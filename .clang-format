@@ -1,0 +1,19 @@
+---
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: false
+AllowShortBlocksOnASingleLine: 'true'
+BreakBeforeBraces: Allman
+BreakConstructorInitializers: BeforeComma
+ColumnLimit: '80'
+IndentWidth: '4'
+PointerAlignment: Left
+SortIncludes: 'false'
+SortUsingDeclarations: 'false'
+SpacesInAngles: 'false'
+SpacesInCStyleCastParentheses: 'false'
+SpacesInParentheses: 'false'
+SpacesInSquareBrackets: 'false'
+Standard: Auto
+UseTab: Never
+
+...
