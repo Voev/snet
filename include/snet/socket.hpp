@@ -64,6 +64,8 @@ class Socket
 
   protected:
     int fd_;
+
+  private:
     ossl::BioPtr sock_;
 };
 

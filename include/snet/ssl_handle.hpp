@@ -16,7 +16,7 @@ class SslHandle
         }
     }
 
-    ~SslHandle()
+    virtual ~SslHandle()
     {
         SSL_free(ssl_);
     }
@@ -41,6 +41,16 @@ class SslHandle
         return ssl_;
     }
 
+    bool HandshakeDone() const
+    {
+        return (TLS_ST_OK == SSL_get_state(ssl_));
+    }
+
+    int GetError(int ret) const
+    {
+        return SSL_get_error(ssl_, ret);
+    }
+
   protected:
     SSL* ssl_{nullptr};
 };
@@ -52,7 +62,6 @@ class SslClientHandle : public SslHandle
         : SslHandle(ctx.Get0())
     {
         SSL_set_fd(ssl_, sock.GetFd());
-        SSL_set_connect_state(ssl_);
     }
 
     int Connect()
@@ -68,7 +77,6 @@ class SslServerHandle : public SslHandle
         : SslHandle(ctx.Get0())
     {
         SSL_set_fd(ssl_, sock.GetFd());
-        SSL_set_accept_state(ssl_);
     }
 
     int Accept()

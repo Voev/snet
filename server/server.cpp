@@ -25,7 +25,11 @@ int main(int argc, char* argv[])
         AddressIPv4 a{argv[1], static_cast<uint16_t>(std::stoi(argv[2]))};
         sock->Listen(a);
 
-        EventManager manager{std::move(sock)};
+        auto ctx = std::make_unique<SslContext>(TLS_server_method());
+        ctx->LoadCertificate("server.pem");
+        ctx->LoadPrivateKey("server.pem");
+
+        EventManager manager{std::move(sock), std::move(ctx)};
         manager.MainThread(-1);
     }
     catch (const std::exception& e)
