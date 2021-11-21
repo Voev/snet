@@ -8,39 +8,23 @@ class EventData
   public:
     EventData() = default;
 
-    EventData(std::unique_ptr<Socket>&& sock, bool bListen)
+    EventData(std::unique_ptr<Socket>&& sock, const SslContext& ctx)
         : sock_(std::move(sock))
-        , bListen_(bListen)
+        , sslSock_(std::make_unique<SslServerHandle>(ctx, *sock_.get()))
     {
     }
 
-    Socket* GetSocket() const
+    Socket& GetSocket() const
     {
-        return sock_.get();
+        return *(sock_.get());
     }
 
-    bool IsListening() const
+    SslServerHandle& GetSslSocket() const
     {
-        return bListen_;
-    }
-
-    std::uint32_t GetEvents() const noexcept
-    {
-        return events_;
-    }
-
-    void AddEvents(std::uint32_t events) noexcept
-    {
-        events_ |= events;
-    }
-
-    void RemoveEvents(std::uint32_t events) noexcept
-    {
-        events_ &= ~events;
+        return *(sslSock_.get());
     }
 
   private:
     std::unique_ptr<Socket> sock_{nullptr};
-    std::uint32_t events_{0};
-    bool bListen_{false};
+    std::unique_ptr<SslServerHandle> sslSock_{nullptr};
 };

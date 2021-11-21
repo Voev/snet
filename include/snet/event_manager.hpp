@@ -4,8 +4,9 @@
 #include <memory>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <openssl/bio.h>
-
+#include <errno.h>
 #include <snet/address.hpp>
 #include <snet/event_poll.hpp>
 #include <snet/event_data.hpp>
@@ -17,9 +18,11 @@ class EventManager
     using EpollEvent = struct epoll_event;
     using EpollEventArray = std::array<EpollEvent, kMaxEvents>;
 
-    EventManager(std::unique_ptr<AcceptSocket>&& sock)
+    EventManager(std::unique_ptr<AcceptSocket>&& sock,
+                 std::unique_ptr<SslContext>&& ctx = nullptr)
         : epoll_(std::make_unique<Epoll>())
         , listener_(std::move(sock))
+        , ctx_(std::move(ctx))
     {
         epoll_->Add(listener_->GetFd(), EPOLLIN);
     }
@@ -36,9 +39,35 @@ class EventManager
     std::array<char, 1024> buffer;
     int readed = 0;
 
-    std::uint32_t OnReceive(const std::unique_ptr<Socket>& sock)
+    std::uint32_t OnHandshake(std::unique_ptr<EventData>& evtData)
     {
-        readed = sock->Read(buffer.data(), sizeof(buffer));
+        int ret = evtData->GetSslSocket().Accept();
+        if (ret == 1)
+        {
+            return EPOLLIN;
+        }
+
+        int err = evtData->GetSslSocket().GetError(ret);
+        if (err == SSL_ERROR_WANT_WRITE)
+        {
+            return EPOLLOUT;
+        }
+        else if (err == SSL_ERROR_WANT_READ)
+        {
+            ERR_print_errors_fp(stderr);
+            return EPOLLIN;
+        }
+        ERR_print_errors_fp(stderr);
+        return 0;
+    }
+
+    std::uint32_t OnReceive(std::unique_ptr<EventData>& evtData)
+    {
+        if (!evtData->GetSslSocket().HandshakeDone())
+        {
+            return OnHandshake(evtData);
+        }
+        readed = evtData->GetSslSocket().Read(buffer.data(), sizeof(buffer));
         if (readed == 0)
         {
             return 0;
@@ -49,19 +78,20 @@ class EventManager
             {
                 return EPOLLIN;
             }
-            else
+            if (errno == ECONNRESET)
             {
-                throw std::runtime_error("read process error");
+                return 0;
             }
+            throw std::runtime_error("read process error");
         }
         std::copy(std::begin(buffer), buffer.data() + readed,
                   std::ostream_iterator<char>(std::cout));
         return EPOLLOUT;
     }
 
-    std::uint32_t OnSend(const std::unique_ptr<Socket>& sock)
+    std::uint32_t OnSend(std::unique_ptr<EventData>& evtData)
     {
-        auto ret = sock->Write(buffer.data(), readed);
+        auto ret = evtData->GetSslSocket().Write(buffer.data(), readed);
         if (ret == 0)
         {
             return 0;
@@ -99,16 +129,10 @@ class EventManager
                 auto flags = events.at(i).events;
                 auto fd = events.at(i).data.fd;
 
-                if (flags & EPOLLERR)
-                {
-                    std::cout << "epoll_wait returned EPOLLERR" << std::endl;
-                    return;
-                }
-
                 if (listener_->GetFd() == fd)
                 {
                     Address addr;
-                    int asock = listener_->Accept(addr);
+                    auto asock = listener_->Accept(addr);
                     if (asock < 0)
                     {
                         if (BIO_sock_should_retry(asock))
@@ -122,21 +146,26 @@ class EventManager
                     }
                     else
                     {
-                        std::cout << addr.ToString() << std::endl;
+                        std::cout << "socket " << asock
+                                  << " opened: " << addr.ToString()
+                                  << std::endl;
                         std::uint32_t events = OnConnected();
-                        fds_[asock] = std::make_unique<Socket>(asock);
+                        auto pasock = std::make_unique<Socket>(asock);
+                        fds_[asock] = std::make_unique<EventData>(
+                            std::move(pasock), *ctx_.get());
                         epoll_->Add(asock, events);
                     }
                 }
                 else
                 {
-                    auto& sock = fds_.at(fd);
+                    auto& evtData = fds_.at(fd);
                     if (flags & EPOLLIN)
                     {
-                        std::uint32_t events = OnReceive(sock);
+                        std::uint32_t events = OnReceive(evtData);
                         if (events == 0)
                         {
-                            std::cout << "socket " << fd << " closing\n ";
+                            std::cout << "socket " << fd << " closed"
+                                      << std::endl;
                             epoll_->Delete(fd);
                             fds_.erase(fd);
                         }
@@ -147,7 +176,7 @@ class EventManager
                     }
                     else if (flags & EPOLLOUT)
                     {
-                        std::uint32_t events = OnSend(sock);
+                        std::uint32_t events = OnSend(evtData);
                         if (events == 0)
                         {
                             std::cout << "socket " << fd << " closing\n ";
@@ -167,5 +196,7 @@ class EventManager
   private:
     std::unique_ptr<Epoll> epoll_;
     std::unique_ptr<AcceptSocket> listener_;
-    std::map<int, std::unique_ptr<Socket>> fds_;
+    std::unique_ptr<SslContext> ctx_;
+
+    std::map<int, std::unique_ptr<EventData>> fds_;
 };

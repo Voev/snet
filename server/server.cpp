@@ -1,4 +1,5 @@
 #include <vector>
+#include <algorithm>
 #include <iostream>
 #include <iterator>
 #include <openssl/err.h>
@@ -10,11 +11,7 @@
 
 int main(int argc, char* argv[])
 {
-    if (argc != 3)
-    {
-        std::cout << "Invalid usage" << std::endl;
-        return EXIT_FAILURE;
-    }
+    std::vector<std::string> arguments(argv + 1, argv + argc);
     try
     {
         OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CRYPTO_STRINGS |
@@ -22,10 +19,22 @@ int main(int argc, char* argv[])
                          nullptr);
         auto sock = std::make_unique<AcceptSocket>();
 
-        AddressIPv4 a{argv[1], static_cast<uint16_t>(std::stoi(argv[2]))};
+        AddressIPv4 a{arguments.at(0),
+                      static_cast<uint16_t>(std::stoi(arguments.at(1)))};
         sock->Listen(a);
 
-        EventManager manager{std::move(sock)};
+        auto ctx = std::make_unique<SslContext>(TLS_server_method());
+        ctx->LoadCertificate("server.pem");
+        ctx->LoadPrivateKey("server.pem");
+        if (std::find(arguments.begin(), arguments.end(), "-t") !=
+            arguments.end())
+        {
+
+            ctx->EnableTlsTrace();
+        }
+        ctx->SetMaxVersion(TLS1_2_VERSION);
+
+        EventManager manager{std::move(sock), std::move(ctx)};
         manager.MainThread(-1);
     }
     catch (const std::exception& e)
