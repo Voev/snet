@@ -4,8 +4,9 @@
 #include <memory>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <openssl/bio.h>
-
+#include <errno.h>
 #include <snet/address.hpp>
 #include <snet/event_poll.hpp>
 #include <snet/event_data.hpp>
@@ -43,7 +44,7 @@ class EventManager
         int ret = evtData->GetSslSocket().Accept();
         if (ret == 1)
         {
-            std::cout << "ssl connected";
+            // std::cout << "ssl connected" << std::endl;
             return EPOLLIN;
         }
 
@@ -54,6 +55,7 @@ class EventManager
         }
         else if (err == SSL_ERROR_WANT_READ)
         {
+            ERR_print_errors_fp(stderr);
             return EPOLLIN;
         }
         ERR_print_errors_fp(stderr);
@@ -77,10 +79,11 @@ class EventManager
             {
                 return EPOLLIN;
             }
-            else
+            if (errno == ECONNRESET)
             {
-                throw std::runtime_error("read process error");
+                return 0;
             }
+            throw std::runtime_error("read process error");
         }
         std::copy(std::begin(buffer), buffer.data() + readed,
                   std::ostream_iterator<char>(std::cout));
@@ -127,11 +130,11 @@ class EventManager
                 auto flags = events.at(i).events;
                 auto fd = events.at(i).data.fd;
 
-                if (flags & EPOLLERR)
+                /*if (flags & EPOLLERR)
                 {
                     std::cout << "epoll_wait returned EPOLLERR" << std::endl;
                     return;
-                }
+                }*/
 
                 if (listener_->GetFd() == fd)
                 {

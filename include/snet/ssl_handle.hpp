@@ -41,6 +41,11 @@ class SslHandle
         return ssl_;
     }
 
+    void Shutdown()
+    {
+        SSL_shutdown(ssl_);
+    }
+
     bool HandshakeDone() const
     {
         return (TLS_ST_OK == SSL_get_state(ssl_));
