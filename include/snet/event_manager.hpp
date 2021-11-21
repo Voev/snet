@@ -44,7 +44,6 @@ class EventManager
         int ret = evtData->GetSslSocket().Accept();
         if (ret == 1)
         {
-            // std::cout << "ssl connected" << std::endl;
             return EPOLLIN;
         }
 
@@ -129,12 +128,6 @@ class EventManager
             {
                 auto flags = events.at(i).events;
                 auto fd = events.at(i).data.fd;
-
-                /*if (flags & EPOLLERR)
-                {
-                    std::cout << "epoll_wait returned EPOLLERR" << std::endl;
-                    return;
-                }*/
 
                 if (listener_->GetFd() == fd)
                 {
