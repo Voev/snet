@@ -5,15 +5,16 @@
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <unistd.h>
 
+
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <atomic>
 #include <csignal>
 #include <chrono>
@@ -28,6 +29,9 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/tls1.h>
+
+#include <snet/event_poll.hpp>
+#include <snet/ssl_handle.hpp>
 
 static const int DEFAULT_THREADS = 1;
 static const int DEFAULT_PEERS = 1;
@@ -228,32 +232,30 @@ class IO
     static const size_t TO_MSEC = 5;
 
   private:
-    int ed_;
+    Epoll epoll_;
     int ev_count_;
-    SSL_CTX* tls_ctx_;
+    //SSL_CTX* tls_ctx_;
+    SslContext tls_ctx_;
     struct epoll_event events_[N_EVENTS];
     std::list<SocketHandler*> reconnect_q_;
     std::list<SocketHandler*> backlog_;
 
   public:
     IO()
-        : ed_(-1)
-        , ev_count_(0)
-        , tls_ctx_(NULL)
+        : ev_count_(0)
+        , tls_ctx_(TLS_client_method())
     {
-        tls_ctx_ = SSL_CTX_new(TLS_client_method());
-
         // Allow only TLS 1.2 and 1.3, and chose only those user has
         // requested.
         if (g_opt.tls_vers != TLS_ANY_VERSION)
         {
-            SSL_CTX_set_min_proto_version(tls_ctx_, g_opt.tls_vers);
-            SSL_CTX_set_max_proto_version(tls_ctx_, g_opt.tls_vers);
+            SSL_CTX_set_min_proto_version(tls_ctx_.Get0(), g_opt.tls_vers);
+            SSL_CTX_set_max_proto_version(tls_ctx_.Get0(), g_opt.tls_vers);
         }
         else
         {
-            SSL_CTX_set_min_proto_version(tls_ctx_, TLS1_2_VERSION);
-            SSL_CTX_set_max_proto_version(tls_ctx_, TLS1_3_VERSION);
+            SSL_CTX_set_min_proto_version(tls_ctx_.Get0(), TLS1_2_VERSION);
+            SSL_CTX_set_max_proto_version(tls_ctx_.Get0(), TLS1_3_VERSION);
         }
 
         // Session resumption.
@@ -261,62 +263,51 @@ class IO
         {
             unsigned int mode = SSL_SESS_CACHE_OFF | SSL_SESS_CACHE_NO_INTERNAL;
             if (!g_opt.adv_tickets)
-                SSL_CTX_set_options(tls_ctx_, SSL_OP_NO_TICKET);
-            SSL_CTX_set_session_cache_mode(tls_ctx_, mode);
+                SSL_CTX_set_options(tls_ctx_.Get0(), SSL_OP_NO_TICKET);
+            SSL_CTX_set_session_cache_mode(tls_ctx_.Get0(), mode);
         }
         else
         {
             unsigned int mode =
                 SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_AUTO_CLEAR;
-            SSL_CTX_set_session_cache_mode(tls_ctx_, mode);
+            SSL_CTX_set_session_cache_mode(tls_ctx_.Get0(), mode);
         }
 
         if (g_opt.cipher)
         {
             if (g_opt.tls_vers == TLS1_3_VERSION ||
                 g_opt.tls_vers == TLS_ANY_VERSION)
-                if (!SSL_CTX_set_ciphersuites(tls_ctx_, g_opt.cipher))
+                if (!SSL_CTX_set_ciphersuites(tls_ctx_.Get0(), g_opt.cipher))
                     throw Except("cannot set cipher");
             if (g_opt.tls_vers == TLS1_2_VERSION ||
                 g_opt.tls_vers == TLS_ANY_VERSION)
-                if (!SSL_CTX_set_cipher_list(tls_ctx_, g_opt.cipher))
+                if (!SSL_CTX_set_cipher_list(tls_ctx_.Get0(), g_opt.cipher))
                     throw Except("cannot set cipher");
         }
         if (g_opt.curve)
-            if (!SSL_CTX_set1_groups_list(tls_ctx_, g_opt.curve))
+            if (!SSL_CTX_set1_groups_list(tls_ctx_.Get0(), g_opt.curve))
                 throw Except("cannot set elliptic curve");
-        SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
+        SSL_CTX_set_verify(tls_ctx_.Get0(), SSL_VERIFY_NONE, NULL);
         if (g_opt.keylogfile)
-            SSL_CTX_set_keylog_callback(tls_ctx_, keylog);
+            SSL_CTX_set_keylog_callback(tls_ctx_.Get0(), keylog);
 
-        if ((ed_ = epoll_create(1)) < 0)
-            throw Except("can't create epoll");
         memset(events_, 0, sizeof(events_));
     }
 
     ~IO()
     {
-        if (ed_ > -1)
-            close(ed_);
         reconnect_q_.clear();
-        SSL_CTX_set_keylog_callback(tls_ctx_, nullptr);
-        if (tls_ctx_)
-            SSL_CTX_free(tls_ctx_);
     }
 
     void add(SocketHandler* sh)
     {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLERR;
-        ev.data.ptr = sh;
-
-        if (epoll_ctl(ed_, EPOLL_CTL_ADD, sh->sd, &ev) < 0)
+        if (epoll_.Add(sh, sh->sd, EPOLLIN | EPOLLOUT | EPOLLERR) < 0)
             throw Except("can't add socket to poller");
     }
 
     void del(SocketHandler* sh)
     {
-        if (epoll_ctl(ed_, EPOLL_CTL_DEL, sh->sd, NULL) < 0)
+        if (epoll_.Delete(sh->sd) < 0)
             throw Except("can't delete socket from poller");
     }
 
@@ -328,7 +319,7 @@ class IO
     void wait()
     {
     retry:
-        ev_count_ = epoll_wait(ed_, events_, N_EVENTS, TO_MSEC);
+        ev_count_ = epoll_.Wait( events_, N_EVENTS, TO_MSEC);
         if (ev_count_ < 0)
         {
             if (errno == EINTR)
@@ -359,25 +350,22 @@ class IO
         return sh;
     }
 
-    SSL* new_tls_ctx(SocketHandler* sh)
+    SslClientHandle* new_tls_ctx(SocketHandler* sh)
     {
-        SSL* ctx = SSL_new(tls_ctx_);
-        if (!ctx)
-            throw Except("cannot clone TLS context");
-
-        SSL_set_fd(ctx, sh->sd);
+        SslClientHandle* handle = new SslClientHandle( tls_ctx_, sh->sd );
+        
         BIO_set_tcp_ndelay(sh->sd, true);
         if (g_opt.use_tickets)
         {
             auto sess = sh->get_session();
             if (sess)
-                SSL_set_session(ctx, sess);
+                SSL_set_session(handle->Get0(), sess);
         }
 
         if (g_opt.sni)
-            SSL_set_tlsext_host_name(ctx, g_opt.sni);
+            SSL_set_tlsext_host_name(handle->Get0(), g_opt.sni);
 
-        return ctx;
+        return handle;
     }
 };
 
@@ -394,7 +382,7 @@ class Peer : public SocketHandler
   private:
     IO& io_;
     int id_;
-    SSL* tls_;
+    std::unique_ptr< SslClientHandle > tls_;
     SSL_SESSION* sess_;
     std::chrono::time_point<std::chrono::steady_clock> ts_;
     enum _states state_;
@@ -404,7 +392,6 @@ class Peer : public SocketHandler
     Peer(IO& io, int id) noexcept
         : io_(io)
         , id_(id)
-        , tls_(NULL)
         , sess_(NULL)
         , state_(STATE_TCP_CONNECT)
         , polled_(false)
@@ -474,12 +461,12 @@ class Peer : public SocketHandler
 
         if (!tls_)
         {
-            tls_ = io_.new_tls_ctx(this);
+            tls_.reset( io_.new_tls_ctx(this) );
             stat.tls_handshakes++;
             ts_ = steady_clock::now();
         }
 
-        int r = SSL_connect(tls_);
+        int r = tls_->Connect();
         if (r == 1)
         {
             auto t1(steady_clock::now());
@@ -496,7 +483,7 @@ class Peer : public SocketHandler
             return true;
         }
 
-        switch (SSL_get_error(tls_, r))
+        switch (tls_->GetError(r))
         {
         case SSL_ERROR_WANT_READ:
         case SSL_ERROR_WANT_WRITE:
@@ -544,11 +531,9 @@ class Peer : public SocketHandler
 
     bool tcp_connect_try_finish()
     {
-        int ret = 0;
-        socklen_t len = 4;
-
-        if (getsockopt(sd, SOL_SOCKET, SO_ERROR, &ret, &len))
-            throw Except("cannot get a socket connect() status");
+        int ret;
+        
+        ret = BIO_sock_error( sd );
 
         if (!ret)
             return handle_established_tcp_conn();
@@ -593,12 +578,11 @@ class Peer : public SocketHandler
             if (g_opt.use_tickets)
             {
                 auto old_sess = sess_;
-                SSL_shutdown(tls_);
-                sess_ = SSL_get1_session(tls_);
+                tls_->Shutdown();
+                sess_ = SSL_get1_session(tls_->Get0());
                 SSL_SESSION_free(old_sess);
             }
-            SSL_free(tls_);
-            tls_ = NULL;
+            tls_.reset( nullptr );
         }
         if (sd >= 0)
         {
