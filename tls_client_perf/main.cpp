@@ -69,7 +69,7 @@ struct
     const char* curve;
     const char* keylogfile;
     const char* sni;
-    struct sockaddr_in6 ip;
+    std::unique_ptr<Address> ip;
 } g_opt;
 
 struct DbgStream
@@ -544,15 +544,11 @@ class Peer : public SocketHandler
 
     bool tcp_connect()
     {
-        sd = socket(g_opt.ip.sin6_family, SOCK_STREAM, IPPROTO_TCP);
+        sd = BIO_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0);
         if (sd < 0)
             throw Except("cannot create a socket");
 
-        fcntl(sd, F_SETFL, fcntl(sd, F_GETFL, 0) | O_NONBLOCK);
-
-        int sz = (g_opt.ip.sin6_family == AF_INET) ? sizeof(sockaddr_in)
-                                                   : sizeof(sockaddr_in6);
-        int r = connect(sd, (struct sockaddr*)&g_opt.ip, sz);
+        int r = BIO_connect(sd, g_opt.ip->Get0(), BIO_SOCK_NONBLOCK);
 
         stat.tcp_handshakes++;
         state_ = STATE_TCP_CONNECTING;
@@ -605,8 +601,8 @@ class Peer : public SocketHandler
             sl.l_onoff = 1;
             sl.l_linger = 0;
             setsockopt(sd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
-            close(sd);
 
+            close(sd);
             sd = -1;
         }
 
@@ -653,32 +649,6 @@ void usage() noexcept
     exit(0);
 }
 
-static int parse_ipv4(const char* addr, const char* port)
-{
-    memset(&g_opt.ip, 0, sizeof(g_opt.ip));
-
-    sockaddr_in* ipv4 = (sockaddr_in*)&g_opt.ip;
-    if (inet_pton(AF_INET, addr, &ipv4->sin_addr) != 1)
-        return -EINVAL;
-
-    ipv4->sin_family = AF_INET;
-    ipv4->sin_port = htons(atoi(port));
-
-    return 0;
-}
-
-static int parse_ipv6(const char* addr, const char* port)
-{
-    memset(&g_opt.ip, 0, sizeof(g_opt.ip));
-
-    if (inet_pton(AF_INET6, addr, &g_opt.ip.sin6_addr) != 1)
-        return -EINVAL;
-
-    g_opt.ip.sin6_family = AF_INET6;
-    g_opt.ip.sin6_port = htons(atoi(port));
-
-    return 0;
-}
 
 static int do_getopt(int argc, char* argv[]) noexcept
 {
@@ -820,30 +790,19 @@ static int do_getopt(int argc, char* argv[]) noexcept
     }
     if (optind >= argc)
     {
-        parse_ipv4("127.0.0.1", "443");
         return 0;
     }
     const char* addr_str = argv[optind];
     const char* port_str = argv[++optind];
-    if (parse_ipv4(addr_str, port_str) && parse_ipv6(addr_str, port_str))
-    {
-        std::cerr << "ERROR: can't parse ip address from string '" << addr_str
-                  << "'" << std::endl;
-        return -EINVAL;
-    }
+
+    g_opt.ip = std::make_unique<AddressIPv4>(addr_str, atoi(port_str));
     return 0;
 }
 
 void print_settings()
 {
-    char str[INET6_ADDRSTRLEN] = {};
-    void* addr = g_opt.ip.sin6_family == AF_INET
-                     ? (void*)&((sockaddr_in*)&g_opt.ip)->sin_addr
-                     : (void*)&g_opt.ip.sin6_addr;
-
-    inet_ntop(g_opt.ip.sin6_family, addr, str, INET6_ADDRSTRLEN);
     std::cout << "Running TLS benchmark with following settings:\n"
-              << "Host:        " << str << " : " << ntohs(g_opt.ip.sin6_port)
+              << "Host:        " << g_opt.ip->ToString()
               << "\n"
               << "TLS version: ";
     if (g_opt.tls_vers == TLS1_2_VERSION)
