@@ -18,9 +18,9 @@
 struct Socket
 {
     Socket()
+        : fd_(BIO_socket(AF_INET, SOCK_STREAM, 0, 0))
     {
-        fd_ = BIO_socket(AF_INET, SOCK_STREAM, 0, 0);
-        if (fd_ < 0 || !BIO_socket_nbio(fd_, 1))
+        if (fd_ < 0)
         {
             throw std::runtime_error("invalid socket");
         }
@@ -29,13 +29,17 @@ struct Socket
     Socket(int fd)
         : fd_(fd)
     {
+        if (fd_ < 0)
+        {
+            throw std::runtime_error("invalid socket");
+        }
     }
 
-    Socket( const Socket& ) = delete;
-    Socket( Socket&& ) = default;
-    
-    Socket& operator=( const Socket& ) = delete;
-    Socket& operator=( Socket&& ) = default;
+    Socket(const Socket&) = delete;
+    Socket(Socket&&) = default;
+
+    Socket& operator=(const Socket&) = delete;
+    Socket& operator=(Socket&&) = default;
 
     virtual ~Socket()
     {
@@ -58,7 +62,7 @@ struct Socket
 
     int GetError() const
     {
-        return BIO_sock_error( fd_ );
+        return BIO_sock_error(fd_);
     }
 
     /*int Read(void* buf, size_t bufSize)
@@ -76,7 +80,7 @@ struct Socket
         return Write(data.c_str(), static_cast<int>(data.length()));
     }*/
 
-private:
+  private:
     int fd_;
 
     /* private:
@@ -89,9 +93,9 @@ class ConnectSocket : public Socket
     ConnectSocket() = default;
     virtual ~ConnectSocket() = default;
 
-    int Connect(const Address& addr)
+    int Connect(const Address& addr, int options = BIO_SOCK_NONBLOCK)
     {
-        return BIO_connect(GetFd(), addr.Get0(), 0);
+        return BIO_connect(GetFd(), addr.Get0(), options);
     }
 };
 
@@ -101,13 +105,13 @@ class AcceptSocket : public Socket
     AcceptSocket() = default;
     virtual ~AcceptSocket() = default;
 
-    int Listen(const Address& addr)
+    int Listen(const Address& addr, int options = BIO_SOCK_REUSEADDR)
     {
-        return BIO_listen(GetFd(), addr.Get0(), BIO_SOCK_REUSEADDR);
+        return BIO_listen(GetFd(), addr.Get0(), options);
     }
 
-    int Accept(Address& addr)
+    int Accept(Address& addr, int options = BIO_SOCK_NONBLOCK)
     {
-        return BIO_accept_ex(GetFd(), addr.Get0(), BIO_SOCK_NONBLOCK);
+        return BIO_accept_ex(GetFd(), addr.Get0(), options);
     }
 };
