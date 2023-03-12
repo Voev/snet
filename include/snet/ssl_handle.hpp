@@ -2,6 +2,7 @@
 #include <openssl/ssl.h>
 #include <snet/socket.hpp>
 #include <snet/utils.hpp>
+#include <snet/ssl_context.hpp>
 #include <stdexcept>
 
 class SslHandle
@@ -63,6 +64,12 @@ class SslHandle
 class SslClientHandle : public SslHandle
 {
   public:
+    explicit SslClientHandle(const SslContext& ctx, int sock)
+        : SslHandle(ctx.Get0())
+    {
+        SSL_set_fd(ssl_, sock);
+    }
+
     explicit SslClientHandle(const SslContext& ctx, const Socket& sock)
         : SslHandle(ctx.Get0())
     {

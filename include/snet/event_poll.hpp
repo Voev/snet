@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cassert>
 #include <unistd.h>
+#include <stdexcept>
 #include <sys/epoll.h>
 
 class Epoll
@@ -12,6 +13,8 @@ class Epoll
     Epoll()
         : fd_(epoll_create1(0))
     {
+        if (fd_ < 0)
+            throw std::runtime_error("can't create epoll");
     }
 
     ~Epoll()
@@ -19,46 +22,45 @@ class Epoll
         close(fd_);
     }
 
-    void Add(int fd, std::uint32_t events)
+    int Add(int fd, std::uint32_t events)
     {
-        Control(EPOLL_CTL_ADD, fd, events);
+        return Control(EPOLL_CTL_ADD, fd, events);
     }
 
-    void Add(void* ptr, int fd, std::uint32_t events)
+    int Add(void* ptr, int fd, std::uint32_t events)
     {
-        Control(EPOLL_CTL_ADD, ptr, fd, events);
+        return Control(EPOLL_CTL_ADD, ptr, fd, events);
     }
 
-    void Delete(int fd)
+    int Delete(int fd)
     {
-        epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr);
+        return epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr);
     }
 
-    void Modify(void* ptr, int fd, std::uint32_t events)
+    int Modify(void* ptr, int fd, std::uint32_t events)
     {
-        Control(EPOLL_CTL_MOD, ptr, fd, events);
+        return Control(EPOLL_CTL_MOD, ptr, fd, events);
     }
 
-    void Modify(int fd, std::uint32_t events)
+    int Modify(int fd, std::uint32_t events)
     {
-        Control(EPOLL_CTL_MOD, fd, events);
+        return Control(EPOLL_CTL_MOD, fd, events);
     }
 
-    void Control(int op, int fd, std::uint32_t events)
+    int Control(int op, int fd, std::uint32_t events)
     {
         Event event = {0, 0};
         event.data.fd = fd;
         event.events = events;
-        int r = epoll_ctl(fd_, op, fd, &event);
-        assert(r != -1);
+        return epoll_ctl(fd_, op, fd, &event);
     }
 
-    void Control(int op, void* ptr, int fd, std::uint32_t events)
+    int Control(int op, void* ptr, int fd, std::uint32_t events)
     {
         Event event = {0, 0};
         event.data.ptr = ptr;
         event.events = events;
-        epoll_ctl(fd_, op, fd, &event);
+        return epoll_ctl(fd_, op, fd, &event);
     }
 
     int Wait(Event* events, int maxCount, int timeout)

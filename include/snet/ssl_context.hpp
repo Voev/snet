@@ -15,7 +15,6 @@ struct SslContext
     ~SslContext()
     {
         SSL_CTX_free(ctx_);
-        BIO_free(out_);
     }
 
     SSL_CTX* Get0() const
@@ -41,13 +40,6 @@ struct SslContext
         }
     }
 
-    void EnableTlsTrace()
-    {
-        SSL_CTX_set_msg_callback(ctx_, SSL_trace);
-        out_ = BIO_new_fp(stdout, BIO_NOCLOSE);
-        SSL_CTX_set_msg_callback_arg(ctx_, out_);
-    }
-
     void SetMaxVersion(int version)
     {
         SSL_CTX_set_max_proto_version(ctx_, version);
@@ -55,5 +47,4 @@ struct SslContext
 
   private:
     SSL_CTX* ctx_{nullptr};
-    BIO* out_{nullptr};
 };
