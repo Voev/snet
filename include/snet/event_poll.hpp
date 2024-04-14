@@ -6,7 +6,7 @@
 
 class Epoll
 {
-  public:
+public:
     using Event = struct epoll_event;
 
     Epoll()
@@ -49,8 +49,7 @@ class Epoll
         Event event = {0, 0};
         event.data.fd = fd;
         event.events = events;
-        int r = epoll_ctl(fd_, op, fd, &event);
-        assert(r != -1);
+        epoll_ctl(fd_, op, fd, &event);
     }
 
     void Control(int op, void* ptr, int fd, std::uint32_t events)
@@ -66,6 +65,6 @@ class Epoll
         return epoll_wait(fd_, events, maxCount, timeout);
     }
 
-  private:
+private:
     int fd_;
 };
