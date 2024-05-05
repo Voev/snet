@@ -1532,69 +1532,12 @@ void client_handler(handler_info* p_info)
     {
         switch (g_pApp->m_const_params.fd_handler_type)
         {
-        case SELECT:
-        {
-            client_handler<IoSelect>(p_info->fd_min, p_info->fd_max,
-                                     p_info->fd_num);
-            break;
-        }
         case RECVFROM:
         {
             client_handler<IoRecvfrom>(p_info->fd_min, p_info->fd_max,
                                        p_info->fd_num);
             break;
         }
-        case RECVFROMMUX:
-        {
-            client_handler<IoRecvfromMUX>(p_info->fd_min, p_info->fd_max,
-                                          p_info->fd_num);
-            break;
-        }
-#ifndef __windows__
-        case POLL:
-        {
-            client_handler<IoPoll>(p_info->fd_min, p_info->fd_max,
-                                   p_info->fd_num);
-            break;
-        }
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-        case EPOLL:
-        {
-            client_handler<IoEpoll>(p_info->fd_min, p_info->fd_max,
-                                    p_info->fd_num);
-            break;
-        }
-#endif // !__FreeBSD__ && !defined(__APPLE__)
-#if defined(__FreeBSD__) || defined(__APPLE__)
-        case KQUEUE:
-        {
-            client_handler<IoKqueue>(p_info->fd_min, p_info->fd_max,
-                                     p_info->fd_num);
-            break;
-        }
-#endif                 // defined(__FreeBSD__) || defined(__APPLE__)
-#ifdef USING_EXTRA_API // For socketxtreme Only
-        case SOCKETXTREME:
-        {
-            if (g_vma_api)
-            {
-#ifdef USING_VMA_EXTRA_API // For VMA socketxtreme Only
-                client_handler<IoSocketxtremeVMA>(
-                    p_info->fd_min, p_info->fd_max, p_info->fd_num);
-#endif // USING_VMA_EXTRA_API
-            }
-            else if (g_xlio_api)
-            {
-#ifdef USING_XLIO_EXTRA_API // For XLIO socketxtreme Only
-                client_handler<IoSocketxtremeXLIO>(
-                    p_info->fd_min, p_info->fd_max, p_info->fd_num);
-#endif // USING_XLIO_EXTRA_API
-            }
-
-            break;
-        }
-#endif // USING_EXTRA_API
-#endif // !WIN32
         default:
         {
             assert(false && "unknown file handler");

@@ -33,6 +33,7 @@
 #include <thread>
 #include <snet/log/logger.hpp>
 #include <snet/network/socket_utils.hpp>
+#include "io_epoll.hpp"
 
 namespace snet::perf
 {
@@ -435,42 +436,19 @@ void server_handler(handler_info* p_info)
                                        p_info->fd_num);
             break;
         }
-        case RECVFROMMUX:
-        {
-            server_handler<IoRecvfromMUX>(p_info->fd_min, p_info->fd_max,
-                                          p_info->fd_num);
-            break;
-        }
-        case SELECT:
+        /*case SELECT:
         {
             server_handler<IoSelect>(p_info->fd_min, p_info->fd_max,
                                      p_info->fd_num);
             break;
-        }
-#ifndef __windows__
-        case POLL:
-        {
-            server_handler<IoPoll>(p_info->fd_min, p_info->fd_max,
-                                   p_info->fd_num);
-            break;
-        }
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
+        }*/
+
         case EPOLL:
         {
             server_handler<IoEpoll>(p_info->fd_min, p_info->fd_max,
                                     p_info->fd_num);
             break;
         }
-#endif // !defined(__FreeBSD__) && !defined(__APPLE__)
-#if defined(__FreeBSD__) || defined(__APPLE__)
-        case KQUEUE:
-        {
-            server_handler<IoKqueue>(p_info->fd_min, p_info->fd_max,
-                                     p_info->fd_num);
-            break;
-        }
-#endif // defined(__FreeBSD__) || defined(__APPLE__)
-#endif
         default:
             snet::log::error("unknown file handler");
         }

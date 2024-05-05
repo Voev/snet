@@ -231,42 +231,11 @@ private:
         return callback.getReceiveCount();
     }
 
-#ifdef USING_VMA_EXTRA_API // VMA
-    template <typename T = IoType>
-    inline std::enable_if_t<is_vma_bufftype<T>::value, unsigned int>
-    client_receive_from_selected(int ifd)
-    {
-        return client_receive_from_selected_<VmaSocketXtremeInputHandler>(ifd);
-    }
-#endif
-
-#ifdef USING_XLIO_EXTRA_API // XLIO
-    template <typename T = IoType>
-    inline std::enable_if_t<is_xlio_bufftype<T>::value, unsigned int>
-    client_receive_from_selected(int ifd)
-    {
-        return client_receive_from_selected_<XlioSocketXtremeInputHandler>(ifd);
-    }
-#endif
-
     template <typename T = IoType>
     inline std::enable_if_t<!(is_vma_bufftype<T>{} || is_xlio_bufftype<T>{}),
                             unsigned int>
     client_receive_from_selected(int ifd)
     {
-#ifdef USING_VMA_EXTRA_API // VMA
-        if (g_pApp->m_const_params.is_zcopyread && g_vma_api)
-        {
-            return client_receive_from_selected_<VmaZCopyReadInputHandler>(ifd);
-        }
-#endif                      // USING_VMA_EXTRA_API
-#ifdef USING_XLIO_EXTRA_API // XLIO
-        if (g_pApp->m_const_params.is_zcopyread && g_xlio_api)
-        {
-            return client_receive_from_selected_<XlioZCopyReadInputHandler>(
-                ifd);
-        }
-#endif // USING_XLIO_EXTRA_API
         return client_receive_from_selected_<RecvFromInputHandler>(ifd);
     }
 
@@ -314,26 +283,6 @@ private:
         receiveCount++;
         TicksTime rxTime;
         rxTime.setNow();
-
-#if 0 // should be part of check-data-integrity
-        if (g_pApp->m_const_params.msg_size_range == 0) { //ABH: added 'if', otherwise, size check will not suit latency-under-load
-            if (nbytes != g_msg_size && errno != EINTR) {
-                exit_with_log("received message size test failed (sent:%d received:%d)", g_msg_size, nbytes,SOCKPERF_ERR_FATAL);
-            }
-        }
-#endif
-
-#ifdef DEBUG // should not occur in real test
-        if (m_pMsgReply->getSequenceCounter() %
-            g_pApp->m_const_params.reply_every)
-        {
-            snet::log::error(
-                "skipping unexpected received message: seqNo=%" PRIu64
-                " mask=0x%x",
-                m_pMsgReply->getSequenceCounter(), m_pMsgReply->getFlags());
-            return true;
-        }
-#endif
 
         serverNo = client_get_server_id(ifd, recvfrom);
         if (unlikely(serverNo < 0))

@@ -1,0 +1,39 @@
+#pragma once
+#include <map>
+#include <memory>
+#include <functional>
+#include <snet/command.hpp>
+#include <snet/utils/noncopyable.hpp>
+
+namespace snet
+{
+
+class CommandDispatcher final : public utils::NonCopyable
+{
+public:
+    CommandDispatcher() = default;
+    ~CommandDispatcher() = default;
+
+    std::unique_ptr<Command> createCommand(std::string_view name);
+
+private:
+    typedef std::function<std::unique_ptr<Command>()> CommandCreator;
+    typedef std::map<std::string_view, CommandCreator> CommandMap;
+    static CommandMap& getCommandMap();
+
+public:
+    class Registration final
+    {
+    public:
+        Registration(const std::string& name, const CommandCreator& creator);
+        ~Registration() = default;
+    };
+};
+
+#define REGISTER_COMMAND(commandName, className)                               \
+    const snet::CommandDispatcher::Registration gCommand##className(           \
+        commandName, []() -> std::unique_ptr<snet::Command> {                  \
+            return std::make_unique<className>();                              \
+        })
+
+} // namespace snet
