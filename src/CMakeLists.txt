@@ -1,6 +1,6 @@
 #add_subdirectory(client)
 #add_subdirectory(server)
-#add_subdirectory(perf)
+add_subdirectory(tls)
 
 # Set executable target name
 set(EXECUTABLE_TARGET snet)
@@ -13,6 +13,7 @@ add_executable(${EXECUTABLE_TARGET} ${SOURCE_FILES})
 
 # Link dependencies
 target_link_libraries(${EXECUTABLE_TARGET}
+  tls_utils
   OpenSSL::Crypto
   OpenSSL::SSL
   Threads::Threads)

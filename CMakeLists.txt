@@ -10,6 +10,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Build options
+option (ENABLE_UNIT_TESTS "enable unit tests" ON)
+
 # Compiler flags
 include(CheckCXXCompilerFlag)
 if (CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -33,3 +36,9 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Entry point for sources
 add_subdirectory(src)
+
+# Tests
+if (ENABLE_UNIT_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif (ENABLE_UNIT_TESTS)

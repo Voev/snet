@@ -3,7 +3,8 @@
 #include <cassert>
 #include <unistd.h>
 #include <sys/epoll.h>
-#include <snet/network/types.hpp>
+#include <snet/utils/error_code.hpp>
+#include <snet/utils/error_code_exception.hpp>
 
 namespace snet::event
 {
@@ -16,6 +17,10 @@ public:
     Epoll()
         : fd_(epoll_create1(0))
     {
+        if (fd_ < 0)
+        {
+            throw utils::ErrorCodeException(utils::GetLastSystemError());
+        }
     }
 
     ~Epoll()
@@ -23,54 +28,103 @@ public:
         close(fd_);
     }
 
-    void add(int fd, std::uint32_t events)
+    inline void add(int fd, std::uint32_t events, std::error_code& ec) noexcept
     {
-        control(EPOLL_CTL_ADD, fd, events);
+        control(EPOLL_CTL_ADD, fd, events, ec);
     }
 
-    void add(void* ptr, int fd, std::uint32_t events)
+    inline void add(int fd, std::uint32_t events)
     {
-        control(EPOLL_CTL_ADD, ptr, fd, events);
+        std::error_code ec;
+        control(EPOLL_CTL_ADD, fd, events, ec);
+        THROW_IF_ERROR(ec);
     }
 
-    void del(int fd)
+    inline void add(void* ptr, int fd, std::uint32_t events, std::error_code& ec) noexcept
     {
-        epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr);
+        control(EPOLL_CTL_ADD, ptr, fd, events, ec);
     }
 
-    void modify(void* ptr, int fd, std::uint32_t events)
+    inline void add(void* ptr, int fd, std::uint32_t events)
     {
-        control(EPOLL_CTL_MOD, ptr, fd, events);
+        std::error_code ec;
+        control(EPOLL_CTL_ADD, ptr, fd, events, ec);
+        THROW_IF_ERROR(ec);
     }
 
-    void modify(int fd, std::uint32_t events)
+    inline void modify(void* ptr, int fd, std::uint32_t events, std::error_code& ec) noexcept
     {
-        control(EPOLL_CTL_MOD, fd, events);
+        control(EPOLL_CTL_MOD, ptr, fd, events, ec);
     }
 
-    void control(int op, int fd, std::uint32_t events)
+    inline void modify(void* ptr, int fd, std::uint32_t events)
+    {
+        std::error_code ec;
+        control(EPOLL_CTL_MOD, ptr, fd, events, ec);
+        THROW_IF_ERROR(ec);
+    }
+
+    inline void modify(int fd, std::uint32_t events, std::error_code& ec) noexcept
+    {
+        control(EPOLL_CTL_MOD, fd, events, ec);
+    }
+
+    inline void modify(int fd, std::uint32_t events)
+    {
+        std::error_code ec;
+        control(EPOLL_CTL_MOD, fd, events, ec);
+        THROW_IF_ERROR(ec);
+    }
+
+    inline void del(int fd, std::error_code& ec) noexcept
+    {
+        if(0 != epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr))
+        {
+            ec = utils::GetLastSystemError();
+        }
+    }
+
+    inline void del(int fd)
+    {
+        std::error_code ec;
+        del(fd, ec);
+        THROW_IF_ERROR(ec);
+    }
+
+    inline void control(int op, int fd, std::uint32_t events, std::error_code& ec) noexcept
     {
         Event event = {0, 0};
         event.data.fd = fd;
         event.events = events;
-        epoll_ctl(fd_, op, fd, &event);
+        if(0 != epoll_ctl(fd_, op, fd, &event))
+        {
+            ec = utils::GetLastSystemError();
+        }
     }
 
-    void control(int op, void* ptr, int fd, std::uint32_t events)
+    inline void control(int op, void* ptr, int fd, std::uint32_t events, std::error_code& ec) noexcept
     {
         Event event = {0, 0};
         event.data.ptr = ptr;
         event.events = events;
-        epoll_ctl(fd_, op, fd, &event);
+        if(0 != epoll_ctl(fd_, op, fd, &event))
+        {
+            ec = utils::GetLastSystemError();
+        }
     }
 
-    int wait(Event* events, int maxCount, int timeout)
+    inline int wait(Event* events, int maxCount, int timeout, std::error_code& ec)
     {
-        return epoll_wait(fd_, events, maxCount, timeout);
+        auto ret = epoll_wait(fd_, events, maxCount, timeout);
+        if(ret < 0)
+        {
+            ec = utils::GetLastSystemError();
+        }
+        return ret;
     }
 
-private: 
-    network::socket_type fd_;
+private:
+    int fd_;
 };
 
 } // namespace snet::event

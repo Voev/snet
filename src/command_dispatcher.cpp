@@ -1,12 +1,14 @@
 #include <snet/command_dispatcher.hpp>
+#include <snet/utils/format.hpp>
 #include <stdexcept>
 
 namespace snet
 {
 
-std::unique_ptr<Command> CommandDispatcher::createCommand(std::string_view name)
+std::unique_ptr<Command> CommandDispatcher::getCommand(std::string_view name)
 {
     const auto& map = CommandDispatcher::getCommandMap();
+    
     auto command = map.find(name);
     if (command != map.end())
     {
@@ -22,14 +24,15 @@ CommandDispatcher::CommandMap& CommandDispatcher::getCommandMap()
 }
 
 CommandDispatcher::Registration::Registration(
-    const std::string& name, const CommandDispatcher::CommandCreator& creator)
+    std::string_view name, const CommandDispatcher::CommandCreator& creator)
 {
     auto& map = CommandDispatcher::getCommandMap();
     if (map.find(name) != map.end())
     {
-        throw std::logic_error("Duplicated registration of command '" + name + "'");
+        throw std::logic_error(utils::Format("duplicated command '{}'", name));
     }
-    map[name] = creator;
+
+    map.insert(std::make_pair(name, creator));
 }
 
 } // namespace snet

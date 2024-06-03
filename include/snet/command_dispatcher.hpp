@@ -14,18 +14,18 @@ public:
     CommandDispatcher() = default;
     ~CommandDispatcher() = default;
 
-    std::unique_ptr<Command> createCommand(std::string_view name);
+    static std::unique_ptr<Command> getCommand(std::string_view name);
 
 private:
     typedef std::function<std::unique_ptr<Command>()> CommandCreator;
     typedef std::map<std::string_view, CommandCreator> CommandMap;
-    static CommandMap& getCommandMap();
 
+    static CommandMap& getCommandMap();
 public:
     class Registration final
     {
     public:
-        Registration(const std::string& name, const CommandCreator& creator);
+        Registration(std::string_view name, const CommandCreator& creator);
         ~Registration() = default;
     };
 };
