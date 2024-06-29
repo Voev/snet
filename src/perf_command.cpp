@@ -9,6 +9,7 @@
 #include <snet/network/socket.hpp>
 #include <snet/network/tcp.hpp>
 #include <snet/log/logger.hpp>
+
 namespace snet
 {
 
@@ -39,7 +40,7 @@ private:
 private:
     event::Epoll ed_;
     int ev_count_;
-    tls::Context ctx_;
+    std::unique_ptr<tls::ClientContext> ctx_;
     event::Epoll::Event events_[N_EVENTS] = {};
     std::list<std::shared_ptr<SocketHandler>> reconnect_q_;
     std::list<std::shared_ptr<SocketHandler>> backlog_;
@@ -49,12 +50,12 @@ public:
     IO(const network::Endpoint& target)
         : ed_()
         , ev_count_(0)
-        , ctx_(TLS_client_method())
+        , ctx_(std::make_unique<tls::ClientContext>())
         , target_(target)
     {
-        ctx_.setMinVersion(tls::ProtocolVersion::TLSv1_2);
-        ctx_.setMaxVersion(tls::ProtocolVersion::TLSv1_3);
-        ctx_.setVerifyCallback(tls::VerifyMode::None, nullptr);
+        ctx_->setMinVersion(tls::ProtocolVersion::TLSv1_2);
+        ctx_->setMaxVersion(tls::ProtocolVersion::TLSv1_3);
+        ctx_->setVerifyCallback(tls::VerifyMode::None, nullptr);
     }
 
     ~IO()
@@ -143,7 +144,7 @@ public:
         , id_(id)
         , state_(STATE_TCP_CONNECT)
     {
-        dbg_status("created");
+        log::debug("{}: peer is created", id);
     }
 
     virtual ~Peer()
@@ -184,53 +185,47 @@ private:
         io_.del(this);
     }
 
-    void dbg_status(const char* msg) noexcept
-    {
-        log::debug(msg);
-    }
-
     bool tls_handshake()
     {
         using namespace std::chrono;
+        std::error_code ec;
 
         state_ = STATE_TLS_HANDSHAKING;
 
         if (!tls_)
         {
-            tls_ = std::make_unique<tls::Handle>(io_.ctx_);
+            tls_ = std::make_unique<tls::Handle>(*io_.ctx_);
             tls_->setSocket(sd.get());
             BIO_set_tcp_ndelay(sd.get(), true);
         }
 
-        tls_->connect();
-        int r = 1;
-        // if (r == 1)
-        {
+        auto want = tls_->handshake();
 
-            dbg_status("has completed TLS handshake");
+        if (want == tls::Handle::Want::Nothing)
+        {
+            log::debug("has completed TLS handshake");
             disconnect();
             io_.queue_reconnect(shared_from_this());
             return true;
         }
-
-        switch (tls_->GetError(r))
+        else if (want == tls::Handle::Want::InputAndRetry)
         {
-        case SSL_ERROR_WANT_READ:
             poll_for_read();
-            break;
-        case SSL_ERROR_WANT_WRITE:
-            poll_for_write();
-            break;
-        default:
-            disconnect();
+            return false;
         }
+        else if (want == tls::Handle::Want::OutputAndRetry)
+        {
+            poll_for_write();
+            return false;
+        }
+        disconnect();
         return false;
     }
 
     bool handle_established_tcp_conn()
     {
         // del_from_poll(); // not needed as we're using EPOLLONESHOT
-        dbg_status("has established TCP connection");
+        log::debug("has established TCP connection");
         return tls_handshake();
     }
 
@@ -321,43 +316,42 @@ private:
     }
 };
 
-bool end_of_work() noexcept
+bool EndOfWork() noexcept
 {
-    // We can make bit more handshakes than was specified by a user -
-    // not a big deal.
     return finish;
 }
 
 void io_loop(const Options& options)
 {
-    std::size_t active_peers = 0;
-    std::size_t new_peers = 1; // std::min(g_opt.n_peers, PEERS_SLOW_START);
+    std::size_t activePeers{0};
+    std::size_t newPeers{1};
 
     auto ip = network::IPAddress::fromString(options.address.c_str());
     network::Endpoint target(ip.value(), options.port);
 
     IO io(target);
-    std::list<std::shared_ptr<SocketHandler>> all_peers;
+    std::list<std::shared_ptr<SocketHandler>> allPeers;
 
-    while (!end_of_work())
+    while (!EndOfWork())
     {
         // We implement slow start of number of concurrent TCP
-        // connections, so active_peers and peers dynamically grow in
+        // connections, so activePeers and peers dynamically grow in
         // this loop.
-        for (; active_peers < options.clientCount && new_peers; --new_peers)
+        for (; activePeers < options.clientCount && newPeers; --newPeers)
         {
-            auto p = std::make_shared<Peer>(io, active_peers++);
-            all_peers.push_back(p);
+            auto p = std::make_shared<Peer>(io, activePeers++);
+            allPeers.push_back(p);
 
-            if (p->next_state() && active_peers + new_peers < options.clientCount)
-                ++new_peers;
+            if (p->next_state() && activePeers + newPeers < options.clientCount)
+                ++newPeers;
         }
 
         io.wait();
+
         while (auto p = io.next_sk())
         {
-            if (p->next_state() && active_peers + new_peers < options.clientCount)
-                ++new_peers;
+            if (p->next_state() && activePeers + newPeers < options.clientCount)
+                ++newPeers;
         }
 
         // Process disconnected sockets from the backlog.
@@ -367,8 +361,8 @@ void io_loop(const Options& options)
             auto p = io.next_backlog();
             if (!p)
                 break;
-            if (p->next_state() && active_peers + new_peers < options.clientCount)
-                ++new_peers;
+            if (p->next_state() && activePeers + newPeers < options.clientCount)
+                ++newPeers;
         }
     }
 }
@@ -378,32 +372,35 @@ class PerfCommand final : public Command
 public:
     PerfCommand()
     {
-        parser_.add("help, h", "Print help message",
-                    utils::OptionType::NoValue);
-        parser_.add("ip, i", "Target IP address",
-                    utils::OptionType::SingleValue);
-        parser_.add("port, p", "Target port", utils::OptionType::SingleValue);
+        parser_.add("help, h", "Print help message");
+        parser_.add("ip, i", utils::Value(&options_.address),
+                    "Target IP address");
+        parser_.add("port, p", utils::Value(&options_.port), "Target port");
     }
 
     ~PerfCommand() = default;
 
     std::string_view description() const override
     {
-        return "my desc";
+        return "perfomance testing for TLS connections";
     }
 
     void execute(const std::vector<std::string>& args) override
     {
         parser_.parse(args);
-        options.port = std::stoi(parser_.get("port"));
-        options.address = parser_.get("ip");
 
-        io_loop(options);
+        if (parser_.isUsed("help"))
+        {
+            parser_.help(std::cout, "snet perf");
+            return;
+        }
+
+        io_loop(options_);
     }
 
 private:
-    utils::ArgumentParser parser_;
-    Options options;
+    utils::OptionsParser parser_;
+    Options options_;
 };
 
 REGISTER_COMMAND("perf", PerfCommand);

@@ -6,15 +6,43 @@
 namespace snet::tls
 {
 
-class Handle
+class Handle final
 {
 public:
+    using Operation = std::function<int(void*, std::size_t)>;
+
+    enum class Want
+    {
+        AlreadyCreated = -3,
+        InputAndRetry = -2,
+        OutputAndRetry = -1,
+        Nothing = 0,
+        Output = 1
+    };
+
     explicit Handle(Context& ctx)
         : ssl_(SSL_new(ctx.ctx_))
     {
         if (!ssl_)
         {
             throw std::bad_alloc();
+        }
+
+        SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE);
+        SSL_set_mode(ssl_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+        SSL_set_mode(ssl_, SSL_MODE_RELEASE_BUFFERS);
+
+        BIO* intBio{nullptr};
+        BIO_new_bio_pair(&intBio, 0, &extBio_, 0);
+        SSL_set_bio(ssl_, intBio, intBio);
+
+        if (ctx.side() == Side::Client)
+        {
+            SSL_set_connect_state(ssl_);
+        }
+        else
+        {
+            SSL_set_accept_state(ssl_);
         }
     }
 
@@ -23,18 +51,24 @@ public:
         SSL_free(ssl_);
     }
 
-    int read(std::uint8_t* buffer, std::size_t bufferSize)
+    Handle(Handle&& other) noexcept
+        : ssl_(other.ssl_)
+        , extBio_(other.extBio_)
     {
-        return SSL_read(ssl_, buffer,
-                        bufferSize < INT_MAX ? static_cast<int>(bufferSize)
-                                             : INT_MAX);
+        other.ssl_ = nullptr;
+        other.extBio_ = nullptr;
     }
 
-    int write(const std::uint8_t* buffer, std::size_t bufferSize)
+    Handle& operator=(Handle&& other) noexcept
     {
-        return SSL_write(ssl_, buffer,
-                         bufferSize < INT_MAX ? static_cast<int>(bufferSize)
-                                              : INT_MAX);
+        if (this != &other)
+        {
+            ssl_ = other.ssl_;
+            extBio_ = other.extBio_;
+            other.ssl_ = nullptr;
+            other.extBio_ = nullptr;
+        }
+        return *this;
     }
 
     void setSocket(int fd, std::error_code& ec) noexcept
@@ -52,109 +86,119 @@ public:
         THROW_IF_ERROR(ec);
     }
 
-    void Shutdown()
+    bool handshakeDone() const
     {
-        SSL_shutdown(ssl_);
+        return SSL_is_init_finished(ssl_);
     }
 
-    bool HandshakeDone() const
+    Want handshake()
     {
-        return (TLS_ST_OK == SSL_get_state(ssl_));
+        Operation op = std::bind(&Handle::doHandshake, this, std::placeholders::_1,
+                                 std::placeholders::_2);
+        return perform(op, nullptr, 0, 0);
     }
 
-    int GetError(int ret) const
+    Want shutdown()
     {
-        return SSL_get_error(ssl_, ret);
+        Operation op = std::bind(&Handle::doShutdown, this, std::placeholders::_1,
+                                 std::placeholders::_2);
+        return perform(op, nullptr, 0, 0);
     }
 
-    void connect(std::error_code& ec) noexcept
+    Want read(std::uint8_t* data, const std::size_t dataLength,
+              std::size_t& bytesTransferred)
     {
-        if (0 >= SSL_connect(ssl_)) {
-            ec = GetLastError();
+        if (dataLength == 0)
+        {
+            return Want::Nothing;
         }
+        Operation op = std::bind(&Handle::doRead, this, std::placeholders::_1,
+                                 std::placeholders::_2);
+        return perform(op, data, dataLength, &bytesTransferred);
     }
 
-    void connect()
+    Want write(std::uint8_t* data, const std::size_t dataLength,
+               std::size_t& bytesTransferred)
     {
-        std::error_code ec;
-        connect(ec);
-        THROW_IF_ERROR(ec);
+        if (dataLength == 0)
+        {
+            return Want::Nothing;
+        }
+        Operation op = std::bind(&Handle::doWrite, this, std::placeholders::_1,
+                                 std::placeholders::_2);
+        return perform(op, const_cast<std::uint8_t*>(data), dataLength,
+                       &bytesTransferred);
     }
 
-/*
-    want perform(int (engine::* op)(void*, std::size_t),
-    std::uint8_t* data, std::size_t length, std::error_code& ec,
-    std::size_t* bytes_transferred)
-{
-  std::size_t pending_output_before = ::BIO_ctrl_pending(ext_bio_);
-  ::ERR_clear_error();
-  int result = (this->*op)(data, length);
-  int ssl_error = ::SSL_get_error(ssl_, result);
-  int sys_error = static_cast<int>(::ERR_get_error());
-  std::size_t pending_output_after = ::BIO_ctrl_pending(ext_bio_);
-
-  if (ssl_error == SSL_ERROR_SSL)
-  {
-    ec = asio::error_code(sys_error,
-        asio::error::get_ssl_category());
-    return pending_output_after > pending_output_before
-      ? want_output : want_nothing;
-  }
-
-  if (ssl_error == SSL_ERROR_SYSCALL)
-  {
-    if (sys_error == 0)
+private:
+    Want perform(const Operation& op, void* data, std::size_t length,
+                 std::size_t* bytesTransferred)
     {
-      ec = asio::ssl::error::unspecified_system_error;
+
+        std::size_t pendingOutputBefore = BIO_ctrl_pending(extBio_);
+        ERR_clear_error();
+        int result = op(data, length);
+        int sslError = SSL_get_error(ssl_, result);
+        std::size_t pendingOutputAfter = BIO_ctrl_pending(extBio_);
+
+        if (sslError == SSL_ERROR_SSL)
+        {
+            return pendingOutputAfter > pendingOutputBefore ? Want::Output
+                                                            : Want::Nothing;
+        }
+
+        if (sslError == SSL_ERROR_SYSCALL)
+        {
+            return pendingOutputAfter > pendingOutputBefore ? Want::Output
+                                                            : Want::Nothing;
+        }
+
+        if (result > 0 && bytesTransferred)
+            *bytesTransferred = static_cast<std::size_t>(result);
+
+        if (sslError == SSL_ERROR_WANT_WRITE)
+        {
+            return Want::OutputAndRetry;
+        }
+        else if (pendingOutputAfter > pendingOutputBefore)
+        {
+            return result > 0 ? Want::Output : Want::OutputAndRetry;
+        }
+        else if (sslError == SSL_ERROR_WANT_READ)
+        {
+            return Want::InputAndRetry;
+        }
+        return Want::Nothing;
     }
-    else
+
+    int doHandshake(void*, std::size_t)
     {
-      ec = asio::error_code(sys_error,
-          asio::error::get_ssl_category());
+        return SSL_do_handshake(ssl_);
     }
-    return pending_output_after > pending_output_before
-      ? want_output : want_nothing;
-  }
 
-  if (result > 0 && bytes_transferred)
-    *bytes_transferred = static_cast<std::size_t>(result);
+    int doShutdown(void*, std::size_t)
+    {
+        int result = SSL_shutdown(ssl_);
+        if (result == 0)
+            result = SSL_shutdown(ssl_);
+        return result;
+    }
 
-  if (ssl_error == SSL_ERROR_WANT_WRITE)
-  {
-    ec = asio::error_code();
-    return want_output_and_retry;
-  }
-  else if (pending_output_after > pending_output_before)
-  {
-    ec = asio::error_code();
-    return result > 0 ? want_output : want_output_and_retry;
-  }
-  else if (ssl_error == SSL_ERROR_WANT_READ)
-  {
-    ec = asio::error_code();
-    return want_input_and_retry;
-  }
-  else if (ssl_error == SSL_ERROR_ZERO_RETURN)
-  {
-    ec = asio::error::eof;
-    return want_nothing;
-  }
-  else if (ssl_error == SSL_ERROR_NONE)
-  {
-    ec = asio::error_code();
-    return want_nothing;
-  }
-  else
-  {
-    ec = asio::ssl::error::unexpected_result;
-    return want_nothing;
-  }
-}
-*/
+    int doRead(void* data, std::size_t length)
+    {
+        return SSL_read(ssl_, data,
+                        length < INT_MAX ? static_cast<int>(length) : INT_MAX);
+    }
 
+    int doWrite(void* data, std::size_t length)
+    {
+        return SSL_write(ssl_, data,
+                         length < INT_MAX ? static_cast<int>(length) : INT_MAX);
+    }
 
-protected:
+private:
     SSL* ssl_{nullptr};
+    BIO* extBio_{nullptr};
 };
 
 } // namespace snet::tls

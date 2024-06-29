@@ -4,8 +4,22 @@
 namespace snet::tls
 {
 
-Context::Context(const SSL_METHOD* meth)
-    : ctx_(SSL_CTX_new(meth))
+static inline const SSL_METHOD* GetMethod(Side side)
+{
+    switch (side)
+    {
+    case Side::Client:
+        return TLS_client_method();
+    case Side::Server:
+        return TLS_server_method();
+    default:
+        break;
+    }
+    return nullptr;
+}
+
+Context::Context(Side side)
+    : ctx_(SSL_CTX_new(GetMethod(side)))
 {
     if (!ctx_)
         throw std::bad_alloc();
@@ -80,7 +94,9 @@ void Context::setMinVersion(ProtocolVersion version,
     }
 }
 
-void Context::setVerifyCallback(VerifyMode mode, VerifyCallback callback) noexcept {
+void Context::setVerifyCallback(VerifyMode mode,
+                                VerifyCallback callback) noexcept
+{
     SSL_CTX_set_verify(ctx_, static_cast<int>(mode), callback);
 }
 

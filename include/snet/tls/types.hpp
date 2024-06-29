@@ -6,6 +6,12 @@
 namespace snet::tls
 {
 
+enum class Side
+{
+    Client = 0,
+    Server
+};
+
 enum class ProtocolVersion : std::uint16_t
 {
     SSLv3_0 = SSL3_VERSION,

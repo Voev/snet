@@ -28,8 +28,10 @@ struct Context : public utils::NonCopyable
 public:
     friend class Handle;
 
-    explicit Context(const SSL_METHOD* meth);
-    ~Context() noexcept;
+    explicit Context(Side side);
+    virtual ~Context() noexcept;
+
+    virtual Side side() const = 0;
 
     void loadPrivateKey(std::string_view filename,
                         std::error_code& ec) noexcept;
@@ -91,6 +93,25 @@ public:
 
 private:
     SSL_CTX* ctx_{nullptr};
+};
+
+/// @brief Контекст настройки параметров клиентского TLS-соединения.
+class ClientContext final : public Context {
+public:
+    ClientContext()
+        : Context(Side::Client) {}
+    ~ClientContext() = default;
+
+    Side side() const override { return Side::Client; }
+};
+
+/// @brief Контекст настройки параметров серверного TLS-соединения.
+class ServerContext final : public Context {
+public:
+    ServerContext()
+        : Context(Side::Server) {}
+    ~ServerContext() = default;
+    Side side() const override { return Side::Server; }
 };
 
 } // namespace verify

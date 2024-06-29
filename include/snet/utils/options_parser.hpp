@@ -2,161 +2,171 @@
 
 #include <algorithm>
 #include <any>
-#include <array>
-#include <cerrno>
-#include <charconv>
-#include <cstdlib>
-#include <functional>
-#include <iomanip>
-#include <iostream>
-#include <iterator>
-#include <limits>
 #include <list>
 #include <map>
-#include <numeric>
 #include <optional>
-#include <sstream>
+#include <iostream>
+#include <iomanip>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
-#include <type_traits>
-#include <utility>
-#include <variant>
 #include <vector>
 #include <snet/utils/format.hpp>
 
 namespace snet::utils
 {
 
-namespace details
+namespace detail
 {
 
-template <class F, class Tuple, class Extra, std::size_t... I>
-constexpr decltype(auto)
-apply_plus_one_impl(F&& f, Tuple&& t, Extra&& x,
-                    std::index_sequence<I...> /*unused*/)
+class ValueSemantic
 {
-    return std::invoke(std::forward<F>(f),
-                       std::get<I>(std::forward<Tuple>(t))...,
-                       std::forward<Extra>(x));
-}
+public:
+    virtual ~ValueSemantic() = default;
 
-template <class F, class Tuple, class Extra>
-constexpr decltype(auto) apply_plus_one(F&& f, Tuple&& t, Extra&& x)
+    virtual void parse(std::any& value,
+                       const std::vector<std::string_view>& args) = 0;
+
+    virtual void notify(const std::any& valueStore) const = 0;
+
+    virtual std::size_t minTokens() const = 0;
+
+    virtual std::size_t maxTokens() const = 0;
+};
+
+class UntypedValue : public ValueSemantic
 {
-    return details::apply_plus_one_impl(
-        std::forward<F>(f), std::forward<Tuple>(t), std::forward<Extra>(x),
-        std::make_index_sequence<
-            std::tuple_size_v<std::remove_reference_t<Tuple>>>{});
-}
+public:
+    void parse(std::any&, const std::vector<std::string_view>&) override
+    {
+    }
+
+    void notify(const std::any&) const override
+    {
+    }
+
+    std::size_t minTokens() const override
+    {
+        return 0U;
+    }
+
+    std::size_t maxTokens() const override
+    {
+        return 0U;
+    };
+};
+
+template <typename T> class TypedValue : public ValueSemantic
+{
+public:
+    TypedValue(T* typedPtr)
+        : typedPtr_(typedPtr)
+    {
+    }
+
+public:
+    void parse(std::any& value,
+               const std::vector<std::string_view>& args) override
+    {
+        auto iss = std::istringstream{std::string(args.front())};
+        T typedValue{};
+
+        if (iss >> typedValue)
+        {
+            value = std::move(typedValue);
+        }
+        else
+        {
+            throw std::runtime_error(
+                utils::Format("could not parse value: {}", args.front()));
+        }
+    }
+
+    void notify(const std::any& valueStore) const override
+    {
+        const T* value = std::any_cast<T>(&valueStore);
+        if (typedPtr_ && value)
+        {
+            *typedPtr_ = *value;
+        }
+    }
+
+    std::size_t minTokens() const override
+    {
+        return 1U;
+    }
+
+    std::size_t maxTokens() const override
+    {
+        return 1U;
+    };
+
+private:
+    T* typedPtr_;
+};
 
 static constexpr std::string_view kSinglePrefix = "-";
 static constexpr std::string_view kDoublePrefix = "--";
 
-template <typename T, typename = void>
-struct HasContainerTraits : std::false_type
+} // namespace detail
+
+template <class T> std::shared_ptr<detail::TypedValue<T>> Value()
 {
-};
+    return std::make_shared<detail::TypedValue<T>>(nullptr);
+}
 
-template <> struct HasContainerTraits<std::string> : std::false_type
+template <class T> std::shared_ptr<detail::TypedValue<T>> Value(T* v)
 {
-};
+    return std::make_shared<detail::TypedValue<T>>(v);
+}
 
-template <> struct HasContainerTraits<std::string_view> : std::false_type
+class OptionsParser;
+
+class Option
 {
-};
-
-template <typename T>
-struct HasContainerTraits<
-    T, std::void_t<typename T::value_type, decltype(std::declval<T>().begin()),
-                   decltype(std::declval<T>().end()),
-                   decltype(std::declval<T>().size())>> : std::true_type
-{
-};
-
-template <typename T>
-inline constexpr bool IsContainer = HasContainerTraits<T>::value;
-
-template <typename T> struct can_invoke_to_string
-{
-    template <typename U>
-    static auto test(int)
-        -> decltype(std::to_string(std::declval<U>()), std::true_type{});
-
-    template <typename U> static auto test(...) -> std::false_type;
-
-    static constexpr bool value = decltype(test<T>(0))::value;
-};
-
-} // namespace details
-
-enum class OptionType
-{
-    NoValue,
-    SingleValue,
-    MultiValue
-};
-
-class ArgumentParser;
-
-class Argument
-{
-    friend class ArgumentParser;
-    friend auto operator<<(std::ostream& stream, const ArgumentParser& parser)
-        -> std::ostream&;
+    friend class OptionsParser;
 
 public:
-
-    Argument(std::string_view optionName, std::string_view description,
-             OptionType optionType)
-        : description_(description)
-        , type_(optionType)
+    Option(std::string&& names, std::string&& description)
+        : description_(std::move(description))
+        , valueSemantic_(std::make_shared<detail::UntypedValue>())
         , isRequired_(false)
         , isUsed_(false)
     {
-        auto end = optionName.find_first_of(',');
-        if (end == std::string_view::npos)
+        setNames(names);
+    }
+
+    Option(std::string&& names,
+           std::shared_ptr<detail::ValueSemantic> valueSemantic,
+           std::string&& description)
+        : description_(std::move(description))
+        , valueSemantic_(valueSemantic)
+        , isRequired_(false)
+        , isUsed_(false)
+    {
+        setNames(names);
+    }
+
+    void setNames(const std::string& names)
+    {
+        auto end = names.find_first_of(',');
+        if (end == std::string::npos)
         {
-            longName_ = optionName;
+            baseName_ = names;
         }
         else
         {
-            auto start = optionName.find_first_not_of(' ', end + 1);
-            if (start == std::string_view::npos)
+            auto start = names.find_first_not_of(' ', end + 1);
+            if (start == std::string::npos)
             {
                 throw std::runtime_error("invalid option name");
             }
-            longName_ = optionName.substr(0, end);
-            shortName_ = optionName.substr(start);
+            baseName_ = names.substr(0, end);
+            aliasName_ = names.substr(start);
         }
     }
 
-    template <class F, class... Args>
-    auto action(F&& callable, Args&&... bound_args)
-        -> std::enable_if_t<std::is_invocable_v<F, Args..., std::string const>,
-                            Argument&>
-    {
-        using action_type = std::conditional_t<
-            std::is_void_v<std::invoke_result_t<F, Args..., std::string const>>,
-            void_action, valued_action>;
-        if constexpr (sizeof...(Args) == 0)
-        {
-            action_.emplace<action_type>(std::forward<F>(callable));
-        }
-        else
-        {
-            action_.emplace<action_type>(
-                [f = std::forward<F>(callable),
-                 tup = std::make_tuple(std::forward<Args>(bound_args)...)](
-                    std::string const& opt) mutable {
-                    return details::apply_plus_one(f, tup, opt);
-                });
-        }
-        return *this;
-    }
-
-    template <typename Iterator> Iterator consume(Iterator start, Iterator end)
+    template <typename Iterator> void consume(Iterator start, Iterator end)
     {
         if (isUsed_)
         {
@@ -164,382 +174,307 @@ public:
         }
         isUsed_ = true;
 
-        if (type_ == OptionType::NoValue)
+        std::size_t distance = std::distance(start, end);
+
+        if (distance < valueSemantic_->minTokens())
         {
-            std::visit([](const auto& f) { f({}); }, action_);
-            return start;
+            throw std::runtime_error("not enough arguments");
+        }
+
+        if (distance > valueSemantic_->maxTokens())
+        {
+            throw std::runtime_error("too many arguments");
+        }
+
+        if (distance > 0)
+        {
+            std::vector<std::string_view> range{start, end};
+            valueSemantic_->parse(value_, range);
         }
         else
         {
-            struct ActionApply
-            {
-                void operator()(valued_action& f)
-                {
-                    std::transform(first, last,
-                                   std::back_inserter(self.values_), f);
-                }
-
-                void operator()(void_action& f)
-                {
-                    std::for_each(first, last, f);
-                }
-
-                Iterator first, last;
-                Argument& self;
-            };
-
-            if (type_ == OptionType::SingleValue)
-            {
-                if (start == end)
-                {
-                    throw std::runtime_error(utils::Format(
-                        "no value provided for option '{}'", longName_));
-                }
-
-                std::visit(ActionApply{start, std::next(start), *this},
-                           action_);
-                return std::next(start);
-            }
-            else
-            {
-                std::visit(ActionApply{start, end, *this}, action_);
-                return end;
-            }
+            valueSemantic_->parse(value_, {});
         }
     }
 
-    /*
-     * @throws std::runtime_error if argument values are not valid
-     */
+private:
+    template <typename T> T get() const
+    {
+        if (!value_.has_value())
+        {
+            throw std::runtime_error("no value provided for '" + baseName_ +
+                                     "'");
+        }
+        return std::any_cast<T>(value_);
+    }
+
+    template <typename T> std::optional<T> present() const
+    {
+        if (!value_.has_value())
+        {
+            return std::nullopt;
+        }
+        return std::any_cast<T>(value_);
+    }
+
     void validate() const
     {
         if (!isUsed_ && isRequired_)
         {
             throw std::runtime_error(
-                utils::Format("'{}' must be specified", longName_));
+                utils::Format("'{}' must be specified", baseName_));
         }
-        if (isUsed_ && isRequired_ && values_.empty())
+        if (isUsed_ && isRequired_ && !value_.has_value())
         {
             throw std::runtime_error(
-                utils::Format("no value for '{}' option", longName_));
+                utils::Format("no value for '{}' option", baseName_));
         }
-    }
-
-    template <typename T> bool operator!=(const T& rhs) const
-    {
-        return !(*this == rhs);
-    }
-
-    /*
-     * Compare to an argument value of known type
-     * @throws std::logic_error in case of incompatible types
-     */
-    template <typename T> bool operator==(const T& rhs) const
-    {
-        if constexpr (!details::IsContainer<T>)
+        if (valueSemantic_)
         {
-            return get<T>() == rhs;
-        }
-        else
-        {
-            using ValueType = typename T::value_type;
-            auto lhs = get<T>();
-            return std::equal(std::begin(lhs), std::end(lhs), std::begin(rhs),
-                              std::end(rhs), [](const auto& a, const auto& b) {
-                                  return std::any_cast<const ValueType&>(a) ==
-                                         b;
-                              });
+            valueSemantic_->notify(value_);
         }
     }
 
 private:
-    /*
-     * Get argument value given a type
-     * @throws std::logic_error in case of incompatible types
-     */
-    template <typename T> T get() const
-    {
-        if (!values_.empty())
-        {
-            if constexpr (details::IsContainer<T>)
-            {
-                return any_cast_container<T>(values_);
-            }
-            else
-            {
-                return std::any_cast<T>(values_.front());
-            }
-        }
-
-        throw std::logic_error("No value provided for '" + longName_ + "'");
-    }
-
-    /*
-     * Get argument value given a type.
-     * @pre The object has no default value.
-     * @returns The stored value if any, std::nullopt otherwise.
-     */
-    template <typename T> auto present() const -> std::optional<T>
-    {
-        if (values_.empty())
-        {
-            return std::nullopt;
-        }
-        if constexpr (details::IsContainer<T>)
-        {
-            return any_cast_container<T>(values_);
-        }
-        return std::any_cast<T>(values_.front());
-    }
-
-    template <typename T>
-    static auto any_cast_container(const std::vector<std::any>& operand) -> T
-    {
-        using ValueType = typename T::value_type;
-
-        T result;
-        std::transform(
-            std::begin(operand), std::end(operand), std::back_inserter(result),
-            [](const auto& value) { return std::any_cast<ValueType>(value); });
-        return result;
-    }
-
-    using valued_action = std::function<std::any(const std::string&)>;
-    using void_action = std::function<void(const std::string&)>;
-
-private:
-    std::variant<valued_action, void_action> action_{
-        std::in_place_type<valued_action>,
-        [](const std::string& value) { return value; }};
-    std::vector<std::any> values_;
-    std::string longName_;
-    std::optional<std::string> shortName_;
+    std::string baseName_;
+    std::optional<std::string> aliasName_;
     std::string description_;
-    OptionType type_;
+    std::any value_;
+    std::shared_ptr<detail::ValueSemantic> valueSemantic_;
     bool isRequired_;
     bool isUsed_;
 };
 
-class ArgumentParser
+class OptionsParser
 {
+private:
+    using OptionList = std::list<Option>;
+    using OptionIterator = OptionList::iterator;
+
 public:
-    ArgumentParser() = default;
-    ~ArgumentParser() = default;
+    OptionsParser() = default;
+    ~OptionsParser() = default;
 
-    ArgumentParser(const ArgumentParser& other) = delete;
-    ArgumentParser& operator=(const ArgumentParser& other) = delete;
+    OptionsParser(const OptionsParser& other) = delete;
+    OptionsParser& operator=(const OptionsParser& other) = delete;
 
-    ArgumentParser(ArgumentParser&&) = delete;
-    ArgumentParser& operator=(ArgumentParser&&) = delete;
+    OptionsParser(OptionsParser&& other) = delete;
+    OptionsParser& operator=(OptionsParser&& other) = delete;
 
-    Argument& add(std::string_view name, std::string_view desc, OptionType type)
+    template <typename T>
+    Option& add(std::string names, std::shared_ptr<detail::TypedValue<T>> value,
+                std::string description)
     {
-        auto option = options_.emplace(std::cend(options_), name, desc, type);
-        optionMap_.insert_or_assign(option->longName_, option);
-
-        if (option->shortName_.has_value())
-        {
-            optionMap_.insert_or_assign(option->shortName_.value(), option);
-        }
-        return *option;
+        auto it = options_.emplace(std::cend(options_), std::move(names), value,
+                                   std::move(description));
+        setOptions(it);
+        return *it;
     }
 
-    /* Getter for arguments and subparsers.
-     * @throws std::logic_error in case of an invalid argument or subparser name
-     */
-    template <typename T = Argument> T& at(std::string_view name)
+    Option& add(std::string names, std::string description)
     {
-        if constexpr (std::is_same_v<T, Argument>)
-        {
-            return (*this)[name];
-        }
+        auto it = options_.emplace(std::cend(options_), std::move(names),
+                                   std::move(description));
+        setOptions(it);
+        return *it;
+    }
+
+    static inline std::string_view trimDashes(std::string_view arg)
+    {
+        if (arg.size() > 2 && startsWith(arg, detail::kDoublePrefix))
+            return arg.substr(2);
+        if (arg.size() > 1 && startsWith(arg, detail::kSinglePrefix))
+            return arg.substr(1);
+        return arg;
+    }
+
+    static inline bool startsWith(std::string_view str, std::string_view prefix)
+    {
+        return str.rfind(prefix, 0) == 0;
+    }
+
+    void parse(int argc, char* argv[])
+    {
+        std::vector<std::string_view> args{(argc > 1 ? argv + 1 : argv),
+                                           argv + argc};
+        auto allocatedArgs = preprocess(args);
+        postprocess(allocatedArgs);
+    }
+
+    void parse(const std::vector<std::string_view>& args)
+    {
+        auto allocatedArgs = preprocess(args);
+        postprocess(allocatedArgs);
     }
 
     void parse(const std::vector<std::string>& args)
     {
-        auto end = std::end(args);
-
-        for (auto arg = std::begin(args); arg != end;)
-        {
-            /**
-             * Processing options like "--option=value"
-             */
-            auto assignPosition = arg->find_first_of('=');
-            if (assignPosition != std::string_view::npos &&
-                arg->rfind("--", 0) == 0)
-            {
-                auto optionName = arg->substr(0, assignPosition);
-                if (optionMap_.find(optionName) != optionMap_.end())
-                {
-                    // This is the name of an option! Split it into two parts
-                    // result.push_back(std::move(opt_name));
-                    // result.push_back(arg.substr(assignPosition + 1));
-                    continue;
-                }
-                else
-                {
-                    throw std::runtime_error(
-                        utils::Format("unknown option: {}", optionName));
-                }
-            }
-
-            if ((*arg)[0] == '-')
-            {
-                std::string optionName;
-                if ((*arg)[1] == '-')
-                {
-                    optionName = arg->substr(2);
-                }
-                else
-                {
-                    optionName = arg->substr(1);
-                }
-
-                auto found = optionMap_.find(optionName);
-                if (found != optionMap_.end())
-                {
-                    arg = found->second->consume(std::next(arg), end);
-                }
-                else
-                {
-                    throw std::runtime_error(
-                        utils::Format("unknown option: {}", optionName));
-                }
-            }
-            else
-            {
-                throw std::runtime_error(
-                    utils::Format("unknown option: {}", *arg));
-            }
-        }
-        parsed_ = true;
+        auto allocatedArgs = preprocess(args);
+        postprocess(allocatedArgs);
     }
 
-    /* Getter for options with default values.
-     * @throws std::logic_error if parse_args() has not been previously called
-     * @throws std::logic_error if there is no such option
-     * @throws std::logic_error if the option has no value
-     * @throws std::bad_any_cast if the option is not of type T
-     */
-    template <typename T = std::string> T get(std::string_view arg_name) const
+    template <typename T = std::string> T get(std::string_view name) const
     {
         if (!parsed_)
         {
             throw std::logic_error("attempt to get value before parsing");
         }
-        return (*this)[arg_name].get<T>();
+        return (*this)[name].get<T>();
     }
 
-    /* Getter for options without default values.
-     * @pre The option has no default value.
-     * @throws std::logic_error if there is no such option
-     * @throws std::bad_any_cast if the option is not of type T
-     */
     template <typename T = std::string>
-    auto present(std::string_view arg_name) const -> std::optional<T>
+    std::optional<T> present(std::string_view name) const
     {
-        return (*this)[arg_name].present<T>();
+        return (*this)[name].present<T>();
     }
 
-    /* Getter that returns true for user-supplied options. Returns false if not
-     * user-supplied, even with a default value.
-     */
-    auto is_used(std::string_view arg_name) const
+    bool isUsed(std::string_view name) const
     {
-        return (*this)[arg_name].isUsed_;
+        return (*this)[name].isUsed_;
     }
 
-    /* Indexing operator. Return a reference to an Argument object
-     * Used in conjunction with Argument.operator== e.g., parser["foo"] == true
-     * @throws std::logic_error in case of an invalid argument name
-     */
-    Argument& operator[](std::string_view arg_name) const
+    void help(std::ostream& os, std::string_view usageName = "") const
     {
-        auto it = optionMap_.find(arg_name.data());
-        if (it != optionMap_.end())
-        {
-            return *(it->second);
-        }
-        throw std::logic_error("No such argument: " + std::string(arg_name));
-    }
+        usage(os, usageName);
 
-    // Format usage part of help only
-    std::string help() const
-    {
-        std::stringstream ss;
-
-        usage(ss);
-
-        ss << "Options:\n";
-        for (auto option : options_)
-        {
-            ss << details::kDoublePrefix << option.longName_;
-            if (option.shortName_.has_value())
-            {
-                ss << " [ " << details::kSinglePrefix << option.shortName_.value() << " ]";
-            }
-            switch (option.type_)
-            {
-            case OptionType::NoValue:
-                break;
-
-            case OptionType::SingleValue:
-                ss << " arg";
-                break;
-            case OptionType::MultiValue:
-                ss << " args...";
-                break;
-            default:
-                break;
-            };
-
-            ss << "\t" << option.description_ << "\n";
-        }
-        return ss.str();
-    }
-
-    void usage(std::stringstream& ss) const
-    {
-        ss << "Usage:\n";
+        os << "Allowed options:\n";
 
         for (auto option : options_)
         {
-            ss << " ";
+            std::stringstream ss;
 
-            if(!option.isRequired_)
+            ss << "  " << detail::kDoublePrefix << option.baseName_;
+            if (option.aliasName_.has_value())
             {
-                ss << "[ ";
+                ss << " [ " << detail::kSinglePrefix
+                   << option.aliasName_.value() << " ]";
             }
-            ss << details::kDoublePrefix << option.longName_;
-           
-            switch (option.type_)
+
+            if (option.valueSemantic_->minTokens() > 0U)
             {
-            case OptionType::NoValue:
-                break;
-            case OptionType::SingleValue:
                 ss << " arg";
-                break;
-            case OptionType::MultiValue:
-                ss << " args...";
-                break;
-            default:
-                break;
-            };
-
-            if(!option.isRequired_)
-            {
-                ss << " ]";
             }
+
+            auto optionInfo = ss.str();
+            os << optionInfo;
+            for(unsigned pad = 25 - static_cast<unsigned>(optionInfo.size()); pad > 0; --pad)
+            {
+                os.put(' ');
+            }
+
+            os << option.description_ << "\n";
         }
-        ss << "\n\n";
     }
 
 private:
-    using ArgumentList = std::list<Argument>;
-    using ArgumentIterator = ArgumentList::iterator;
+    inline void setOptions(const OptionIterator& it)
+    {
+        optionMap_.insert_or_assign(it->baseName_, it);
+        if (it->aliasName_.has_value())
+        {
+            optionMap_.insert_or_assign(it->aliasName_.value(), it);
+        }
+    }
 
-    ArgumentList options_;
-    std::map<std::string, ArgumentIterator> optionMap_;
+    Option& operator[](std::string_view name) const
+    {
+        auto it = optionMap_.find(name);
+        if (it == optionMap_.end())
+        {
+            throw std::runtime_error(utils::Format("no such option: {}", name));
+        }
+        return *(it->second);
+    }
+
+    template <typename T = std::string_view>
+    std::vector<std::string> preprocess(const std::vector<T>& args)
+    {
+        std::vector<std::string> result;
+        auto begin = std::begin(args);
+        auto end = std::end(args);
+
+        for (auto arg = begin; arg != end; arg = std::next(arg))
+        {
+            if (arg->size() > 2 && startsWith(*arg, detail::kDoublePrefix))
+            {
+                auto assignPosition = arg->find_first_of('=');
+                if (assignPosition != std::string::npos)
+                {
+                    result.push_back(
+                        std::string(arg->substr(0, assignPosition)));
+                    result.push_back(
+                        std::string(arg->substr(assignPosition + 1)));
+                    continue;
+                }
+            }
+            result.push_back(std::string(*arg));
+        }
+        return result;
+    }
+
+    void postprocess(const std::vector<std::string>& args)
+    {
+        auto end = std::end(args);
+        for (auto arg = std::begin(args); arg != end;)
+        {
+            auto optionName = trimDashes(*arg);
+            auto foundOption = optionMap_.find(optionName);
+            if (foundOption != optionMap_.end())
+            {
+                auto nextOption =
+                    std::find_if(std::next(arg), end, [](auto& x) {
+                        return startsWith(x, "--") || startsWith(x, "-");
+                    });
+                foundOption->second->consume(std::next(arg), nextOption);
+                arg = nextOption;
+            }
+            else
+            {
+                throw std::runtime_error(
+                    utils::Format("unknown option: {}", optionName));
+            }
+        }
+
+        for (auto& option : options_)
+        {
+            option.validate();
+        }
+        parsed_ = true;
+    }
+
+    void usage(std::ostream& os, std::string_view usageName) const
+    {
+        os << "Usage:\n";
+
+        os << "  " << usageName;
+
+        for (auto option : options_)
+        {
+            os << " ";
+
+            if (!option.isRequired_)
+            {
+                os << "[ ";
+            }
+
+            os << detail::kDoublePrefix << option.baseName_;
+            if (option.valueSemantic_->minTokens() > 0U)
+            {
+                os << " arg";
+            }
+
+            if (!option.isRequired_)
+            {
+                os << " ]";
+            }
+        }
+        os << "\n\n";
+    }
+
+private:
+    OptionList options_;
+    std::map<std::string_view, OptionIterator> optionMap_;
+    std::string programName_;
     bool parsed_{false};
 };
 
