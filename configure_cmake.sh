@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/bin/sh
+# Convenience wrapper for easily viewing/setting options that
+# the project's CMake scripts will recognize
 
 set -e
 command="$0 $*"
@@ -17,8 +19,14 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
 
     --builddir=                  the build directory
     --generator=                 run cmake --help for a list of generators
+    --prefix=                    installation prefix
     --verbose                    makefile verbose output
+
+Optional Features:
     --build-type=[Debug|Release] set cmake build type
+    --enable-address-sanitizer   enable address sanitizer support
+    --enable-ub-sanitizer        enable undefined behavior sanitizer support
+    --enable-thread-sanitizer    enable thread sanitizer support
 "
 
 sourcedir="$( cd "$( dirname "$0" )" && pwd )"
@@ -34,9 +42,12 @@ append_cache_entry () {
 
 # set defaults
 builddir=build
+prefix=/opt/snet
 build_type="Release"
 verbose_option=OFF
+coverage_enabled=no
 CMakeCacheEntries=""
+append_cache_entry CMAKE_INSTALL_PREFIX PATH   $prefix
 
 # parse arguments
 while [ $# -ne 0 ]; do
@@ -66,6 +77,24 @@ while [ $# -ne 0 ]; do
         --verbose)
             verbose_option=ON
             ;;
+        --enable-address-sanitizer)
+            append_cache_entry ENABLE_ADDRESS_SANITIZER BOOL true
+            ;;
+        --disable-address-sanitizer)
+            append_cache_entry ENABLE_ADDRESS_SANITIZER BOOL false
+            ;;
+        --enable-thread-sanitizer)
+            append_cache_entry ENABLE_THREAD_SANITIZER  BOOL true
+            ;;
+        --disable-thread-sanitizer)
+            append_cache_entry ENABLE_THREAD_SANITIZER  BOOL false
+            ;;
+        --enable-ub-sanitizer)
+            append_cache_entry ENABLE_UB_SANITIZER      BOOL true
+            ;;
+        --disable-ub-sanitizer)
+            append_cache_entry ENABLE_UB_SANITIZER      BOOL false
+            ;;
         --build-type=*)
             if [ $optarg = "Debug" ] || [ $optarg = "Release" ]; then
                 build_type=$optarg
@@ -94,6 +123,14 @@ else
     mkdir -p $builddir
 fi
 
+if [ "$coverage_enabled" = "yes" ]; then
+    if [ "$verbose_option" = "ON" ]; then
+        append_cache_entry CTEST_VERBOSE_FLAG      STRING "-VV"
+    else
+        append_cache_entry CTEST_VERBOSE_FLAG      STRING "--output-on-failure"
+    fi
+fi
+
 echo "Build Directory : $builddir"
 echo "Source Directory: $sourcedir"
 cd $builddir
@@ -110,3 +147,4 @@ echo "# This is the command used to configure this build" > config.status
 echo $command >> config.status
 chmod u+x config.status
 
+echo "Project configured"
