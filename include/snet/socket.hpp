@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <snet/ossl_types.hpp>
+#include <snet/tls/types.hpp>
 #include <snet/address.hpp>
 #include <snet/utils.hpp>
 
@@ -66,7 +66,7 @@ class Socket
     int fd_;
 
   private:
-    ossl::BioPtr sock_;
+    snet::tls::BioPtr sock_;
 };
 
 class ConnectSocket : public Socket

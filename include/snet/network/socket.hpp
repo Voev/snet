@@ -24,6 +24,8 @@ public:
         std::error_code ec;
         sock_ = MakeSocket(protocol.family(), protocol.type(), protocol.protocol(), ec);
         THROW_IF_ERROR(ec);
+
+        //fcntl(sock_, F_SETFL, fcntl(sd, F_GETFL, 0) | O_NONBLOCK);
     }
 
     void close() noexcept
