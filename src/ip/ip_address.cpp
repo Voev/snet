@@ -169,6 +169,8 @@ std::optional<IPAddress> IPAddress::fromString(const char* str)
     return std::nullopt;
 }
 
+ 
+
 } // namespace snet::ip
 
 std::ostream& operator<<(std::ostream& os, const snet::ip::IPAddress& addr)
