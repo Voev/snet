@@ -5,20 +5,12 @@ project(snet
         LANGUAGES CXX
         VERSION ${VERSION_STRING})
 
-# C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Compiler flags
-include(CheckCXXCompilerFlag)
-if (CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(COMPILER_OPTIONS "-Werror -Wall -Wextra -Wpedantic")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMPILER_OPTIONS}")
-endif()
-
 # Set path to CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# Custom options
+option (ENABLE_UNIT_TESTS "Enable unit tests" ON)
+option (ENABLE_CODE_COVERAGE "Enable code coverage" OFF)
 
 # Include CMake modules
 include(ConfigureCompiler)
@@ -34,3 +26,18 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Entry point for sources
 add_subdirectory(src)
+
+# Test options
+if (ENABLE_UNIT_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif (ENABLE_UNIT_TESTS)
+
+# Coverage options
+if (ENABLE_CODE_COVERAGE)
+  setup_target_for_coverage_lcov(
+    NAME coverage
+    EXECUTABLE ctest -V ${CTEST_VERBOSE_FLAG}
+    EXCLUDE "${PROJECT_SOURCE_DIR}/tests/*"
+    LCOV_ARGS "--no-external")
+endif (ENABLE_CODE_COVERAGE)
