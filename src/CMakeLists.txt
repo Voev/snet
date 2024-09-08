@@ -1,5 +1,5 @@
 # Library name
-set(LIB_NAME snet)
+set(LIB_NAME snet_lib)
 
 # Sources
 file(GLOB_RECURSE SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" *.cpp)

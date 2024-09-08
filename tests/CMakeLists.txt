@@ -8,7 +8,9 @@ file(GLOB_RECURSE SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" *.cpp)
 add_executable(${TEST_NAME} ${SOURCES})
 
 # Set dependencies
-target_link_libraries(${TEST_NAME} snet GTest::GTest)
+target_link_libraries(${TEST_NAME}
+    snet_lib
+    GTest::GTest)
 
 # Discover tests
 gtest_discover_tests(
