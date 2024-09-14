@@ -5,22 +5,10 @@
 namespace snet::tls
 {
 
-/// @brief Режим проверки цепочки сертификатов противоположной стороны.
-enum class VerifyMode
-{
-    None = 0x00,
-    Peer = 0x01,
-    FailIfNoPeerCert = 0x02,
-    ClientOnce = 0x04,
-    PostHandhsake = 0x08
-};
-
-using VerifyCallback = int (*)(int, X509_STORE_CTX*);
-
 struct Settings : public utils::NonCopyable
 {
 public:
-    friend class Handle;
+    friend class Connection;
 
     explicit Settings(Side side);
 

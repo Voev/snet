@@ -24,6 +24,17 @@ enum class ProtocolVersion : std::uint16_t
     TLSv1_3 = TLS1_3_VERSION
 };
 
+enum class VerifyMode
+{
+    None = 0x00,
+    Peer = 0x01,
+    FailIfNoPeerCert = 0x02,
+    ClientOnce = 0x04,
+    PostHandhsake = 0x08
+};
+
+using VerifyCallback = int (*)(int, X509_STORE_CTX*);
+
 enum Mode : std::uint32_t
 {
     EnablePartialWrite = SSL_MODE_ENABLE_PARTIAL_WRITE,
@@ -39,5 +50,7 @@ enum Mode : std::uint32_t
 
 DEFINE_CUSTOM_UNIQUE_PTR(SslPtr, SSL, SSL_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
+
+DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, BIO, BIO_free_all);
 
 } // namespace snet::tls
