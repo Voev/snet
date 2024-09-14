@@ -76,7 +76,7 @@ IPv6Address::const_iterator IPv6Address::end() const
     return addr_.s6_addr + kBytesCount;
 }
 
-std::optional<IPv6Address> fromString(std::string_view str)
+std::optional<IPv6Address> IPv6Address::fromString(std::string_view str)
 {
     std::uint8_t addr[IPv6Address::kBytesCount];
     if (inet_pton(AF_INET6, str.data(), addr) <= 0)
