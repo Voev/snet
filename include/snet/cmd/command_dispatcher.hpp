@@ -3,37 +3,48 @@
 #include <memory>
 #include <functional>
 #include <snet/cmd/command.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <snet/utils/singleton.hpp>
 
 namespace snet::cmd
 {
 
-class CommandDispatcher final : public utils::NonCopyable
+class CommandDispatcher final : public utils::Singleton<CommandDispatcher>
 {
+    typedef std::unique_ptr<Command> CommandPtr;
+    typedef std::string CommandDescription;
+    typedef std::function<CommandPtr()> CommandCreator;
+    typedef std::tuple<CommandDescription, CommandCreator> CommandMeta;
+    typedef std::unordered_map<std::string, CommandMeta> CommandMap;
+
 public:
     CommandDispatcher() = default;
     ~CommandDispatcher() = default;
 
-    static std::unique_ptr<Command> getCommand(std::string_view name);
+    CommandPtr createCommand(const std::string& name);
+
+    void printCommands(std::ostream& os);
 
 private:
-    typedef std::function<std::unique_ptr<Command>()> CommandCreator;
-    typedef std::map<std::string_view, CommandCreator> CommandMap;
+    CommandMap& getCommands();
 
-    static CommandMap& getCommandMap();
 public:
-    class Registration final
+    class Registrar final
     {
     public:
-        Registration(std::string_view name, const CommandCreator& creator);
-        ~Registration() = default;
+        Registrar(const std::string& name, const std::string& desc,
+                  const CommandCreator& creator);
+        ~Registrar() = default;
     };
+
+private:
+    CommandMap commands_;
 };
 
-#define REGISTER_COMMAND(commandName, className)                               \
-    const snet::CommandDispatcher::Registration gCommand##className(           \
-        commandName, []() -> std::unique_ptr<snet::Command> {                  \
+#define REGISTER_COMMAND(commandName, commandDesc, className)                  \
+    const snet::cmd::CommandDispatcher::Registrar className##Registrar(        \
+        commandName, commandDesc,                                              \
+        []() -> std::unique_ptr<snet::cmd::Command> {                          \
             return std::make_unique<className>();                              \
         })
 
-} // namespace snet
+} // namespace snet::cmd

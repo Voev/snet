@@ -4,34 +4,40 @@
 namespace snet::cmd
 {
 
-std::unique_ptr<Command> CommandDispatcher::getCommand(std::string_view name)
+CommandDispatcher::CommandPtr CommandDispatcher::createCommand(const std::string& name)
 {
-    const auto& map = CommandDispatcher::getCommandMap();
-    
-    auto command = map.find(name);
-    if (command != map.end())
+    auto command = commands_.find(name.data());
+    if (command == commands_.end())
     {
-        return command->second();
+        throw std::runtime_error("Unknown command: " + name);
     }
-    return nullptr;
+    return std::get<CommandCreator>(command->second)();
 }
 
-CommandDispatcher::CommandMap& CommandDispatcher::getCommandMap()
+void CommandDispatcher::printCommands(std::ostream& os)
 {
-    static CommandDispatcher::CommandMap globalCommands;
-    return globalCommands;
+    for(auto [name, meta] : commands_)
+    {
+        os << name << "        " << std::get<CommandDescription>(meta) << std::endl;
+    }
+    os << std::endl;
 }
 
-CommandDispatcher::Registration::Registration(
-    std::string_view name, const CommandDispatcher::CommandCreator& creator)
+CommandDispatcher::CommandMap& CommandDispatcher::getCommands()
 {
-    auto& map = CommandDispatcher::getCommandMap();
-    if (map.find(name) != map.end())
+    return commands_;
+}
+
+CommandDispatcher::Registrar::Registrar(
+    const std::string& name, const std::string& desc, const CommandDispatcher::CommandCreator& creator)
+{
+    auto& commands = CommandDispatcher::Instance().getCommands();
+    if (commands.find(name) != commands.end())
     {
-        throw std::logic_error("duplicated command '" + std::string(name) + "'");
+        throw std::logic_error("Duplicated command: " + name);
     }
 
-    map.insert(std::make_pair(name, creator));
+    commands.insert(std::make_pair(name, std::make_tuple(desc, creator)));
 }
 
 } // namespace snet

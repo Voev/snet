@@ -24,6 +24,8 @@ enum class ProtocolVersion : std::uint16_t
     TLSv1_3 = TLS1_3_VERSION
 };
 
+using ProtocolVersionRange = std::pair<ProtocolVersion, ProtocolVersion>;
+
 enum class VerifyMode
 {
     None = 0x00,
@@ -48,8 +50,21 @@ enum Mode : std::uint32_t
     Async = SSL_MODE_ASYNC
 };
 
+enum SessionCacheMode : std::uint16_t
+{
+    CacheOff = SSL_SESS_CACHE_OFF,
+    CacheClient = SSL_SESS_CACHE_CLIENT,
+    CacheServer = SSL_SESS_CACHE_SERVER,
+    CacheBoth = SSL_SESS_CACHE_BOTH,
+    CacheNoAutoClear = SSL_SESS_CACHE_NO_AUTO_CLEAR,
+    CacherNoInternal = SSL_SESS_CACHE_NO_INTERNAL,
+    CacheNoInternalLookup = SSL_SESS_CACHE_NO_INTERNAL_LOOKUP,
+    CacheNoInternalStore = SSL_SESS_CACHE_NO_INTERNAL_STORE,
+};
+
 DEFINE_CUSTOM_UNIQUE_PTR(SslPtr, SSL, SSL_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(SslSessionPtr, SSL_SESSION, SSL_SESSION_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, BIO, BIO_free_all);
 

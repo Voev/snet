@@ -58,7 +58,7 @@ public:
     bool operator<(const Endpoint& rhs) const noexcept;
 
     // Determine whether the Endpoint is IPv4.
-    inline bool isIPv4() const noexcept;
+    bool isIPv4() const noexcept;
 
     std::string toString() const;
 

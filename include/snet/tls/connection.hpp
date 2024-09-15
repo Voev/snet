@@ -30,6 +30,12 @@ public:
 
     void setSocket(int fd);
 
+    void setSession(SSL_SESSION* session);
+
+    SslSessionPtr getSession();
+
+    void setExtHostName(std::string_view hostname);
+
     bool handshakeDone() const noexcept;
 
     Want handshake();
