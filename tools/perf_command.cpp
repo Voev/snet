@@ -49,7 +49,7 @@ struct Options
     std::string sni;
     std::string ip;
     size_t n_hs{std::numeric_limits<size_t>::max()};
-    int n_peers{DEFAULT_PEERS};
+    int nSessions{DEFAULT_PEERS};
     int n_threads{DEFAULT_THREADS};
     int timeout{0};
     uint16_t port{443};
@@ -59,7 +59,7 @@ struct Options
     bool adv_tickets{false};
 };
 
-struct PeerOptions
+struct SessionOptions
 {
     std::string sni;
     bool reuseSession;
@@ -67,7 +67,8 @@ struct PeerOptions
 
 struct
 {
-    typedef std::chrono::time_point<std::chrono::steady_clock> __time_t;
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = std::chrono::time_point<Clock>;
 
     std::atomic<uint64_t> tot_tls_handshakes;
     std::atomic<int32_t> tcp_handshakes;
@@ -77,7 +78,7 @@ struct
     std::atomic<int32_t> error_count;
     int32_t __no_false_sharing[9];
 
-    __time_t stat_time;
+    TimePoint stat_time;
 
     int32_t measures;
     int32_t max_hs;
@@ -87,7 +88,7 @@ struct
 
     void start_count()
     {
-        stat_time = std::chrono::steady_clock::now();
+        stat_time = Clock::now();
     }
 } stat;
 
@@ -150,12 +151,12 @@ static thread_local LatencyStat lat_stat;
 struct SocketHandler
 {
     virtual ~SocketHandler(){};
-    virtual bool next_state() = 0;
+    virtual bool nextState() = 0;
 
     snet::socket::Socket sd;
 };
 
-class IO
+class SessionManager
 {
 private:
     static const size_t N_EVENTS = 128;
@@ -171,10 +172,10 @@ private:
 
 
 public:
-    IO(const Options& options)
+    SessionManager(const Options& options)
         : epoll_()
         , ev_count_(0)
-        , tls_ctx_(NULL)
+        , tls_ctx_(nullptr)
     {
         tls_ctx_ = SSL_CTX_new(TLS_client_method());
 
@@ -213,12 +214,12 @@ public:
         if (!options.curve.empty())
             if (!SSL_CTX_set1_groups_list(tls_ctx_, options.curve.c_str()))
                 throw std::runtime_error("cannot set elliptic curve");
-        SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
+        SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, nullptr);
 
         memset(events_, 0, sizeof(events_));
     }
 
-    ~IO()
+    ~SessionManager()
     {
         reconnect_q_.clear();
 
@@ -269,14 +270,14 @@ public:
         }
     }
 
-    SocketHandler* next_sk() noexcept
+    SocketHandler* nextSession() noexcept
     {
         if (ev_count_)
         {
             ev_count_--;
             return (SocketHandler*)events_[ev_count_].data.ptr;
         }
-        return NULL;
+        return nullptr;
     }
 
     void backlog() noexcept
@@ -284,17 +285,17 @@ public:
         backlog_.swap(reconnect_q_);
     }
 
-    SocketHandler* next_backlog() noexcept
+    SocketHandler* nextBacklog() noexcept
     {
         if (backlog_.empty())
-            return NULL;
+            return nullptr;
 
         SocketHandler* sh = backlog_.front();
         backlog_.pop_front();
         return sh;
     }
 
-    SSL* makeConnection()
+    SSL* makePreconnection()
     {
         SSL* ctx = SSL_new(tls_ctx_);
         if (!ctx)
@@ -303,57 +304,55 @@ public:
     }
 };
 
-class Peer final : public SocketHandler
+class Session final : public SocketHandler
 {
 private:
-    enum _states
+    enum class State
     {
-        STATE_TCP_CONNECT,
-        STATE_TCP_CONNECTING,
-        STATE_TLS_HANDSHAKING,
+        Preconnect,
+        InTcpHandshaking,
+        InTlsHandshaking,
     };
 
 private:
-    IO& io_;
+    SessionManager& manager_;
     int id_;
     SSL* tls_;
     SslSessionPtr session_;
     socket::Endpoint ep_;
     std::chrono::time_point<std::chrono::steady_clock> ts_;
-    enum _states state_;
+    State state_;
     bool reuseSession_;
     std::string sni_;
 
 public:
-    Peer(IO& io, socket::Endpoint ep, bool reuseSession, std::string sni, int id) noexcept
-        : io_(io)
+    Session(SessionManager& manager, socket::Endpoint ep, bool reuseSession, std::string sni, int id) noexcept
+        : manager_(manager)
         , id_(id)
-        , tls_(NULL)
+        , tls_(nullptr)
         , ep_(ep)
-        , state_(STATE_TCP_CONNECT)
+        , state_(State::Preconnect)
         , reuseSession_(reuseSession)
         , sni_(std::move(sni))
     {
         log::debug("peer {} created", id_);
     }
 
-    ~Peer() noexcept
+    ~Session() noexcept
     {
         disconnect();
     }
 
-    bool next_state() final override
+    bool nextState() final override
     {
         switch (state_)
         {
-        case STATE_TCP_CONNECT:
+        case State::Preconnect:
             return tcp_connect();
-        case STATE_TCP_CONNECTING:
+        case State::InTcpHandshaking:
             return tcp_connect_try_finish();
-        case STATE_TLS_HANDSHAKING:
+        case State::InTlsHandshaking:
             return tls_handshake();
-        default:
-            throw std::runtime_error("bad next state " + std::to_string(state_));
         }
         return false;
     }
@@ -361,28 +360,28 @@ public:
 private:
     void poll_for_read()
     {
-        io_.add(this, Read | Error);
+        manager_.add(this, Read | Error);
     }
 
     void poll_for_write()
     {
-        io_.add(this, Write | Error);
+        manager_.add(this, Write | Error);
     }
 
     void del_from_poll()
     {
-        io_.del(this);
+        manager_.del(this);
     }
 
     bool tls_handshake()
     {
         using namespace std::chrono;
 
-        state_ = STATE_TLS_HANDSHAKING;
+        state_ = State::InTlsHandshaking;
 
         if (!tls_)
         {
-            tls_ = io_.makeConnection();
+            tls_ = manager_.makePreconnection();
 
             SSL_set_fd(tls_, sd.get());
             
@@ -415,7 +414,7 @@ private:
             stat.tot_tls_handshakes++;
             disconnect();
             stat.tcp_connections--;
-            io_.queue_reconnect(this);
+            manager_.queue_reconnect(this);
             return true;
         }
 
@@ -485,7 +484,7 @@ private:
         sd.connect(ep_, ec);
 
         stat.tcp_handshakes++;
-        state_ = STATE_TCP_CONNECTING;
+        state_ = State::InTcpHandshaking;
 
         if (!ec)
             return handle_established_tcp_conn();
@@ -504,7 +503,7 @@ private:
                 session_.reset(SSL_get1_session(tls_));
             }
             SSL_free(tls_);
-            tls_ = NULL;
+            tls_ = nullptr;
         }
         if (sd.get() >= 0)
         {
@@ -515,7 +514,7 @@ private:
             sd.close();
         }
 
-        state_ = STATE_TCP_CONNECT;
+        state_ = State::Preconnect;
     }
 };
 
@@ -545,7 +544,7 @@ void sig_handler(int signum) noexcept
 void update_limits(Options& options) noexcept
 {
     struct rlimit open_file_limit = {};
-    rlim_t req_fd_n = (options.n_peers + 4) * options.n_threads;
+    rlim_t req_fd_n = (options.nSessions + 4) * options.n_threads;
 
     getrlimit(RLIMIT_NOFILE, &open_file_limit);
     if (open_file_limit.rlim_cur > req_fd_n)
@@ -556,13 +555,13 @@ void update_limits(Options& options) noexcept
     open_file_limit.rlim_cur = req_fd_n;
     if (setrlimit(RLIMIT_NOFILE, &open_file_limit))
     {
-        options.n_peers = open_file_limit.rlim_cur / (options.n_threads + 4);
+        options.nSessions = open_file_limit.rlim_cur / (options.n_threads + 4);
         std::cerr << "WARNING: required " << req_fd_n
                   << " (peers_number * threads_number), but setrlimit(2)"
                      " fails for this rlimit. Try to run as root or"
                      " decrease the numbers. Continue with "
-                  << options.n_peers << " peers" << std::endl;
-        if (!options.n_peers)
+                  << options.nSessions << " peers" << std::endl;
+        if (!options.nSessions)
         {
             std::cerr << "ERROR: cannot run with no peers" << std::endl;
             exit(3);
@@ -640,47 +639,47 @@ void statistics_dump() noexcept
               << g_lat_stat.stat.back() << std::endl;
 }
 
-bool end_of_work(const Options& options) noexcept
+bool endOfWork(const Options& options) noexcept
 {
     return finish || stat.tot_tls_handshakes >= options.n_hs;
 }
 
-void io_loop(const Options& options, const socket::Endpoint& ep)
+void processLoop(const Options& options, const socket::Endpoint& ep)
 {
-    int active_peers = 0;
-    int new_peers = std::min(options.n_peers, PEERS_SLOW_START);
-    IO io(options);
-    std::list<SocketHandler*> all_peers;
+    int activeSessions = 0;
+    int newSessions = std::min(options.nSessions, PEERS_SLOW_START);
+    SessionManager manager(options);
+    std::list<SocketHandler*> allSessions;
 
-    while (!end_of_work(options))
+    while (!endOfWork(options))
     {
-        for (; active_peers < options.n_peers && new_peers; --new_peers)
+        for (; activeSessions < options.nSessions && newSessions; --newSessions)
         {
-            Peer* p = new Peer(io, ep, options.use_tickets, options.sni, active_peers++);
-            all_peers.push_back(p);
+            Session* p = new Session(manager, ep, options.use_tickets, options.sni, activeSessions++);
+            allSessions.push_back(p);
 
-            if (p->next_state() && active_peers + new_peers < options.n_peers)
-                ++new_peers;
+            if (p->nextState() && activeSessions + newSessions < options.nSessions)
+                ++newSessions;
         }
 
-        io.wait();
-        while (auto p = io.next_sk())
+        manager.wait();
+        while (auto s = manager.nextSession())
         {
-            if (p->next_state() && active_peers + new_peers < options.n_peers)
-                ++new_peers;
+            if (s->nextState() && activeSessions + newSessions < options.nSessions)
+                ++newSessions;
         }
 
-        io.backlog();
+        manager.backlog();
         while (!finish)
         {
-            auto p = io.next_backlog();
-            if (!p)
+            auto s = manager.nextBacklog();
+            if (!s)
                 break;
-            if (p->next_state() && active_peers + new_peers < options.n_peers)
-                ++new_peers;
+            if (s->nextState() && activeSessions + newSessions < options.nSessions)
+                ++newSessions;
         }
 
-        if (active_peers == options.n_peers && !start_stats)
+        if (activeSessions == options.nSessions && !start_stats)
         {
             start_stats = true;
             std::cout << "( All peers are active, start to"
@@ -688,8 +687,8 @@ void io_loop(const Options& options, const socket::Endpoint& ep)
         }
     }
 
-    for (auto p : all_peers)
-        delete p;
+    for (auto s : allSessions)
+        delete s;
 }
 
 namespace snet
@@ -703,7 +702,7 @@ public:
         parser_.add("help, h", "Print help message");
         parser_.add("debug, d", "Run in debug mode");
         parser_.add("to, T", "Duration of the test (in seconds)");
-        parser_.add("limit, l", opt::Value(&options_.n_peers),
+        parser_.add("limit, l", opt::Value(&options_.nSessions),
                     "Limit parallel connections for each thread");
         parser_.add("conn, n", opt::Value(&options_.n_hs),
                     "Total number of handshakes to establish");
@@ -760,7 +759,7 @@ public:
                 bool success{true};
                 try
                 {
-                    io_loop(options_, ep);
+                    processLoop(options_, ep);
                 }
                 catch (std::exception& e)
                 {
@@ -774,7 +773,7 @@ public:
 
         auto start_t(steady_clock::now());
         stat.start_count();
-        while (!end_of_work(options_))
+        while (!endOfWork(options_))
         {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             statistics_update(options_);
