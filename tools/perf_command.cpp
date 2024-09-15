@@ -118,8 +118,7 @@ public:
         stat_[i_] = dt;
 
         i_ += di_;
-        // Write statistics in ring buffer fashion, but mix later
-        // results with earlier instead of just rewriting them.
+
         if (i_ >= LATENCY_N)
         {
             i_ = 0;
@@ -179,9 +178,6 @@ public:
     {
         tls_ctx_ = SSL_CTX_new(TLS_client_method());
 
-        // Allow only TLS 1.2 and 1.3, and chose only those user has
-        // requested.
-
         if (!options.tls_vers.empty())
         {
             auto versions = ParseVersionRange(options.tls_vers);
@@ -195,7 +191,6 @@ public:
             SSL_CTX_set_max_proto_version(tls_ctx_, static_cast<long>(max));
         }
 
-        // Session resumption.
         if (!options.use_tickets)
         {
             unsigned int mode = SSL_SESS_CACHE_OFF | SSL_SESS_CACHE_NO_INTERNAL;
@@ -299,15 +294,11 @@ public:
         return sh;
     }
 
-    SSL* new_tls_ctx(SocketHandler* sh)
+    SSL* makeConnection()
     {
         SSL* ctx = SSL_new(tls_ctx_);
         if (!ctx)
             throw std::runtime_error("cannot clone TLS context");
-
-        SSL_set_fd(ctx, sh->sd.get());
-        BIO_set_tcp_ndelay(sh->sd.get(), true);
-
         return ctx;
     }
 };
@@ -391,7 +382,11 @@ private:
 
         if (!tls_)
         {
-            tls_ = io_.new_tls_ctx(this);
+            tls_ = io_.makeConnection();
+
+            SSL_set_fd(tls_, sd.get());
+            
+            BIO_set_tcp_ndelay(sd.get(), true);
 
             if (reuseSession_ && session_)
             {
