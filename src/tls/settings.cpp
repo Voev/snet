@@ -93,7 +93,47 @@ void Settings::setVerifyCallback(VerifyMode mode,
 
 void Settings::setMode(Mode mode)
 {
-    if (0 >= SSL_CTX_set_mode(ctx_, static_cast<unsigned int>(mode)))
+    if (0 >= SSL_CTX_set_mode(ctx_, static_cast<long>(mode)))
+    {
+        throw ErrorCodeException(GetLastError());
+    }
+}
+
+void Settings::setSessionCacheMode(unsigned long mode)
+{
+    if (0 >= SSL_CTX_set_session_cache_mode(ctx_, static_cast<long>(mode)))
+    {
+        throw ErrorCodeException(GetLastError());
+    }
+}
+
+void Settings::setOptions(unsigned long options)
+{
+    if (0 >= SSL_CTX_set_options(ctx_, options))
+    {
+        throw ErrorCodeException(GetLastError());
+    }
+}
+
+void Settings::setGroupsList(std::string_view groupsList)
+{
+    if (0 >= SSL_CTX_set1_groups_list(ctx_, groupsList.data()))
+    {
+        throw ErrorCodeException(GetLastError());
+    }
+}
+
+void Settings::setCipherList(std::string_view cipherList)
+{
+    if (0 >= SSL_CTX_set_cipher_list(ctx_, cipherList.data()))
+    {
+        throw ErrorCodeException(GetLastError());
+    }
+}
+
+void Settings::setCipherSuites(std::string_view cipherSuites)
+{
+    if (0 >= SSL_CTX_set_ciphersuites(ctx_, cipherSuites.data()))
     {
         throw ErrorCodeException(GetLastError());
     }

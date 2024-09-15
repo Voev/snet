@@ -15,8 +15,15 @@ SocketType connect(SocketType sock, const SocketAddrType* addr,
 SocketType accept(SocketType sock, SocketAddrType* addr,
                   SocketLengthType* addrlen, std::error_code& ec);
 
+int setSocketOption(SocketType s, int level, int optname, void* optval,
+                    size_t* optlen, std::error_code& ec);
+
+void setLinger(SocketType s, int onoff, int linger, std::error_code& ec);
+
 int getSocketOption(SocketType s, int level, int optname, void* optval,
                     size_t* optlen, std::error_code& ec);
+
+std::error_code getSocketError(SocketType s);
 
 bool setNonBlocking(SocketType s, bool value, std::error_code& ec);
 

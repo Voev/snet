@@ -69,6 +69,24 @@ SocketType accept(SocketType sock, SocketAddrType* addr,
     return ret;
 }
 
+int setSocketOption(SocketType s, int level, int optname, void* optval,
+                    size_t optlen, std::error_code& ec)
+{
+    int ret = ::setsockopt(s, level, optname, optval,
+                           static_cast<SocketLengthType>(optlen));
+    if (ret == InvalidSocket)
+    {
+        ec = utils::GetLastSystemError();
+    }
+    return ret;
+}
+
+void setLinger(SocketType s, int onoff, int linger, std::error_code& ec)
+{
+    struct linger sl = {.l_onoff = onoff, .l_linger = linger};
+    setSocketOption(s, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl), ec);
+}
+
 int getSocketOption(SocketType s, int level, int optname, void* optval,
                     size_t* optlen, std::error_code& ec)
 {
@@ -85,6 +103,21 @@ int getSocketOption(SocketType s, int level, int optname, void* optval,
         *optlen = static_cast<std::size_t>(tmp_optlen);
     }
     return ret;
+}
+
+std::error_code getSocketError(SocketType s)
+{
+    std::error_code ec;
+    int sockType{};
+    size_t sockTypeLen = sizeof(sockType);
+
+    int ret =
+        getSocketOption(s, SOL_SOCKET, SO_ERROR, &sockType, &sockTypeLen, ec);
+    if (ret == InvalidSocket)
+    {
+        return ec;
+    }
+    return std::make_error_code(static_cast<std::errc>(ret));
 }
 
 bool setNonBlocking(SocketType s, bool value, std::error_code& ec)

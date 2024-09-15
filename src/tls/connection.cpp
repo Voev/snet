@@ -70,6 +70,27 @@ void Connection::setSocket(int fd)
     }
 }
 
+void Connection::setSession(SSL_SESSION* session)
+{
+    if (0 >= SSL_set_session(ssl_, session))
+    {
+        throw utils::ErrorCodeException(GetLastError());
+    }
+}
+
+SslSessionPtr Connection::getSession()
+{
+    return SslSessionPtr{SSL_get1_session(ssl_)};
+}
+
+void Connection::setExtHostName(std::string_view hostname)
+{
+    if (0 >= SSL_set_tlsext_host_name(ssl_, hostname.data()))
+    {
+        throw utils::ErrorCodeException(GetLastError());
+    }
+}
+
 bool Connection::handshakeDone() const noexcept
 {
     return SSL_is_init_finished(ssl_);
