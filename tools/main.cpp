@@ -1,35 +1,44 @@
 #include <iostream>
-#include <snet/ip/ip_address.hpp>
-#include <snet/socket/socket.hpp>
-#include <snet/socket/tcp.hpp>
-#include <snet/tls/connection.hpp>
-#include <snet/log/log_manager.hpp>
+#include <snet/cmd/command_dispatcher.hpp>
+#include <snet/utils/string.hpp>
 
-int main()
+using namespace snet::cmd;
+using namespace snet::utils;
+
+void PrintHelp()
 {
-    snet::log::LogManager::Instance().enable(snet::log::Type::Console);
-    snet::log::LogManager::Instance().setLevel(snet::log::Level::Debug);
+}
 
-    snet::socket::Socket s;
-    s.open(snet::socket::Tcp::v4());
-    auto ip = snet::ip::IPAddress::fromString("5.255.255.242");
-    s.connect(snet::socket::Endpoint(ip.value(), 443));
-
-    snet::tls::ClientSettings settings;
-    snet::tls::Connection conn(settings);
-
-    conn.setSocket(s.get());
-    auto want = conn.handshake();
-    if(want == snet::tls::Connection::Want::Nothing)
+int main(int argc, char* argv[])
+{
+    try
     {
-        snet::log::emergency("OK");
-        snet::log::critical("OK");
-        snet::log::alert("OK");
-        snet::log::error("OK");
-        snet::log::warning("OK");
-        snet::log::notice("OK");
-        snet::log::info("OK");
-        snet::log::debug("OK");
+        std::vector<std::string> args(argv + 1, argv + argc);
+
+        if (args.empty())
+        {
+            std::cerr << "Use '--help' to print commands" << std::endl;
+            return EXIT_SUCCESS;
+        }
+        else if (equals(args.front(), "-h") || equals(args.front(), "--help"))
+        {
+            CommandDispatcher::Instance().printCommands(std::cout);
+            return EXIT_SUCCESS;
+        }
+
+        auto cmd = CommandDispatcher::Instance().createCommand(argv[1]);
+        args.erase(args.begin());
+        cmd->execute(args);
+    }
+    catch (const std::system_error& e)
+    {
+        std::cerr << e.what() << "[" << e.code() << "]" << std::endl;
+        return EXIT_FAILURE;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
 }

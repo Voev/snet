@@ -75,14 +75,14 @@ int getSocketOption(SocketType s, int level, int optname, void* optval,
     assert(optlen != nullptr);
 
     SocketLengthType tmp_optlen = static_cast<SocketLengthType>(*optlen);
-    int ret = ::getsockopt(s, level, optname, (char*)optval, &tmp_optlen);
+    int ret = ::getsockopt(s, level, optname, optval, &tmp_optlen);
     if (ret == InvalidSocket)
     {
         ec = utils::GetLastSystemError();
     }
     if (optlen)
     {
-        *optlen = (std::size_t)tmp_optlen;
+        *optlen = static_cast<std::size_t>(tmp_optlen);
     }
     return ret;
 }

@@ -30,7 +30,16 @@ public:
 
     void close() noexcept
     {
-        socket::close(sock_);
+        if(sock_ != InvalidSocket)
+        {
+            socket::close(sock_);
+            sock_ = InvalidSocket;
+        }
+    }
+
+    void connect(const Endpoint& peer, std::error_code& ec) noexcept
+    {
+        socket::connect(sock_, peer.data(), peer.size(), ec);
     }
 
     void connect(const Endpoint& peer)
