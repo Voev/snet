@@ -5,12 +5,9 @@
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <array>
@@ -36,11 +33,16 @@
 #include <snet/socket/tcp.hpp>
 #include <snet/socket/endpoint.hpp>
 #include <snet/utils/error_code.hpp>
+#include <snet/event/epoll.hpp>
+#include <snet/log/log_manager.hpp>
 
 static const int DEFAULT_THREADS = 1;
 static const int DEFAULT_PEERS = 1;
 static const int PEERS_SLOW_START = 10;
 static const int LATENCY_N = 1024;
+
+using namespace snet;
+using namespace snet::event;
 
 struct Options
 {
@@ -220,16 +222,16 @@ private:
     static const size_t TO_MSEC = 5;
 
 private:
-    int ed_;
+    snet::event::Epoll epoll_;
+    snet::event::Epoll::Event events_[N_EVENTS];
     int ev_count_;
     SSL_CTX* tls_ctx_;
-    struct epoll_event events_[N_EVENTS];
     std::list<SocketHandler*> reconnect_q_;
     std::list<SocketHandler*> backlog_;
 
 public:
     IO()
-        : ed_(-1)
+        : epoll_()
         , ev_count_(0)
         , tls_ctx_(NULL)
     {
@@ -279,40 +281,37 @@ public:
                 throw Except("cannot set elliptic curve");
         SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
 
-        if ((ed_ = epoll_create(1)) < 0)
-            throw Except("can't create epoll");
         memset(events_, 0, sizeof(events_));
     }
 
     ~IO()
     {
-        if (ed_ > -1)
-            close(ed_);
         reconnect_q_.clear();
 
         if (tls_ctx_)
             SSL_CTX_free(tls_ctx_);
     }
 
-    void add(SocketHandler* sh, int events)
+    void add(SocketHandler* sh, Epoll::EventMask events)
     {
-        struct epoll_event ev = {.events = events | EPOLLONESHOT,
-                                 .data = {.ptr = sh}};
+        std::error_code ec;
+        epoll_.modify(sh, sh->sd.get(), snet::event::OneShot | events, ec);
 
-        if (epoll_ctl(ed_, EPOLL_CTL_MOD, sh->sd.get(), &ev) < 0)
+        if (ec == std::errc::no_such_file_or_directory)
         {
-            if (errno == ENOENT &&
-                epoll_ctl(ed_, EPOLL_CTL_ADD, sh->sd.get(), &ev) < 0)
-            {
-                throw Except("can't add socket to poller");
-            }
+            ec.clear();
+            epoll_.add(sh, sh->sd.get(), events, ec);
         }
+        if (ec)
+            log::error("add(): {}", ec.message());
     }
 
     void del(SocketHandler* sh)
     {
-        if (epoll_ctl(ed_, EPOLL_CTL_DEL, sh->sd.get(), NULL) < 0)
-            throw Except("can't delete socket from poller");
+        std::error_code ec;
+        epoll_.del(sh->sd.get(), ec);
+        if (ec)
+            log::error("del(): {}", ec.message());
     }
 
     void queue_reconnect(SocketHandler* sh) noexcept
@@ -322,20 +321,26 @@ public:
 
     void wait()
     {
-    retry:
-        ev_count_ = epoll_wait(ed_, events_, N_EVENTS, TO_MSEC);
-        if (ev_count_ < 0)
+        std::error_code ec;
+        while (true)
         {
-            if (errno == EINTR)
-                goto retry;
-            throw Except("poller wait error");
+            ev_count_ = epoll_.wait(events_, N_EVENTS, TO_MSEC, ec);
+            if (ec == std::errc::interrupted)
+                continue;
+
+            if (!ec)
+                break;
+
+            THROW_IF_ERROR(ec);
         }
     }
 
     SocketHandler* next_sk() noexcept
     {
-        if (ev_count_)
-            return (SocketHandler*)events_[--ev_count_].data.ptr;
+        if (ev_count_) {
+            ev_count_--;
+            return (SocketHandler*)events_[ev_count_].data.ptr;
+        }
         return NULL;
     }
 
