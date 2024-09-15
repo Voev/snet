@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/snet.dir/main.cpp.o CMakeFiles/snet.dir/perf_command.cpp.o -o ../bin/snet  ../lib/libsnet_lib.a /usr/lib/x86_64-linux-gnu/libcrypto.so /usr/lib/x86_64-linux-gnu/libssl.so -lpthread /usr/lib/x86_64-linux-gnu/libcrypto.so 

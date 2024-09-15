@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/snet_unit_test.dir/ip/ipv4_address_test.cpp.o CMakeFiles/snet_unit_test.dir/ip/ipv6_address_test.cpp.o CMakeFiles/snet_unit_test.dir/main.cpp.o CMakeFiles/snet_unit_test.dir/opt/option_parser_test.cpp.o -o ../bin/snet_unit_test  ../lib/libsnet_lib.a /usr/lib/x86_64-linux-gnu/libgtest.a -lpthread 
