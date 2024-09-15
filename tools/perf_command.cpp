@@ -453,30 +453,20 @@ private:
         if (ec == std::errc::operation_in_progress ||
             ec == std::errc::resource_unavailable_try_again)
         {
-            errno = 0;
-
             poll_for_write();
-
             return;
         }
 
         if (!stat.tcp_connections)
             throw std::runtime_error("cannot establish even one TCP connection");
 
-        errno = 0;
         stat.tcp_handshakes--;
         disconnect();
     }
 
     bool tcp_connect_try_finish()
     {
-        int ret = 0;
-        socklen_t len = 4;
-
-        if (getsockopt(sd.get(), SOL_SOCKET, SO_ERROR, &ret, &len))
-            throw std::runtime_error("cannot get a socket connect() status");
-        std::error_code ec = std::make_error_code(static_cast<std::errc>(ret));
-
+        auto ec = socket::getSocketError(sd.get());
         if (!ec)
             return handle_established_tcp_conn();
 
@@ -520,8 +510,8 @@ private:
         {
             del_from_poll();
 
-            struct linger sl = {.l_onoff = 1, .l_linger = 0};
-            setsockopt(sd.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
+            std::error_code ec;
+            socket::setLinger(sd.get(), 1, 0, ec);
             sd.close();
         }
 
