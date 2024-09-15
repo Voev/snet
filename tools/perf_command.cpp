@@ -1,13 +1,6 @@
-#include <arpa/inet.h>
-#include <errno.h>
-#include <execinfo.h>
-#include <getopt.h>
 #include <sys/resource.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
 
 #include <algorithm>
 #include <array>
@@ -155,49 +148,6 @@ private:
 
 static thread_local LatencyStat lat_stat;
 
-class Except : public std::exception
-{
-private:
-    static const size_t maxmsg = 256;
-    std::string str_;
-
-public:
-    Except(const char* fmt, ...) noexcept
-    {
-        va_list ap;
-        char msg[maxmsg];
-        va_start(ap, fmt);
-        vsnprintf(msg, maxmsg, fmt, ap);
-        va_end(ap);
-        str_ = msg;
-
-        // Add system error code (errno).
-        if (errno)
-        {
-            std::stringstream ss;
-            ss << " (" << strerror(errno) << ", errno=" << errno << ")";
-            str_ += ss.str();
-        }
-
-        // Add OpenSSL error code if exists.
-        unsigned long ossl_err = ERR_get_error();
-        if (ossl_err)
-        {
-            char buf[256];
-            str_ += std::string(": ") + ERR_error_string(ossl_err, buf);
-        }
-    }
-
-    ~Except() noexcept
-    {
-    }
-
-    const char* what() const noexcept
-    {
-        return str_.c_str();
-    }
-};
-
 struct SocketHandler
 {
     virtual ~SocketHandler(){};
@@ -263,11 +213,11 @@ public:
         if (!options.cipher.empty())
         {
             if (!SSL_CTX_set_cipher_list(tls_ctx_, options.cipher.c_str()))
-                throw Except("cannot set cipher");
+                throw std::runtime_error("cannot set cipher");
         }
         if (!options.curve.empty())
             if (!SSL_CTX_set1_groups_list(tls_ctx_, options.curve.c_str()))
-                throw Except("cannot set elliptic curve");
+                throw std::runtime_error("cannot set elliptic curve");
         SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
 
         memset(events_, 0, sizeof(events_));
@@ -353,7 +303,7 @@ public:
     {
         SSL* ctx = SSL_new(tls_ctx_);
         if (!ctx)
-            throw Except("cannot clone TLS context");
+            throw std::runtime_error("cannot clone TLS context");
 
         SSL_set_fd(ctx, sh->sd.get());
         BIO_set_tcp_ndelay(sh->sd.get(), true);
@@ -412,7 +362,7 @@ public:
         case STATE_TLS_HANDSHAKING:
             return tls_handshake();
         default:
-            throw Except("bad next state %d", state_);
+            throw std::runtime_error("bad next state " + std::to_string(state_));
         }
         return false;
     }
@@ -484,7 +434,7 @@ private:
             break;
         default:
             if (!stat.tot_tls_handshakes)
-                throw Except("cannot establish even one TLS"
+                throw std::runtime_error("cannot establish even one TLS"
                              " connection");
             stat.tls_handshakes--;
             stat.error_count++;
@@ -509,15 +459,14 @@ private:
             ec == std::errc::resource_unavailable_try_again)
         {
             errno = 0;
-            // Continue to wait on the TCP handshake.
-            // add_to_poll();
+
             poll_for_write();
 
             return;
         }
 
         if (!stat.tcp_connections)
-            throw Except("cannot establish even one TCP connection");
+            throw std::runtime_error("cannot establish even one TCP connection");
 
         errno = 0;
         stat.tcp_handshakes--;
@@ -530,7 +479,7 @@ private:
         socklen_t len = 4;
 
         if (getsockopt(sd.get(), SOL_SOCKET, SO_ERROR, &ret, &len))
-            throw Except("cannot get a socket connect() status");
+            throw std::runtime_error("cannot get a socket connect() status");
         std::error_code ec = std::make_error_code(static_cast<std::errc>(ret));
 
         if (!ec)
@@ -553,8 +502,6 @@ private:
         stat.tcp_handshakes++;
         state_ = STATE_TCP_CONNECTING;
 
-        // On on localhost connect() can complete instantly
-        // even on non-blocking sockets (e.g. Tempesta FW case).
         if (!ec)
             return handle_established_tcp_conn();
 
@@ -566,11 +513,6 @@ private:
     {
         if (tls_)
         {
-            // SSL_shutdown() marks the session as established and
-            // saves it into session cache. Ignore it and just clean
-            // the session if resumed sessions are unwanted.
-            // Even SSL_CTX_set_session_cache_mode() doesn't help to
-            // restrict session cache usage.
             if (reuseSession_)
             {
                 SSL_shutdown(tls_);
@@ -583,12 +525,6 @@ private:
         {
             del_from_poll();
 
-            // Disable TIME-WAIT state, close immediately.
-            // This leads to connection terminations with RST and
-            // on high traffic valume you may see large number of
-            // ESTABLISHED connections, which will be terminated by
-            // the OS on timeout.
-            // https://github.com/tempesta-tech/tempesta/issues/1432
             struct linger sl = {.l_onoff = 1, .l_linger = 0};
             setsockopt(sd.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
             sd.close();
@@ -624,8 +560,6 @@ void sig_handler(int signum) noexcept
 void update_limits(Options& options) noexcept
 {
     struct rlimit open_file_limit = {};
-    // Set limit for all the peer sockets + epoll socket for
-    // each thread + standard IO.
     rlim_t req_fd_n = (options.n_peers + 4) * options.n_threads;
 
     getrlimit(RLIMIT_NOFILE, &open_file_limit);
@@ -698,7 +632,6 @@ void statistics_dump() noexcept
         return;
     }
 
-    // Do this only once at the end of program, so sorting isn't a big deal.
     std::sort(stat.hs_history.begin(), stat.hs_history.end(),
               std::greater<int32_t>());
     std::sort(g_lat_stat.stat.begin(), g_lat_stat.stat.end(),
@@ -724,8 +657,6 @@ void statistics_dump() noexcept
 
 bool end_of_work(const Options& options) noexcept
 {
-    // We can make bit more handshakes than was specified by a user -
-    // not a big deal.
     return finish || stat.tot_tls_handshakes >= options.n_hs;
 }
 
@@ -738,9 +669,6 @@ void io_loop(const Options& options, const socket::Endpoint& ep)
 
     while (!end_of_work(options))
     {
-        // We implement slow start of number of concurrent TCP
-        // connections, so active_peers and peers dynamically grow in
-        // this loop.
         for (; active_peers < options.n_peers && new_peers; --new_peers)
         {
             Peer* p = new Peer(io, ep, options.use_tickets, options.sni, active_peers++);
@@ -757,7 +685,6 @@ void io_loop(const Options& options, const socket::Endpoint& ep)
                 ++new_peers;
         }
 
-        // Process disconnected sockets from the backlog.
         io.backlog();
         while (!finish)
         {
@@ -849,11 +776,6 @@ public:
                 try
                 {
                     io_loop(options_, ep);
-                }
-                catch (Except& e)
-                {
-                    std::cerr << "ERROR: " << e.what() << std::endl;
-                    success = false;
                 }
                 catch (std::exception& e)
                 {
