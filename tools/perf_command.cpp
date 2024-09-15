@@ -35,6 +35,8 @@
 #include <snet/utils/error_code.hpp>
 #include <snet/event/epoll.hpp>
 #include <snet/log/log_manager.hpp>
+#include <snet/tls/types.hpp>
+#include <snet/tls/tls_utils.hpp>
 
 static const int DEFAULT_THREADS = 1;
 static const int DEFAULT_PEERS = 1;
@@ -43,42 +45,32 @@ static const int LATENCY_N = 1024;
 
 using namespace snet;
 using namespace snet::event;
+using namespace snet::log;
+using namespace snet::tls;
 
 struct Options
 {
+    std::string tls_vers;
+    std::string cipher;
+    std::string curve;
+    std::string sni;
+    std::string ip;
+    size_t n_hs{std::numeric_limits<size_t>::max()};
     int n_peers{DEFAULT_PEERS};
     int n_threads{DEFAULT_THREADS};
-    size_t n_hs{std::numeric_limits<size_t>::max()};
     int timeout{0};
     uint16_t port{443};
     bool debug{false};
     bool quiet{false};
-    int tls_vers{0};
     bool use_tickets{false};
     bool adv_tickets{false};
-    const char* cipher{nullptr};
-    const char* curve{nullptr};
-    const char* sni{nullptr};
-    std::string ip;
-} g_opt;
+};
 
-struct DbgStream
+struct PeerOptions
 {
-    template <typename T> const DbgStream& operator<<(const T& v) const noexcept
-    {
-        if (g_opt.debug)
-            std::cout << v;
-        return *this;
-    }
-
-    const DbgStream&
-    operator<<(std::ostream& (*manip)(std::ostream&)) const noexcept
-    {
-        if (g_opt.debug)
-            manip(std::cout);
-        return *this;
-    }
-} dbg;
+    std::string sni;
+    bool reuseSession;
+};
 
 struct
 {
@@ -127,7 +119,7 @@ public:
     {
         if (!dt)
         {
-            dbg << "Bad zero latency" << std::endl;
+            log::debug("Bad zero latency");
             return;
         }
         stat_[i_] = dt;
@@ -210,7 +202,6 @@ struct SocketHandler
 {
     virtual ~SocketHandler(){};
     virtual bool next_state() = 0;
-    virtual SSL_SESSION* get_session() = 0;
 
     snet::socket::Socket sd;
 };
@@ -229,8 +220,9 @@ private:
     std::list<SocketHandler*> reconnect_q_;
     std::list<SocketHandler*> backlog_;
 
+
 public:
-    IO()
+    IO(const Options& options)
         : epoll_()
         , ev_count_(0)
         , tls_ctx_(NULL)
@@ -239,22 +231,25 @@ public:
 
         // Allow only TLS 1.2 and 1.3, and chose only those user has
         // requested.
-        if (g_opt.tls_vers != TLS_ANY_VERSION)
+
+        if (!options.tls_vers.empty())
         {
-            SSL_CTX_set_min_proto_version(tls_ctx_, g_opt.tls_vers);
-            SSL_CTX_set_max_proto_version(tls_ctx_, g_opt.tls_vers);
-        }
-        else
-        {
-            SSL_CTX_set_min_proto_version(tls_ctx_, TLS1_2_VERSION);
-            SSL_CTX_set_max_proto_version(tls_ctx_, TLS1_3_VERSION);
+            auto versions = ParseVersionRange(options.tls_vers);
+            if(!versions.has_value())
+            {
+                throw std::runtime_error("");
+            }
+
+            auto [min, max] = versions.value();
+            SSL_CTX_set_min_proto_version(tls_ctx_, static_cast<long>(min));
+            SSL_CTX_set_max_proto_version(tls_ctx_, static_cast<long>(max));
         }
 
         // Session resumption.
-        if (!g_opt.use_tickets)
+        if (!options.use_tickets)
         {
             unsigned int mode = SSL_SESS_CACHE_OFF | SSL_SESS_CACHE_NO_INTERNAL;
-            if (!g_opt.adv_tickets)
+            if (!options.adv_tickets)
                 SSL_CTX_set_options(tls_ctx_, SSL_OP_NO_TICKET);
             SSL_CTX_set_session_cache_mode(tls_ctx_, mode);
         }
@@ -265,19 +260,13 @@ public:
             SSL_CTX_set_session_cache_mode(tls_ctx_, mode);
         }
 
-        if (g_opt.cipher)
+        if (!options.cipher.empty())
         {
-            if (g_opt.tls_vers == TLS1_3_VERSION ||
-                g_opt.tls_vers == TLS_ANY_VERSION)
-                if (!SSL_CTX_set_ciphersuites(tls_ctx_, g_opt.cipher))
-                    throw Except("cannot set cipher");
-            if (g_opt.tls_vers == TLS1_2_VERSION ||
-                g_opt.tls_vers == TLS_ANY_VERSION)
-                if (!SSL_CTX_set_cipher_list(tls_ctx_, g_opt.cipher))
-                    throw Except("cannot set cipher");
+            if (!SSL_CTX_set_cipher_list(tls_ctx_, options.cipher.c_str()))
+                throw Except("cannot set cipher");
         }
-        if (g_opt.curve)
-            if (!SSL_CTX_set1_groups_list(tls_ctx_, g_opt.curve))
+        if (!options.curve.empty())
+            if (!SSL_CTX_set1_groups_list(tls_ctx_, options.curve.c_str()))
                 throw Except("cannot set elliptic curve");
         SSL_CTX_set_verify(tls_ctx_, SSL_VERIFY_NONE, NULL);
 
@@ -337,7 +326,8 @@ public:
 
     SocketHandler* next_sk() noexcept
     {
-        if (ev_count_) {
+        if (ev_count_)
+        {
             ev_count_--;
             return (SocketHandler*)events_[ev_count_].data.ptr;
         }
@@ -367,21 +357,12 @@ public:
 
         SSL_set_fd(ctx, sh->sd.get());
         BIO_set_tcp_ndelay(sh->sd.get(), true);
-        if (g_opt.use_tickets)
-        {
-            auto sess = sh->get_session();
-            if (sess)
-                SSL_set_session(ctx, sess);
-        }
-
-        if (g_opt.sni)
-            SSL_set_tlsext_host_name(ctx, g_opt.sni);
 
         return ctx;
     }
 };
 
-class Peer : public SocketHandler
+class Peer final : public SocketHandler
 {
 private:
     enum _states
@@ -395,26 +376,29 @@ private:
     IO& io_;
     int id_;
     SSL* tls_;
-    SSL_SESSION* sess_;
+    SslSessionPtr session_;
+    socket::Endpoint ep_;
     std::chrono::time_point<std::chrono::steady_clock> ts_;
     enum _states state_;
+    bool reuseSession_;
+    std::string sni_;
 
 public:
-    Peer(IO& io, int id) noexcept
+    Peer(IO& io, socket::Endpoint ep, bool reuseSession, std::string sni, int id) noexcept
         : io_(io)
         , id_(id)
         , tls_(NULL)
-        , sess_(NULL)
+        , ep_(ep)
         , state_(STATE_TCP_CONNECT)
+        , reuseSession_(reuseSession)
+        , sni_(std::move(sni))
     {
-        dbg_status("created");
+        log::debug("peer {} created", id_);
     }
 
-    virtual ~Peer()
+    ~Peer() noexcept
     {
         disconnect();
-        if (sess_)
-            SSL_SESSION_free(sess_);
     }
 
     bool next_state() final override
@@ -433,31 +417,20 @@ public:
         return false;
     }
 
-    SSL_SESSION* get_session()
-    {
-        return sess_;
-    }
-
 private:
     void poll_for_read()
     {
-        io_.add(this, EPOLLIN | EPOLLERR);
+        io_.add(this, Read | Error);
     }
 
     void poll_for_write()
     {
-        io_.add(this, EPOLLOUT | EPOLLERR);
+        io_.add(this, Write | Error);
     }
 
     void del_from_poll()
     {
         io_.del(this);
-    }
-
-    void dbg_status(const char* msg) noexcept
-    {
-        if (g_opt.debug)
-            dbg << "peer " << id_ << " " << msg << std::endl;
     }
 
     bool tls_handshake()
@@ -469,6 +442,17 @@ private:
         if (!tls_)
         {
             tls_ = io_.new_tls_ctx(this);
+
+            if (reuseSession_ && session_)
+            {
+                SSL_set_session(tls_, session_);
+            }
+
+            if (!sni_.empty())
+            {
+                SSL_set_tlsext_host_name(tls_, sni_.c_str());
+            }
+
             stat.tls_handshakes++;
             ts_ = steady_clock::now();
         }
@@ -480,7 +464,7 @@ private:
             const duration<double, std::milli> lat = t1 - ts_;
             lat_stat.update(lat.count());
 
-            dbg_status("has completed TLS handshake");
+            log::debug("peer {}: has completed TLS handshake", id_);
             stat.tls_handshakes--;
             stat.tls_connections++;
             stat.tot_tls_handshakes++;
@@ -513,7 +497,7 @@ private:
     bool handle_established_tcp_conn()
     {
         // del_from_poll(); // not needed as we're using EPOLLONESHOT
-        dbg_status("has established TCP connection");
+        log::debug("peer {}: has established TCP connection", id_);
         stat.tcp_handshakes--;
         stat.tcp_connections++;
         return tls_handshake();
@@ -558,21 +542,13 @@ private:
 
     bool tcp_connect()
     {
+        sd.open(ep_.isIPv4() ? snet::socket::Tcp::v4()
+                             : snet::socket::Tcp::v6());
+
         std::error_code ec;
-        auto ip = snet::ip::IPAddress::fromString(g_opt.ip.c_str());
-        if (!ip.has_value())
-        {
-            throw std::runtime_error("undefined IP address");
-        }
-
-        sd.open(ip.value().isIPv4() ? snet::socket::Tcp::v4()
-                                    : snet::socket::Tcp::v6());
-
         snet::socket::setNonBlocking(sd.get(), true, ec);
         THROW_IF_ERROR(ec);
-
-        snet::socket::Endpoint ep(ip.value(), g_opt.port);
-        sd.connect(ep, ec);
+        sd.connect(ep_, ec);
 
         stat.tcp_handshakes++;
         state_ = STATE_TCP_CONNECTING;
@@ -595,26 +571,17 @@ private:
             // the session if resumed sessions are unwanted.
             // Even SSL_CTX_set_session_cache_mode() doesn't help to
             // restrict session cache usage.
-            if (g_opt.use_tickets)
+            if (reuseSession_)
             {
-                auto old_sess = sess_;
                 SSL_shutdown(tls_);
-                sess_ = SSL_get1_session(tls_);
-                SSL_SESSION_free(old_sess);
+                session_.reset(SSL_get1_session(tls_));
             }
             SSL_free(tls_);
             tls_ = NULL;
         }
         if (sd.get() >= 0)
         {
-            try
-            {
-                del_from_poll();
-            }
-            catch (Except& e)
-            {
-                std::cerr << "ERROR disconnect: " << e.what() << std::endl;
-            }
+            del_from_poll();
 
             // Disable TIME-WAIT state, close immediately.
             // This leads to connection terminations with RST and
@@ -631,24 +598,18 @@ private:
     }
 };
 
-void print_settings()
+void print_settings(const Options& options)
 {
     std::cout << "Running TLS benchmark with following settings:\n"
-              << "Host:        " << g_opt.ip << ":" << g_opt.port << "\n"
-              << "TLS version: ";
-    if (g_opt.tls_vers == TLS1_2_VERSION)
-        std::cout << "1.2\n";
-    else if (g_opt.tls_vers == TLS1_3_VERSION)
-        std::cout << "1.3\n";
-    else
-        std::cout << "Any of 1.2 or 1.3\n";
-    std::cout << "Cipher:      " << (g_opt.cipher ? g_opt.cipher : "default")
+              << "Host:        " << options.ip << ":" << options.port << "\n"
+              << "TLS version: " << options.tls_vers;
+    std::cout << "Cipher:      " << (!options.cipher.empty() ? options.cipher : "default")
               << "\n"
               << "TLS tickets: "
-              << (g_opt.use_tickets
+              << (options.use_tickets
                       ? "on\n"
-                      : !g_opt.adv_tickets ? "off\n" : "advertise\n")
-              << "Duration:    " << g_opt.timeout << "\n"
+                      : !options.adv_tickets ? "off\n" : "advertise\n")
+              << "Duration:    " << options.timeout << "\n"
               << std::endl;
 }
 
@@ -660,29 +621,29 @@ void sig_handler(int signum) noexcept
     finish = true;
 }
 
-void update_limits() noexcept
+void update_limits(Options& options) noexcept
 {
     struct rlimit open_file_limit = {};
     // Set limit for all the peer sockets + epoll socket for
     // each thread + standard IO.
-    rlim_t req_fd_n = (g_opt.n_peers + 4) * g_opt.n_threads;
+    rlim_t req_fd_n = (options.n_peers + 4) * options.n_threads;
 
     getrlimit(RLIMIT_NOFILE, &open_file_limit);
     if (open_file_limit.rlim_cur > req_fd_n)
         return;
 
-    if (!g_opt.quiet)
+    if (!options.quiet)
         std::cout << "set open files limit to " << req_fd_n << std::endl;
     open_file_limit.rlim_cur = req_fd_n;
     if (setrlimit(RLIMIT_NOFILE, &open_file_limit))
     {
-        g_opt.n_peers = open_file_limit.rlim_cur / (g_opt.n_threads + 4);
+        options.n_peers = open_file_limit.rlim_cur / (options.n_threads + 4);
         std::cerr << "WARNING: required " << req_fd_n
                   << " (peers_number * threads_number), but setrlimit(2)"
                      " fails for this rlimit. Try to run as root or"
                      " decrease the numbers. Continue with "
-                  << g_opt.n_peers << " peers" << std::endl;
-        if (!g_opt.n_peers)
+                  << options.n_peers << " peers" << std::endl;
+        if (!options.n_peers)
         {
             std::cerr << "ERROR: cannot run with no peers" << std::endl;
             exit(3);
@@ -690,7 +651,7 @@ void update_limits() noexcept
     }
 }
 
-void statistics_update() noexcept
+void statistics_update(const Options& options) noexcept
 {
     using namespace std::chrono;
 
@@ -703,7 +664,7 @@ void statistics_update() noexcept
     stat.tls_connections -= tls_conns;
 
     int32_t curr_hs = (size_t)(1000 * tls_conns) / dt;
-    if (!g_opt.quiet)
+    if (!options.quiet)
         std::cout << "TLS hs in progress " << stat.tls_handshakes << " ["
                   << curr_hs << " h/s],"
                   << " TCP open conns " << stat.tcp_connections << " ["
@@ -761,38 +722,38 @@ void statistics_dump() noexcept
               << g_lat_stat.stat.back() << std::endl;
 }
 
-bool end_of_work() noexcept
+bool end_of_work(const Options& options) noexcept
 {
     // We can make bit more handshakes than was specified by a user -
     // not a big deal.
-    return finish || stat.tot_tls_handshakes >= g_opt.n_hs;
+    return finish || stat.tot_tls_handshakes >= options.n_hs;
 }
 
-void io_loop()
+void io_loop(const Options& options, const socket::Endpoint& ep)
 {
     int active_peers = 0;
-    int new_peers = std::min(g_opt.n_peers, PEERS_SLOW_START);
-    IO io;
+    int new_peers = std::min(options.n_peers, PEERS_SLOW_START);
+    IO io(options);
     std::list<SocketHandler*> all_peers;
 
-    while (!end_of_work())
+    while (!end_of_work(options))
     {
         // We implement slow start of number of concurrent TCP
         // connections, so active_peers and peers dynamically grow in
         // this loop.
-        for (; active_peers < g_opt.n_peers && new_peers; --new_peers)
+        for (; active_peers < options.n_peers && new_peers; --new_peers)
         {
-            Peer* p = new Peer(io, active_peers++);
+            Peer* p = new Peer(io, ep, options.use_tickets, options.sni, active_peers++);
             all_peers.push_back(p);
 
-            if (p->next_state() && active_peers + new_peers < g_opt.n_peers)
+            if (p->next_state() && active_peers + new_peers < options.n_peers)
                 ++new_peers;
         }
 
         io.wait();
         while (auto p = io.next_sk())
         {
-            if (p->next_state() && active_peers + new_peers < g_opt.n_peers)
+            if (p->next_state() && active_peers + new_peers < options.n_peers)
                 ++new_peers;
         }
 
@@ -803,11 +764,11 @@ void io_loop()
             auto p = io.next_backlog();
             if (!p)
                 break;
-            if (p->next_state() && active_peers + new_peers < g_opt.n_peers)
+            if (p->next_state() && active_peers + new_peers < options.n_peers)
                 ++new_peers;
         }
 
-        if (active_peers == g_opt.n_peers && !start_stats)
+        if (active_peers == options.n_peers && !start_stats)
         {
             start_stats = true;
             std::cout << "( All peers are active, start to"
@@ -830,16 +791,16 @@ public:
         parser_.add("help, h", "Print help message");
         parser_.add("debug, d", "Run in debug mode");
         parser_.add("to, T", "Duration of the test (in seconds)");
-        parser_.add("limit, l", opt::Value(&g_opt.n_peers),
+        parser_.add("limit, l", opt::Value(&options_.n_peers),
                     "Limit parallel connections for each thread");
-        parser_.add("conn, n", opt::Value(&g_opt.n_hs),
+        parser_.add("conn, n", opt::Value(&options_.n_hs),
                     "Total number of handshakes to establish");
-        parser_.add("threads, t", opt::Value(&g_opt.n_threads),
+        parser_.add("threads, t", opt::Value(&options_.n_threads),
                     "Number of threads");
-        parser_.add("tls", opt::Value(&g_opt.tls_vers),
+        parser_.add("tls", opt::Value(&options_.tls_vers),
                     "Set TLS version for handshake");
-        parser_.add("ip, i", opt::Value(&g_opt.ip), "Target IP address");
-        parser_.add("port, p", opt::Value(&g_opt.port), "Target port");
+        parser_.add("ip, i", opt::Value(&options_.ip), "Target IP address");
+        parser_.add("port, p", opt::Value(&options_.port), "Target port");
     }
 
     ~PerfCommand() = default;
@@ -855,9 +816,15 @@ public:
             return;
         }
 
-        if (!g_opt.quiet)
-            print_settings();
-        update_limits();
+        LogManager::Instance().enable(Type::Console);
+        if (parser_.isUsed("debug"))
+        {
+            LogManager::Instance().setLevel(Level::Debug);
+        }
+
+        if (!options_.quiet)
+            print_settings(options_);
+        update_limits(options_);
 
         signal(SIGTERM, sig_handler);
         signal(SIGINT, sig_handler);
@@ -865,15 +832,23 @@ public:
         SSL_library_init();
         SSL_load_error_strings();
 
-        std::vector<std::thread> thr(g_opt.n_threads);
-        for (auto i = 0; i < g_opt.n_threads; ++i)
+        auto ip = snet::ip::IPAddress::fromString(options_.ip.c_str());
+        if (!ip.has_value())
         {
-            dbg << "spawn thread " << (i + 1) << std::endl;
-            thr[i] = std::thread([]() {
+            throw std::runtime_error("undefined IP address");
+        }
+
+        snet::socket::Endpoint ep(ip.value(), options_.port);
+
+        std::vector<std::thread> thr(options_.n_threads);
+        for (auto i = 0; i < options_.n_threads; ++i)
+        {
+            log::debug("thread {}: created", i + 1);
+            thr[i] = std::thread([&]() {
                 bool success{true};
                 try
                 {
-                    io_loop();
+                    io_loop(options_, ep);
                 }
                 catch (Except& e)
                 {
@@ -892,14 +867,14 @@ public:
 
         auto start_t(steady_clock::now());
         stat.start_count();
-        while (!end_of_work())
+        while (!end_of_work(options_))
         {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            statistics_update();
+            statistics_update(options_);
 
             auto now(steady_clock::now());
             auto dt = duration_cast<seconds>(now - start_t).count();
-            if (g_opt.timeout && g_opt.timeout <= dt)
+            if (options_.timeout && options_.timeout <= dt)
                 finish = true;
         }
 
@@ -911,6 +886,7 @@ public:
 
 private:
     opt::OptionParser parser_;
+    Options options_;
 };
 
 REGISTER_COMMAND("perf", "Perfomance testing for TLS connections", PerfCommand);

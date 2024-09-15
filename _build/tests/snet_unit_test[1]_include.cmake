@@ -1,0 +1,5 @@
+if(EXISTS "/mnt/c/Users/voev/Projects/snet/_build/tests/snet_unit_test[1]_tests.cmake")
+  include("/mnt/c/Users/voev/Projects/snet/_build/tests/snet_unit_test[1]_tests.cmake")
+else()
+  add_test(snet_unit_test_NOT_BUILT snet_unit_test_NOT_BUILT)
+endif()
