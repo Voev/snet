@@ -89,7 +89,7 @@ struct GlobalLatencyStats
 {
     std::mutex lock;
     std::vector<double> stat;
-    double acc_lat;
+    double sum;
 };
 
 static GlobalLatencyStats gLatencyStats;
@@ -100,7 +100,6 @@ public:
     LocalLatencyStats() noexcept
         : i_(0)
         , di_(1)
-        , stat_({0})
     {
     }
 
@@ -119,7 +118,9 @@ public:
         {
             i_ = 0;
             if (++di_ > kLatencyItems / 4)
+            {
                 di_ = 1;
+            }
         }
     }
 
@@ -128,10 +129,8 @@ public:
         std::lock_guard<std::mutex> guard(gLatencyStats.lock);
         for (auto l : stat_)
         {
-            if (l <= 0.0)
-                break;
             gLatencyStats.stat.push_back(l);
-            gLatencyStats.acc_lat += l;
+            gLatencyStats.sum += l;
         }
     }
 
@@ -451,8 +450,7 @@ private:
         int r = SSL_connect(tls_);
         if (r == 1)
         {
-            auto end(Clock::now());
-            const duration<double, std::milli> latency = start_ - end;
+            const duration<double, std::milli> latency = Clock::now() - start_;
             gLocalLatencyStats.update(latency.count());
 
             log::debug("peer {}: has completed TLS handshake", id_);
@@ -595,10 +593,10 @@ void UpdateStatistics(const Options& options) noexcept
 
 void DumpStatistics() noexcept
 {
-    auto hsz = stat.handshakeHistory.size();
-    auto lsz = gLatencyStats.stat.size();
+    auto handshakeItems = stat.handshakeHistory.size();
+    auto latencyItems = gLatencyStats.stat.size();
 
-    if (!bStartStats || hsz < 1 || lsz < 1)
+    if (!bStartStats || handshakeItems < 1 || latencyItems < 1)
     {
         std::cerr << "ERROR: not enough statistics collected" << std::endl;
         return;
@@ -616,14 +614,14 @@ void DumpStatistics() noexcept
               << " MAX " << stat.maxHandshakes << "; AVG "
               << stat.avgHandshakes
               // 95% handshakes are faster than this number.
-              << "; 95P " << stat.handshakeHistory[hsz * 95 / 100] << "; MIN "
+              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100] << "; MIN "
               << stat.minHandshakes << std::endl;
 
     std::cout << " LATENCY (ms):   "
               << " MIN " << gLatencyStats.stat.front() << "; AVG "
-              << gLatencyStats.acc_lat / lsz
+              << gLatencyStats.sum / latencyItems
               // 95% latencies are smaller than this one.
-              << "; 95P " << gLatencyStats.stat[lsz * 95 / 100] << "; MAX "
+              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100] << "; MAX "
               << gLatencyStats.stat.back() << std::endl;
 }
 
