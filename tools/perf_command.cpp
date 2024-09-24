@@ -21,15 +21,19 @@
 
 #include <snet/cmd/command_dispatcher.hpp>
 #include <snet/opt/option_parser.hpp>
+
 #include <snet/socket/resolver.hpp>
 #include <snet/socket/socket.hpp>
 #include <snet/socket/tcp.hpp>
 #include <snet/socket/endpoint.hpp>
+
 #include <snet/utils/error_code.hpp>
 #include <snet/event/epoll.hpp>
 #include <snet/log/log_manager.hpp>
+
 #include <snet/tls/types.hpp>
 #include <snet/tls/tls_utils.hpp>
+#include <snet/tls/connection.hpp>
 
 static const size_t kDefaultThreadCount = 1;
 static const size_t kDefaultSessionCount = 1;
@@ -160,7 +164,7 @@ private:
     Epoll epoll_;
     std::array<Epoll::Event, kEventCount> events_;
     int eventCount_;
-    SslCtxPtr settings_;
+    tls::ClientSettings settings_;
     std::list<ISession*> reconnect_q_;
     std::list<ISession*> backlog_;
 
@@ -169,10 +173,8 @@ public:
         : epoll_()
         , events_()
         , eventCount_(0)
-        , settings_(nullptr)
+        , settings_()
     {
-        settings_.reset(SSL_CTX_new(TLS_client_method()));
-
         if (!options.versions.empty())
         {
             auto versions = ParseVersionRange(options.versions);
@@ -182,37 +184,32 @@ public:
             }
 
             auto [min, max] = versions.value();
-            SSL_CTX_set_min_proto_version(settings_, static_cast<long>(min));
-            SSL_CTX_set_max_proto_version(settings_, static_cast<long>(max));
+            settings_.setMinVersion(min);
+            settings_.setMaxVersion(max);
         }
 
         if (!options.useTickets)
         {
-            unsigned int mode = SSL_SESS_CACHE_OFF | SSL_SESS_CACHE_NO_INTERNAL;
             if (!options.advTickets)
-                SSL_CTX_set_options(settings_, SSL_OP_NO_TICKET);
-            SSL_CTX_set_session_cache_mode(settings_, mode);
+                settings_.setOptions(SSL_OP_NO_TICKET);
+            settings_.setSessionCacheMode(SessionCacheMode::CacheOff|SessionCacheMode::CacheNoInternal);
         }
         else
         {
-            unsigned int mode =
-                SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_AUTO_CLEAR;
-            SSL_CTX_set_session_cache_mode(settings_, mode);
+            settings_.setSessionCacheMode(SessionCacheMode::CacheClient|SessionCacheMode::CacheNoAutoClear);
         }
 
         if (!options.cipher.empty())
         {
-            if (!SSL_CTX_set_cipher_list(settings_, options.cipher.c_str()))
-                throw std::runtime_error("cannot set cipher");
+            settings_.setCipherList(options.cipher);
         }
 
         if (!options.curve.empty())
         {
-            if (!SSL_CTX_set1_groups_list(settings_, options.curve.c_str()))
-                throw std::runtime_error("cannot set elliptic curve");
+            settings_.setGroupsList(options.curve);
         }
         
-        SSL_CTX_set_verify(settings_, SSL_VERIFY_NONE, nullptr);
+        settings_.setVerifyCallback(tls::VerifyMode::None, nullptr);
     }
 
     ~SessionManager()
@@ -288,9 +285,9 @@ public:
         return sh;
     }
 
-    SslPtr makePreconnection()
+    SslPtr makeConnection()
     {
-        return SslPtr(SSL_new(settings_));
+        return SslPtr(SSL_new(settings_.get()));
     }
 };
 
@@ -427,7 +424,7 @@ private:
 
         if (!tls_)
         {
-            tls_ = manager_.makePreconnection();
+            tls_ = manager_.makeConnection();
 
             SSL_set_fd(tls_, sd.get());
 
