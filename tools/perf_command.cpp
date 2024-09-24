@@ -192,11 +192,13 @@ public:
         {
             if (!options.advTickets)
                 settings_.setOptions(SSL_OP_NO_TICKET);
-            settings_.setSessionCacheMode(SessionCacheMode::CacheOff|SessionCacheMode::CacheNoInternal);
+            settings_.setSessionCacheMode(SessionCacheMode::CacheOff |
+                                          SessionCacheMode::CacheNoInternal);
         }
         else
         {
-            settings_.setSessionCacheMode(SessionCacheMode::CacheClient|SessionCacheMode::CacheNoAutoClear);
+            settings_.setSessionCacheMode(SessionCacheMode::CacheClient |
+                                          SessionCacheMode::CacheNoAutoClear);
         }
 
         if (!options.cipher.empty())
@@ -208,7 +210,7 @@ public:
         {
             settings_.setGroupsList(options.curve);
         }
-        
+
         settings_.setVerifyCallback(tls::VerifyMode::None, nullptr);
     }
 
@@ -249,7 +251,8 @@ public:
         std::error_code ec;
         while (true)
         {
-            eventCount_ = epoll_.wait(events_.data(), events_.size(), kTimeout, ec);
+            eventCount_ =
+                epoll_.wait(events_.data(), events_.size(), kTimeout, ec);
             if (ec == std::errc::interrupted)
                 continue;
 
@@ -285,9 +288,9 @@ public:
         return sh;
     }
 
-    SslPtr makeConnection()
+    std::unique_ptr<Connection> makeConnection()
     {
-        return SslPtr(SSL_new(settings_.get()));
+        return std::make_unique<Connection>(settings_);
     }
 };
 
@@ -304,7 +307,7 @@ private:
 private:
     SessionManager& manager_;
     Endpoint ep_;
-    SslPtr tls_;
+    std::unique_ptr<Connection> tls_;
     SslSessionPtr session_;
     TimePoint start_;
     State state_;
@@ -317,7 +320,6 @@ public:
             std::string sni, int id) noexcept
         : manager_(manager)
         , ep_(ep)
-        , tls_(nullptr)
         , state_(State::Preconnect)
         , sni_(std::move(sni))
         , reuseSession_(reuseSession)
@@ -388,8 +390,7 @@ private:
 
     bool doTcpConnect()
     {
-        sd.open(ep_.isIPv4() ? Tcp::v4()
-                             : Tcp::v6());
+        sd.open(ep_.isIPv4() ? Tcp::v4() : Tcp::v6());
 
         std::error_code ec;
         setNonBlocking(sd.get(), true, ec);
@@ -426,26 +427,26 @@ private:
         {
             tls_ = manager_.makeConnection();
 
-            SSL_set_fd(tls_, sd.get());
+            tls_->setSocket(sd.get());
 
             BIO_set_tcp_ndelay(sd.get(), true);
 
             if (reuseSession_ && session_)
             {
-                SSL_set_session(tls_, session_);
+                tls_->setSession(session_);
             }
 
             if (!sni_.empty())
             {
-                SSL_set_tlsext_host_name(tls_, sni_.c_str());
+                tls_->setExtHostName(sni_);
             }
 
             stat.tlsHandshakes++;
             start_ = Clock::now();
         }
 
-        int r = SSL_connect(tls_);
-        if (r == 1)
+        auto want = tls_->handshake();
+        if (want == Connection::Want::Nothing)
         {
             const duration<double, std::milli> latency = Clock::now() - start_;
             gLocalLatencyStats.update(latency.count());
@@ -461,12 +462,12 @@ private:
             return true;
         }
 
-        switch (SSL_get_error(tls_, r))
+        switch (want)
         {
-        case SSL_ERROR_WANT_READ:
+        case Connection::Want::InputAndRetry:
             pollForRead();
             break;
-        case SSL_ERROR_WANT_WRITE:
+        case Connection::Want::OutputAndRetry:
             pollForWrite();
             break;
         default:
@@ -487,8 +488,8 @@ private:
         {
             if (reuseSession_)
             {
-                SSL_shutdown(tls_);
-                session_.reset(SSL_get1_session(tls_));
+                tls_->shutdown();
+                session_ = tls_->getSession();
             }
             tls_.reset();
         }
@@ -541,7 +542,8 @@ void UpdateLimits(Options& options) noexcept
     open_file_limit.rlim_cur = req_fd_n;
     if (setrlimit(RLIMIT_NOFILE, &open_file_limit))
     {
-        options.sessionLimit = open_file_limit.rlim_cur / (options.threadLimit + 4);
+        options.sessionLimit =
+            open_file_limit.rlim_cur / (options.threadLimit + 4);
         std::cerr << "WARNING: required " << req_fd_n
                   << " (peers_number * threads_number), but setrlimit(2)"
                      " fails for this rlimit. Try to run as root or"
@@ -580,7 +582,8 @@ void UpdateStatistics(const Options& options) noexcept
         stat.maxHandshakes = curr_hs;
     if (curr_hs && (stat.minHandshakes > curr_hs || !stat.minHandshakes))
         stat.minHandshakes = curr_hs;
-    stat.avgHandshakes = (stat.avgHandshakes * (stat.measures - 1) + curr_hs) / stat.measures;
+    stat.avgHandshakes =
+        (stat.avgHandshakes * (stat.measures - 1) + curr_hs) / stat.measures;
     if (stat.handshakeHistory.size() == 3600)
         std::cerr << "WARNING: benchmark is running for too long"
                   << " last history won't be stored" << std::endl;
@@ -608,18 +611,19 @@ void DumpStatistics() noexcept
     std::cout << " TOTAL:           SECONDS " << stat.measures
               << "; HANDSHAKES " << stat.totalHandshakes << std::endl;
     std::cout << " HANDSHAKES/sec: "
-              << " MAX " << stat.maxHandshakes << "; AVG "
-              << stat.avgHandshakes
+              << " MIN " << stat.minHandshakes
+              << "; AVG " << stat.avgHandshakes
               // 95% handshakes are faster than this number.
-              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100] << "; MIN "
-              << stat.minHandshakes << std::endl;
+              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100]
+              << "; MAX " << stat.maxHandshakes << std::endl;
+              
 
     std::cout << " LATENCY (ms):   "
               << " MIN " << gLatencyStats.stat.front() << "; AVG "
               << gLatencyStats.sum / latencyItems
               // 95% latencies are smaller than this one.
-              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100] << "; MAX "
-              << gLatencyStats.stat.back() << std::endl;
+              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100]
+              << "; MAX " << gLatencyStats.stat.back() << std::endl;
 }
 
 bool EndOfWork(const Options& options) noexcept
@@ -630,13 +634,15 @@ bool EndOfWork(const Options& options) noexcept
 void ProcessLoop(const Options& options, const Endpoint& ep)
 {
     size_t activeSessions = 0;
-    auto newSessions = std::min(options.sessionLimit, kSessionCountForSlowStart);
+    auto newSessions =
+        std::min(options.sessionLimit, kSessionCountForSlowStart);
     SessionManager manager(options);
     std::list<ISession*> allSessions;
 
     while (!EndOfWork(options))
     {
-        for (; activeSessions < options.sessionLimit && newSessions; --newSessions)
+        for (; activeSessions < options.sessionLimit && newSessions;
+             --newSessions)
         {
             Session* p = new Session(manager, ep, options.useTickets,
                                      options.sni, activeSessions++);
@@ -697,7 +703,8 @@ public:
                     "Number of threads");
         parser_.add("tls", opt::Value(&options_.versions),
                     "Set TLS version for handshake");
-        parser_.add("input, i", opt::Value(&options_.input), "Target remote host");
+        parser_.add("input, i", opt::Value(&options_.input),
+                    "Target remote host");
     }
 
     ~PerfCommand() = default;
@@ -769,7 +776,8 @@ public:
             if (options_.timeout > 0)
             {
                 auto endProgram(Clock::now());
-                auto duration = duration_cast<seconds>(endProgram - startProgram).count();
+                auto duration =
+                    duration_cast<seconds>(endProgram - startProgram).count();
                 if (options_.timeout <= duration)
                 {
                     bFinish = true;

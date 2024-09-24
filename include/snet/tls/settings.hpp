@@ -42,8 +42,6 @@ public:
 
     void setCipherSuites(std::string_view cipherSuites);
 
-    SSL_CTX* get() { return ctx_.get(); }
-
 private:
     SslCtxPtr ctx_;
 };
