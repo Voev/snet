@@ -8,7 +8,13 @@ namespace snet::ip
 class IPAddress final
 {
 public:
-    IPAddress() noexcept;
+    enum Type
+    {
+        IPv4,
+        IPv6
+    };
+
+    IPAddress(Type type = IPv4) noexcept;
 
     IPAddress(const IPv4Address& addr) noexcept;
 
@@ -50,16 +56,12 @@ public:
 
     bool operator>=(const IPAddress& rhs) const noexcept;
 
-    static IPAddress any() noexcept;
+    static IPAddress any(Type type = IPv4) noexcept;
 
     static std::optional<IPAddress> fromString(const char* str);
 
 private:
-    enum
-    {
-        IPv4,
-        IPv6 
-    } type_;
+    Type type_;
 
     IPv4Address ipv4_;
     IPv6Address ipv6_;

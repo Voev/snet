@@ -21,7 +21,7 @@
 
 #include <snet/cmd/command_dispatcher.hpp>
 #include <snet/opt/option_parser.hpp>
-#include <snet/ip/ip_address.hpp>
+#include <snet/socket/resolver.hpp>
 #include <snet/socket/socket.hpp>
 #include <snet/socket/tcp.hpp>
 #include <snet/socket/endpoint.hpp>
@@ -54,12 +54,11 @@ struct Options
     std::string cipher;
     std::string curve;
     std::string sni;
-    std::string ip;
+    std::string input;
     size_t handshakeLimit{std::numeric_limits<size_t>::max()};
     size_t sessionLimit{kDefaultSessionCount};
     size_t threadLimit{kDefaultThreadCount};
     int timeout{0};
-    uint16_t port{443};
     bool debug{false};
     bool quiet{false};
     bool useTickets{false};
@@ -82,12 +81,9 @@ struct Statistics
     int32_t minHandshakes;
     int32_t avgHandshakes;
     std::vector<int32_t> handshakeHistory;
+};
 
-    void startCount()
-    {
-        startTime = Clock::now();
-    }
-} stat;
+static Statistics stat;
 
 struct GlobalLatencyStats
 {
@@ -110,13 +106,13 @@ public:
 
     void update(double dt) noexcept
     {
-        if (!dt)
+        if (dt <= 0.0)
         {
-            log::debug("Bad zero latency");
+            log::error("Bad latency value - {}", dt);
             return;
         }
-        stat_[i_] = dt;
 
+        stat_[i_] = dt;
         i_ += di_;
 
         if (i_ >= kLatencyItems)
@@ -129,10 +125,10 @@ public:
 
     void dump() noexcept
     {
-        std::lock_guard<std::mutex> _(gLatencyStats.lock);
+        std::lock_guard<std::mutex> guard(gLatencyStats.lock);
         for (auto l : stat_)
         {
-            if (!l)
+            if (l <= 0.0)
                 break;
             gLatencyStats.stat.push_back(l);
             gLatencyStats.acc_lat += l;
@@ -140,9 +136,9 @@ public:
     }
 
 private:
-    unsigned int i_;
-    unsigned int di_;
     std::array<double, kLatencyItems> stat_;
+    size_t i_;
+    size_t di_;
 };
 
 static thread_local LocalLatencyStats gLocalLatencyStats;
@@ -513,10 +509,10 @@ private:
     }
 };
 
-void PrintOptions(const Options& options)
+void PrintOptions(const Endpoint& ep, const Options& options)
 {
     std::cout << "Running TLS benchmark with following settings:\n"
-              << "Host:        " << options.ip << ":" << options.port << "\n"
+              << "Host:        " << ep.toString() << "\n"
               << "TLS version: " << options.versions;
     std::cout << "Cipher:      "
               << (!options.cipher.empty() ? options.cipher : "default") << "\n"
@@ -706,8 +702,7 @@ public:
                     "Number of threads");
         parser_.add("tls", opt::Value(&options_.versions),
                     "Set TLS version for handshake");
-        parser_.add("ip, i", opt::Value(&options_.ip), "Target IP address");
-        parser_.add("port, p", opt::Value(&options_.port), "Target port");
+        parser_.add("input, i", opt::Value(&options_.input), "Target remote host");
     }
 
     ~PerfCommand() = default;
@@ -727,25 +722,26 @@ public:
             LogManager::Instance().setLevel(Level::Debug);
         }
 
-        if (!options_.quiet)
-        {
-            PrintOptions(options_);
-        }
-        UpdateLimits(options_);
-
         signal(SIGTERM, sig_handler);
         signal(SIGINT, sig_handler);
 
         SSL_library_init();
         SSL_load_error_strings();
 
-        auto ip = snet::ip::IPAddress::fromString(options_.ip.c_str());
-        if (!ip.has_value())
-        {
-            throw std::runtime_error("undefined IP address");
-        }
+        ResolverOptions resolverOptions;
+        resolverOptions.allowDns(true);
+        resolverOptions.expectPort(true);
+        resolverOptions.bindable(false);
 
-        Endpoint ep(ip.value(), options_.port);
+        snet::socket::Resolver resolver;
+        auto it = resolver.resolve(options_.input, resolverOptions);
+        auto ep = *it;
+
+        if (!options_.quiet)
+        {
+            PrintOptions(ep, options_);
+        }
+        UpdateLimits(options_);
 
         std::vector<std::thread> threads(options_.threadLimit);
         for (size_t i = 0; i < options_.threadLimit; ++i)
@@ -768,7 +764,7 @@ public:
         }
 
         auto startProgram(Clock::now());
-        stat.startCount();
+        stat.startTime = startProgram;
 
         while (!EndOfWork(options_))
         {
