@@ -63,7 +63,7 @@ public:
     std::string toString() const;
 
 private:
-    // The underlying IP ip address.
+    // The underlying IP socket address.
     union data_union
     {
         SocketAddrType base;
