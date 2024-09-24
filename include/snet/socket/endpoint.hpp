@@ -49,7 +49,7 @@ public:
     ip::IPAddress address() const noexcept;
 
     // Set the IP address associated with the Endpoint.
-    inline void address(const ip::IPAddress& addr) noexcept;
+    void address(const ip::IPAddress& addr) noexcept;
 
     // Compare two Endpoints for equality.
     bool operator==(const Endpoint& rhs) const noexcept;
@@ -72,7 +72,7 @@ private:
     } data_;
 };
 
-} // namespace snet::socket
+} // namespace snet::ip
 
 template <> struct std::hash<snet::socket::Endpoint>
 {

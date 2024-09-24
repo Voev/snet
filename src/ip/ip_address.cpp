@@ -3,8 +3,8 @@
 namespace snet::ip
 {
 
-IPAddress::IPAddress() noexcept
-    : type_(IPv4)
+IPAddress::IPAddress(Type type) noexcept
+    : type_(type)
     , ipv4_()
     , ipv6_()
 {
@@ -151,9 +151,9 @@ bool IPAddress::operator>=(const IPAddress& rhs) const noexcept
     return !(*this < rhs);
 }
 
-IPAddress IPAddress::any() noexcept
+IPAddress IPAddress::any(Type type) noexcept
 {
-    return IPAddress();
+    return IPAddress(type);
 }
 
 std::optional<IPAddress> IPAddress::fromString(const char* str)

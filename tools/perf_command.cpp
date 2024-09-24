@@ -21,7 +21,7 @@
 
 #include <snet/cmd/command_dispatcher.hpp>
 #include <snet/opt/option_parser.hpp>
-#include <snet/ip/ip_address.hpp>
+#include <snet/socket/resolver.hpp>
 #include <snet/socket/socket.hpp>
 #include <snet/socket/tcp.hpp>
 #include <snet/socket/endpoint.hpp>
@@ -54,12 +54,11 @@ struct Options
     std::string cipher;
     std::string curve;
     std::string sni;
-    std::string ip;
+    std::string input;
     size_t handshakeLimit{std::numeric_limits<size_t>::max()};
     size_t sessionLimit{kDefaultSessionCount};
     size_t threadLimit{kDefaultThreadCount};
     int timeout{0};
-    uint16_t port{443};
     bool debug{false};
     bool quiet{false};
     bool useTickets{false};
@@ -82,18 +81,15 @@ struct Statistics
     int32_t minHandshakes;
     int32_t avgHandshakes;
     std::vector<int32_t> handshakeHistory;
+};
 
-    void startCount()
-    {
-        startTime = Clock::now();
-    }
-} stat;
+static Statistics stat;
 
 struct GlobalLatencyStats
 {
     std::mutex lock;
     std::vector<double> stat;
-    double acc_lat;
+    double sum;
 };
 
 static GlobalLatencyStats gLatencyStats;
@@ -104,45 +100,44 @@ public:
     LocalLatencyStats() noexcept
         : i_(0)
         , di_(1)
-        , stat_({0})
     {
     }
 
     void update(double dt) noexcept
     {
-        if (!dt)
+        if (dt <= 0.0)
         {
-            log::debug("Bad zero latency");
+            log::error("Bad latency value - {}", dt);
             return;
         }
-        stat_[i_] = dt;
 
+        stat_[i_] = dt;
         i_ += di_;
 
         if (i_ >= kLatencyItems)
         {
             i_ = 0;
             if (++di_ > kLatencyItems / 4)
+            {
                 di_ = 1;
+            }
         }
     }
 
     void dump() noexcept
     {
-        std::lock_guard<std::mutex> _(gLatencyStats.lock);
+        std::lock_guard<std::mutex> guard(gLatencyStats.lock);
         for (auto l : stat_)
         {
-            if (!l)
-                break;
             gLatencyStats.stat.push_back(l);
-            gLatencyStats.acc_lat += l;
+            gLatencyStats.sum += l;
         }
     }
 
 private:
-    unsigned int i_;
-    unsigned int di_;
     std::array<double, kLatencyItems> stat_;
+    size_t i_;
+    size_t di_;
 };
 
 static thread_local LocalLatencyStats gLocalLatencyStats;
@@ -455,8 +450,7 @@ private:
         int r = SSL_connect(tls_);
         if (r == 1)
         {
-            auto end(Clock::now());
-            const duration<double, std::milli> latency = start_ - end;
+            const duration<double, std::milli> latency = Clock::now() - start_;
             gLocalLatencyStats.update(latency.count());
 
             log::debug("peer {}: has completed TLS handshake", id_);
@@ -513,10 +507,10 @@ private:
     }
 };
 
-void PrintOptions(const Options& options)
+void PrintOptions(const Endpoint& ep, const Options& options)
 {
     std::cout << "Running TLS benchmark with following settings:\n"
-              << "Host:        " << options.ip << ":" << options.port << "\n"
+              << "Host:        " << ep.toString() << "\n"
               << "TLS version: " << options.versions;
     std::cout << "Cipher:      "
               << (!options.cipher.empty() ? options.cipher : "default") << "\n"
@@ -599,10 +593,10 @@ void UpdateStatistics(const Options& options) noexcept
 
 void DumpStatistics() noexcept
 {
-    auto hsz = stat.handshakeHistory.size();
-    auto lsz = gLatencyStats.stat.size();
+    auto handshakeItems = stat.handshakeHistory.size();
+    auto latencyItems = gLatencyStats.stat.size();
 
-    if (!bStartStats || hsz < 1 || lsz < 1)
+    if (!bStartStats || handshakeItems < 1 || latencyItems < 1)
     {
         std::cerr << "ERROR: not enough statistics collected" << std::endl;
         return;
@@ -620,14 +614,14 @@ void DumpStatistics() noexcept
               << " MAX " << stat.maxHandshakes << "; AVG "
               << stat.avgHandshakes
               // 95% handshakes are faster than this number.
-              << "; 95P " << stat.handshakeHistory[hsz * 95 / 100] << "; MIN "
+              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100] << "; MIN "
               << stat.minHandshakes << std::endl;
 
     std::cout << " LATENCY (ms):   "
               << " MIN " << gLatencyStats.stat.front() << "; AVG "
-              << gLatencyStats.acc_lat / lsz
+              << gLatencyStats.sum / latencyItems
               // 95% latencies are smaller than this one.
-              << "; 95P " << gLatencyStats.stat[lsz * 95 / 100] << "; MAX "
+              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100] << "; MAX "
               << gLatencyStats.stat.back() << std::endl;
 }
 
@@ -706,8 +700,7 @@ public:
                     "Number of threads");
         parser_.add("tls", opt::Value(&options_.versions),
                     "Set TLS version for handshake");
-        parser_.add("ip, i", opt::Value(&options_.ip), "Target IP address");
-        parser_.add("port, p", opt::Value(&options_.port), "Target port");
+        parser_.add("input, i", opt::Value(&options_.input), "Target remote host");
     }
 
     ~PerfCommand() = default;
@@ -727,25 +720,26 @@ public:
             LogManager::Instance().setLevel(Level::Debug);
         }
 
-        if (!options_.quiet)
-        {
-            PrintOptions(options_);
-        }
-        UpdateLimits(options_);
-
         signal(SIGTERM, sig_handler);
         signal(SIGINT, sig_handler);
 
         SSL_library_init();
         SSL_load_error_strings();
 
-        auto ip = snet::ip::IPAddress::fromString(options_.ip.c_str());
-        if (!ip.has_value())
-        {
-            throw std::runtime_error("undefined IP address");
-        }
+        ResolverOptions resolverOptions;
+        resolverOptions.allowDns(true);
+        resolverOptions.expectPort(true);
+        resolverOptions.bindable(false);
 
-        Endpoint ep(ip.value(), options_.port);
+        snet::socket::Resolver resolver;
+        auto it = resolver.resolve(options_.input, resolverOptions);
+        auto ep = *it;
+
+        if (!options_.quiet)
+        {
+            PrintOptions(ep, options_);
+        }
+        UpdateLimits(options_);
 
         std::vector<std::thread> threads(options_.threadLimit);
         for (size_t i = 0; i < options_.threadLimit; ++i)
@@ -768,7 +762,7 @@ public:
         }
 
         auto startProgram(Clock::now());
-        stat.startCount();
+        stat.startTime = startProgram;
 
         while (!EndOfWork(options_))
         {
