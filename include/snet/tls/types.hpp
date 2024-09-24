@@ -57,7 +57,7 @@ enum SessionCacheMode : std::uint16_t
     CacheServer = SSL_SESS_CACHE_SERVER,
     CacheBoth = SSL_SESS_CACHE_BOTH,
     CacheNoAutoClear = SSL_SESS_CACHE_NO_AUTO_CLEAR,
-    CacherNoInternal = SSL_SESS_CACHE_NO_INTERNAL,
+    CacheNoInternal = SSL_SESS_CACHE_NO_INTERNAL,
     CacheNoInternalLookup = SSL_SESS_CACHE_NO_INTERNAL_LOOKUP,
     CacheNoInternalStore = SSL_SESS_CACHE_NO_INTERNAL_STORE,
 };

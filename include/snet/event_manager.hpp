@@ -6,10 +6,10 @@
 #include <cstring>
 #include <iostream>
 #include <openssl/bio.h>
-#include <errno.h>
 #include <snet/address.hpp>
-#include <snet/event_poll.hpp>
 #include <snet/event_data.hpp>
+#include <snet/event/epoll.hpp>
+#include <snet/tls/settings.hpp>
 
 class EventManager
 {
@@ -19,12 +19,12 @@ class EventManager
     using EpollEventArray = std::array<EpollEvent, kMaxEvents>;
 
     EventManager(std::unique_ptr<AcceptSocket>&& sock,
-                 std::unique_ptr<SslContext>&& ctx = nullptr)
-        : epoll_(std::make_unique<Epoll>())
+                 snet::tls::ServerSettings& ctx)
+        : epoll_()
         , listener_(std::move(sock))
-        , ctx_(std::move(ctx))
+        , ctx_(ctx)
     {
-        epoll_->Add(listener_->GetFd(), EPOLLIN);
+        epoll_.add(listener_->GetFd(), EPOLLIN);
     }
 
     ~EventManager()
@@ -67,7 +67,7 @@ class EventManager
         {
             return OnHandshake(evtData);
         }
-        readed = evtData->GetSslSocket().Read(buffer.data(), sizeof(buffer));
+        readed = evtData->GetSslSocket().read(buffer.data(), sizeof(buffer));
         if (readed == 0)
         {
             return 0;
@@ -115,12 +115,13 @@ class EventManager
         while (true)
         {
             EpollEventArray events;
-            auto nReady = epoll_->Wait(events.data(), kMaxEvents, timeout);
+            std::error_code ec;
+            auto nReady = epoll_.wait(events.data(), kMaxEvents, timeout, ec);
             if (nReady < 0)
             {
-                if (errno != EINTR)
+                if (ec != std::errc::interrupted)
                 {
-                    std::cout << "Epoll error: " << errno << " fd is <todo>";
+                    std::cout << "Epoll error: " << ec.message();
                 }
                 continue;
             }
@@ -152,8 +153,8 @@ class EventManager
                         std::uint32_t events = OnConnected();
                         auto pasock = std::make_unique<Socket>(asock);
                         fds_[asock] = std::make_unique<EventData>(
-                            std::move(pasock), *ctx_.get());
-                        epoll_->Add(asock, events);
+                            std::move(pasock), ctx_);
+                        epoll_.add(asock, events);
                     }
                 }
                 else
@@ -166,12 +167,12 @@ class EventManager
                         {
                             std::cout << "socket " << fd << " closed"
                                       << std::endl;
-                            epoll_->Delete(fd);
+                            epoll_.del(fd);
                             fds_.erase(fd);
                         }
                         else
                         {
-                            epoll_->Modify(fd, events);
+                            epoll_.modify(fd, events);
                         }
                     }
                     else if (flags & EPOLLOUT)
@@ -180,12 +181,12 @@ class EventManager
                         if (events == 0)
                         {
                             std::cout << "socket " << fd << " closing\n ";
-                            epoll_->Delete(fd);
+                            epoll_.del(fd);
                             fds_.erase(fd);
                         }
                         else
                         {
-                            epoll_->Modify(fd, events);
+                            epoll_.modify(fd, events);
                         }
                     }
                 }
@@ -194,9 +195,9 @@ class EventManager
     }
 
   private:
-    std::unique_ptr<Epoll> epoll_;
+    snet::event::Epoll epoll_;
     std::unique_ptr<AcceptSocket> listener_;
-    std::unique_ptr<SslContext> ctx_;
+    snet::tls::ServerSettings ctx_;
 
     std::map<int, std::unique_ptr<EventData>> fds_;
 };

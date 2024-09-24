@@ -1,23 +1,13 @@
 
 #pragma once
 #include <string>
+#include <stdexcept>
 #include <openssl/bio.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <fcntl.h>
-
-#include <snet/ossl_types.hpp>
 #include <snet/address.hpp>
-#include <snet/utils.hpp>
 
 class Socket
 {
-  public:
+public:
     explicit Socket(int fd = 0)
         : fd_(fd)
     {
@@ -29,7 +19,7 @@ class Socket
                 throw std::runtime_error("invalid socket");
             }
         }
-        sock_.reset(BIO_new_socket(fd_, BIO_NOCLOSE));
+        sock_ = BIO_new_socket(fd_, BIO_NOCLOSE);
         if (!sock_)
         {
             throw std::runtime_error("BIO_new_socket() failed");
@@ -38,8 +28,8 @@ class Socket
 
     virtual ~Socket()
     {
+        BIO_free_all(sock_);
         BIO_closesocket(fd_);
-        fd_ = -1;
     }
 
     int GetFd() const
@@ -49,12 +39,12 @@ class Socket
 
     int Read(void* buf, size_t bufSize)
     {
-        return BIO_read(sock_.get(), buf, bufSize);
+        return BIO_read(sock_, buf, bufSize);
     }
 
     int Write(const void* buf, int bufSize)
     {
-        return BIO_write(sock_.get(), buf, bufSize);
+        return BIO_write(sock_, buf, bufSize);
     }
 
     int Write(const std::string& data)
@@ -62,16 +52,16 @@ class Socket
         return Write(data.c_str(), static_cast<int>(data.length()));
     }
 
-  protected:
+protected:
     int fd_;
 
-  private:
-    ossl::BioPtr sock_;
+private:
+    BIO* sock_;
 };
 
 class ConnectSocket : public Socket
 {
-  public:
+public:
     ConnectSocket() = default;
     virtual ~ConnectSocket() = default;
 
@@ -83,7 +73,7 @@ class ConnectSocket : public Socket
 
 class AcceptSocket : public Socket
 {
-  public:
+public:
     AcceptSocket() = default;
     virtual ~AcceptSocket() = default;
 

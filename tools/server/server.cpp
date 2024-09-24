@@ -3,10 +3,9 @@
 #include <iostream>
 #include <iterator>
 #include <openssl/err.h>
-#include <snet/ossl_types.hpp>
 #include <snet/socket.hpp>
-#include <snet/ssl_context.hpp>
-#include <snet/ssl_handle.hpp>
+#include <snet/tls/settings.hpp>
+#include <snet/tls/connection.hpp>
 #include <snet/event_manager.hpp>
 
 int main(int argc, char* argv[])
@@ -23,18 +22,12 @@ int main(int argc, char* argv[])
                       static_cast<uint16_t>(std::stoi(arguments.at(1)))};
         sock->Listen(a);
 
-        auto ctx = std::make_unique<SslContext>(TLS_server_method());
-        ctx->LoadCertificate("server.pem");
-        ctx->LoadPrivateKey("server.pem");
-        if (std::find(arguments.begin(), arguments.end(), "-t") !=
-            arguments.end())
-        {
+        snet::tls::ServerSettings settings;
+        settings.loadCertificate("server.pem");
+        settings.loadPrivateKey("server.pem");
+        settings.setMaxVersion(snet::tls::ProtocolVersion::TLSv1_2);
 
-            ctx->EnableTlsTrace();
-        }
-        ctx->SetMaxVersion(TLS1_2_VERSION);
-
-        EventManager manager{std::move(sock), std::move(ctx)};
+        EventManager manager{std::move(sock), settings};
         manager.MainThread(-1);
     }
     catch (const std::exception& e)

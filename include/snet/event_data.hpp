@@ -1,16 +1,17 @@
 #pragma once
 #include <memory>
 #include <snet/socket.hpp>
-#include <snet/ssl_handle.hpp>
+#include <snet/tls/settings.hpp>
+#include <snet/tls/connection.hpp>
 
 class EventData
 {
   public:
     EventData() = default;
 
-    EventData(std::unique_ptr<Socket>&& sock, const SslContext& ctx)
+    EventData(std::unique_ptr<Socket>&& sock, const snet::tls::ServerSettings& ctx)
         : sock_(std::move(sock))
-        , sslSock_(std::make_unique<SslServerHandle>(ctx, *sock_.get()))
+        , sslSock_(std::make_unique<snet::tls::Connection>(ctx))
     {
     }
 
@@ -19,12 +20,12 @@ class EventData
         return *(sock_.get());
     }
 
-    SslServerHandle& GetSslSocket() const
+    snet::tls::Connection& GetSslSocket() const
     {
         return *(sslSock_.get());
     }
 
   private:
     std::unique_ptr<Socket> sock_{nullptr};
-    std::unique_ptr<SslServerHandle> sslSock_{nullptr};
+    std::unique_ptr<snet::tls::Connection> sslSock_{nullptr};
 };
