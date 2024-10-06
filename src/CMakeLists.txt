@@ -1,8 +1,5 @@
-# Library name
-set(LIB_NAME snet_lib)
-
 # Sources
-file(GLOB_RECURSE SOURCES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" *.cpp)
+file(GLOB_RECURSE SOURCES *.cpp)
 
 # Set target library
-add_library(${LIB_NAME} STATIC ${SOURCES})
+add_library(snet_lib STATIC ${SOURCES})
