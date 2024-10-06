@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 file(STRINGS "version.txt" VERSION_STRING)
 
 project(snet
-        LANGUAGES CXX
+        LANGUAGES C CXX
         VERSION ${VERSION_STRING})
 
 # Set path to CMake modules
