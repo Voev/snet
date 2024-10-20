@@ -13,7 +13,7 @@
 #include <snet/socket/types.hpp>
 
 #include <snet/utils/error_code.hpp>
-#include <snet/utils/error_code_exception.hpp>
+#include <snet/utils/exception.hpp>
 #include <snet/utils/to_number.hpp>
 
 using namespace snet::ip;
@@ -123,7 +123,7 @@ Resolver::ConstIterator Resolver::resolve(const std::string& str,
         auto delim = str.find_last_of(':');
         if (delim == std::string::npos)
         {
-            throw std::runtime_error("undefined port number: " + str);
+            throw RuntimeError("undefined port number: " + str);
         }
 
         addr = str.substr(0, delim);
@@ -181,7 +181,7 @@ Resolver::ConstIterator Resolver::resolve(const std::string& str,
         HostEntry* entry = gethostbyname(addr.data());
         if (!entry)
         {
-            throw ErrorCodeException(GetLastSystemError());
+            throw SystemError(GetLastSystemError());
         }
 
         IPAddress ip;

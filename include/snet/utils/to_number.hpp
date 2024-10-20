@@ -4,7 +4,7 @@
 #include <string_view>
 #include <type_traits>
 
-#include <snet/utils/error_code_exception.hpp>
+#include <snet/utils/exception.hpp>
 
 namespace snet::utils
 {
@@ -25,7 +25,7 @@ inline void to_number(std::string_view value, T& result)
 {
     std::error_code ec;
     to_number<T>(value, result, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 } // namespace snet::utils

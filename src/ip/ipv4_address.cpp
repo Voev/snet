@@ -6,7 +6,7 @@
 
 #include <snet/utils/endianness.hpp>
 #include <snet/utils/error_code.hpp>
-#include <snet/utils/error_code_exception.hpp>
+#include <snet/utils/exception.hpp>
 
 using namespace snet::utils;
 
@@ -37,7 +37,7 @@ IPv4Address::IPv4Address(std::string_view str)
         auto ec = GetLastSystemError();
         if (!ec)
             ec = std::make_error_code(std::errc::invalid_argument);
-        throw ErrorCodeException(ec);
+        throw SystemError(ec);
     }
 }
 
@@ -126,7 +126,7 @@ std::string IPv4Address::toString() const
     auto addr = inet_ntop(AF_INET, &addr_.s_addr, addrStr, sizeof(addrStr));
     if (addr == nullptr)
     {
-        throw ErrorCodeException(GetLastSystemError());
+        throw SystemError(GetLastSystemError());
     }
     return addr;
 }

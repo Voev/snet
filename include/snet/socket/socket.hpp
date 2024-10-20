@@ -2,7 +2,7 @@
 #include <snet/socket/types.hpp>
 #include <snet/socket/socket_ops.hpp>
 #include <snet/socket/endpoint.hpp>
-#include <snet/utils/error_code_exception.hpp>
+#include <snet/utils/exception.hpp>
 
 namespace snet::socket
 {
@@ -25,7 +25,7 @@ public:
         std::error_code ec;
         sock_ =
             socket(protocol.family(), protocol.type(), protocol.protocol(), ec);
-        THROW_IF_ERROR(ec);
+        utils::ThrowIfError(ec);
     }
 
     void close() noexcept
@@ -46,7 +46,7 @@ public:
     {
         std::error_code ec;
         socket::connect(sock_, peer.data(), peer.size(), ec);
-        THROW_IF_ERROR(ec);
+        utils::ThrowIfError(ec);
     }
 
     SocketType get() const
