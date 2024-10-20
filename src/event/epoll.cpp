@@ -2,7 +2,7 @@
 #include <unistd.h> // close
 #include <snet/event/epoll.hpp>
 #include <snet/utils/error_code.hpp>
-#include <snet/utils/error_code_exception.hpp>
+#include <snet/utils/exception.hpp>
 
 namespace snet::event
 {
@@ -12,7 +12,7 @@ Epoll::Epoll()
 {
     if (fd_ < 0)
     {
-        throw utils::ErrorCodeException(utils::GetLastSystemError());
+        throw utils::SystemError(utils::GetLastSystemError());
     }
 }
 
@@ -39,7 +39,7 @@ void Epoll::add(int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_ADD, fd, events, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 void Epoll::add(void* ptr, int fd, EventMask events,
@@ -52,7 +52,7 @@ void Epoll::add(void* ptr, int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_ADD, ptr, fd, events, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 void Epoll::modify(void* ptr, int fd, EventMask events,
@@ -65,7 +65,7 @@ void Epoll::modify(void* ptr, int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_MOD, ptr, fd, events, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 void Epoll::modify(int fd, EventMask events, std::error_code& ec) noexcept
@@ -77,7 +77,7 @@ void Epoll::modify(int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_MOD, fd, events, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 void Epoll::del(int fd, std::error_code& ec) noexcept
@@ -92,7 +92,7 @@ void Epoll::del(int fd)
 {
     std::error_code ec;
     del(fd, ec);
-    THROW_IF_ERROR(ec);
+    utils::ThrowIfError(ec);
 }
 
 void Epoll::control(int op, int fd, EventMask events,

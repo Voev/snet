@@ -3,6 +3,7 @@ AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
 AllowShortFunctionsOnASingleLine: false
 AllowShortBlocksOnASingleLine: 'true'
+AlwaysBreakTemplateDeclarations: Yes
 BreakBeforeBraces: Allman
 BreakConstructorInitializers: BeforeComma
 ColumnLimit: '80'

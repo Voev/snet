@@ -259,7 +259,7 @@ public:
             if (!ec)
                 break;
 
-            THROW_IF_ERROR(ec);
+            utils::ThrowIfError(ec);
         }
     }
 
@@ -394,7 +394,7 @@ private:
 
         std::error_code ec;
         setNonBlocking(sd.get(), true, ec);
-        THROW_IF_ERROR(ec);
+        utils::ThrowIfError(ec);
         sd.connect(ep_, ec);
 
         stat.tcpHandshakes++;
