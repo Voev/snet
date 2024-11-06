@@ -24,9 +24,9 @@ public:
 
     void useCertificate(X509* certificate);
 
-    void setMaxVersion(ProtocolVersion version);
+    void setMaxVersion(VersionCode version);
 
-    void setMinVersion(ProtocolVersion version);
+    void setMinVersion(VersionCode version);
 
     void setVerifyCallback(VerifyMode mode, VerifyCallback callback) noexcept;
 

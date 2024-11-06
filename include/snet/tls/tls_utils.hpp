@@ -6,8 +6,8 @@
 namespace snet::tls
 {
 
-std::optional<ProtocolVersion> ParseVersion(std::string_view str);
+std::optional<VersionCode> ParseVersion(std::string_view str);
 
-std::optional<ProtocolVersionRange> ParseVersionRange(std::string_view str);
+std::optional<VersionCodeRange> ParseVersionRange(std::string_view str);
 
 } // namespace snet::tls

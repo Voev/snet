@@ -224,7 +224,7 @@ inline constexpr OutT load_any(InR&& in_range) {
         } else if constexpr (is_native(endianness)) {
             return typecast_copy<OutT>(in);
         } else if constexpr (is_opposite(endianness)) {
-            return reverse_bytes(typecast_copy<OutT>(in));
+            return reverseBytes(typecast_copy<OutT>(in));
         } else {
             static_assert(native_endianness_is_unknown<endianness>());
             return fallback_load_any<endianness, OutT>(std::forward<InR>(in_range));
@@ -467,7 +467,7 @@ inline constexpr void store_any(InT in, OutR&& out_range) {
         } else if constexpr (is_native(endianness)) {
             typecast_copy(out, in);
         } else if constexpr (is_opposite(endianness)) {
-            typecast_copy(out, reverse_bytes(in));
+            typecast_copy(out, reverseBytes(in));
         } else {
             static_assert(native_endianness_is_unknown<endianness>());
             return fallback_store_any<endianness, InT>(in, std::forward<OutR>(out_range));

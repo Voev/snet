@@ -4,36 +4,36 @@
 namespace snet::tls
 {
 
-std::optional<ProtocolVersion> ParseVersion(std::string_view str)
+std::optional<VersionCode> ParseVersion(std::string_view str)
 {
     if (utils::iequals(str, "ssl2"))
     {
-        return ProtocolVersion::SSLv2_0;
+        return VersionCode::SSLv2_0;
     }
     else if (utils::iequals(str, "ssl3"))
     {
-        return ProtocolVersion::SSLv3_0;
+        return VersionCode::SSLv3_0;
     }
     else if (utils::iequals(str, "tls1"))
     {
-        return ProtocolVersion::TLSv1_0;
+        return VersionCode::TLSv1_0;
     }
     else if (utils::iequals(str, "tls1.1"))
     {
-        return ProtocolVersion::TLSv1_1;
+        return VersionCode::TLSv1_1;
     }
     else if (utils::iequals(str, "tls1.2"))
     {
-        return ProtocolVersion::TLSv1_2;
+        return VersionCode::TLSv1_2;
     }
     else if (utils::iequals(str, "tls1.3"))
     {
-        return ProtocolVersion::TLSv1_3;
+        return VersionCode::TLSv1_3;
     }
     return std::nullopt;
 }
 
-std::optional<ProtocolVersionRange> ParseVersionRange(std::string_view str)
+std::optional<VersionCodeRange> ParseVersionRange(std::string_view str)
 {
     auto delim = str.find("-");
     if (delim != std::string_view::npos)

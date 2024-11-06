@@ -7,6 +7,8 @@
 #include <snet/pcap/pcap_file_reader_device.hpp>
 
 #include <snet/tcp/tcp_reassembly.hpp>
+#include <snet/utils/hexlify.hpp>
+#include <snet/tls.hpp>
 
 using namespace snet::log;
 using namespace snet::pcap;
@@ -17,19 +19,75 @@ namespace snet::sniffer
 struct Options
 {
     std::string input;
+    std::string keylog;
 };
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
+using SessionManager = std::unordered_map<uint32_t, tls::Session>;
+
+struct SnifferManager
 {
-    (void)sideIndex;
-    (void)tcpData;
-    (void)userCookie;
+    SnifferManager()
+        : outputBuffer(16 * 1024)
+    {}
+
+    tls::SecretNodeManager secrets;
+    SessionManager sessions;
+    std::vector<uint8_t> outputBuffer;
+};
+
+void OnClientHello(tls::Session& session, void* userData)
+{
+    auto mgr = static_cast<SnifferManager*>(userData);
+    auto secrets = mgr->secrets.getSecretNode(session.getClientRandom());
+    if (secrets.has_value())
+    {
+        session.setSecrets(secrets.value());
+    }
+}
+
+static tls::SessionCallbacks sessionCallbacks{ OnClientHello };
+
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex,
+                                   const tcp::TcpStreamData& tcpData,
+                                   void* userCookie)
+{
+    auto mgr = static_cast<SnifferManager*>(userCookie);
 
     if (tcpData.getMissingByteCount() == 0)
     {
-        // начинаем обрабатывать record-ы
-    }
+        auto session = mgr->sessions.find(tcpData.getConnectionData().flowKey);
+        if (session == mgr->sessions.end())
+        {
+            auto result = mgr->sessions.insert(std::make_pair(
+                tcpData.getConnectionData().flowKey, tls::Session(sessionCallbacks, mgr)));
+            if (result.second)
+            {
+                session = result.first;
+            }
+        }
 
+        // check session!
+
+        utils::printHex({tcpData.getData(), tcpData.getDataLength()});
+
+        try
+        {
+            size_t consumedBytes{0};
+            auto data = std::span(tcpData.getData(), tcpData.getDataLength());
+            while (data.size_bytes() > 0)
+            {
+                auto record = session->second.readRecord(sideIndex, data, mgr->outputBuffer, consumedBytes);
+
+                session->second.processRecord(sideIndex, record);
+
+                data = data.subspan(consumedBytes);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+        }
+    }
 }
 
 void SniffPacketsFromFile(const std::string& fileName,
@@ -49,7 +107,8 @@ void SniffPacketsFromFile(const std::string& fileName,
     layers::RawPacket rawPacket;
     while (reader->getNextPacket(rawPacket))
     {
-        tcpReassembly.reassemblePacket(&rawPacket); // вызываются коллбэки по обработке payload
+        // вызываются коллбэки по обработке payload
+        tcpReassembly.reassemblePacket(&rawPacket);
     }
 
     // extract number of connections before closing all of them
@@ -70,6 +129,8 @@ public:
     {
         parser_.add("help, h", "Print help message");
         parser_.add("input, i", opt::Value(&options_.input), "Input PCAP file");
+        parser_.add("keylog, k", opt::Value(&options_.keylog),
+                    "Input key log file");
     }
 
     ~Command() = default;
@@ -85,7 +146,11 @@ public:
 
         LogManager::Instance().enable(Type::Console);
 
-        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback);
+        SnifferManager manager;
+        manager.secrets.parseKeyLogFile(options_.keylog);
+
+        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback,
+                                         &manager);
         SniffPacketsFromFile(options_.input, tcpReassembly);
     }
 

@@ -69,7 +69,7 @@ void Settings::useCertificate(X509* certificate)
     }
 }
 
-void Settings::setMaxVersion(ProtocolVersion version)
+void Settings::setMaxVersion(VersionCode version)
 {
     if (0 >= SSL_CTX_set_max_proto_version(ctx_, static_cast<long>(version)))
     {
@@ -77,7 +77,7 @@ void Settings::setMaxVersion(ProtocolVersion version)
     }
 }
 
-void Settings::setMinVersion(ProtocolVersion version)
+void Settings::setMinVersion(VersionCode version)
 {
     if (0 >= SSL_CTX_set_min_proto_version(ctx_, static_cast<long>(version)))
     {

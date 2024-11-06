@@ -14,7 +14,50 @@ enum class Side
     Server
 };
 
-enum class ProtocolVersion : std::uint16_t
+enum class RecordType : uint8_t {
+   Invalid = 0,  // RFC 8446 (TLS 1.3)
+   ChangeCipherSpec = 20,
+   Alert = 21,
+   Handshake = 22,
+   ApplicationData = 23,
+   Heartbeat = 24,  // RFC 6520 (TLS 1.3)
+};
+
+enum SizeLimits : size_t {
+   TLS_HEADER_SIZE = 5,
+   MAX_PLAINTEXT_SIZE = 16 * 1024,
+   MAX_COMPRESSED_SIZE = MAX_PLAINTEXT_SIZE + 1024,
+   MAX_CIPHERTEXT_SIZE = MAX_COMPRESSED_SIZE + 1024,
+   MAX_AEAD_EXPANSION_SIZE_TLS13 = 255,
+   MAX_CIPHERTEXT_SIZE_TLS13 = MAX_PLAINTEXT_SIZE + MAX_AEAD_EXPANSION_SIZE_TLS13 + 1
+};
+
+enum class HandshakeType : uint8_t {
+   HelloRequest = 0,
+   ClientHello = 1,
+   ServerHello = 2,
+   HelloVerifyRequest = 3,
+   NewSessionTicket = 4,  // RFC 5077
+
+   EndOfEarlyData = 5,       // RFC 8446 (TLS 1.3)
+   EncryptedExtensions = 8,  // RFC 8446 (TLS 1.3)
+
+   Certificate = 11,
+   ServerKeyExchange = 12,
+   CertificateRequest = 13,
+   ServerHelloDone = 14,
+   CertificateVerify = 15,
+   ClientKeyExchange = 16,
+   Finished = 20,
+
+   KeyUpdate = 24,  // RFC 8446 (TLS 1.3)
+
+   HelloRetryRequest = 253,  // Not a wire value (HRR appears as an ordinary Server Hello)
+   HandshakeCCS = 254,       // Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
+   None = 255                // Null value
+};
+
+enum class VersionCode : std::uint16_t
 {
     SSLv2_0 = SSL2_VERSION,
     SSLv3_0 = SSL3_VERSION,
@@ -24,7 +67,7 @@ enum class ProtocolVersion : std::uint16_t
     TLSv1_3 = TLS1_3_VERSION
 };
 
-using ProtocolVersionRange = std::pair<ProtocolVersion, ProtocolVersion>;
+using VersionCodeRange = std::pair<VersionCode, VersionCode>;
 
 enum class VerifyMode
 {
@@ -67,5 +110,14 @@ DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslSessionPtr, SSL_SESSION, SSL_SESSION_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, BIO, BIO_free_all);
+
+DEFINE_CUSTOM_UNIQUE_PTR(HmacCtxPtr, HMAC_CTX, HMAC_CTX_free);
+
+DEFINE_CUSTOM_UNIQUE_PTR(EvpPkeyPtr, EVP_PKEY, EVP_PKEY_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpPkeyCtxPtr, EVP_PKEY_CTX, EVP_PKEY_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpCipherPtr, EVP_CIPHER, EVP_CIPHER_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpCipherCtxPtr, EVP_CIPHER_CTX, EVP_CIPHER_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpMdPtr, EVP_MD, EVP_MD_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpMdCtxPtr, EVP_MD_CTX, EVP_MD_CTX_free);
 
 } // namespace snet::tls
