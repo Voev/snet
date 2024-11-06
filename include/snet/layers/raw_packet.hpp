@@ -3,7 +3,7 @@
 #include <sys/time.h>
 #include <stddef.h>
 
-namespace snet::pcap
+namespace snet::layers
 {
 
 enum LinkLayerType
@@ -573,4 +573,4 @@ public:
     virtual bool reallocateData(size_t newBufferLength);
 };
 
-} // namespace snet::pcap
+} // namespace snet::layers

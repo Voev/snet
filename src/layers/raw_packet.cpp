@@ -1,8 +1,8 @@
 #include <cstring>
-#include <snet/packet/raw_packet.hpp>
+#include <snet/layers/raw_packet.hpp>
 #include <snet/log/log_manager.hpp>
 
-namespace snet::pcap
+namespace snet::layers
 {
 
 void RawPacket::init(bool deleteRawDataAtDestructor)

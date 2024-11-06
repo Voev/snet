@@ -6,6 +6,8 @@
 #include <snet/log/log_manager.hpp>
 #include <snet/pcap/pcap_file_reader_device.hpp>
 
+#include <snet/tcp/tcp_reassembly.hpp>
+
 using namespace snet::log;
 using namespace snet::pcap;
 
@@ -17,18 +19,48 @@ struct Options
     std::string input;
 };
 
-void SniffPackets(PcapFileReaderDevice& reader, std::ostream& out,
-                  int packetCount)
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
 {
-    // read packets from the file until end-of-file or until reached user
-    // requested packet count
-    int packetCountSoFar = 0;
-    RawPacket rawPacket;
-    while (reader.getNextPacket(rawPacket) && packetCountSoFar != packetCount)
+    (void)sideIndex;
+    (void)tcpData;
+    (void)userCookie;
+
+    if (tcpData.getMissingByteCount() == 0)
     {
-        packetCountSoFar++;
-        out << rawPacket.getRawDataLen() << std::endl;
+        // начинаем обрабатывать record-ы
     }
+
+}
+
+void SniffPacketsFromFile(const std::string& fileName,
+                          tcp::TcpReassembly& tcpReassembly)
+{
+    auto reader = pcap::IFileReaderDevice::getReader(fileName);
+    if (!reader->open())
+    {
+        std::cerr << "Cannot open pcap/pcapng file" << std::endl;
+        return;
+    }
+
+    std::cout << "Starting reading '" << fileName << "'..." << std::endl;
+
+    // run in a loop that reads one packet from the file in each iteration and
+    // feeds it to the TCP reassembly instance
+    layers::RawPacket rawPacket;
+    while (reader->getNextPacket(rawPacket))
+    {
+        tcpReassembly.reassemblePacket(&rawPacket); // вызываются коллбэки по обработке payload
+    }
+
+    // extract number of connections before closing all of them
+    size_t numOfConnectionsProcessed =
+        tcpReassembly.getConnectionInformation().size();
+
+    tcpReassembly.closeAllConnections();
+    reader->close();
+
+    std::cout << "Done! processed " << numOfConnectionsProcessed
+              << " connections" << std::endl;
 }
 
 class Command final : public cmd::Command
@@ -53,9 +85,8 @@ public:
 
         LogManager::Instance().enable(Type::Console);
 
-        PcapFileReaderDevice dev(options_.input);
-        dev.open();
-        SniffPackets(dev, std::cout, 10);
+        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback);
+        SniffPacketsFromFile(options_.input, tcpReassembly);
     }
 
 private:

@@ -1,6 +1,6 @@
 #pragma once
 #include <snet/pcap/i_file_reader_device.hpp>
-#include <snet/packet/raw_packet.hpp>
+#include <snet/layers/raw_packet.hpp>
 
 namespace snet::pcap
 {
@@ -13,7 +13,7 @@ namespace snet::pcap
 class PcapFileReaderDevice : public IFileReaderDevice
 {
 private:
-    LinkLayerType m_PcapLinkLayerType;
+    layers::LinkLayerType m_PcapLinkLayerType;
 
     // private copy c'tor
     PcapFileReaderDevice(const PcapFileReaderDevice& other) = delete;
@@ -28,7 +28,7 @@ public:
      */
     PcapFileReaderDevice(const std::string& fileName)
         : IFileReaderDevice(fileName)
-        , m_PcapLinkLayerType(LINKTYPE_ETHERNET)
+        , m_PcapLinkLayerType(layers::LINKTYPE_ETHERNET)
     {
     }
 
@@ -40,7 +40,7 @@ public:
     /**
      * @return The link layer type of this file
      */
-    LinkLayerType getLinkLayerType() const
+    layers::LinkLayerType getLinkLayerType() const
     {
         return m_PcapLinkLayerType;
     }
@@ -56,7 +56,7 @@ public:
      * the file isn't opened (also, an error log will be printed) or if reached
      * end-of-file
      */
-    bool getNextPacket(RawPacket& rawPacket) override;
+    bool getNextPacket(layers::RawPacket& rawPacket) override;
 
     /**
      * Open the file name which path was specified in the constructor in a
