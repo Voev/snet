@@ -6,6 +6,7 @@
 #include <snet/log/log_manager.hpp>
 
 #include <snet/layers/packet.hpp>
+#include <snet/layers/eth_layer.hpp>
 #include <snet/layers/loopback.hpp>
 #include <snet/layers/ipv4_layer.hpp>
 #include <snet/layers/ipv6_layer.hpp>
@@ -783,6 +784,15 @@ Layer* Packet::createFirstLayer(LinkLayerType linkType)
 
     if (linkType == LINKTYPE_ETHERNET)
     {
+        if (EthLayer::isDataValid(rawData, rawDataLen))
+        {
+            return new EthLayer((uint8_t*)rawData, rawDataLen, this);
+        }
+        else
+        {
+            return new PayloadLayer((uint8_t*)rawData, rawDataLen, nullptr,
+                                    this);
+        }
         return new PayloadLayer((uint8_t*)rawData, rawDataLen, nullptr, this);
     }
     else if (linkType == LINKTYPE_NULL)

@@ -57,6 +57,8 @@ enum class HandshakeType : uint8_t {
    None = 255                // Null value
 };
 
+std::string toString(const HandshakeType type);
+
 enum class VersionCode : std::uint16_t
 {
     SSLv2_0 = SSL2_VERSION,

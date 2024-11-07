@@ -141,20 +141,20 @@ private:
             return get_uint24_t();
         }
 
-        throw snet::utils::RuntimeError("Bad length size");
+        throw_decode_error("Bad length size");
     }
 
     size_t get_num_elems(size_t len_bytes, size_t T_size, size_t min_elems, size_t max_elems) {
         const size_t byte_length = get_length_field(len_bytes);
 
         if (byte_length % T_size != 0) {
-            throw snet::utils::RuntimeError("Size isn't multiple of T");
+            throw_decode_error("Size isn't multiple of T");
         }
 
         const size_t num_elems = byte_length / T_size;
 
         if (num_elems < min_elems || num_elems > max_elems) {
-            throw snet::utils::RuntimeError("Length field outside parameters");
+            throw_decode_error("Length field outside parameters");
         }
 
         return num_elems;

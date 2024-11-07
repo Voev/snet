@@ -60,39 +60,40 @@ private:
 
 private:
     void processHandshakeClientHello(int8_t sideIndex,
-                                     stream::DataReader& reader);
+                                     std::span<const uint8_t> message);
 
     void processHandshakeServerHello(int8_t sideIndex,
-                                     stream::DataReader& reader);
+                                     std::span<const uint8_t> message);
 
     void processHandshakeSessionTicket(int8_t sideIndex,
-                                       stream::DataReader& reader);
+                                       std::span<const uint8_t> message);
 
     void processHandshakeEncryptedExtensions(int8_t sideIndex,
-                                             stream::DataReader& reader);
+                                             std::span<const uint8_t> message);
 
     void processHandshakeCertificate(int8_t sideIndex,
-                                     stream::DataReader& reader);
+                                     std::span<const uint8_t> message);
 
     void processHandshakeServerKeyExchange(int8_t sideIndex,
-                                           stream::DataReader& reader);
+                                           std::span<const uint8_t> message);
 
     void processHandshakeCertificateRequest(int8_t sideIndex,
-                                            stream::DataReader& reader);
+                                            std::span<const uint8_t> message);
 
     void processHandshakeServerHelloDone(int8_t sideIndex,
-                                         stream::DataReader& reader);
+                                         std::span<const uint8_t> message);
 
     void processHandshakeCertificateVerify(int8_t sideIndex,
-                                           stream::DataReader& reader);
+                                           std::span<const uint8_t> message);
 
     void processHandshakeClientKeyExchange(int8_t sideIndex,
-                                           stream::DataReader& reader);
+                                           std::span<const uint8_t> message);
 
-    void processHandshakeFinished(int8_t sideIndex, stream::DataReader& reader);
+    void processHandshakeFinished(int8_t sideIndex,
+                                  std::span<const uint8_t> message);
 
     void processHandshakeKeyUpdate(int8_t sideIndex,
-                                   stream::DataReader& reader);
+                                   std::span<const uint8_t> message);
 
 private:
     void PRF(const Secret& secret, std::string_view usage,

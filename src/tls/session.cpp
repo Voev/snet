@@ -46,8 +46,8 @@ void Session::PRF(const Secret& secret, std::string_view usage,
                   std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2,
                   std::span<uint8_t> out)
 {
-    utils::ThrowIfTrue(version_ <= tls::ProtocolVersion::TLSv1_2,
-                       "Invalid TLS version");
+    utils::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2,
+                        "Invalid TLS version");
 
     if (version_ <= tls::ProtocolVersion::SSLv3_0)
         ssl3_prf(secret, usage, rnd1, rnd2, out);
@@ -182,10 +182,10 @@ void Session::generateTLS13KeyingMaterial()
 }
 
 void Session::processHandshakeClientHello(int8_t sideIndex,
-                                          stream::DataReader& reader)
+                                          std::span<const uint8_t> message)
 {
-
     utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
+    stream::DataReader reader("Client Hello", message);
 
     reader.get_byte();
     reader.get_byte();
@@ -203,18 +203,19 @@ void Session::processHandshakeClientHello(int8_t sideIndex,
     clientExensions.deserialize(reader, tls::Side::Client,
                                 tls::HandshakeType::ClientHello);
 
+    reader.assert_done();
+
     if (callbacks_.onClientHello)
         callbacks_.onClientHello(*this, userData_);
 }
 
 void Session::processHandshakeServerHello(int8_t sideIndex,
-                                          stream::DataReader& reader)
+                                          std::span<const uint8_t> message)
 {
-
     utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+    stream::DataReader reader("Server Hello", message);
 
-    reader.get_byte();
-    reader.get_byte();
+    version_ = ProtocolVersion(reader.get_uint16_t());
     serverRandom_ = reader.get_fixed<uint8_t>(32);
 
     // check for HRR
@@ -238,17 +239,21 @@ void Session::processHandshakeServerHello(int8_t sideIndex,
         version_ = ext->versions()[0];
     }
 
+    reader.assert_done();
+
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
         generateTLS13KeyingMaterial();
     }
-
-    // processServerSessionID(d, session_id.data(), session_id.size());
 }
 
 void Session::processHandshakeCertificate(int8_t sideIndex,
-                                          stream::DataReader& reader)
+                                          std::span<const uint8_t> message)
 {
+    static const char* debugInfo =
+        (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
+    stream::DataReader reader(debugInfo, message);
+
     if (version_ == ProtocolVersion::TLSv1_3)
     {
         auto requestContext = reader.get_range<uint8_t>(1, 0, 255);
@@ -260,24 +265,43 @@ void Session::processHandshakeCertificate(int8_t sideIndex,
             sideIndex == 1 && !requestContext.empty(),
             "Server Certificate message must not contain a request context");
 
-        const auto cert_entries_len = reader.get_uint24_t();
-        utils::ThrowIfTrue(reader.remaining_bytes() != cert_entries_len,
+        const size_t certEntriesLength = reader.get_uint24_t();
+        utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength,
                            "Certificate: Message malformed");
 
         while (reader.has_remaining())
         {
+            /// Cert Entry
             reader.get_tls_length_value(3);
+            /// Extensions
             const auto extensionsLength = reader.peek_uint16_t();
             reader.get_fixed<uint8_t>(extensionsLength + 2);
         }
     }
+    else
+    {
+        const size_t certsLength = reader.get_uint24_t();
+        utils::ThrowIfTrue(reader.remaining_bytes() != certsLength,
+                           "Certificate: Message malformed");
+
+        while (reader.has_remaining())
+        {
+            /// Certificate
+            reader.get_tls_length_value(3);
+        }
+    }
+
+    reader.assert_done();
 }
 
 void Session::processHandshakeSessionTicket(int8_t sideIndex,
-                                            stream::DataReader& reader)
+                                            std::span<const uint8_t> message)
 {
+    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     if (version_ == ProtocolVersion::TLSv1_3)
     {
+        stream::DataReader reader("TLSv1.3 New Session Ticket", message);
+
         // ticket_lifetime_hint
         reader.get_uint32_t();
         // ticket_age_add
@@ -291,38 +315,90 @@ void Session::processHandshakeSessionTicket(int8_t sideIndex,
         Extensions exts;
         exts.deserialize(reader, tls::Side::Server,
                          HandshakeType::NewSessionTicket);
+
+        reader.assert_done();
     }
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
-        utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+        stream::DataReader reader("TLSv1.2 New Session Ticket", message);
         utils::ThrowIfTrue(reader.remaining_bytes() < 6,
                            "Session ticket message too short to be valid");
         reader.get_uint32_t();
         reader.get_range<uint8_t>(2, 0, 65535);
+        reader.assert_done();
+    }
+    else
+    {
+        throw utils::RuntimeError(
+            "NewSessionTicket can't be in TLS versions below 1.2");
     }
 }
 
-void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
-                                                  stream::DataReader& reader)
+void Session::processHandshakeEncryptedExtensions(
+    int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+    stream::DataReader reader("Encrypted Extensions", message);
+
     utils::ThrowIfTrue(reader.remaining_bytes() < 2,
                        "Server sent an empty Encrypted Extensions message");
     serverExensions.deserialize(reader, tls::Side::Server,
                                 tls::HandshakeType::EncryptedExtensions);
+
+    reader.assert_done();
 }
 
-void Session::processHandshakeServerKeyExchange(int8_t sideIndex,
-                                                stream::DataReader& reader)
+void Session::processHandshakeServerKeyExchange(
+    int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    (void)reader;
+
+    stream::DataReader reader("ServerKeyExchange", message);
+
+    auto kex = cs.getKeyExchAlg();
+
+    if (kex == tls::KexAlg::PSK || kex == KexAlg::ECDHE_PSK)
+    {
+        reader.get_string(2, 0, 65535);
+    }
+
+    if (kex == KexAlg::DHE)
+    {
+        // 3 bigints, DH p, g, Y
+        for (size_t i = 0; i != 3; ++i)
+        {
+            reader.get_range<uint8_t>(2, 1, 65535);
+        }
+    }
+    else if (kex == KexAlg::ECDHE || kex == KexAlg::ECDHE_PSK)
+    {
+        reader.get_byte();                    // curve type
+        reader.get_uint16_t();                // curve id
+        reader.get_range<uint8_t>(1, 1, 255); // public key
+    }
+    else if (kex != KexAlg::PSK)
+    {
+        throw utils::RuntimeError("Server_Key_Exchange: Unsupported kex type");
+    }
+
+    auto auth = cs.getAuthAlg();
+    if (auth == AuthAlg::DSS || auth == AuthAlg::ECDSA)
+    {
+        reader.get_uint16_t();                  // algorithm
+        reader.get_range<uint8_t>(2, 0, 65535); // signature
+    }
+
+    reader.assert_done();
 }
 
-void Session::processHandshakeCertificateRequest(int8_t sideIndex,
-                                                 stream::DataReader& reader)
+void Session::processHandshakeCertificateRequest(
+    int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+    stream::DataReader reader("Certificate Request", message);
+
     utils::ThrowIfTrue(reader.remaining_bytes() < 4,
                        "Certificate_Req: Bad certificate request");
 
@@ -343,35 +419,36 @@ void Session::processHandshakeCertificateRequest(int8_t sideIndex,
         std::vector<uint8_t> name_bits =
             reader.get_range_vector<uint8_t>(2, 0, 65535);
     }
+
+    reader.assert_done();
 }
 
 void Session::processHandshakeServerHelloDone(int8_t sideIndex,
-                                              stream::DataReader& reader)
+                                              std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    (void)reader;
+    stream::DataReader reader("Server Hello Done", message);
 
     // handshakeHash.update(data);
 }
 
-void Session::processHandshakeCertificateVerify(int8_t sideIndex,
-                                                stream::DataReader& reader)
+void Session::processHandshakeCertificateVerify(
+    int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    (void)reader;
 
-    // handshakeHash.update(data);
-
+    stream::DataReader reader("CertificateVerify", message);
     reader.get_uint16_t();
     reader.get_range<uint8_t>(2, 0, 65535);
+    reader.assert_done();
 }
 
-void Session::processHandshakeClientKeyExchange(int8_t sideIndex,
-                                                stream::DataReader& reader)
+void Session::processHandshakeClientKeyExchange(
+    int8_t sideIndex, std::span<const uint8_t> message)
 {
 
     utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
-    (void)reader;
+    (void)message;
 
     switch (cs.getKeyExchAlg())
     {
@@ -384,10 +461,9 @@ void Session::processHandshakeClientKeyExchange(int8_t sideIndex,
 }
 
 void Session::processHandshakeFinished(int8_t sideIndex,
-                                       stream::DataReader& reader)
+                                       std::span<const uint8_t> message)
 {
-    /// Ignore finished messsage
-    reader.discard_next(reader.remaining_bytes());
+    (void)message;
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
@@ -426,10 +502,9 @@ void Session::processHandshakeFinished(int8_t sideIndex,
 }
 
 void Session::processHandshakeKeyUpdate(int8_t sideIndex,
-                                        stream::DataReader& reader)
+                                        std::span<const uint8_t> message)
 {
-
-    (void)reader;
+    (void)message;
 
     std::vector<uint8_t> newsecret;
     std::vector<uint8_t> newkey;
@@ -459,99 +534,86 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex,
     }
 }
 
-void Session::processHandshake(int8_t sideIndex, std::span<const uint8_t> data)
+void Session::processHandshake(int8_t sideIndex,
+                               std::span<const uint8_t> message)
 {
+    stream::DataReader reader("Handshake Message", message);
 
-    stream::DataReader reader("Handshake", data);
+    auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());
+    log::warning("{} [{}]", toString(messageType), message.size());
 
-    while (reader.has_remaining() > 0)
+    const auto messageLength = reader.get_uint24_t();
+    utils::ThrowIfFalse(reader.remaining_bytes() == messageLength,
+                        "Incorrect length of handshake message");
+
+    message = message.subspan(reader.read_so_far());
+
+    switch (messageType)
     {
-        auto type = static_cast<tls::HandshakeType>(reader.get_byte());
-        const auto msg_len = reader.get_uint24_t();
-        utils::ThrowIfFalse(reader.remaining_bytes() == msg_len,
-                            "Incorrect length of handshake message");
-
-        switch (type)
-        {
-        case tls::HandshakeType::HelloRequest:
-            /* Not implemented */
-            break;
-        case tls::HandshakeType::ClientHello:
-            processHandshakeClientHello(sideIndex, reader);
-            break;
-        case tls::HandshakeType::ServerHello:
-            processHandshakeServerHello(sideIndex, reader);
-            break;
-        case tls::HandshakeType::HelloVerifyRequest:
-            /* Not implemented */
-            break;
-        case tls::HandshakeType::NewSessionTicket:
-            processHandshakeSessionTicket(sideIndex, reader);
-            break;
-        case tls::HandshakeType::EndOfEarlyData:
-            /* Not implemented */
-            break;
-        case tls::HandshakeType::EncryptedExtensions:
-            processHandshakeEncryptedExtensions(sideIndex, reader);
-            break;
-        case tls::HandshakeType::Certificate:
-            processHandshakeCertificate(sideIndex, reader);
-            break;
-        case tls::HandshakeType::ServerKeyExchange:
-            processHandshakeServerKeyExchange(sideIndex, reader);
-            break;
-        case tls::HandshakeType::CertificateRequest:
-            break;
-        case tls::HandshakeType::ServerHelloDone:
-            break;
-        case tls::HandshakeType::CertificateVerify:
-            processHandshakeCertificateVerify(sideIndex, reader);
-            break;
-        case tls::HandshakeType::ClientKeyExchange:
-            processHandshakeClientKeyExchange(sideIndex, reader);
-            break;
-        case tls::HandshakeType::Finished:
-            processHandshakeFinished(sideIndex, reader);
-            break;
-        case tls::HandshakeType::KeyUpdate:
-            processHandshakeKeyUpdate(sideIndex, reader);
-            break;
-        case tls::HandshakeType::HelloRetryRequest:
-            break;
-        case tls::HandshakeType::HandshakeCCS:
-            break;
-        default:
-            break;
-        }
+    case tls::HandshakeType::HelloRequest:
+        /* Not implemented */
+        break;
+    case tls::HandshakeType::ClientHello:
+        processHandshakeClientHello(sideIndex, message);
+        break;
+    case tls::HandshakeType::ServerHello:
+        processHandshakeServerHello(sideIndex, message);
+        break;
+    case tls::HandshakeType::HelloVerifyRequest:
+        /* Not implemented */
+        break;
+    case tls::HandshakeType::NewSessionTicket:
+        processHandshakeSessionTicket(sideIndex, message);
+        break;
+    case tls::HandshakeType::EndOfEarlyData:
+        /* Not implemented */
+        break;
+    case tls::HandshakeType::EncryptedExtensions:
+        processHandshakeEncryptedExtensions(sideIndex, message);
+        break;
+    case tls::HandshakeType::Certificate:
+        processHandshakeCertificate(sideIndex, message);
+        break;
+    case tls::HandshakeType::ServerKeyExchange:
+        processHandshakeServerKeyExchange(sideIndex, message);
+        break;
+    case tls::HandshakeType::CertificateRequest:
+        break;
+    case tls::HandshakeType::ServerHelloDone:
+        utils::ThrowIfFalse(message.empty(),
+                            "Malformed Server Hello Done Message");
+        break;
+    case tls::HandshakeType::CertificateVerify:
+        processHandshakeCertificateVerify(sideIndex, message);
+        break;
+    case tls::HandshakeType::ClientKeyExchange:
+        processHandshakeClientKeyExchange(sideIndex, message);
+        break;
+    case tls::HandshakeType::Finished:
+        processHandshakeFinished(sideIndex, message);
+        break;
+    case tls::HandshakeType::KeyUpdate:
+        processHandshakeKeyUpdate(sideIndex, message);
+        break;
+    case tls::HandshakeType::HelloRetryRequest:
+        break;
+    case tls::HandshakeType::HandshakeCCS:
+        break;
+    default:
+        break;
     }
-    reader.assert_done();
 }
 
 void Session::processChangeCipherSpec(int8_t sideIndex,
                                       std::span<const uint8_t> data)
 {
-
+    (void)sideIndex;
     (void)data;
 
-    if (version_ != tls::ProtocolVersion::TLSv1_3)
+    if (version_ != tls::ProtocolVersion::TLSv1_3 &&
+        (c_to_s == nullptr || s_to_c == nullptr))
     {
-        if (sideIndex == 0)
-        {
-            // c_to_s = std::move(c_to_s_n);
-        }
-        else
-        {
-            // s_to_c = std::move(s_to_c_n);
-        }
-    }
-
-    if (sideIndex == 0)
-    {
-        i_state = SSL_ST_SENT_CHANGE_CIPHER_SPEC;
-    }
-    else
-    {
-        r_state = SSL_ST_SENT_CHANGE_CIPHER_SPEC;
+        generateKeyingMaterial();
     }
 }
 
@@ -623,6 +685,32 @@ Record Session::readRecord(const int8_t sideIndex,
         return Record(recordType, recordVersion,
                       std::span(outputBytes.begin(), outputBytes.end() - 1));
     }
+    else if (version <= ProtocolVersion::TLSv1_2 &&
+             (c_to_s != nullptr || s_to_c != nullptr))
+    {
+        if (sideIndex == 0)
+        {
+            c_to_s->tls_decrypt(
+                recordType, version, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                outputBytes);
+        }
+        else
+        {
+            s_to_c->tls_decrypt(
+                recordType, version, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                outputBytes);
+        }
+
+        uint8_t lastByte = *(outputBytes.end() - 1);
+
+        utils::ThrowIfTrue(lastByte < 20 || lastByte > 23,
+                           "TLS record type had unexpected value");
+
+        recordType = static_cast<RecordType>(lastByte);
+
+        return Record(recordType, recordVersion,
+                      std::span(outputBytes.begin(), outputBytes.end() - 1));
+    }
 
     return Record(recordType, recordVersion,
                   inputBytes.subspan(TLS_HEADER_SIZE, recordSize));
@@ -630,7 +718,6 @@ Record Session::readRecord(const int8_t sideIndex,
 
 void Session::processRecord(int8_t sideIndex, const Record& record)
 {
-
     switch (record.type())
     {
     case tls::RecordType::ChangeCipherSpec:

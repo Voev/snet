@@ -3,6 +3,7 @@
 #include <span>
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/version.hpp>
 
 namespace snet::tls {
 
@@ -12,7 +13,7 @@ public:
         CipherSuite cs, std::span<const uint8_t> mk, const std::vector<uint8_t>& sk, const std::vector<uint8_t>& iv);
     ~RecordDecoder();
 
-    void tls_decrypt(RecordType rt, int version, std::span<const uint8_t> in, std::vector<uint8_t>& out);
+    void tls_decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in, std::vector<uint8_t>& out);
 
     void tls13_decrypt(RecordType rt, std::span<const uint8_t> in, std::vector<uint8_t>& out);
 
