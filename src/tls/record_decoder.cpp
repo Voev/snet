@@ -8,18 +8,10 @@
 #include <snet/utils/endianness.hpp>
 #include <snet/utils/exception.hpp>
 #include <snet/utils/hexlify.hpp>
+#include <snet/utils/load_store.hpp>
 
 #include <snet/tls/exception.hpp>
 #include <snet/tls/record_decoder.hpp>
-
-const char* digests[] = {"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", nullptr};
-
-const char* ciphers[] = {
-    "DES",         "3DES",        "RC4",  "RC2",   "IDEA",        "AES128",      "AES256",
-    "CAMELLIA128", "CAMELLIA256", "SEED", nullptr, "aes-128-gcm", "aes-256-gcm", "ChaCha20-Poly1305",
-    "aes-128-ccm",
-    "aes-128-ccm", // for ccm 8, uses the same cipher
-};
 
 #define MSB(a) ((a >> 8) & 0xff)
 #define LSB(a) (a & 0xff)
@@ -34,7 +26,7 @@ RecordDecoder::RecordDecoder(
     , cipher_(EVP_CIPHER_CTX_new())
     , seq_(0) {
 
-    auto cipher = snet::tls::GetEncAlgorithm(cipherSuite_.getEncAlg());
+    auto cipher = GetEncAlgorithm(cipherSuite_.getEncAlg());
 
     implicitIv_.resize(iv.size());
     memcpy(implicitIv_.data(), iv.data(), iv.size());
@@ -60,12 +52,12 @@ void RecordDecoder::tls13_update_keys(const std::vector<uint8_t>& newkey, const 
     seq_ = 0;
 }
 
-void RecordDecoder::tls13_decrypt(tls::RecordType rt, std::span<const uint8_t> in, std::vector<uint8_t>& out) {
+void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in, std::vector<uint8_t>& out) {
     int i;
     int x;
     std::array<uint8_t, 5> aad;
     std::array<uint8_t, 12> aead_nonce;
-    int taglen = cipherSuite_.getEncAlg() == snet::tls::EncAlg::AES_128_CCM_8 ? 8 : 16;
+    int taglen = cipherSuite_.getEncAlg() == EncAlg::AES_128_CCM_8 ? 8 : 16;
 
     utils::printHex("CipherText", in);
     utils::printHex("KEY", writeKey_);
@@ -85,8 +77,9 @@ void RecordDecoder::tls13_decrypt(tls::RecordType rt, std::span<const uint8_t> i
     aad[0] = static_cast<uint8_t>(rt);
     aad[1] = 0x03;
     aad[2] = 0x03;
-    aad[3] = MSB(in.size());
-    aad[4] = LSB(in.size());
+    uint16_t size = static_cast<uint16_t>(in.size());
+    aad[3] = utils::get_byte<0>(size);
+    aad[4] = utils::get_byte<1>(size);
 
     utils::printHex("NONCE", aead_nonce);
     utils::printHex("Tag", tag);
@@ -144,10 +137,10 @@ void RecordDecoder::tls_decrypt(RecordType rt, int version, std::span<const uint
         fmt_seq(seq_, aead_tag);
         seq_++;
         aead_tag[8] = static_cast<uint8_t>(rt);
-        aead_tag[9] = MSB(version);
-        aead_tag[10] = LSB(version);
-        //aead_tag[11] = MSB(inl);
-        //aead_tag[12] = LSB(inl);
+        aead_tag[9] = utils::get_byte<0>(version);
+        aead_tag[10] = utils::get_byte<1>(version);
+        //aead_tag[11] = utils::get_byte<0>(inl);
+        //aead_tag[12] = utils::get_byte<1>(inl);
 
         /*tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, outl, aead_tag, 13));
         tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out, outl, in, inl));
@@ -245,10 +238,10 @@ void RecordDecoder::tls_check_mac(
     HmacCtxPtr hm(HMAC_CTX_new());
     tls::ThrowIfFalse(hm != nullptr);
 
-    md = snet::tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
-    tls::ThrowIfFalse(md != nullptr);
+    md = GetMacAlgorithm(cipherSuite_.getHashAlg());
+    ThrowIfFalse(md != nullptr);
 
-    tls::ThrowIfFalse(0 < HMAC_Init_ex(hm, macKey_.data(), macKey_.size(), md, nullptr));
+    ThrowIfFalse(0 < HMAC_Init_ex(hm, macKey_.data(), macKey_.size(), md, nullptr));
 
     fmt_seq(seq_, buf);
     seq_++;
@@ -256,12 +249,12 @@ void RecordDecoder::tls_check_mac(
     buf[0] = static_cast<uint8_t>(rt);
     tls::ThrowIfFalse(0 < HMAC_Update(hm, buf, 1));
 
-    buf[0] = MSB(ver);
-    buf[1] = LSB(ver);
+    buf[0] = utils::get_byte<0>(ver);
+    buf[1] = utils::get_byte<1>(ver);
     tls::ThrowIfFalse(0 < HMAC_Update(hm, buf, 2));
 
-    buf[0] = MSB(datalen);
-    buf[1] = LSB(datalen);
+    buf[0] = utils::get_byte<0>(datalen);
+    buf[1] = utils::get_byte<1>(datalen);
     tls::ThrowIfFalse(0 < HMAC_Update(hm, buf, 2));
 
     /* for encrypt-then-mac with an explicit IV */
@@ -281,12 +274,12 @@ void RecordDecoder::ssl3_check_mac(RecordType rt, int ver, uint8_t* data, uint32
     const EVP_MD* md;
     uint32_t l;
     uint8_t buf[64], dgst[20];
-    int pad_ct = (cipherSuite_.getHashAlg() == snet::tls::MACAlg::SHA1) ? 40 : 48;
+    int pad_ct = (cipherSuite_.getHashAlg() == MACAlg::SHA1) ? 40 : 48;
 
     EvpMdCtxPtr mc(EVP_MD_CTX_new());
     tls::ThrowIfFalse(mc != nullptr);
 
-    md = snet::tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
+    md = GetMacAlgorithm(cipherSuite_.getHashAlg());
     tls::ThrowIfFalse(md != nullptr);
     tls::ThrowIfFalse(0 < EVP_DigestInit(mc, md));
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, macKey_.data(), macKey_.size()));
@@ -301,8 +294,8 @@ void RecordDecoder::ssl3_check_mac(RecordType rt, int ver, uint8_t* data, uint32
     buf[0] = static_cast<uint8_t>(rt);
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, buf, 1));
 
-    buf[0] = MSB(datalen);
-    buf[1] = LSB(datalen);
+    buf[0] = utils::get_byte<0>(datalen);
+    buf[1] = utils::get_byte<1>(datalen);
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, buf, 2));
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, data, datalen));
     tls::ThrowIfFalse(0 < EVP_DigestFinal(mc, dgst, &l));

@@ -90,9 +90,9 @@ uint8_t TcpHeader::get_flag(Flags tcp_flag) const {
             return header_.flags.cwr;
             break;
         default:
-            return 0;
             break;
     };
+    return 0;
 }
 
 uint16_t TcpHeader::flags() const {
@@ -128,6 +128,8 @@ void TcpHeader::set_flag(Flags tcp_flag, uint8_t value) {
             break;
         case CWR:
             header_.flags.cwr = value;
+            break;
+        default:
             break;
     };
 }

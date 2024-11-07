@@ -137,9 +137,9 @@ void Session::generateKeyingMaterial()
     reader.read(clientIV.data(), clientIV.size());
     reader.read(serverIV.data(), serverIV.size());
 
-    c_to_s_n = std::make_unique<snet::tls::RecordDecoder>(
+    c_to_s = std::make_unique<snet::tls::RecordDecoder>(
         cs, clientMacKey, clientWriteKey, clientIV);
-    s_to_c_n = std::make_unique<snet::tls::RecordDecoder>(
+    s_to_c = std::make_unique<snet::tls::RecordDecoder>(
         cs, serverMacKey, serverWriteKey, serverIV);
 }
 
@@ -162,12 +162,6 @@ void Session::generateTLS13KeyingMaterial()
         md, secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "iv",
         {}, 12);
 
-    auto serverWriteKey =
-        hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
-                        "key", {}, keySize);
-    auto serverIV = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
-
     auto clientHandshakeWriteKey = hkdfExpandLabel(
         md, secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "key",
         {}, keySize);
@@ -175,26 +169,12 @@ void Session::generateTLS13KeyingMaterial()
         md, secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "iv",
         {}, 12);
 
-    auto clientWriteKey =
-        hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ClientTrafficSecret),
-                        "key", {}, keySize);
-    auto clientIV = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
-
     utils::printHex("Server Handshake Write key", serverHandshakeWriteKey);
     utils::printHex("Server Handshake IV", serverHandshakeIV);
-    utils::printHex("Server Write key", serverWriteKey);
-    utils::printHex("Server IV", serverIV);
 
     utils::printHex("Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex("Client Handshake IV", clientHandshakeIV);
-    utils::printHex("Client Write key", clientWriteKey);
-    utils::printHex("Client IV", clientIV);
 
-    c_to_s_n = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(),
-                                               clientWriteKey, clientIV);
-    s_to_c_n = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(),
-                                               serverWriteKey, serverIV);
     c_to_s = std::make_unique<RecordDecoder>(
         cs, std::span<uint8_t>(), clientHandshakeWriteKey, clientHandshakeIV);
     s_to_c = std::make_unique<RecordDecoder>(
@@ -274,13 +254,18 @@ void Session::processHandshakeCertificate(int8_t sideIndex,
         auto requestContext = reader.get_range<uint8_t>(1, 0, 255);
 
         // RFC 8446 4.4.2
-        //    [...] in the case of server authentication, this field SHALL be zero length.
-        utils::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(), "Server Certificate message must not contain a request context");
+        //    [...] in the case of server authentication, this field SHALL be
+        //    zero length.
+        utils::ThrowIfTrue(
+            sideIndex == 1 && !requestContext.empty(),
+            "Server Certificate message must not contain a request context");
 
         const auto cert_entries_len = reader.get_uint24_t();
-        utils::ThrowIfTrue(reader.remaining_bytes() != cert_entries_len, "Certificate: Message malformed");
+        utils::ThrowIfTrue(reader.remaining_bytes() != cert_entries_len,
+                           "Certificate: Message malformed");
 
-        while(reader.has_remaining()) {
+        while (reader.has_remaining())
+        {
             reader.get_tls_length_value(3);
             const auto extensionsLength = reader.peek_uint16_t();
             reader.get_fixed<uint8_t>(extensionsLength + 2);
@@ -304,13 +289,14 @@ void Session::processHandshakeSessionTicket(int8_t sideIndex,
 
         // extensions
         Extensions exts;
-        exts.deserialize(reader, tls::Side::Server, HandshakeType::NewSessionTicket);
+        exts.deserialize(reader, tls::Side::Server,
+                         HandshakeType::NewSessionTicket);
     }
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
         utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
         utils::ThrowIfTrue(reader.remaining_bytes() < 6,
-                        "Session ticket message too short to be valid");
+                           "Session ticket message too short to be valid");
         reader.get_uint32_t();
         reader.get_range<uint8_t>(2, 0, 65535);
     }
@@ -400,17 +386,41 @@ void Session::processHandshakeClientKeyExchange(int8_t sideIndex,
 void Session::processHandshakeFinished(int8_t sideIndex,
                                        stream::DataReader& reader)
 {
-    (void)reader;
+    /// Ignore finished messsage
+    reader.discard_next(reader.remaining_bytes());
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
+        auto keySize = cs.getStrengthBits() / 8;
+        auto md = tls::GetMacAlgorithm(cs.getHashAlg());
+
         if (sideIndex == 0)
-        { // Change from handshake decoder to data traffic decoder
-            c_to_s = std::move(c_to_s_n);
+        {
+            auto clientWriteKey = hkdfExpandLabel(
+                md, secrets_.getSecret(SecretNode::ClientTrafficSecret), "key",
+                {}, keySize);
+            auto clientIV = hkdfExpandLabel(
+                md, secrets_.getSecret(SecretNode::ClientTrafficSecret), "iv",
+                {}, 12);
+
+            c_to_s = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(),
+                                                     clientWriteKey, clientIV);
+            utils::printHex("Client Write key", clientWriteKey);
+            utils::printHex("Client IV", clientIV);
         }
         else
         {
-            s_to_c = std::move(s_to_c_n);
+            auto serverWriteKey = hkdfExpandLabel(
+                md, secrets_.getSecret(SecretNode::ServerTrafficSecret), "key",
+                {}, keySize);
+            auto serverIV = hkdfExpandLabel(
+                md, secrets_.getSecret(SecretNode::ServerTrafficSecret), "iv",
+                {}, 12);
+            s_to_c = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(),
+                                                     serverWriteKey, serverIV);
+
+            utils::printHex("Server Write key", serverWriteKey);
+            utils::printHex("Server IV", serverIV);
         }
     }
 }
@@ -527,11 +537,11 @@ void Session::processChangeCipherSpec(int8_t sideIndex,
     {
         if (sideIndex == 0)
         {
-            c_to_s = std::move(c_to_s_n);
+            // c_to_s = std::move(c_to_s_n);
         }
         else
         {
-            s_to_c = std::move(s_to_c_n);
+            // s_to_c = std::move(s_to_c_n);
         }
     }
 

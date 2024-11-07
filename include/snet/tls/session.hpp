@@ -117,8 +117,6 @@ public:
     std::vector<uint8_t> sessionId_;
     std::unique_ptr<RecordDecoder> c_to_s;
     std::unique_ptr<RecordDecoder> s_to_c;
-    std::unique_ptr<RecordDecoder> c_to_s_n;
-    std::unique_ptr<RecordDecoder> s_to_c_n;
     Extensions clientExensions;
     Extensions serverExensions;
     HandshakeHash handshakeHash;
