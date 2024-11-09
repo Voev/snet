@@ -175,6 +175,8 @@ public:
 
     bool isAEAD() const;
 
+    std::uint32_t getAeadTagLength() const;
+
     const std::string& name()
     {
         return name_;

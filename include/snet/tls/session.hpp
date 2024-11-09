@@ -100,9 +100,9 @@ private:
              std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2,
              std::span<uint8_t> out);
 
-    void generateKeyingMaterial();
+    void generateKeyMaterial(const int8_t sideIndex);
 
-    void generateTLS13KeyingMaterial();
+    void generateTLS13KeyMaterial();
 
 public:
     SessionCallbacks callbacks_;

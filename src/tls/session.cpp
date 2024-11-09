@@ -71,7 +71,7 @@ static int tls_iv_length_within_key_block(const EVP_CIPHER* c)
         return EVP_CIPHER_get_iv_length(c);
 }
 
-void Session::generateKeyingMaterial()
+void Session::generateKeyMaterial(const int8_t sideIndex)
 {
     std::vector<uint8_t> clientWriteKey;
     std::vector<uint8_t> serverWriteKey;
@@ -102,48 +102,73 @@ void Session::generateKeyingMaterial()
 
     size_t keySize = EVP_CIPHER_get_key_length(cipher);
     size_t ivSize = tls_iv_length_within_key_block(cipher);
-    size_t macSize{0};
 
-    if (!cs.isAEAD())
+    if (cs.isAEAD())
     {
-        auto mac = snet::tls::GetMacAlgorithm(cs.getHashAlg());
-        macSize = EVP_MD_size(mac);
-    }
+        key_block.resize(keySize * 2 + ivSize * 2);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion",
+            serverRandom_, clientRandom_, key_block);
 
-    key_block.resize(macSize * 2 + keySize * 2 + ivSize * 2);
-    PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion",
-        serverRandom_, clientRandom_, key_block);
+        clientWriteKey.resize(keySize);
+        serverWriteKey.resize(keySize);
+        clientIV.resize(ivSize);
+        serverIV.resize(ivSize);
 
-    snet::stream::MemoryReader reader(key_block);
-    if (!cs.isAEAD())
-    {
-        clientMacKey.resize(macSize);
-        serverMacKey.resize(macSize);
-        reader.read(clientMacKey.data(), clientMacKey.size());
-        reader.read(serverMacKey.data(), serverMacKey.size());
+        snet::stream::MemoryReader reader(key_block);
+        reader.read(clientWriteKey.data(), clientWriteKey.size());
+        reader.read(serverWriteKey.data(), serverWriteKey.size());
+        reader.read(clientIV.data(), clientIV.size());
+        reader.read(serverIV.data(), serverIV.size());
+
+        if (sideIndex == 0)
+        {
+            c_to_s = std::make_unique<snet::tls::RecordDecoder>();
+            c_to_s->initAEAD(cs, clientWriteKey, clientIV);
+        }
+        else
+        {
+            s_to_c = std::make_unique<snet::tls::RecordDecoder>();
+            s_to_c->initAEAD(cs, serverWriteKey, serverIV);
+        }
     }
     else
     {
-        reader.skip(macSize);
+        auto mac = snet::tls::GetMacAlgorithm(cs.getHashAlg());
+        auto macSize = EVP_MD_size(mac);
+
+        key_block.resize(macSize * 2 + keySize * 2 + ivSize * 2);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion",
+            serverRandom_, clientRandom_, key_block);
+
+        clientMacKey.resize(macSize);
+        serverMacKey.resize(macSize);
+        clientWriteKey.resize(keySize);
+        serverWriteKey.resize(keySize);
+        clientIV.resize(ivSize);
+        serverIV.resize(ivSize);
+
+        snet::stream::MemoryReader reader(key_block);
+        reader.read(clientMacKey.data(), clientMacKey.size());
+        reader.read(serverMacKey.data(), serverMacKey.size());
+        reader.read(clientWriteKey.data(), clientWriteKey.size());
+        reader.read(serverWriteKey.data(), serverWriteKey.size());
+        reader.read(clientIV.data(), clientIV.size());
+        reader.read(serverIV.data(), serverIV.size());
+
+        if (sideIndex == 0)
+        {
+            c_to_s = std::make_unique<snet::tls::RecordDecoder>(
+                cs, clientMacKey, clientWriteKey, clientIV);
+        }
+        else
+        {
+            s_to_c = std::make_unique<snet::tls::RecordDecoder>(
+                cs, serverMacKey, serverWriteKey, serverIV);
+        }
     }
-
-    clientWriteKey.resize(keySize);
-    serverWriteKey.resize(keySize);
-    reader.read(clientWriteKey.data(), clientWriteKey.size());
-    reader.read(serverWriteKey.data(), serverWriteKey.size());
-
-    clientIV.resize(ivSize);
-    serverIV.resize(ivSize);
-    reader.read(clientIV.data(), clientIV.size());
-    reader.read(serverIV.data(), serverIV.size());
-
-    c_to_s = std::make_unique<snet::tls::RecordDecoder>(
-        cs, clientMacKey, clientWriteKey, clientIV);
-    s_to_c = std::make_unique<snet::tls::RecordDecoder>(
-        cs, serverMacKey, serverWriteKey, serverIV);
 }
 
-void Session::generateTLS13KeyingMaterial()
+void Session::generateTLS13KeyMaterial()
 {
     if (!secrets_.isValid(ProtocolVersion::TLSv1_3))
     {
@@ -243,7 +268,7 @@ void Session::processHandshakeServerHello(int8_t sideIndex,
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
-        generateTLS13KeyingMaterial();
+        generateTLS13KeyMaterial();
     }
 }
 
@@ -607,13 +632,12 @@ void Session::processHandshake(int8_t sideIndex,
 void Session::processChangeCipherSpec(int8_t sideIndex,
                                       std::span<const uint8_t> data)
 {
-    (void)sideIndex;
-    (void)data;
+    utils::ThrowIfFalse(data.size() == 1 && data[0] == 0x01,
+                        "Malformed Change Cipher Spec message");
 
-    if (version_ != tls::ProtocolVersion::TLSv1_3 &&
-        (c_to_s == nullptr || s_to_c == nullptr))
+    if (version_ <= tls::ProtocolVersion::TLSv1_3)
     {
-        generateKeyingMaterial();
+        generateKeyMaterial(sideIndex);
     }
 }
 
@@ -685,31 +709,24 @@ Record Session::readRecord(const int8_t sideIndex,
         return Record(recordType, recordVersion,
                       std::span(outputBytes.begin(), outputBytes.end() - 1));
     }
-    else if (version <= ProtocolVersion::TLSv1_2 &&
-             (c_to_s != nullptr || s_to_c != nullptr))
+    else if (version <= ProtocolVersion::TLSv1_2)
     {
-        if (sideIndex == 0)
+        if (sideIndex == 0 && c_to_s != nullptr)
         {
-            c_to_s->tls_decrypt(
-                recordType, version, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
-                outputBytes);
+            c_to_s->tls_decrypt(recordType, version,
+                                inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                                outputBytes);
+
+            return Record(recordType, recordVersion, outputBytes);
         }
-        else
+        else if (sideIndex == 1 && s_to_c != nullptr)
         {
-            s_to_c->tls_decrypt(
-                recordType, version, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
-                outputBytes);
+            s_to_c->tls_decrypt(recordType, version,
+                                inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                                outputBytes);
+
+            return Record(recordType, recordVersion, outputBytes);
         }
-
-        uint8_t lastByte = *(outputBytes.end() - 1);
-
-        utils::ThrowIfTrue(lastByte < 20 || lastByte > 23,
-                           "TLS record type had unexpected value");
-
-        recordType = static_cast<RecordType>(lastByte);
-
-        return Record(recordType, recordVersion,
-                      std::span(outputBytes.begin(), outputBytes.end() - 1));
     }
 
     return Record(recordType, recordVersion,

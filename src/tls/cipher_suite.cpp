@@ -2,6 +2,7 @@
 #include <openssl/ssl.h>
 #include <snet/tls/exception.hpp>
 #include <snet/utils/endianness.hpp>
+#include <snet/utils/exception.hpp>
 
 using namespace snet::tls;
 
@@ -221,6 +222,22 @@ std::uint32_t CipherSuite::getAlgBits() const {
 bool CipherSuite::isAEAD() const
 {
     return aead_;
+}
+
+std::uint32_t CipherSuite::getAeadTagLength() const
+{
+    utils::ThrowIfFalse(isAEAD(), "must be AEAD cipher");
+
+    if (enc_ == EncAlg::AES_128_GCM || enc_ == EncAlg::AES_256_GCM)
+        return EVP_GCM_TLS_TAG_LEN;
+    else if (enc_ == EncAlg::CHACHA20_POLY1305)
+        return EVP_CHACHAPOLY_TLS_TAG_LEN;
+    else if (enc_ == EncAlg::AES_128_CCM)
+        return EVP_CCM_TLS_TAG_LEN;
+    else if (enc_ == EncAlg::AES_128_CCM_8)
+        return EVP_CCM8_TLS_TAG_LEN;
+
+    return 0U;
 }
 
 struct CipherSuiteManager::Impl final {

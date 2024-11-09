@@ -13,13 +13,19 @@
 #include <snet/tls/exception.hpp>
 #include <snet/tls/record_decoder.hpp>
 
-#define MSB(a) ((a >> 8) & 0xff)
-#define LSB(a) (a & 0xff)
-
 namespace snet::tls
 {
 
-static int fmt_seq(uint32_t num, uint8_t* buf);
+RecordDecoder::RecordDecoder()
+    : cipherSuite_()
+    , cipher_(EVP_CIPHER_CTX_new())
+    , seq_(0)
+{
+}
+
+RecordDecoder::~RecordDecoder() noexcept
+{
+}
 
 RecordDecoder::RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
                              const std::vector<uint8_t>& encKey,
@@ -51,8 +57,15 @@ RecordDecoder::RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
     }
 }
 
-RecordDecoder::~RecordDecoder() noexcept
+void RecordDecoder::initAEAD(CipherSuite cs, const std::vector<uint8_t>& encKey,
+                             const std::vector<uint8_t>& encIV)
 {
+    cipherSuite_ = cs;
+    implicitIv_ = encIV;
+    writeKey_ = encKey;
+
+    auto cipher = GetEncAlgorithm(cipherSuite_.getEncAlg());
+    tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
 }
 
 void RecordDecoder::tls13_update_keys(const std::vector<uint8_t>& newkey,
@@ -68,9 +81,8 @@ void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
 {
     int i;
     int x;
-    std::array<uint8_t, 5> aad;
+    std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
-    int taglen = cipherSuite_.getEncAlg() == EncAlg::AES_128_CCM_8 ? 8 : 16;
 
     utils::printHex("CipherText", in);
     utils::printHex("KEY", writeKey_);
@@ -85,8 +97,9 @@ void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
     }
     seq_++;
 
-    auto data = in.subspan(0, in.size() - taglen);
-    auto tag = in.subspan(in.size() - taglen, taglen);
+    auto tagLength = cipherSuite_.getAeadTagLength();
+    auto data = in.subspan(0, in.size() - tagLength);
+    auto tag = in.subspan(in.size() - tagLength, tagLength);
 
     aad[0] = static_cast<uint8_t>(rt);
     aad[1] = 0x03;
@@ -140,46 +153,55 @@ void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
     tls::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
 }
 
+
 void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version,
                                 std::span<const uint8_t> in,
                                 std::vector<uint8_t>& out)
 {
-    uint8_t aead_tag[13], aead_nonce[12];
-
     if (cipherSuite_.isAEAD())
     {
+        uint8_t aad[TLS12_AEAD_AAD_SIZE], aead_nonce[12];
+        
         memcpy(aead_nonce, implicitIv_.data(), implicitIv_.size());
-        memcpy(aead_nonce + implicitIv_.size(), in.data(), 12 - implicitIv_.size());
+        memcpy(aead_nonce + implicitIv_.size(), in.data(),
+               12 - implicitIv_.size());
         in = in.subspan(12 - implicitIv_.size());
 
         tls::ThrowIfFalse(0 < EVP_DecryptInit(cipher_, nullptr,
                                               writeKey_.data(), aead_nonce));
 
-        /*
-           Then tag is always 16 bytes, as per:
-           https://tools.ietf.org/html/rfc5116#section-5.2
-        */
-        auto data = in.subspan(0, in.size() - 16);
-        auto tag = in.subspan(in.size() - 16, 16);
+        auto tagLength = cipherSuite_.getAeadTagLength();
+        auto data = in.subspan(0, in.size() - tagLength);
+        auto tag = in.subspan(in.size() - tagLength, tagLength);
 
-        tls::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, 16, const_cast<uint8_t*>(tag.data())));
+        tls::ThrowIfFalse(
+            0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG,
+                                    static_cast<int>(tag.size()),
+                                    const_cast<uint8_t*>(tag.data())));
 
-        fmt_seq(seq_, aead_tag);
+        utils::store_be(seq_, &aad[0]);
+        aad[8] = static_cast<uint8_t>(rt);
+        aad[9] = version.major_version();
+        aad[10] = version.minor_version();
+        uint16_t size = static_cast<uint16_t>(data.size());
+        aad[11] = utils::get_byte<0>(size);
+        aad[12] = utils::get_byte<1>(size);
+
         seq_++;
-        aead_tag[8] = static_cast<uint8_t>(rt);
-        aead_tag[9] = version.major_version();
-        aead_tag[10] = version.minor_version();
-        uint16_t size = static_cast<uint16_t>(in.size());
-        aead_tag[11] = utils::get_byte<0>(size);
-        aead_tag[12] = utils::get_byte<1>(size);
+
+        utils::printHex("AEAD Tag", tag);
+        utils::printHex("AEAD Nonce", aead_nonce);
+        utils::printHex("CipherText", data);
 
         int outSize{0};
-        tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aead_tag, 13));
+        tls::ThrowIfFalse(
+            0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad, sizeof(aad)));
 
         outSize = out.size();
         out.resize(outSize);
 
-        tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
+        tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize,
+                                                data.data(), data.size()));
         out.resize(outSize);
 
         int x{0};
@@ -254,19 +276,6 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version,
     }
 }
 
-/* This should go to 2^128, but we're never really going to see
-   more than 2^64, so we cheat*/
-static int fmt_seq(uint32_t num, uint8_t* buf)
-{
-    uint32_t netnum;
-
-    memset(buf, 0, 8);
-    netnum = utils::host_to_be(num);
-    memcpy(buf + 4, &netnum, 4);
-
-    return 0;
-}
-
 void RecordDecoder::tls_check_mac(RecordType rt, int ver, uint8_t* data,
                                   uint32_t datalen, uint8_t* iv, uint32_t ivlen,
                                   uint8_t* mac)
@@ -285,7 +294,7 @@ void RecordDecoder::tls_check_mac(RecordType rt, int ver, uint8_t* data,
     ThrowIfFalse(0 <
                  HMAC_Init_ex(hm, macKey_.data(), macKey_.size(), md, nullptr));
 
-    fmt_seq(seq_, buf);
+    utils::store_be(seq_, &buf[0]);
     seq_++;
     tls::ThrowIfFalse(0 < HMAC_Update(hm, buf, 8));
     buf[0] = static_cast<uint8_t>(rt);
@@ -333,7 +342,7 @@ void RecordDecoder::ssl3_check_mac(RecordType rt, int ver, uint8_t* data,
     memset(buf, 0x36, pad_ct);
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, buf, pad_ct));
 
-    fmt_seq(seq_, buf);
+    utils::store_be(seq_, &buf[0]);
     seq_++;
     tls::ThrowIfFalse(0 < EVP_DigestUpdate(mc, buf, 8));
 
