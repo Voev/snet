@@ -23,7 +23,8 @@ public:
                   const std::vector<uint8_t>& encIV);
 
     void tls_decrypt(RecordType rt, ProtocolVersion version,
-                     std::span<const uint8_t> in, std::vector<uint8_t>& out);
+                     std::span<const uint8_t> in, std::vector<uint8_t>& out,
+                     bool encryptThenMac);
 
     void tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
                        std::vector<uint8_t>& out);
@@ -32,11 +33,13 @@ public:
                            const std::vector<uint8_t>& newiv);
 
 private:
-    void ssl3_check_mac(RecordType rt, int ver, uint8_t* data, uint32_t datalen,
-                        uint8_t* mac);
+    void ssl3_check_mac(RecordType recordType, std::span<const uint8_t> content,
+                        std::span<const uint8_t> mac);
 
-    void tls_check_mac(RecordType rt, int ver, uint8_t* data, uint32_t datalen,
-                       uint8_t* iv, uint32_t ivlen, uint8_t* mac);
+    void tls_check_mac(RecordType recordType, ProtocolVersion version,
+                       std::span<const uint8_t> iv,
+                       std::span<const uint8_t> content,
+                       std::span<const uint8_t> mac);
 
 private:
     CipherSuite cipherSuite_;
@@ -45,11 +48,6 @@ private:
     std::vector<uint8_t> writeKey_;   /* for AEAD ciphers */
     EvpCipherCtxPtr cipher_;
     uint64_t seq_;
-};
-
-class AEADCipher
-{
-public:
 };
 
 } // namespace snet::tls

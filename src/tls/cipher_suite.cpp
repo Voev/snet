@@ -93,6 +93,36 @@ static int CustomEncAlg2OpenSSLEncAlg(const EncAlg alg) {
     return NID_undef;
 }
 
+
+static MACAlg OpenSSLMacAlg2CustomMacAlg(const int nid) {
+    switch (nid) {
+        case NID_md5:
+            return MACAlg::MD5;
+        case NID_sha1:
+            return MACAlg::SHA1;
+        case NID_sha256:
+            return MACAlg::SHA256;
+        case NID_sha384:
+            return MACAlg::SHA384;
+        case NID_id_Gost28147_89_MAC:
+            return MACAlg::GOST_28147;
+        case NID_gost_mac_12:
+            return MACAlg::GOST_28147_12;
+        case NID_id_GostR3411_94:
+            return MACAlg::GOST_R3411_94;
+        case NID_id_GostR3411_2012_256:
+            return MACAlg::GOST_R3411_2012_256;
+        case NID_id_GostR3411_2012_512:
+            return MACAlg::GOST_R3411_2012_512;
+        case NID_magma_mac:
+            return MACAlg::GOST_Magma;
+        case NID_kuznyechik_mac:
+            return MACAlg::GOST_Kuznyechik;
+        default:;
+    }
+    return MACAlg::Unknown;
+}
+
 static int CustomMacAlg2OpenSSLMacAlg(const MACAlg alg)
 {
     switch (alg) {
@@ -123,34 +153,6 @@ static int CustomMacAlg2OpenSSLMacAlg(const MACAlg alg)
     return NID_undef;
 }
 
-static MACAlg GetMacAlg(const int nid) {
-    switch (nid) {
-        case NID_md5:
-            return MACAlg::MD5;
-        case NID_sha1:
-            return MACAlg::SHA1;
-        case NID_sha256:
-            return MACAlg::SHA256;
-        case NID_sha384:
-            return MACAlg::SHA384;
-        case NID_id_Gost28147_89_MAC:
-            return MACAlg::GOST_28147;
-        case NID_gost_mac_12:
-            return MACAlg::GOST_28147_12;
-        case NID_id_GostR3411_94:
-            return MACAlg::GOST_R3411_94;
-        case NID_id_GostR3411_2012_256:
-            return MACAlg::GOST_R3411_2012_256;
-        case NID_id_GostR3411_2012_512:
-            return MACAlg::GOST_R3411_2012_512;
-        case NID_magma_mac:
-            return MACAlg::GOST_Magma;
-        case NID_kuznyechik_mac:
-            return MACAlg::GOST_Kuznyechik;
-        default:;
-    }
-    return MACAlg::Unknown;
-}
 
 } // namespace
 
@@ -279,7 +281,7 @@ CipherSuite CipherSuiteManager::getCipherSuiteById(uint32_t id) {
         auto kex = GetKexAlg(cipherSuite);
         auto auth = GetAuthAlg(cipherSuite);
         auto enc = ::OpenSSLEncAlg2CustomEncAlg(SSL_CIPHER_get_cipher_nid(cipherSuite));
-        auto mac = GetMacAlg(EVP_MD_type(SSL_CIPHER_get_handshake_digest(cipherSuite)));
+        auto mac = ::OpenSSLMacAlg2CustomMacAlg(SSL_CIPHER_get_digest_nid(cipherSuite));
         int algBits{0};
         int strengthBits = SSL_CIPHER_get_bits(cipherSuite, &algBits);
         return CipherSuite(name, id, strengthBits, algBits, kex, auth, enc, mac, SSL_CIPHER_is_aead(cipherSuite));

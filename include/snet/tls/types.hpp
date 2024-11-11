@@ -25,6 +25,7 @@ enum class RecordType : uint8_t {
 
 enum SizeLimits : size_t {
    TLS_HEADER_SIZE = 5,
+   TLS_HANDSHAKE_HEADER_SIZE = 4,
    TLS12_AEAD_AAD_SIZE = 13,
    TLS13_AEAD_AAD_SIZE = 5,
    MAX_PLAINTEXT_SIZE = 16 * 1024,

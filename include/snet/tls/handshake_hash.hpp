@@ -13,6 +13,7 @@ public:
     HandshakeHash() = default;
 
     void update(std::span<const uint8_t> in) {
+        utils::printHex("UPDATE", in);
         std::copy(in.begin(), in.end(), std::back_inserter(m_data));
     }
 

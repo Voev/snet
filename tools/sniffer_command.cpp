@@ -68,7 +68,7 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex,
 
         // check session!
 
-        utils::printHex({tcpData.getData(), tcpData.getDataLength()});
+        //utils::printHex({tcpData.getData(), tcpData.getDataLength()});
 
         try
         {
@@ -147,7 +147,8 @@ public:
         LogManager::Instance().enable(Type::Console);
 
         SnifferManager manager;
-        manager.secrets.parseKeyLogFile(options_.keylog);
+        if (!options_.keylog.empty())
+            manager.secrets.parseKeyLogFile(options_.keylog);
 
         tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback,
                                          &manager);

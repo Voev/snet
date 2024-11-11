@@ -110,7 +110,6 @@ public:
     void* userData_;
     ProtocolVersion version_;
     CipherSuite cs;
-    int ephemeral_rsa;
     std::vector<uint8_t> PMS;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
@@ -120,7 +119,7 @@ public:
     std::unique_ptr<RecordDecoder> s_to_c;
     Extensions clientExensions;
     Extensions serverExensions;
-    HandshakeHash handshakeHash;
+    HandshakeHash handshakeHash_;
     bool msInited{false};
     int i_state{0};
     int r_state{0};
