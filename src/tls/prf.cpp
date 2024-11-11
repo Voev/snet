@@ -5,6 +5,7 @@
 #include <snet/tls/prf.hpp>
 #include <snet/tls/exception.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/tls/cipher_suite.hpp>
 
 #include <snet/utils/exception.hpp>
 #include <snet/utils/load_store.hpp>
@@ -27,11 +28,8 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
     unsigned char buf[EVP_MAX_MD_SIZE];
     unsigned int n;
 
-    EvpMdPtr md5(EVP_MD_fetch(nullptr, "MD5", nullptr));
-    tls::ThrowIfTrue(md5 == nullptr);
-
-    EvpMdPtr sha1(EVP_MD_fetch(nullptr, "SHA1", nullptr));
-    tls::ThrowIfTrue(sha1 == nullptr);
+    auto md5 = CipherSuiteManager::Instance().fetchDigest("MD5");
+    auto sha1 = CipherSuiteManager::Instance().fetchDigest("SHA1");
 
     EvpMdCtxPtr ctx(EVP_MD_CTX_new());
     tls::ThrowIfTrue(ctx == nullptr);
@@ -57,7 +55,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
              std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
              std::span<uint8_t> out)
 {
-    EvpKdfPtr kdf(EVP_KDF_fetch(nullptr, "TLS1-PRF", nullptr));
+    auto kdf = CipherSuiteManager::Instance().fetchKdf("TLS1-PRF");
     tls::ThrowIfTrue(kdf == nullptr);
 
     EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
@@ -79,7 +77,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     tls::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
-std::vector<uint8_t> hkdfExpandLabel(const EVP_MD* md, const Secret& secret, std::string_view label,
+std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
                                      std::span<const uint8_t> context, const size_t length)
 {
     // assemble (serialized) HkdfLabel
@@ -105,19 +103,25 @@ std::vector<uint8_t> hkdfExpandLabel(const EVP_MD* md, const Secret& secret, std
     hkdfLabel.push_back(static_cast<uint8_t>(context.size()));
     hkdfLabel.insert(hkdfLabel.end(), context.begin(), context.end());
 
-    EvpPkeyCtxPtr pctx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr));
-    tls::ThrowIfFalse(pctx != nullptr);
+    auto kdf = CipherSuiteManager::Instance().fetchKdf("HKDF");
 
-    tls::ThrowIfFalse(0 < EVP_PKEY_derive_init(pctx));
-    tls::ThrowIfFalse(0 < EVP_PKEY_CTX_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXPAND_ONLY));
-    tls::ThrowIfFalse(0 < EVP_PKEY_CTX_set_hkdf_md(pctx, md));
-    tls::ThrowIfFalse(0 < EVP_PKEY_CTX_set1_hkdf_key(pctx, secret.data(), secret.size()));
+    EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    tls::ThrowIfTrue(kctx == nullptr);
 
-    tls::ThrowIfFalse(0 < EVP_PKEY_CTX_add1_hkdf_info(pctx, hkdfLabel.data(), hkdfLabel.size()));
+    static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
+    OSSL_PARAM params[6], *p = params;
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
+                                            const_cast<char*>(algorithm.data()), 0);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()),
+                                             secret.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_INFO, const_cast<uint8_t*>(hkdfLabel.data()),
+                                             hkdfLabel.size());
+    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    *p = OSSL_PARAM_construct_end();
 
     std::size_t outlen(length);
     std::vector<uint8_t> out(outlen);
-    tls::ThrowIfFalse(0 < EVP_PKEY_derive(pctx, out.data(), &outlen));
+    tls::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
     out.resize(outlen);
 
     return out;

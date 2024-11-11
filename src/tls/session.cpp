@@ -152,17 +152,19 @@ void Session::generateTLS13KeyMaterial()
 
     auto keySize = cipherSuite_.getStrengthBits() / 8;
 
-    auto md =  CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
-
     auto serverHandshakeWriteKey = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "key", {}, keySize);
-    auto serverHandshakeIV = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "iv", {}, 12);
+        cipherSuite_.getDigestName(), secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret),
+        "key", {}, keySize);
+    auto serverHandshakeIV =
+        hkdfExpandLabel(cipherSuite_.getDigestName(),
+                        secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "iv", {}, 12);
 
     auto clientHandshakeWriteKey = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "key", {}, keySize);
-    auto clientHandshakeIV = hkdfExpandLabel(
-        md, secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "iv", {}, 12);
+        cipherSuite_.getDigestName(), secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret),
+        "key", {}, keySize);
+    auto clientHandshakeIV =
+        hkdfExpandLabel(cipherSuite_.getDigestName(),
+                        secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "iv", {}, 12);
 
     utils::printHex("Server Handshake Write key", serverHandshakeWriteKey);
     utils::printHex("Server Handshake IV", serverHandshakeIV);
@@ -487,9 +489,11 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
         if (sideIndex == 0)
         {
             auto clientWriteKey = hkdfExpandLabel(
-                md, secrets_.getSecret(SecretNode::ClientTrafficSecret), "key", {}, keySize);
-            auto clientIV = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ClientTrafficSecret),
-                                            "iv", {}, 12);
+                EVP_MD_get0_name(md), secrets_.getSecret(SecretNode::ClientTrafficSecret), "key",
+                {}, keySize);
+            auto clientIV =
+                hkdfExpandLabel(EVP_MD_get0_name(md),
+                                secrets_.getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
 
             c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
                                                      clientWriteKey, clientIV);
@@ -499,9 +503,11 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
         else
         {
             auto serverWriteKey = hkdfExpandLabel(
-                md, secrets_.getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
-            auto serverIV = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
-                                            "iv", {}, 12);
+                EVP_MD_get0_name(md), secrets_.getSecret(SecretNode::ServerTrafficSecret), "key",
+                {}, keySize);
+            auto serverIV =
+                hkdfExpandLabel(EVP_MD_get0_name(md),
+                                secrets_.getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
             s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
                                                      serverWriteKey, serverIV);
 
@@ -524,18 +530,20 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
 
     if (sideIndex == 0)
     {
-        auto CTS = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ClientTrafficSecret),
+        auto CTS = hkdfExpandLabel(EVP_MD_get0_name(md),
+                                   secrets_.getSecret(SecretNode::ClientTrafficSecret),
                                    "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(md, CTS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(md, CTS, "iv", {}, 12);
+        newkey = hkdfExpandLabel(EVP_MD_get0_name(md), CTS, "key", {}, keySize);
+        newiv = hkdfExpandLabel(EVP_MD_get0_name(md), CTS, "iv", {}, 12);
         c_to_s->tls13UpdateKeys(newkey, newiv);
     }
     else
     {
-        auto STS = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
+        auto STS = hkdfExpandLabel(EVP_MD_get0_name(md),
+                                   secrets_.getSecret(SecretNode::ServerTrafficSecret),
                                    "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(md, STS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(md, STS, "iv", {}, 12);
+        newkey = hkdfExpandLabel(EVP_MD_get0_name(md), STS, "key", {}, keySize);
+        newiv = hkdfExpandLabel(EVP_MD_get0_name(md), STS, "iv", {}, 12);
 
         s_to_c->tls13UpdateKeys(newkey, newiv);
     }

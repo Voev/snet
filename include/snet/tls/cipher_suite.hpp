@@ -151,10 +151,9 @@ public:
 
     ~CipherSuite() noexcept;
 
-    explicit CipherSuite(std::string name, std::uint32_t id,
-                         std::uint32_t strengthBits, std::uint32_t algBits,
-                         KexAlg keyExAlg, AuthAlg authAlg, std::string symKeyAlg,
-                         std::string MACAlg, bool aead);
+    explicit CipherSuite(std::string name, std::uint32_t id, std::uint32_t strengthBits,
+                         std::uint32_t algBits, KexAlg keyExAlg, AuthAlg authAlg,
+                         std::string symKeyAlg, std::string MACAlg, bool aead);
 
     KexAlg getKeyExchAlg() const;
 
@@ -194,6 +193,8 @@ public:
     ~CipherSuiteManager() noexcept;
 
     CipherSuite getCipherSuiteById(uint32_t id);
+
+    EvpKdfPtr fetchKdf(std::string_view algorithm);
 
     EvpMacPtr fetchMac(std::string_view algorithm);
 

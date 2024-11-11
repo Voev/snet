@@ -177,6 +177,13 @@ EvpMacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
     return mac;
 }
 
+EvpKdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
+{
+    auto kdf = EvpKdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
+    tls::ThrowIfTrue(kdf == nullptr);
+    return kdf;
+}
+
 EvpMdPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
 {
     auto digest = EvpMdPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
