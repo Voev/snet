@@ -6,9 +6,7 @@
 #include <openssl/err.h>
 #include <openssl/kdf.h>
 #include <openssl/ssl.h>
-#include <openssl/hmac.h>
 #include <openssl/evp.h>
-#include <openssl/md5.h>
 #include <openssl/x509v3.h>
 #include <openssl/core_names.h>
 
@@ -47,13 +45,11 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     utils::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
     if (version_ <= tls::ProtocolVersion::SSLv3_0)
-        ssl3_prf(secret, usage, rnd1, rnd2, out);
-    else if (version_ <= tls::ProtocolVersion::TLSv1_1)
-        tls_prf(secret, usage, rnd1, rnd2, out);
+        ssl3Prf(secret, rnd1, rnd2, out);
     else
     {
         auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
-        tls12_prf(md, secret, usage, rnd1, rnd2, out);
+        tls1Prf(EVP_MD_name(md), secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -135,13 +131,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            c_to_s = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, clientMacKey, clientWriteKey,
-                                                                clientIV);
+            c_to_s = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, clientMacKey,
+                                                                clientWriteKey, clientIV);
         }
         else
         {
-            s_to_c = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, serverMacKey, serverWriteKey,
-                                                                serverIV);
+            s_to_c = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, serverMacKey,
+                                                                serverWriteKey, serverIV);
         }
     }
 }
@@ -174,10 +170,10 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex("Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex("Client Handshake IV", clientHandshakeIV);
 
-    c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), clientHandshakeWriteKey,
-                                             clientHandshakeIV);
-    s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), serverHandshakeWriteKey,
-                                             serverHandshakeIV);
+    c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
+                                             clientHandshakeWriteKey, clientHandshakeIV);
+    s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
+                                             serverHandshakeWriteKey, serverHandshakeIV);
 }
 
 void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message)
@@ -340,7 +336,8 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
 
     utils::ThrowIfTrue(reader.remaining_bytes() < 2,
                        "Server sent an empty Encrypted Extensions message");
-    serverExensions_.deserialize(reader, tls::Side::Server, tls::HandshakeType::EncryptedExtensions);
+    serverExensions_.deserialize(reader, tls::Side::Server,
+                                 tls::HandshakeType::EncryptedExtensions);
 
     reader.assert_done();
 }
@@ -494,8 +491,8 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
             auto clientIV = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ClientTrafficSecret),
                                             "iv", {}, 12);
 
-            c_to_s =
-                std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), clientWriteKey, clientIV);
+            c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
+                                                     clientWriteKey, clientIV);
             utils::printHex("Client Write key", clientWriteKey);
             utils::printHex("Client IV", clientIV);
         }
@@ -505,8 +502,8 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
                 md, secrets_.getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
             auto serverIV = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
                                             "iv", {}, 12);
-            s_to_c =
-                std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), serverWriteKey, serverIV);
+            s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
+                                                     serverWriteKey, serverIV);
 
             utils::printHex("Server Write key", serverWriteKey);
             utils::printHex("Server IV", serverIV);
@@ -531,7 +528,7 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
                                    "traffic upd", {}, EVP_MD_size(mac));
         newkey = hkdfExpandLabel(mac, CTS, "key", {}, keySize);
         newiv = hkdfExpandLabel(mac, CTS, "iv", {}, 12);
-        c_to_s->tls13_update_keys(newkey, newiv);
+        c_to_s->tls13UpdateKeys(newkey, newiv);
     }
     else
     {
@@ -540,7 +537,7 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
         newkey = hkdfExpandLabel(mac, STS, "key", {}, keySize);
         newiv = hkdfExpandLabel(mac, STS, "iv", {}, 12);
 
-        s_to_c->tls13_update_keys(newkey, newiv);
+        s_to_c->tls13UpdateKeys(newkey, newiv);
     }
 }
 
@@ -661,13 +658,13 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
     {
         if (sideIndex == 0)
         {
-            c_to_s->tls13_decrypt(recordType, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
-                                  outputBytes);
+            c_to_s->tls13Decrypt(recordType, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                                 outputBytes);
         }
         else
         {
-            s_to_c->tls13_decrypt(recordType, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
-                                  outputBytes);
+            s_to_c->tls13Decrypt(recordType, inputBytes.subspan(TLS_HEADER_SIZE, recordSize),
+                                 outputBytes);
         }
 
         uint8_t lastByte = *(outputBytes.end() - 1);
@@ -683,7 +680,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
     {
         if (sideIndex == 0 && c_to_s != nullptr)
         {
-            c_to_s->tls_decrypt(recordType, version,
+            c_to_s->tls1Decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
                                 serverExensions_.has(Extension_Code::EncryptThenMac));
 
@@ -691,7 +688,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
         }
         else if (sideIndex == 1 && s_to_c != nullptr)
         {
-            s_to_c->tls_decrypt(recordType, version,
+            s_to_c->tls1Decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
                                 serverExensions_.has(Extension_Code::EncryptThenMac));
 

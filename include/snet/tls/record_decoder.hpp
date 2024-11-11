@@ -15,31 +15,24 @@ public:
 
     ~RecordDecoder();
 
-    RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
-                  std::span<const uint8_t> encKey,
+    RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey, std::span<const uint8_t> encKey,
                   std::span<const uint8_t> iv);
 
-    void initAEAD(CipherSuite cs, std::span<const uint8_t> encKey,
-                  std::span<const uint8_t> encIV);
+    void initAEAD(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV);
 
-    void tls_decrypt(RecordType rt, ProtocolVersion version,
-                     std::span<const uint8_t> in, std::vector<uint8_t>& out,
-                     bool encryptThenMac);
+    void tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                     std::vector<uint8_t>& out, bool encryptThenMac);
 
-    void tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
-                       std::vector<uint8_t>& out);
+    void tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::vector<uint8_t>& out);
 
-    void tls13_update_keys(const std::vector<uint8_t>& newkey,
-                           const std::vector<uint8_t>& newiv);
+    void tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv);
 
 private:
-    void ssl3_check_mac(RecordType recordType, std::span<const uint8_t> content,
-                        std::span<const uint8_t> mac);
+    void ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content,
+                      std::span<const uint8_t> mac);
 
-    void tls_check_mac(RecordType recordType, ProtocolVersion version,
-                       std::span<const uint8_t> iv,
-                       std::span<const uint8_t> content,
-                       std::span<const uint8_t> mac);
+    void tls1CheckMac(RecordType recordType, ProtocolVersion version, std::span<const uint8_t> iv,
+                      std::span<const uint8_t> content, std::span<const uint8_t> mac);
 
 private:
     CipherSuite cipherSuite_;

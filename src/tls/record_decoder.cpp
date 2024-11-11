@@ -1,7 +1,7 @@
 #include <snet/log/log_manager.hpp>
 
 #include <openssl/ssl.h>
-#include <openssl/hmac.h>
+#include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
@@ -69,7 +69,7 @@ void RecordDecoder::initAEAD(CipherSuite cs, std::span<const uint8_t> encKey,
     tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
 }
 
-void RecordDecoder::tls13_update_keys(const std::vector<uint8_t>& newkey,
+void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey,
                                       const std::vector<uint8_t>& newiv)
 {
     std::copy(newkey.begin(), newkey.end(), writeKey_.begin());
@@ -77,7 +77,7 @@ void RecordDecoder::tls13_update_keys(const std::vector<uint8_t>& newkey,
     seq_ = 0;
 }
 
-void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
+void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
                                   std::vector<uint8_t>& out)
 {
     int i;
@@ -150,7 +150,7 @@ void RecordDecoder::tls13_decrypt(RecordType rt, std::span<const uint8_t> in,
     tls::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
 }
 
-void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
                                 std::vector<uint8_t>& out, bool encryptThenMac)
 {
     if (cipherSuite_.isAEAD())
@@ -233,7 +233,7 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
-                tls_check_mac(rt, version, iv, content, mac);
+                tls1CheckMac(rt, version, iv, content, mac);
 
                 out.erase(out.begin(), out.begin() + blockSize);
                 outSize -= blockSize;
@@ -241,7 +241,7 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
-                tls_check_mac(rt, version, {}, content, mac);
+                tls1CheckMac(rt, version, {}, content, mac);
             }
 
             out.resize(outSize);
@@ -267,7 +267,7 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
                 utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = std::span(out.begin() + blockSize, out.begin() + outSize);
-                tls_check_mac(rt, version, {}, content, mac);
+                tls1CheckMac(rt, version, {}, content, mac);
 
                 out.erase(out.begin(), out.begin() + blockSize);
                 outSize -= blockSize;
@@ -278,11 +278,11 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
 
                 if (version == ProtocolVersion::SSLv3_0)
                 {
-                    ssl3_check_mac(rt, content, mac);
+                    ssl3CheckMac(rt, content, mac);
                 }
                 else
                 {
-                    tls_check_mac(rt, version, {}, content, mac);
+                    tls1CheckMac(rt, version, {}, content, mac);
                 }
             }
 
@@ -302,11 +302,11 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
         auto mac = std::span(out.end() - EVP_MD_get_size(md), out.end());
         if (version == ProtocolVersion::SSLv3_0)
         {
-            ssl3_check_mac(rt, content, mac);
+            ssl3CheckMac(rt, content, mac);
         }
         else
         {
-            tls_check_mac(rt, version, {}, content, mac);
+            tls1CheckMac(rt, version, {}, content, mac);
         }
 
         outSize -= mac.size();
@@ -314,20 +314,15 @@ void RecordDecoder::tls_decrypt(RecordType rt, ProtocolVersion version, std::spa
     }
 }
 
-void RecordDecoder::tls_check_mac(RecordType recordType, ProtocolVersion version,
+void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
                                   std::span<const uint8_t> iv, std::span<const uint8_t> content,
-                                  std::span<const uint8_t> mac)
+                                  std::span<const uint8_t> expectedMac)
 {
 
     const EVP_MD* md;
 
-    HmacCtxPtr hm(HMAC_CTX_new());
-    tls::ThrowIfFalse(hm != nullptr);
-
     md = GetMacAlgorithm(cipherSuite_.getHashAlg());
     ThrowIfFalse(md != nullptr);
-
-    ThrowIfFalse(0 < HMAC_Init_ex(hm, macKey_.data(), macKey_.size(), md, nullptr));
 
     std::array<uint8_t, 13> meta;
     utils::store_be(seq_, meta.data());
@@ -339,25 +334,38 @@ void RecordDecoder::tls_check_mac(RecordType recordType, ProtocolVersion version
     meta[11] = utils::get_byte<0>(s);
     meta[12] = utils::get_byte<1>(s);
 
-    tls::ThrowIfFalse(0 < HMAC_Update(hm, meta.data(), meta.size()));
+    OSSL_PARAM params[2];
+    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, (char*)EVP_MD_name(md), 0);
+    params[1] = OSSL_PARAM_construct_end();
+    
+    EvpMacPtr mac(EVP_MAC_fetch(nullptr, "HMAC", nullptr));
+    tls::ThrowIfTrue(mac == nullptr);
+
+    EvpMacCtxPtr ctx(EVP_MAC_CTX_new(mac));
+    tls::ThrowIfTrue(ctx == nullptr);
+
+    tls::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(ctx, params));
+    tls::ThrowIfFalse(0 < EVP_MAC_init(ctx, macKey_.data(), macKey_.size(), nullptr));
+    tls::ThrowIfFalse(0 < EVP_MAC_update(ctx, meta.data(), meta.size()));
 
     if (!iv.empty())
     {
-        tls::ThrowIfFalse(0 < HMAC_Update(hm, iv.data(), iv.size()));
+        tls::ThrowIfFalse(0 < EVP_MAC_update(ctx, iv.data(), iv.size()));
     }
 
-    tls::ThrowIfFalse(0 < HMAC_Update(hm, content.data(), content.size()));
+    tls::ThrowIfFalse(0 < EVP_MAC_update(ctx, content.data(), content.size()));
 
-    unsigned int actualMacSize{EVP_MAX_MD_SIZE};
+    size_t actualMacSize{EVP_MAX_MD_SIZE};
     std::vector<uint8_t> actualMac(actualMacSize);
-    tls::ThrowIfFalse(0 < HMAC_Final(hm, actualMac.data(), &actualMacSize));
+    tls::ThrowIfFalse(0 < EVP_MAC_final(ctx, actualMac.data(), &actualMacSize, actualMacSize));
 
     actualMac.resize(actualMacSize);
 
-    utils::ThrowIfFalse(std::equal(mac.begin(), mac.end(), actualMac.begin()), "Bad record MAC");
+    utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
+                        "Bad record MAC");
 }
 
-void RecordDecoder::ssl3_check_mac(RecordType recordType, std::span<const uint8_t> content,
+void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content,
                                    std::span<const uint8_t> mac)
 {
     const EVP_MD* md;

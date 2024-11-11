@@ -3,6 +3,7 @@
 #include <memory>
 #include <snet/utils/custom_unique_ptr.hpp>
 
+#include <openssl/kdf.h>
 #include <openssl/ssl.h>
 
 namespace snet::tls
@@ -115,14 +116,15 @@ DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslSessionPtr, SSL_SESSION, SSL_SESSION_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, BIO, BIO_free_all);
-
-DEFINE_CUSTOM_UNIQUE_PTR(HmacCtxPtr, HMAC_CTX, HMAC_CTX_free);
-
 DEFINE_CUSTOM_UNIQUE_PTR(EvpPkeyPtr, EVP_PKEY, EVP_PKEY_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpPkeyCtxPtr, EVP_PKEY_CTX, EVP_PKEY_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpCipherPtr, EVP_CIPHER, EVP_CIPHER_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpCipherCtxPtr, EVP_CIPHER_CTX, EVP_CIPHER_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMdPtr, EVP_MD, EVP_MD_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMdCtxPtr, EVP_MD_CTX, EVP_MD_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpKdfPtr, EVP_KDF, EVP_KDF_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpKdfCtxPtr, EVP_KDF_CTX, EVP_KDF_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpMacPtr, EVP_MAC, EVP_MAC_free);
+DEFINE_CUSTOM_UNIQUE_PTR(EvpMacCtxPtr, EVP_MAC_CTX, EVP_MAC_CTX_free);
 
 } // namespace snet::tls
