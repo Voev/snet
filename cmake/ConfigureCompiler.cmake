@@ -81,8 +81,6 @@ if (ENABLE_WERROR)
     add_compiler_flag(-Werror) 
 endif (ENABLE_WERROR)
 
-add_compiler_flag(-DOPENSSL_SUPPRESS_DEPRECATED)
-
 if (CMAKE_GENERATOR STREQUAL "Unix Makefiles")
   set(CMAKE_COLOR_MAKEFILE ON)
 endif()

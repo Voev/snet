@@ -16,9 +16,10 @@
 #include <snet/utils/hexlify.hpp>
 #include <snet/utils/memory_viewer.hpp>
 
-#include <snet/tls/record_decoder.hpp>
 #include <snet/tls/session.hpp>
+#include <snet/tls/record_decoder.hpp>
 #include <snet/tls/prf.hpp>
+#include <snet/tls/exception.hpp>
 
 namespace snet::tls
 {
@@ -48,8 +49,7 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
         ssl3Prf(secret, rnd1, rnd2, out);
     else
     {
-        auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
-        tls1Prf(EVP_MD_name(md), secret, usage, rnd1, rnd2, out);
+        tls1Prf(cipherSuite_.getDigestName(), secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -73,7 +73,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         Secret masterSecret(48);
         if (serverExensions_.has(tls::Extension_Code::ExtendedMasterSecret))
         {
-            auto sessionHash = handshakeHash_.final(cipherSuite_.getHashAlg());
+            auto sessionHash = handshakeHash_.final(cipherSuite_.getDigestName());
             PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
         }
         else
@@ -84,7 +84,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         utils::printHex("MS", masterSecret);
     }
 
-    auto cipher = snet::tls::GetEncAlgorithm(cipherSuite_.getEncAlg());
+    auto cipher = CipherSuiteManager::Instance().fetchCipher(cipherSuite_.getCipherName());
 
     size_t keySize = EVP_CIPHER_get_key_length(cipher);
     size_t ivSize = tls_iv_length_within_key_block(cipher);
@@ -114,8 +114,8 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
     else
     {
-        auto mac = snet::tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
-        auto macSize = EVP_MD_size(mac);
+        auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
+        auto macSize = EVP_MD_get_size(md);
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
@@ -152,7 +152,7 @@ void Session::generateTLS13KeyMaterial()
 
     auto keySize = cipherSuite_.getStrengthBits() / 8;
 
-    auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
+    auto md =  CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
 
     auto serverHandshakeWriteKey = hkdfExpandLabel(
         md, secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "key", {}, keySize);
@@ -482,7 +482,7 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
         auto keySize = cipherSuite_.getStrengthBits() / 8;
-        auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
+        auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
 
         if (sideIndex == 0)
         {
@@ -519,23 +519,23 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
     std::vector<uint8_t> newkey;
     std::vector<uint8_t> newiv;
 
-    auto mac = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
+    auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
     auto keySize = cipherSuite_.getStrengthBits() / 8;
 
     if (sideIndex == 0)
     {
-        auto CTS = hkdfExpandLabel(mac, secrets_.getSecret(SecretNode::ClientTrafficSecret),
-                                   "traffic upd", {}, EVP_MD_size(mac));
-        newkey = hkdfExpandLabel(mac, CTS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(mac, CTS, "iv", {}, 12);
+        auto CTS = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ClientTrafficSecret),
+                                   "traffic upd", {}, EVP_MD_get_size(md));
+        newkey = hkdfExpandLabel(md, CTS, "key", {}, keySize);
+        newiv = hkdfExpandLabel(md, CTS, "iv", {}, 12);
         c_to_s->tls13UpdateKeys(newkey, newiv);
     }
     else
     {
-        auto STS = hkdfExpandLabel(mac, secrets_.getSecret(SecretNode::ServerTrafficSecret),
-                                   "traffic upd", {}, EVP_MD_size(mac));
-        newkey = hkdfExpandLabel(mac, STS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(mac, STS, "iv", {}, 12);
+        auto STS = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
+                                   "traffic upd", {}, EVP_MD_get_size(md));
+        newkey = hkdfExpandLabel(md, STS, "key", {}, keySize);
+        newiv = hkdfExpandLabel(md, STS, "iv", {}, 12);
 
         s_to_c->tls13UpdateKeys(newkey, newiv);
     }

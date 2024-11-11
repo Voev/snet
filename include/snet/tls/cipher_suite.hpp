@@ -144,11 +144,6 @@ enum class MACAlg
     GOST_Kuznyechik,
 };
 
-
-const EVP_CIPHER* GetEncAlgorithm(const EncAlg alg);
-
-const EVP_MD* GetMacAlgorithm(const MACAlg alg);
-
 class CipherSuite final
 {
 public:
@@ -158,16 +153,16 @@ public:
 
     explicit CipherSuite(std::string name, std::uint32_t id,
                          std::uint32_t strengthBits, std::uint32_t algBits,
-                         KexAlg keyExAlg, AuthAlg authAlg, EncAlg symKeyAlg,
-                         MACAlg MACAlg, bool aead);
+                         KexAlg keyExAlg, AuthAlg authAlg, std::string symKeyAlg,
+                         std::string MACAlg, bool aead);
 
     KexAlg getKeyExchAlg() const;
 
     AuthAlg getAuthAlg() const;
 
-    MACAlg getHashAlg() const;
+    const std::string& getDigestName() const;
 
-    EncAlg getEncAlg() const;
+    const std::string& getCipherName() const;
 
     std::uint32_t getStrengthBits() const;
 
@@ -175,9 +170,7 @@ public:
 
     bool isAEAD() const;
 
-    std::uint32_t getAeadTagLength() const;
-
-    const std::string& name()
+    const std::string& name() const
     {
         return name_;
     }
@@ -189,8 +182,8 @@ private:
     std::uint32_t algBits_;      ///< Number of bits for algorithm
     KexAlg kex_;
     AuthAlg auth_;
-    EncAlg enc_;
-    MACAlg mac_;
+    std::string cipher_;
+    std::string digest_;
     bool aead_;
 };
 
@@ -201,6 +194,12 @@ public:
     ~CipherSuiteManager() noexcept;
 
     CipherSuite getCipherSuiteById(uint32_t id);
+
+    EvpMacPtr fetchMac(std::string_view algorithm);
+
+    EvpMdPtr fetchDigest(std::string_view algorithm);
+
+    EvpCipherPtr fetchCipher(std::string_view algorithm);
 
 private:
     struct Impl;
