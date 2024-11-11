@@ -15,12 +15,12 @@ public:
 
     ~RecordDecoder();
 
-    RecordDecoder(CipherSuite cs, std::span<const uint8_t> mk,
-                  const std::vector<uint8_t>& sk,
-                  const std::vector<uint8_t>& iv);
+    RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
+                  std::span<const uint8_t> encKey,
+                  std::span<const uint8_t> iv);
 
-    void initAEAD(CipherSuite cs, const std::vector<uint8_t>& encKey,
-                  const std::vector<uint8_t>& encIV);
+    void initAEAD(CipherSuite cs, std::span<const uint8_t> encKey,
+                  std::span<const uint8_t> encIV);
 
     void tls_decrypt(RecordType rt, ProtocolVersion version,
                      std::span<const uint8_t> in, std::vector<uint8_t>& out,

@@ -28,7 +28,7 @@ RecordDecoder::~RecordDecoder() noexcept
 }
 
 RecordDecoder::RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
-                             const std::vector<uint8_t>& encKey, const std::vector<uint8_t>& iv)
+                             std::span<const uint8_t> encKey, std::span<const uint8_t> iv)
     : cipherSuite_(cs)
     , cipher_(EVP_CIPHER_CTX_new())
     , seq_(0)
@@ -54,12 +54,16 @@ RecordDecoder::RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
     }
 }
 
-void RecordDecoder::initAEAD(CipherSuite cs, const std::vector<uint8_t>& encKey,
-                             const std::vector<uint8_t>& encIV)
+void RecordDecoder::initAEAD(CipherSuite cs, std::span<const uint8_t> encKey,
+                             std::span<const uint8_t> encIV)
 {
     cipherSuite_ = cs;
-    implicitIv_ = encIV;
-    writeKey_ = encKey;
+
+    implicitIv_.resize(encIV.size());
+    memcpy(implicitIv_.data(), encIV.data(), encIV.size());
+
+    writeKey_.resize(encKey.size());
+    memcpy(writeKey_.data(), encKey.data(), encKey.size());
 
     auto cipher = GetEncAlgorithm(cipherSuite_.getEncAlg());
     tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));

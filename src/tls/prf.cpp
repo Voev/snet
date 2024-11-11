@@ -7,6 +7,7 @@
 #include <snet/tls/types.hpp>
 
 #include <snet/utils/exception.hpp>
+#include <snet/utils/load_store.hpp>
 
 #include <openssl/md5.h>
 #include <openssl/sha.h>
@@ -177,7 +178,6 @@ void tls_P_hash(const Secret& secret, std::span<const uint8_t> seed, const EVP_M
 void tls_prf(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
              std::span<const uint8_t> rnd2, std::span<uint8_t> out)
 {
-
     std::vector<uint8_t> md5_out;
     std::vector<uint8_t> sha_out;
     std::vector<uint8_t> seed;
@@ -210,7 +210,6 @@ void tls_prf(const Secret& secret, std::string_view usage, std::span<const uint8
 void tls12_prf(const EVP_MD* md, const Secret& secret, std::string_view usage,
                std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2, std::span<uint8_t> out)
 {
-
     std::vector<uint8_t> sha_out;
     std::vector<uint8_t> seed;
 
@@ -226,17 +225,9 @@ void tls12_prf(const EVP_MD* md, const Secret& secret, std::string_view usage,
         out[i] = sha_out[i];
 }
 
-template <size_t B, typename T>
-inline constexpr uint8_t getByte(T input) requires(B < sizeof(T))
-{
-    const size_t shift = ((~B) & (sizeof(T) - 1)) << 3;
-    return static_cast<uint8_t>((input >> shift) & 0xFF);
-}
-
 std::vector<uint8_t> hkdfExpandLabel(const EVP_MD* md, const Secret& secret, std::string_view label,
                                      std::span<const uint8_t> context, const size_t length)
 {
-
     // assemble (serialized) HkdfLabel
     std::vector<uint8_t> hkdfLabel;
     hkdfLabel.reserve(2 /* length */ + (label.size() + 6 /* 'tls13 ' */ + 1 /* length field*/) +
@@ -245,8 +236,8 @@ std::vector<uint8_t> hkdfExpandLabel(const EVP_MD* md, const Secret& secret, std
     // length
     utils::ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
     const auto len = static_cast<uint16_t>(length);
-    hkdfLabel.push_back(getByte<0>(len));
-    hkdfLabel.push_back(getByte<1>(len));
+    hkdfLabel.push_back(utils::get_byte<0>(len));
+    hkdfLabel.push_back(utils::get_byte<1>(len));
 
     // label
     const std::string prefix = "tls13 ";

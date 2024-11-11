@@ -14,9 +14,9 @@
 
 #include <snet/log/log_manager.hpp>
 
-#include <snet/stream/memory_reader.hpp>
 #include <snet/utils/exception.hpp>
 #include <snet/utils/hexlify.hpp>
+#include <snet/utils/memory_viewer.hpp>
 
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/session.hpp>
@@ -70,13 +70,7 @@ static int tls_iv_length_within_key_block(const EVP_CIPHER* c)
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
 {
-    std::vector<uint8_t> clientWriteKey;
-    std::vector<uint8_t> serverWriteKey;
-    std::vector<uint8_t> clientMacKey;
-    std::vector<uint8_t> serverMacKey;
-    std::vector<uint8_t> clientIV;
-    std::vector<uint8_t> serverIV;
-    std::vector<uint8_t> key_block;
+    std::vector<uint8_t> keyBlock;
 
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
@@ -101,20 +95,15 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (cipherSuite_.isAEAD())
     {
-        key_block.resize(keySize * 2 + ivSize * 2);
+        keyBlock.resize(keySize * 2 + ivSize * 2);
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, key_block);
+            clientRandom_, keyBlock);
 
-        clientWriteKey.resize(keySize);
-        serverWriteKey.resize(keySize);
-        clientIV.resize(ivSize);
-        serverIV.resize(ivSize);
-
-        snet::stream::MemoryReader reader(key_block);
-        reader.read(clientWriteKey.data(), clientWriteKey.size());
-        reader.read(serverWriteKey.data(), serverWriteKey.size());
-        reader.read(clientIV.data(), clientIV.size());
-        reader.read(serverIV.data(), serverIV.size());
+        utils::MemoryViewer viewer(keyBlock);
+        auto clientWriteKey = viewer.view(keySize);
+        auto serverWriteKey = viewer.view(keySize);
+        auto clientIV = viewer.view(ivSize);
+        auto serverIV = viewer.view(ivSize);
 
         if (sideIndex == 0)
         {
@@ -132,24 +121,17 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto mac = snet::tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
         auto macSize = EVP_MD_size(mac);
 
-        key_block.resize(macSize * 2 + keySize * 2 + ivSize * 2);
+        keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, key_block);
+            clientRandom_, keyBlock);
 
-        clientMacKey.resize(macSize);
-        serverMacKey.resize(macSize);
-        clientWriteKey.resize(keySize);
-        serverWriteKey.resize(keySize);
-        clientIV.resize(ivSize);
-        serverIV.resize(ivSize);
-
-        snet::stream::MemoryReader reader(key_block);
-        reader.read(clientMacKey.data(), clientMacKey.size());
-        reader.read(serverMacKey.data(), serverMacKey.size());
-        reader.read(clientWriteKey.data(), clientWriteKey.size());
-        reader.read(serverWriteKey.data(), serverWriteKey.size());
-        reader.read(clientIV.data(), clientIV.size());
-        reader.read(serverIV.data(), serverIV.size());
+        utils::MemoryViewer viewer(keyBlock);
+        auto clientMacKey = viewer.view(macSize);
+        auto serverMacKey = viewer.view(macSize);
+        auto clientWriteKey = viewer.view(keySize);
+        auto serverWriteKey = viewer.view(keySize);
+        auto clientIV = viewer.view(ivSize);
+        auto serverIV = viewer.view(ivSize);
 
         if (sideIndex == 0)
         {
