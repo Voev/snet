@@ -17,11 +17,6 @@
 namespace snet::tls
 {
 
-/*State defines*/
-#define SSL_ST_SENT_NOTHING 0
-#define SSL_ST_HANDSHAKE 1
-#define SSL_ST_SENT_CHANGE_CIPHER_SPEC 2
-
 class Session;
 
 struct SessionCallbacks
@@ -106,23 +101,19 @@ private:
 
 public:
     SessionCallbacks callbacks_;
-
     void* userData_;
     ProtocolVersion version_;
-    CipherSuite cs;
-    std::vector<uint8_t> PMS;
+    CipherSuite cipherSuite_;
+    std::vector<uint8_t> PMS_;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> sessionId_;
     std::unique_ptr<RecordDecoder> c_to_s;
     std::unique_ptr<RecordDecoder> s_to_c;
-    Extensions clientExensions;
-    Extensions serverExensions;
+    Extensions clientExensions_;
+    Extensions serverExensions_;
     HandshakeHash handshakeHash_;
-    bool msInited{false};
-    int i_state{0};
-    int r_state{0};
 };
 
 } // namespace snet::tls

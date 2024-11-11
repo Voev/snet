@@ -28,8 +28,6 @@ namespace snet::tls
 Session::Session(SessionCallbacks callbacks, void* userData)
     : callbacks_(std::move(callbacks))
     , userData_(userData)
-    , i_state(SSL_ST_SENT_NOTHING)
-    , r_state(SSL_ST_HANDSHAKE)
 {
 }
 
@@ -54,7 +52,7 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
         tls_prf(secret, usage, rnd1, rnd2, out);
     else
     {
-        auto md = tls::GetMacAlgorithm(cs.getHashAlg());
+        auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
         tls12_prf(md, secret, usage, rnd1, rnd2, out);
     }
 }
@@ -83,25 +81,25 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
-        if (serverExensions.has(tls::Extension_Code::ExtendedMasterSecret))
+        if (serverExensions_.has(tls::Extension_Code::ExtendedMasterSecret))
         {
-            auto sessionHash = handshakeHash_.final(cs.getHashAlg());
-            PRF(PMS, "extended master secret", sessionHash, {}, masterSecret);
+            auto sessionHash = handshakeHash_.final(cipherSuite_.getHashAlg());
+            PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
         }
         else
         {
-            PRF(PMS, "master secret", clientRandom_, serverRandom_, masterSecret);
+            PRF(PMS_, "master secret", clientRandom_, serverRandom_, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
         utils::printHex("MS", masterSecret);
     }
 
-    auto cipher = snet::tls::GetEncAlgorithm(cs.getEncAlg());
+    auto cipher = snet::tls::GetEncAlgorithm(cipherSuite_.getEncAlg());
 
     size_t keySize = EVP_CIPHER_get_key_length(cipher);
     size_t ivSize = tls_iv_length_within_key_block(cipher);
 
-    if (cs.isAEAD())
+    if (cipherSuite_.isAEAD())
     {
         key_block.resize(keySize * 2 + ivSize * 2);
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
@@ -121,17 +119,17 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         if (sideIndex == 0)
         {
             c_to_s = std::make_unique<snet::tls::RecordDecoder>();
-            c_to_s->initAEAD(cs, clientWriteKey, clientIV);
+            c_to_s->initAEAD(cipherSuite_, clientWriteKey, clientIV);
         }
         else
         {
             s_to_c = std::make_unique<snet::tls::RecordDecoder>();
-            s_to_c->initAEAD(cs, serverWriteKey, serverIV);
+            s_to_c->initAEAD(cipherSuite_, serverWriteKey, serverIV);
         }
     }
     else
     {
-        auto mac = snet::tls::GetMacAlgorithm(cs.getHashAlg());
+        auto mac = snet::tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
         auto macSize = EVP_MD_size(mac);
 
         key_block.resize(macSize * 2 + keySize * 2 + ivSize * 2);
@@ -155,12 +153,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            c_to_s = std::make_unique<snet::tls::RecordDecoder>(cs, clientMacKey, clientWriteKey,
+            c_to_s = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, clientMacKey, clientWriteKey,
                                                                 clientIV);
         }
         else
         {
-            s_to_c = std::make_unique<snet::tls::RecordDecoder>(cs, serverMacKey, serverWriteKey,
+            s_to_c = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, serverMacKey, serverWriteKey,
                                                                 serverIV);
         }
     }
@@ -174,9 +172,9 @@ void Session::generateTLS13KeyMaterial()
         return;
     }
 
-    auto keySize = cs.getStrengthBits() / 8;
+    auto keySize = cipherSuite_.getStrengthBits() / 8;
 
-    auto md = tls::GetMacAlgorithm(cs.getHashAlg());
+    auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
 
     auto serverHandshakeWriteKey = hkdfExpandLabel(
         md, secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "key", {}, keySize);
@@ -194,9 +192,9 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex("Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex("Client Handshake IV", clientHandshakeIV);
 
-    c_to_s = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(), clientHandshakeWriteKey,
+    c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), clientHandshakeWriteKey,
                                              clientHandshakeIV);
-    s_to_c = std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(), serverHandshakeWriteKey,
+    s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), serverHandshakeWriteKey,
                                              serverHandshakeIV);
 }
 
@@ -218,7 +216,7 @@ void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint
     reader.get_range_vector<uint8_t>(1, 1, 255);
 
     /// Read client extensions
-    clientExensions.deserialize(reader, tls::Side::Client, tls::HandshakeType::ClientHello);
+    clientExensions_.deserialize(reader, tls::Side::Client, tls::HandshakeType::ClientHello);
 
     reader.assert_done();
 
@@ -246,13 +244,13 @@ void Session::processHandshakeServerHello(int8_t sideIndex, std::span<const uint
     /// Compression Method
     reader.get_byte();
 
-    serverExensions.deserialize(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
+    serverExensions_.deserialize(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
 
-    cs = CipherSuiteManager::Instance().getCipherSuiteById(ciphersuite);
+    cipherSuite_ = CipherSuiteManager::Instance().getCipherSuiteById(ciphersuite);
 
-    if (serverExensions.has(tls::Extension_Code::SupportedVersions))
+    if (serverExensions_.has(tls::Extension_Code::SupportedVersions))
     {
-        auto ext = serverExensions.get<tls::Supported_Versions>();
+        auto ext = serverExensions_.get<tls::Supported_Versions>();
         version_ = ext->versions()[0];
     }
 
@@ -360,7 +358,7 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
 
     utils::ThrowIfTrue(reader.remaining_bytes() < 2,
                        "Server sent an empty Encrypted Extensions message");
-    serverExensions.deserialize(reader, tls::Side::Server, tls::HandshakeType::EncryptedExtensions);
+    serverExensions_.deserialize(reader, tls::Side::Server, tls::HandshakeType::EncryptedExtensions);
 
     reader.assert_done();
 }
@@ -371,7 +369,7 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
 
     stream::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    auto kex = cs.getKeyExchAlg();
+    auto kex = cipherSuite_.getKeyExchAlg();
 
     if (kex == tls::KexAlg::PSK || kex == KexAlg::ECDHE_PSK)
     {
@@ -397,7 +395,7 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
         throw utils::RuntimeError("Server_Key_Exchange: Unsupported kex type");
     }
 
-    auto auth = cs.getAuthAlg();
+    auto auth = cipherSuite_.getAuthAlg();
     if (auth == AuthAlg::DSS || auth == AuthAlg::ECDSA)
     {
         reader.get_uint16_t();                  // algorithm
@@ -461,7 +459,7 @@ void Session::processHandshakeClientKeyExchange(int8_t sideIndex, std::span<cons
 {
     utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
 
-    if (cs.getKeyExchAlg() == KexAlg::RSA)
+    if (cipherSuite_.getKeyExchAlg() == KexAlg::RSA)
     {
         BIO* b = BIO_new_file("/mnt/c/Users/voev/Projects/key.pem", "r");
         EVP_PKEY* serverKey = PEM_read_bio_PrivateKey(b, nullptr, nullptr, nullptr);
@@ -488,11 +486,11 @@ void Session::processHandshakeClientKeyExchange(int8_t sideIndex, std::span<cons
         tls::ThrowIfFalse(0 <
                           EVP_PKEY_decrypt(ctx, nullptr, &size, message.data(), message.size()));
 
-        PMS.resize(size);
-        tls::ThrowIfFalse(0 < EVP_PKEY_decrypt(ctx, PMS.data(), &size, encryptedPreMaster.data(),
+        PMS_.resize(size);
+        tls::ThrowIfFalse(0 < EVP_PKEY_decrypt(ctx, PMS_.data(), &size, encryptedPreMaster.data(),
                                                encryptedPreMaster.size()));
 
-        PMS.resize(size);
+        PMS_.resize(size);
     }
 
     handshakeHash_.update(message);
@@ -504,8 +502,8 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
-        auto keySize = cs.getStrengthBits() / 8;
-        auto md = tls::GetMacAlgorithm(cs.getHashAlg());
+        auto keySize = cipherSuite_.getStrengthBits() / 8;
+        auto md = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
 
         if (sideIndex == 0)
         {
@@ -515,7 +513,7 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
                                             "iv", {}, 12);
 
             c_to_s =
-                std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(), clientWriteKey, clientIV);
+                std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), clientWriteKey, clientIV);
             utils::printHex("Client Write key", clientWriteKey);
             utils::printHex("Client IV", clientIV);
         }
@@ -526,7 +524,7 @@ void Session::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t
             auto serverIV = hkdfExpandLabel(md, secrets_.getSecret(SecretNode::ServerTrafficSecret),
                                             "iv", {}, 12);
             s_to_c =
-                std::make_unique<RecordDecoder>(cs, std::span<uint8_t>(), serverWriteKey, serverIV);
+                std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(), serverWriteKey, serverIV);
 
             utils::printHex("Server Write key", serverWriteKey);
             utils::printHex("Server IV", serverIV);
@@ -542,8 +540,8 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
     std::vector<uint8_t> newkey;
     std::vector<uint8_t> newiv;
 
-    auto mac = tls::GetMacAlgorithm(cs.getHashAlg());
-    auto keySize = cs.getStrengthBits() / 8;
+    auto mac = tls::GetMacAlgorithm(cipherSuite_.getHashAlg());
+    auto keySize = cipherSuite_.getStrengthBits() / 8;
 
     if (sideIndex == 0)
     {
@@ -705,7 +703,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
         {
             c_to_s->tls_decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
-                                serverExensions.has(Extension_Code::EncryptThenMac));
+                                serverExensions_.has(Extension_Code::EncryptThenMac));
 
             return Record(recordType, recordVersion, outputBytes);
         }
@@ -713,7 +711,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
         {
             s_to_c->tls_decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
-                                serverExensions.has(Extension_Code::EncryptThenMac));
+                                serverExensions_.has(Extension_Code::EncryptThenMac));
 
             return Record(recordType, recordVersion, outputBytes);
         }
