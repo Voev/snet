@@ -69,17 +69,17 @@ void Settings::useCertificate(X509* certificate)
     }
 }
 
-void Settings::setMaxVersion(VersionCode version)
+void Settings::setMaxVersion(const ProtocolVersion& version)
 {
-    if (0 >= SSL_CTX_set_max_proto_version(ctx_, static_cast<long>(version)))
+    if (0 >= SSL_CTX_set_max_proto_version(ctx_, version.code()))
     {
         throw SystemError(GetLastError());
     }
 }
 
-void Settings::setMinVersion(VersionCode version)
+void Settings::setMinVersion(const ProtocolVersion& version)
 {
-    if (0 >= SSL_CTX_set_min_proto_version(ctx_, static_cast<long>(version)))
+    if (0 >= SSL_CTX_set_min_proto_version(ctx_, version.code()))
     {
         throw SystemError(GetLastError());
     }

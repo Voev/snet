@@ -153,13 +153,17 @@ public:
 
     explicit CipherSuite(std::string name, std::uint32_t id, std::uint32_t strengthBits,
                          std::uint32_t algBits, KexAlg keyExAlg, AuthAlg authAlg,
-                         std::string symKeyAlg, std::string MACAlg, bool aead);
+                         std::string cipher, std::string digest, std::string handshakeDigest, bool aead);
+
+    const std::string& name() const;
 
     KexAlg getKeyExchAlg() const;
 
     AuthAlg getAuthAlg() const;
 
     const std::string& getDigestName() const;
+
+    const std::string& getHandshakeDigest() const;
 
     const std::string& getCipherName() const;
 
@@ -168,11 +172,6 @@ public:
     std::uint32_t getAlgBits() const;
 
     bool isAEAD() const;
-
-    const std::string& name() const
-    {
-        return name_;
-    }
 
 private:
     std::string name_;
@@ -183,6 +182,7 @@ private:
     AuthAlg auth_;
     std::string cipher_;
     std::string digest_;
+    std::string handshakeDigest_;
     bool aead_;
 };
 
@@ -190,6 +190,7 @@ class CipherSuiteManager final : public utils::Singleton<CipherSuiteManager>
 {
 public:
     CipherSuiteManager();
+
     ~CipherSuiteManager() noexcept;
 
     CipherSuite getCipherSuiteById(uint32_t id);

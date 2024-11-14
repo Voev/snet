@@ -77,6 +77,15 @@ void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey,
     seq_ = 0;
 }
 
+size_t GetTagLength(EVP_CIPHER_CTX* ctx)
+{
+    if (EVP_CIPHER_CTX_get_mode(ctx) == EVP_CIPH_CCM_MODE)
+    {
+        return EVP_CCM_TLS_TAG_LEN;
+    }
+    return EVP_CIPHER_CTX_get_tag_length(ctx);
+}
+
 void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
                                  std::vector<uint8_t>& out)
 {
@@ -100,7 +109,7 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     }
     seq_++;
 
-    auto tagLength = EVP_CIPHER_CTX_get_tag_length(cipher_);
+    auto tagLength = GetTagLength(cipher_);
     auto data = in.subspan(0, in.size() - tagLength);
     auto tag = in.subspan(in.size() - tagLength, tagLength);
 
@@ -130,7 +139,7 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
     {
-        tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, nullptr, in.size()));
+        tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, nullptr, data.size()));
     }
 
     tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad.data(), aad.size()));
@@ -145,9 +154,8 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     {
         tls::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_GCM_SET_TAG, tag.size(),
                                                   const_cast<uint8_t*>(tag.data())));
+        tls::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
     }
-
-    tls::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
 }
 
 void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
@@ -171,7 +179,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         tls::ThrowIfFalse(0 <
                           EVP_DecryptInit(cipher_, nullptr, writeKey_.data(), aead_nonce.data()));
 
-        auto tagLength = EVP_CIPHER_CTX_get_tag_length(cipher_);
+        auto tagLength = GetTagLength(cipher_);
         auto data = in.subspan(0, in.size() - tagLength);
         auto tag = in.subspan(in.size() - tagLength, tagLength);
 
@@ -181,8 +189,8 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
 
         utils::store_be(seq_, &aad[0]);
         aad[8] = static_cast<uint8_t>(rt);
-        aad[9] = version.major_version();
-        aad[10] = version.minor_version();
+        aad[9] = version.majorVersion();
+        aad[10] = version.minorVersion();
         uint16_t size = static_cast<uint16_t>(data.size());
         aad[11] = utils::get_byte<0>(size);
         aad[12] = utils::get_byte<1>(size);
@@ -322,8 +330,8 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
     utils::store_be(seq_, meta.data());
     seq_++;
     meta[8] = static_cast<uint8_t>(recordType);
-    meta[9] = version.major_version();
-    meta[10] = version.minor_version();
+    meta[9] = version.majorVersion();
+    meta[10] = version.minorVersion();
     uint16_t s = content.size() + iv.size();
     meta[11] = utils::get_byte<0>(s);
     meta[12] = utils::get_byte<1>(s);

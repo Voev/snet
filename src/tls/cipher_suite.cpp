@@ -82,16 +82,21 @@ CipherSuite::~CipherSuite() noexcept {
 
 CipherSuite::CipherSuite(
     std::string name, std::uint32_t id, std::uint32_t strengthBits, std::uint32_t algBits, KexAlg kex, AuthAlg auth,
-    std::string enc, std::string mac, bool aead)
+    std::string cipher, std::string digest, std::string handshakeDigest, bool aead)
     : name_(std::move(name))
     , id_(id)
     , strengthBits_(strengthBits)
     , algBits_(algBits)
     , kex_(kex)
     , auth_(auth)
-    , cipher_(std::move(enc))
-    , digest_(std::move(mac))
+    , cipher_(std::move(cipher))
+    , digest_(std::move(digest))
+    , handshakeDigest_(std::move(handshakeDigest))
     , aead_(aead) {
+}
+
+const std::string& CipherSuite::name() const {
+    return name_;
 }
 
 KexAlg CipherSuite::getKeyExchAlg() const {
@@ -104,6 +109,10 @@ AuthAlg CipherSuite::getAuthAlg() const {
 
 const std::string& CipherSuite::getDigestName() const {
     return digest_;
+}
+
+const std::string& CipherSuite::getHandshakeDigest() const {
+    return handshakeDigest_;
 }
 
 const std::string& CipherSuite::getCipherName() const {
@@ -163,9 +172,10 @@ CipherSuite CipherSuiteManager::getCipherSuiteById(uint32_t id) {
         auto auth = GetAuthAlg(cipherSuite);
         auto cipher = OBJ_nid2sn(SSL_CIPHER_get_cipher_nid(cipherSuite));
         auto digest = OBJ_nid2sn(SSL_CIPHER_get_digest_nid(cipherSuite));
+        auto handshakeDigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cipherSuite));
         int algBits{0};
         int strengthBits = SSL_CIPHER_get_bits(cipherSuite, &algBits);
-        return CipherSuite(name, id, strengthBits, algBits, kex, auth, cipher, digest, SSL_CIPHER_is_aead(cipherSuite));
+        return CipherSuite(name, id, strengthBits, algBits, kex, auth, cipher, digest, handshakeDigest, SSL_CIPHER_is_aead(cipherSuite));
     }
     return CipherSuite();
 }

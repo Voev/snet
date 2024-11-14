@@ -1,104 +1,88 @@
+/// @brief Определение класса сообщения протокола оповещения (Alert).
 
 #include <snet/tls/alert.hpp>
 #include <snet/utils/exception.hpp>
 
-namespace snet::tls {
+namespace snet::tls
+{
 
-Alert::Alert(const std::vector<uint8_t>& buf) {
-    utils::ThrowIfTrue(buf.size() != 2, "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
+namespace
+{
 
-    if (buf[0] == 1) {
-        m_fatal = false;
-    } else if (buf[0] == 2) {
-        m_fatal = true;
-    } else {
-        throw utils::RuntimeError("Bad code for TLS alert level");
-    }
-
-    const uint8_t dc = buf[1];
-
-    m_type_code = static_cast<Type>(dc);
-}
-
-std::vector<uint8_t> Alert::serialize() const {
-    return std::vector<uint8_t>({static_cast<uint8_t>(is_fatal() ? 2 : 1), static_cast<uint8_t>(type())});
-}
-
-namespace {
-
-const char* alert_type_to_string(AlertType type) {
-    switch (type) {
-        case AlertType::CloseNotify:
-            return "close_notify";
-        case AlertType::UnexpectedMessage:
-            return "unexpected_message";
-        case AlertType::BadRecordMac:
-            return "bad_record_mac";
-        case AlertType::DecryptionFailed:
-            return "decryption_failed";
-        case AlertType::RecordOverflow:
-            return "record_overflow";
-        case AlertType::DecompressionFailure:
-            return "decompression_failure";
-        case AlertType::HandshakeFailure:
-            return "handshake_failure";
-        case AlertType::NoCertificate:
-            return "no_certificate";
-        case AlertType::BadCertificate:
-            return "bad_certificate";
-        case AlertType::UnsupportedCertificate:
-            return "unsupported_certificate";
-        case AlertType::CertificateRevoked:
-            return "certificate_revoked";
-        case AlertType::CertificateExpired:
-            return "certificate_expired";
-        case AlertType::CertificateUnknown:
-            return "certificate_unknown";
-        case AlertType::IllegalParameter:
-            return "illegal_parameter";
-        case AlertType::UnknownCA:
-            return "unknown_ca";
-        case AlertType::AccessDenied:
-            return "access_denied";
-        case AlertType::DecodeError:
-            return "decode_error";
-        case AlertType::DecryptError:
-            return "decrypt_error";
-        case AlertType::ExportRestriction:
-            return "export_restriction";
-        case AlertType::ProtocolVersion:
-            return "protocol_version";
-        case AlertType::InsufficientSecurity:
-            return "insufficient_security";
-        case AlertType::InternalError:
-            return "internal_error";
-        case AlertType::InappropriateFallback:
-            return "inappropriate_fallback";
-        case AlertType::UserCanceled:
-            return "user_canceled";
-        case AlertType::NoRenegotiation:
-            return "no_renegotiation";
-        case AlertType::MissingExtension:
-            return "missing_extension";
-        case AlertType::UnsupportedExtension:
-            return "unsupported_extension";
-        case AlertType::CertificateUnobtainable:
-            return "certificate_unobtainable";
-        case AlertType::UnrecognizedName:
-            return "unrecognized_name";
-        case AlertType::BadCertificateStatusResponse:
-            return "bad_certificate_status_response";
-        case AlertType::BadCertificateHashValue:
-            return "bad_certificate_hash_value";
-        case AlertType::UnknownPSKIdentity:
-            return "unknown_psk_identity";
-        case AlertType::CertificateRequired:
-            return "certificate_required";
-        case AlertType::NoApplicationProtocol:
-            return "no_application_protocol";
-
-        case AlertType::None:
-            return "none";
+const char* DescriptionToString(const Alert::Description description)
+{
+    switch (description)
+    {
+    case Alert::Description::CloseNotify:
+        return "close_notify";
+    case Alert::Description::UnexpectedMessage:
+        return "unexpected_message";
+    case Alert::Description::BadRecordMac:
+        return "bad_record_mac";
+    case Alert::Description::DecryptionFailed:
+        return "decryption_failed";
+    case Alert::Description::RecordOverflow:
+        return "record_overflow";
+    case Alert::Description::DecompressionFailure:
+        return "decompression_failure";
+    case Alert::Description::HandshakeFailure:
+        return "handshake_failure";
+    case Alert::Description::NoCertificate:
+        return "no_certificate";
+    case Alert::Description::BadCertificate:
+        return "bad_certificate";
+    case Alert::Description::UnsupportedCertificate:
+        return "unsupported_certificate";
+    case Alert::Description::CertificateRevoked:
+        return "certificate_revoked";
+    case Alert::Description::CertificateExpired:
+        return "certificate_expired";
+    case Alert::Description::CertificateUnknown:
+        return "certificate_unknown";
+    case Alert::Description::IllegalParameter:
+        return "illegal_parameter";
+    case Alert::Description::UnknownCA:
+        return "unknown_ca";
+    case Alert::Description::AccessDenied:
+        return "access_denied";
+    case Alert::Description::DecodeError:
+        return "decode_error";
+    case Alert::Description::DecryptError:
+        return "decrypt_error";
+    case Alert::Description::ExportRestriction:
+        return "export_restriction";
+    case Alert::Description::ProtocolVersion:
+        return "protocol_version";
+    case Alert::Description::InsufficientSecurity:
+        return "insufficient_security";
+    case Alert::Description::InternalError:
+        return "internal_error";
+    case Alert::Description::InappropriateFallback:
+        return "inappropriate_fallback";
+    case Alert::Description::UserCanceled:
+        return "user_canceled";
+    case Alert::Description::NoRenegotiation:
+        return "no_renegotiation";
+    case Alert::Description::MissingExtension:
+        return "missing_extension";
+    case Alert::Description::UnsupportedExtension:
+        return "unsupported_extension";
+    case Alert::Description::CertificateUnobtainable:
+        return "certificate_unobtainable";
+    case Alert::Description::UnrecognizedName:
+        return "unrecognized_name";
+    case Alert::Description::BadCertificateStatusResponse:
+        return "bad_certificate_status_response";
+    case Alert::Description::BadCertificateHashValue:
+        return "bad_certificate_hash_value";
+    case Alert::Description::UnknownPSKIdentity:
+        return "unknown_psk_identity";
+    case Alert::Description::CertificateRequired:
+        return "certificate_required";
+    case Alert::Description::NoApplicationProtocol:
+        return "no_application_protocol";
+    case Alert::Description::None:
+        return "none";
     }
 
     return nullptr;
@@ -106,12 +90,75 @@ const char* alert_type_to_string(AlertType type) {
 
 } // namespace
 
-std::string Alert::type_string() const {
-    if (const char* known_alert = alert_type_to_string(type())) {
-        return std::string(known_alert);
+Alert::Alert()
+    : fatal_(false)
+    , description_(Description::None)
+{
+}
+
+Alert::~Alert() noexcept = default;
+
+Alert::Alert(const Alert& other) = default;
+
+Alert::Alert(Alert&& other) noexcept = default;
+
+Alert& Alert::operator=(const Alert& other) = default;
+
+Alert& Alert::operator=(Alert&& other) noexcept = default;
+
+Alert::Alert(Description description, bool fatal)
+    : fatal_(fatal)
+    , description_(description)
+{
+}
+
+Alert::Alert(std::span<const uint8_t> buf)
+{
+    utils::ThrowIfTrue(buf.size() != 2,
+                       "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
+
+    utils::ThrowIfFalse(buf[0] == 1 || buf[0] == 2, "Bad code for TLS alert level");
+
+    fatal_ = (buf[0] == 2);
+    description_ = static_cast<Description>(buf[1]);
+}
+
+bool Alert::isFatal() const noexcept
+{
+    return fatal_;
+}
+
+bool Alert::isValid() const noexcept
+{
+    return (description_ != Alert::Description::None);
+}
+
+Alert::Description Alert::description() const noexcept
+{
+    return description_;
+}
+
+std::string Alert::toString() const
+{
+    const char* knownAlert = DescriptionToString(description());
+    if (knownAlert)
+    {
+        return std::string(knownAlert);
     }
 
-    return "unrecognized_alert_" + std::to_string(static_cast<size_t>(type()));
+    return "unknown_alert_" + std::to_string(static_cast<size_t>(description()));
+}
+
+std::vector<uint8_t> Alert::serialize() const
+{
+    if (isValid())
+    {
+        std::vector<uint8_t> message(2);
+        message[0] = isFatal() ? 2 : 1;
+        message[1] = static_cast<uint8_t>(description());
+        return message;
+    }
+    return std::vector<uint8_t>();
 }
 
 } // namespace snet::tls

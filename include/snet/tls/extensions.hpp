@@ -13,7 +13,7 @@
 
 namespace snet::tls {
 
-enum class Extension_Code : uint16_t {
+enum class ExtensionCode : std::uint16_t {
     ServerNameIndication = 0,
     ApplicationLayerProtocolNegotiation = 16,
     ClientCertificateType = 19,
@@ -32,7 +32,7 @@ public:
     /**
      * @return code number of the extension
      */
-    virtual Extension_Code type() const = 0;
+    virtual ExtensionCode type() const = 0;
 
     /**
      * @return if we should encode this extension or not
@@ -46,22 +46,22 @@ public:
  */
 class ServerNameIndicator final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::ServerNameIndication;
+    static ExtensionCode staticType() {
+        return ExtensionCode::ServerNameIndication;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
-    explicit ServerNameIndicator(std::string_view host_name)
-        : m_sni_host_name(host_name) {
+    explicit ServerNameIndicator(std::string_view hostname)
+        : hostname_(hostname) {
     }
 
     ServerNameIndicator(stream::DataReader& reader, uint16_t extension_size);
 
     std::string host_name() const {
-        return m_sni_host_name;
+        return hostname_;
     }
 
     bool empty() const override {
@@ -69,24 +69,24 @@ public:
     }
 
 private:
-    std::string m_sni_host_name;
+    std::string hostname_;
 };
 
 /**
  * ALPN (RFC 7301)
  */
-class Application_Layer_Protocol_Notification final : public Extension {
+class ALPN final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::ApplicationLayerProtocolNegotiation;
+    static ExtensionCode staticType() {
+        return ExtensionCode::ApplicationLayerProtocolNegotiation;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
     const std::vector<std::string>& protocols() const {
-        return m_protocols;
+        return protocols_;
     }
 
     std::string single_protocol() const;
@@ -94,239 +94,237 @@ public:
     /**
      * Single protocol, used by server
      */
-    explicit Application_Layer_Protocol_Notification(std::string_view protocol)
-        : m_protocols(1, std::string(protocol)) {
+    explicit ALPN(std::string_view protocol)
+        : protocols_(1, std::string(protocol)) {
     }
 
     /**
      * List of protocols, used by client
      */
-    explicit Application_Layer_Protocol_Notification(const std::vector<std::string>& protocols)
-        : m_protocols(protocols) {
+    explicit ALPN(const std::vector<std::string>& protocols)
+        : protocols_(protocols) {
     }
 
-    Application_Layer_Protocol_Notification(stream::DataReader& reader, uint16_t extension_size, Side from);
+    ALPN(stream::DataReader& reader, uint16_t extension_size, Side from);
 
     bool empty() const override {
-        return m_protocols.empty();
+        return protocols_.empty();
     }
 
 private:
-    std::vector<std::string> m_protocols;
+    std::vector<std::string> protocols_;
 };
 
 // As defined in RFC 8446 4.4.2
-enum class Certificate_Type : uint8_t { X509 = 0, RawPublicKey = 2 };
+enum class CertificateType : uint8_t { X509 = 0, RawPublicKey = 2 };
 
-std::string certificate_type_to_string(Certificate_Type type);
-Certificate_Type certificate_type_from_string(const std::string& type_str);
+std::string CertificateType_to_string(CertificateType type);
+CertificateType CertificateType_from_string(const std::string& type_str);
 
 /**
  * RFC 7250
- * Base class for 'client_certificate_type' and 'server_certificate_type' extensions.
+ * Base class for 'client_CertificateType' and 'server_CertificateType' extensions.
  */
-class Certificate_Type_Base : public Extension {
+class CertificateTypeBase : public Extension {
 public:
     /**
      * Called by the client to advertise support for a number of cert types.
      */
-    Certificate_Type_Base(std::vector<Certificate_Type> supported_cert_types);
+    CertificateTypeBase(std::vector<CertificateType> supported_cert_types);
 
 protected:
     /**
      * Called by the server to select a cert type to be used in the handshake.
      */
-    Certificate_Type_Base(
-        const Certificate_Type_Base& certificate_type_from_client,
-        const std::vector<Certificate_Type>& server_preference);
+    CertificateTypeBase(
+        const CertificateTypeBase& CertificateType_from_client,
+        const std::vector<CertificateType>& server_preference);
 
 public:
-    Certificate_Type_Base(stream::DataReader& reader, uint16_t extension_size, Side from);
+    CertificateTypeBase(stream::DataReader& reader, uint16_t extension_size, Side from);
 
-    void validate_selection(const Certificate_Type_Base& from_server) const;
-    Certificate_Type selected_certificate_type() const;
+    void validate_selection(const CertificateTypeBase& from_server) const;
+    CertificateType selected_CertificateType() const;
 
     bool empty() const override {
         // RFC 7250 4.1
         //    If the client has no remaining certificate types to send in the
         //    client hello, other than the default X.509 type, it MUST omit the
-        //    entire client[/server]_certificate_type extension [...].
-        return m_from == Side::Client && m_certificate_types.size() == 1 &&
-               m_certificate_types.front() == Certificate_Type::X509;
+        //    entire client[/server]_CertificateType extension [...].
+        return from_ == Side::Client && certTypes_.size() == 1 &&
+               certTypes_.front() == CertificateType::X509;
     }
 
 private:
-    std::vector<Certificate_Type> m_certificate_types;
-    Side m_from;
+    std::vector<CertificateType> certTypes_;
+    Side from_;
 };
 
-class Client_Certificate_Type final : public Certificate_Type_Base {
+class ClientCertificateType final : public CertificateTypeBase {
 public:
-    using Certificate_Type_Base::Certificate_Type_Base;
+    using CertificateTypeBase::CertificateTypeBase;
 
     /**
      * Creates the Server Hello extension from the received client preferences.
      */
-    Client_Certificate_Type(const Client_Certificate_Type& cct);
+    ClientCertificateType(const ClientCertificateType& cct);
 
-    static Extension_Code static_type() {
-        return Extension_Code::ClientCertificateType;
+    static ExtensionCode staticType() {
+        return ExtensionCode::ClientCertificateType;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 };
 
-class Server_Certificate_Type final : public Certificate_Type_Base {
+class ServerCertificateType final : public CertificateTypeBase {
 public:
-    using Certificate_Type_Base::Certificate_Type_Base;
+    using CertificateTypeBase::CertificateTypeBase;
 
     /**
      * Creates the Server Hello extension from the received client preferences.
      */
-    Server_Certificate_Type(const Server_Certificate_Type& sct);
+    ServerCertificateType(const ServerCertificateType& sct);
 
-    static Extension_Code static_type() {
-        return Extension_Code::ServerCertificateType;
+    static ExtensionCode staticType() {
+        return ExtensionCode::ServerCertificateType;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 };
 
 /**
  * Extended Master Secret Extension (RFC 7627)
  */
-class Extended_Master_Secret final : public Extension {
+class ExtendedMasterSecret final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::ExtendedMasterSecret;
+    static ExtensionCode staticType() {
+        return ExtensionCode::ExtendedMasterSecret;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
     bool empty() const override {
         return false;
     }
 
-    Extended_Master_Secret() = default;
+    ExtendedMasterSecret() = default;
 
-    Extended_Master_Secret(stream::DataReader& reader, uint16_t extension_size);
+    ExtendedMasterSecret(stream::DataReader& reader, uint16_t extension_size);
 };
 
 /**
  * Encrypt-then-MAC Extension (RFC 7366)
  */
-class Encrypt_then_MAC final : public Extension {
+class EncryptThenMAC final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::EncryptThenMac;
+    static ExtensionCode staticType() {
+        return ExtensionCode::EncryptThenMac;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
     bool empty() const override {
         return false;
     }
 
-    Encrypt_then_MAC() = default;
+    EncryptThenMAC() = default;
 
-    Encrypt_then_MAC(stream::DataReader& reader, uint16_t extension_size);
+    EncryptThenMAC(stream::DataReader& reader, uint16_t extension_size);
 };
 
 /**
  * Supported Versions from RFC 8446
  */
-class Supported_Versions final : public Extension {
+class SupportedVersions final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::SupportedVersions;
+    static ExtensionCode staticType() {
+        return ExtensionCode::SupportedVersions;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
     bool empty() const override {
-        return m_versions.empty();
+        return versions_.empty();
     }
 
-    Supported_Versions(ProtocolVersion version) {
-        m_versions.push_back(version);
+    SupportedVersions(ProtocolVersion version) {
+        versions_.push_back(version);
     }
 
-    Supported_Versions(stream::DataReader& reader, uint16_t extension_size, Side from);
+    SupportedVersions(stream::DataReader& reader, uint16_t extension_size, Side from);
 
     bool supports(ProtocolVersion version) const;
 
     const std::vector<ProtocolVersion>& versions() const {
-        return m_versions;
+        return versions_;
     }
 
 private:
-    std::vector<ProtocolVersion> m_versions;
+    std::vector<ProtocolVersion> versions_;
 };
 
 /**
  * Record Size Limit (RFC 8449)
- *
- * TODO: the record size limit is currently not honored by the TLS 1.2 stack
  */
-class Record_Size_Limit final : public Extension {
+class RecordSizeLimit final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::RecordSizeLimit;
+    static ExtensionCode staticType() {
+        return ExtensionCode::RecordSizeLimit;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
-    explicit Record_Size_Limit(uint16_t limit);
+    explicit RecordSizeLimit(uint16_t limit);
 
-    Record_Size_Limit(stream::DataReader& reader, uint16_t extension_size, Side from);
+    RecordSizeLimit(stream::DataReader& reader, uint16_t extension_size, Side from);
 
     uint16_t limit() const {
-        return m_limit;
+        return limit_;
     }
 
     bool empty() const override {
-        return m_limit == 0;
+        return limit_ == 0;
     }
 
 private:
-    uint16_t m_limit;
+    uint16_t limit_;
 };
 
 /**
  * Renegotiation Indication Extension (RFC 5746)
  */
-class Renegotiation_Extension final : public Extension {
+class RenegotiationExtension final : public Extension {
 public:
-    static Extension_Code static_type() {
-        return Extension_Code::SafeRenegotiation;
+    static ExtensionCode staticType() {
+        return ExtensionCode::SafeRenegotiation;
     }
 
-    Extension_Code type() const override {
-        return static_type();
+    ExtensionCode type() const override {
+        return staticType();
     }
 
-    Renegotiation_Extension() = default;
+    RenegotiationExtension() = default;
 
-    explicit Renegotiation_Extension(const std::vector<uint8_t>& bits)
-        : m_reneg_data(bits) {
+    explicit RenegotiationExtension(const std::vector<uint8_t>& bits)
+        : renegData_(bits) {
     }
 
-    Renegotiation_Extension(stream::DataReader& reader, uint16_t extension_size);
+    RenegotiationExtension(stream::DataReader& reader, uint16_t extension_size);
 
     const std::vector<uint8_t>& renegotiation_info() const {
-        return m_reneg_data;
+        return renegData_;
     }
 
     bool empty() const override {
@@ -334,32 +332,31 @@ public:
     } // always send this
 
 private:
-    std::vector<uint8_t> m_reneg_data;
+    std::vector<uint8_t> renegData_;
 };
-
 
 /**
  * Unknown extensions are deserialized as this type
  */
-class Unknown_Extension final : public Extension {
+class UnknownExtension final : public Extension {
 public:
-    Unknown_Extension(Extension_Code type, stream::DataReader& reader, uint16_t extension_size);
+    UnknownExtension(ExtensionCode type, stream::DataReader& reader, uint16_t extension_size);
 
     const std::vector<uint8_t>& value() {
-        return m_value;
+        return value_;
     }
 
     bool empty() const override {
         return false;
     }
 
-    Extension_Code type() const override {
-        return m_type;
+    ExtensionCode type() const override {
+        return type_;
     }
 
 private:
-    Extension_Code m_type;
-    std::vector<uint8_t> m_value;
+    ExtensionCode type_;
+    std::vector<uint8_t> value_;
 };
 
 /**
@@ -367,15 +364,15 @@ private:
  */
 class Extensions final {
 public:
-    std::set<Extension_Code> extension_types() const;
+    std::set<ExtensionCode> extension_types() const;
 
     const std::vector<std::unique_ptr<Extension>>& all() const {
-        return m_extensions;
+        return extensions_;
     }
 
     template <typename T>
     T* get() const {
-        return dynamic_cast<T*>(get(T::static_type()));
+        return dynamic_cast<T*>(get(T::staticType()));
     }
 
     template <typename T>
@@ -383,16 +380,16 @@ public:
         return get<T>() != nullptr;
     }
 
-    bool has(Extension_Code type) const {
+    bool has(ExtensionCode type) const {
         return get(type) != nullptr;
     }
 
     size_t size() const {
-        return m_extensions.size();
+        return extensions_.size();
     }
 
     bool empty() const {
-        return m_extensions.empty();
+        return extensions_.empty();
     }
 
     void add(std::unique_ptr<Extension> extn);
@@ -401,11 +398,11 @@ public:
         add(std::unique_ptr<Extension>(extn));
     }
 
-    Extension* get(Extension_Code type) const {
+    Extension* get(ExtensionCode type) const {
         const auto i = std::find_if(
-            m_extensions.cbegin(), m_extensions.cend(), [type](const auto& ext) { return ext->type() == type; });
+            extensions_.cbegin(), extensions_.cend(), [type](const auto& ext) { return ext->type() == type; });
 
-        return (i != m_extensions.end()) ? i->get() : nullptr;
+        return (i != extensions_.end()) ? i->get() : nullptr;
     }
 
     void deserialize(stream::DataReader& reader, Side from, HandshakeType message_type);
@@ -416,14 +413,14 @@ public:
      * @returns true if this contains any extensions that are not contained in @p allowed_extensions.
      */
     bool contains_other_than(
-        const std::set<Extension_Code>& allowed_extensions, bool allow_unknown_extensions = false) const;
+        const std::set<ExtensionCode>& allowed_extensions, bool allow_unknown_extensions = false) const;
 
     /**
      * @param allowed_extensions  extension types that are allowed
      * @returns true if this contains any extensions implemented by Botan that
      *          are not contained in @p allowed_extensions.
      */
-    bool contains_implemented_extensions_other_than(const std::set<Extension_Code>& allowed_extensions) const {
+    bool contains_implemented_extensions_other_than(const std::set<ExtensionCode>& allowed_extensions) const {
         return contains_other_than(allowed_extensions, true);
     }
 
@@ -435,7 +432,7 @@ public:
     decltype(auto) take() {
         std::unique_ptr<T> out_ptr;
 
-        auto ext = take(T::static_type());
+        auto ext = take(T::staticType());
         if (ext != nullptr) {
             out_ptr.reset(dynamic_cast<T*>(ext.get()));
             //BOTAN_ASSERT_NOMSG(out_ptr != nullptr);
@@ -449,7 +446,7 @@ public:
      * Take the extension with the given type out of the extensions list.
      * Returns a nullptr if the extension didn't exist.
      */
-    std::unique_ptr<Extension> take(Extension_Code type);
+    std::unique_ptr<Extension> take(ExtensionCode type);
 
     /**
      * Remove an extension from this extensions object, if it exists.
@@ -458,7 +455,7 @@ public:
      *
      * Note: not used internally, might be used in Callbacks::tls_modify_extensions()
      */
-    bool remove_extension(Extension_Code type) {
+    bool remove_extension(ExtensionCode type) {
         return take(type) != nullptr;
     }
 
@@ -473,7 +470,7 @@ public:
     }
 
 private:
-    std::vector<std::unique_ptr<Extension>> m_extensions;
+    std::vector<std::unique_ptr<Extension>> extensions_;
 };
 
 } // namespace snet::tls

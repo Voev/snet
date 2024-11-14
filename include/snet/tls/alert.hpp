@@ -1,132 +1,115 @@
+/// @brief Объявление класса сообщения протокола оповещения (Alert).
+
 #pragma once
 #include <string>
 #include <vector>
+#include <span>
 
-namespace snet::tls {
+namespace snet::tls
+{
 
-/**
- * Type codes for TLS alerts
- *
- * The enumeration value matches the wire encoding
- */
-enum class AlertType {
-    CloseNotify = 0,
-    UnexpectedMessage = 10,
-    BadRecordMac = 20,
-    DecryptionFailed = 21,
-    RecordOverflow = 22,
-    DecompressionFailure = 30,
-    HandshakeFailure = 40,
-    NoCertificate = 41, // SSLv3 only
-    BadCertificate = 42,
-    UnsupportedCertificate = 43,
-    CertificateRevoked = 44,
-    CertificateExpired = 45,
-    CertificateUnknown = 46,
-    IllegalParameter = 47,
-    UnknownCA = 48,
-    AccessDenied = 49,
-    DecodeError = 50,
-    DecryptError = 51,
-    ExportRestriction = 60,
-    ProtocolVersion = 70,
-    InsufficientSecurity = 71,
-    InternalError = 80,
-    InappropriateFallback = 86,
-    UserCanceled = 90,
-    NoRenegotiation = 100,
-    MissingExtension = 109, // RFC 8446
-    UnsupportedExtension = 110,
-    CertificateUnobtainable = 111,
-    UnrecognizedName = 112,
-    BadCertificateStatusResponse = 113,
-    BadCertificateHashValue = 114,
-    UnknownPSKIdentity = 115,
-    CertificateRequired = 116,   // RFC 8446
-    NoApplicationProtocol = 120, // RFC 7301
-
-    // pseudo alert values
-    None = 256,
-
-};
-
-/**
- * SSL/TLS Alert Message
- */
-class Alert final {
+/// @brief Класс сообщения протокола оповещения.
+class Alert final
+{
 public:
-    typedef AlertType Type;
-    using enum AlertType;
+    /// @brief Описание сообщения оповещения.
+    enum Description
+    {
+        CloseNotify = 0,
+        UnexpectedMessage = 10,
+        BadRecordMac = 20,
+        DecryptionFailed = 21,
+        RecordOverflow = 22,
+        DecompressionFailure = 30,
+        HandshakeFailure = 40,
+        NoCertificate = 41,
+        BadCertificate = 42,
+        UnsupportedCertificate = 43,
+        CertificateRevoked = 44,
+        CertificateExpired = 45,
+        CertificateUnknown = 46,
+        IllegalParameter = 47,
+        UnknownCA = 48,
+        AccessDenied = 49,
+        DecodeError = 50,
+        DecryptError = 51,
+        ExportRestriction = 60,
+        ProtocolVersion = 70,
+        InsufficientSecurity = 71,
+        InternalError = 80,
+        InappropriateFallback = 86,
+        UserCanceled = 90,
+        NoRenegotiation = 100,
+        MissingExtension = 109,
+        UnsupportedExtension = 110,
+        CertificateUnobtainable = 111,
+        UnrecognizedName = 112,
+        BadCertificateStatusResponse = 113,
+        BadCertificateHashValue = 114,
+        UnknownPSKIdentity = 115,
+        CertificateRequired = 116,
+        NoApplicationProtocol = 120,
+        None = 256, // Псевдо-значение для отслеживания корректности.
+    };
 
-    /**
-     * @return true iff this alert is non-empty
-     */
-    bool is_valid() const {
-        return (m_type_code != AlertType::None);
-    }
+    /// @brief Конструктор по умолчанию.
+    Alert();
 
-    /**
-     * Return true if this alert is fatal. A fatal alert causes the connection
-     * to be immediately disconnected. Otherwise, the alert is a warning and
-     * the connection remains valid.
-     *
-     * Note:
-     *    RFC 8446 6.
-     *       In TLS 1.3, the severity is implicit in the type of alert being sent,
-     *       and the "level" field can safely be ignored.
-     *    Everything is considered fatal except for UserCanceled and CloseNotify (RFC 8446 6.1)
-     *
-     * @return if this alert is fatal or not
-     */
-    bool is_fatal() const {
-        return m_fatal;
-    }
+    /// @brief Деструктор.
+    ~Alert() noexcept;
 
-    /**
-     * Returns the type of the alert as an enum
-     *
-     * @return type of alert
-     */
-    Type type() const {
-        return m_type_code;
-    }
+    /// @brief Конструктор копирования.
+    /// @param other Константная ссылка на сообщение оповещения.
+    Alert(const Alert& other);
 
-    /**
-     * Returns the type of the alert as a string
-     *
-     * @return type of alert
-     */
-    std::string type_string() const;
+    /// @brief Конструктор перемещения.
+    /// @param other rvalue-ссылка на сообщение оповещения.
+    Alert(Alert&& other) noexcept;
 
-    /**
-     * Serialize an alert
-     */
+    /// @brief Оператор копирования.
+    /// @param other Константная ссылка на сообщение оповещения.
+    /// @return Ссылка на сообщение оповещения.
+    Alert& operator=(const Alert& other);
+
+    /// @brief Оператор перемещения.
+    /// @param other rvalue-ссылка на сообщение оповещения.
+    /// @return Ссылка на сообщение оповещения.
+    Alert& operator=(Alert&& other) noexcept;
+
+    /// @brief Конструктор, формирующий сообщение оповещения из явного описания и флага критичности.
+    /// @param description Описание сообщения оповещения.
+    /// @param fatal Флаг критичности сообщения оповещения.
+    Alert(Description description, bool fatal = false);
+
+    /// @brief Конструктор, десериализующий набор байт в сообщение оповещения.
+    /// @param buf Набор байт.
+    explicit Alert(std::span<const uint8_t> buf);
+
+    /// @brief Метод проверки критичности сообщения.
+    /// @retval true - сообщение Alert критическое.
+    /// @retval false - иначе.
+    bool isFatal() const noexcept;
+
+    /// @brief Метод проверки корректности сообщения.
+    /// @retval true - если описание оповещения было задано.
+    /// @retval false - иначе.
+    bool isValid() const noexcept;
+
+    /// @brief Метод получения описания оповещения
+    /// @return
+    Description description() const noexcept;
+
+    /// @brief Метод преобразования в строковое представление.
+    /// @return Строковое представление.
+    std::string toString() const;
+
+    /// @brief Метод сериализации сообщения оповещения в набор байт.
+    /// @return Набор байт.
     std::vector<uint8_t> serialize() const;
 
-    /**
-     * Deserialize an Alert message
-     * @param buf the serialized alert
-     */
-    explicit Alert(const std::vector<uint8_t>& buf);
-
-    /**
-     * Create a new Alert
-     * @param type_code the type of alert
-     * @param fatal specifies if this is a fatal alert
-     */
-    Alert(Type type_code, bool fatal = false)
-        : m_fatal(fatal)
-        , m_type_code(type_code) {
-    }
-
-    Alert()
-        : m_fatal(false)
-        , m_type_code(AlertType::None) {
-    }
-
 private:
-    bool m_fatal;
-    Type m_type_code;
+    bool fatal_;
+    Description description_;
 };
 
 } // namespace snet::tls

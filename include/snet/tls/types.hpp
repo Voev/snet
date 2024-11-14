@@ -73,8 +73,6 @@ enum class VersionCode : std::uint16_t
     TLSv1_3 = TLS1_3_VERSION
 };
 
-using VersionCodeRange = std::pair<VersionCode, VersionCode>;
-
 enum class VerifyMode
 {
     None = 0x00,
