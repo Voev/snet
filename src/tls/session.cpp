@@ -10,8 +10,6 @@
 #include <openssl/x509v3.h>
 #include <openssl/core_names.h>
 
-#include <snet/log/log_manager.hpp>
-
 #include <snet/utils/exception.hpp>
 #include <snet/utils/hexlify.hpp>
 #include <snet/utils/memory_viewer.hpp>
@@ -728,7 +726,6 @@ void Session::generateTLS13KeyMaterial()
 {
     if (!secrets_.isValid(ProtocolVersion::TLSv1_3))
     {
-        log::warning("Unable to generate keying material for TLSv1.3");
         return;
     }
 

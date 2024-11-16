@@ -1,8 +1,5 @@
 #pragma once
-
 #include <snet/ip/ip_address.hpp>
-
-#include <snet/layers/layer.hpp>
 
 namespace snet::layers {
 /**

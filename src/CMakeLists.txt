@@ -1,5 +1,10 @@
-# Sources
-file(GLOB_RECURSE SOURCES *.cpp)
-
-# Set target library
-add_library(snet_lib STATIC ${SOURCES})
+add_subdirectory(log)
+add_subdirectory(utils)
+add_subdirectory(tls)
+add_subdirectory(ip)
+add_subdirectory(tcp)
+add_subdirectory(layers)
+add_subdirectory(event)
+add_subdirectory(socket)
+add_subdirectory(pcap)
+add_subdirectory(cli)

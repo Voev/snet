@@ -1,13 +1,9 @@
 #include <iostream>
-#include <snet/cmd/command_dispatcher.hpp>
+#include <snet/cli/command_dispatcher.hpp>
 #include <snet/utils/string.hpp>
 
 using namespace snet::cmd;
 using namespace snet::utils;
-
-void PrintHelp()
-{
-}
 
 int main(int argc, char* argv[])
 {

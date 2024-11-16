@@ -26,7 +26,6 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Entry point for sources
 add_subdirectory(src)
-add_subdirectory(tools)
 
 # Test options
 if (ENABLE_UNIT_TESTS)

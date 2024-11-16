@@ -1,5 +1,5 @@
 #include <iostream>
-#include <snet/cmd/command_dispatcher.hpp>
+#include <snet/cli/command_dispatcher.hpp>
 #include <snet/opt/option_parser.hpp>
 
 #include <snet/utils/error_code.hpp>
