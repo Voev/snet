@@ -28,8 +28,7 @@ PayloadLayer::PayloadLayer(const std::string& payloadAsHexStream)
     }*/
 }
 
-void PayloadLayer::setPayload(const uint8_t* newPayload,
-                              size_t newPayloadLength)
+void PayloadLayer::setPayload(const uint8_t* newPayload, size_t newPayloadLength)
 {
     if (newPayloadLength < m_DataLen)
     {
@@ -55,4 +54,4 @@ std::string PayloadLayer::toString() const
     return "Payload Layer, Data length: " + dataLenStream.str() + " [Bytes]";
 }
 
-} // namespace pcpp
+} // namespace snet::layers

@@ -6,12 +6,6 @@
 
 #include <snet/layers/protocol.hpp>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers {
 
 /**
@@ -35,13 +29,12 @@ class Packet;
 
 /**
  * @class Layer
- * Layer is the base class for all protocol layers. Each protocol supported in PcapPlusPlus has a class that
- * inherits Layer.
+ * Layer is the base class for all protocol layers.
  * The protocol layer class expose all properties and methods relevant for viewing and editing protocol fields.
  * For example: a pointer to a structured header (e.g tcphdr, iphdr, etc.), protocol header size, payload size,
  * compute fields that can be automatically computed, print protocol data to string, etc.
  * Each protocol instance is obviously part of a protocol stack (which construct a packet). This protocol stack is
- * represented in PcapPlusPlus in a linked list, and each layer is an element in this list. That's why each layer
+ * represented in a linked list, and each layer is an element in this list. That's why each layer
  * has properties to the next and previous layer in the protocol stack. The Layer class, as a base class, is
  * abstract and the user can't create an instance of it (it has a private constructor). Each layer holds a pointer
  * to the relevant place in the packet. The layer sees all the data from this pointer forward until the end of the

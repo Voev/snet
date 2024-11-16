@@ -3,20 +3,13 @@
 #include <snet/layers/layer.hpp>
 #include <snet/layers/raw_packet.hpp>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers {
 
 /**
  * @class Packet
  * This class represents a parsed packet. It contains the raw data (RawPacket instance), and a linked list of
  * layers, each layer is a parsed protocol that this packet contains. The layers linked list is ordered where the
- * first layer is the lowest in the packet (currently it's always Ethernet protocol as PcapPlusPlus supports only
- * Ethernet packets), the next layer will be L2.5 or L3 (e.g VLAN, IPv4, IPv6, etc.), and so on. etc.), etc. The
+ * first layer is the lowest in the packet, the next layer will be L2.5 or L3 (e.g VLAN, IPv4, IPv6, etc.), and so on. etc.), etc. The
  * last layer in the linked list will be the highest in the packet. For example: for a standard HTTP request packet
  * the layer will look like this: EthLayer -> IPv4Layer -> TcpLayer -> HttpRequestLayer <BR> Packet instance isn't
  * read only. The user can add or remove layers, update current layer, etc.

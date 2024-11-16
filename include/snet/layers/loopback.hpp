@@ -1,7 +1,4 @@
 #pragma once
-
-/// @file
-
 #include <snet/layers/layer.hpp>
 
 namespace snet::layers

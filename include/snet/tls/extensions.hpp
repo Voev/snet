@@ -417,7 +417,7 @@ public:
 
     /**
      * @param allowed_extensions  extension types that are allowed
-     * @returns true if this contains any extensions implemented by Botan that
+     * @returns true if this contains any extensions that
      *          are not contained in @p allowed_extensions.
      */
     bool contains_implemented_extensions_other_than(const std::set<ExtensionCode>& allowed_extensions) const {
@@ -435,7 +435,6 @@ public:
         auto ext = take(T::staticType());
         if (ext != nullptr) {
             out_ptr.reset(dynamic_cast<T*>(ext.get()));
-            //BOTAN_ASSERT_NOMSG(out_ptr != nullptr);
             ext.release();
         }
 

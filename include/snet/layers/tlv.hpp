@@ -1,17 +1,8 @@
 #pragma once
-
 #include <string.h>
-
 #include <snet/ip/ip_address.hpp>
-
 #include <snet/layers/layer.hpp>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers
 {
 /**

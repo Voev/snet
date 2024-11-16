@@ -5,6 +5,7 @@
 
 #include <openssl/kdf.h>
 #include <openssl/ssl.h>
+#include <openssl/store.h>
 
 namespace snet::tls
 {
@@ -60,6 +61,8 @@ enum class HandshakeType : uint8_t {
    HandshakeCCS = 254,       // Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
    None = 255                // Null value
 };
+
+std::string toString(const RecordType type);
 
 std::string toString(const HandshakeType type);
 
@@ -124,5 +127,13 @@ DEFINE_CUSTOM_UNIQUE_PTR(EvpKdfPtr, EVP_KDF, EVP_KDF_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpKdfCtxPtr, EVP_KDF_CTX, EVP_KDF_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMacPtr, EVP_MAC, EVP_MAC_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMacCtxPtr, EVP_MAC_CTX, EVP_MAC_CTX_free);
+
+inline void OSSL_STORE_CTX_free(OSSL_STORE_CTX* ctx)
+{
+    OSSL_STORE_close(ctx);
+}
+
+DEFINE_CUSTOM_UNIQUE_PTR(StoreCtxPtr, OSSL_STORE_CTX, OSSL_STORE_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(StoreInfoPtr, OSSL_STORE_INFO, OSSL_STORE_INFO_free);
 
 } // namespace snet::tls

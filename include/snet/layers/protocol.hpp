@@ -1,17 +1,9 @@
 #pragma once
-
 #include <stdint.h>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers {
 /**
  * @typedef ProtocolType
- * Representing all protocols supported by PcapPlusPlus
  */
 typedef uint8_t ProtocolType;
 
@@ -22,7 +14,7 @@ typedef uint8_t ProtocolType;
 typedef uint32_t ProtocolTypeFamily;
 
 /**
- * Unknown protocol (or unsupported by PcapPlusPlus)
+ * Unknown protocol
  */
 const ProtocolType UnknownProtocol = 0;
 

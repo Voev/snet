@@ -20,24 +20,36 @@ struct Options
 {
     std::string input;
     std::string keylog;
+    std::string serverKeyPath;
 };
 
-using SessionManager = std::unordered_map<uint32_t, tls::Session>;
+using SessionManager = std::unordered_map<uint32_t, std::unique_ptr<tls::Session>>;
 
 struct SnifferManager
 {
     SnifferManager()
-        : outputBuffer(16 * 1024)
-    {}
+    {
+    }
 
     tls::SecretNodeManager secrets;
+    tls::ServerInfo serverInfo;
     SessionManager sessions;
-    std::vector<uint8_t> outputBuffer;
 };
+
+void OnAlert(const int8_t, const tls::Alert& alert)
+{
+    std::cout << alert.toString() << std::endl;
+}
+
+void OnAppData(const int8_t, std::span<const uint8_t> appData)
+{
+    utils::printHex(appData);
+}
 
 void OnClientHello(tls::Session& session, void* userData)
 {
     auto mgr = static_cast<SnifferManager*>(userData);
+
     auto secrets = mgr->secrets.getSecretNode(session.getClientRandom());
     if (secrets.has_value())
     {
@@ -45,10 +57,23 @@ void OnClientHello(tls::Session& session, void* userData)
     }
 }
 
-static tls::SessionCallbacks sessionCallbacks{ OnClientHello };
+void OnRecord(const int8_t sideIndex, const tls::Record& record)
+{
+    std::cout << (sideIndex == 0 ? "C -> S" : "S -> C");
+    std::cout << ", " << tls::toString(record.type()) << " [" << record.totalLength() << "]" << std::endl;
+}
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex,
-                                   const tcp::TcpStreamData& tcpData,
+void OnHandshake(const int8_t, const tls::HandshakeType type,
+                 std::span<const uint8_t> message)
+{
+    std::cout << tls::toString(type) << "[" << message.size() << "]" << std::endl;
+    utils::printHex(message);
+}
+
+static tls::SessionCallbacks sessionCallbacks{OnClientHello, OnRecord, OnHandshake, OnAlert,
+                                              OnAppData};
+
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData,
                                    void* userCookie)
 {
     auto mgr = static_cast<SnifferManager*>(userCookie);
@@ -58,40 +83,23 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex,
         auto session = mgr->sessions.find(tcpData.getConnectionData().flowKey);
         if (session == mgr->sessions.end())
         {
-            auto result = mgr->sessions.insert(std::make_pair(
-                tcpData.getConnectionData().flowKey, tls::Session(sessionCallbacks, mgr)));
+            auto result = mgr->sessions.emplace(std::make_pair(tcpData.getConnectionData().flowKey,
+                                                               std::make_unique<tls::Session>()));
             if (result.second)
             {
                 session = result.first;
+                session->second->setCallbacks(sessionCallbacks, mgr);
+                session->second->setServerInfo(mgr->serverInfo);
             }
         }
 
-        // check session!
-
-        //utils::printHex({tcpData.getData(), tcpData.getDataLength()});
-
-        try
-        {
-            size_t consumedBytes{0};
-            auto data = std::span(tcpData.getData(), tcpData.getDataLength());
-            while (data.size_bytes() > 0)
-            {
-                auto record = session->second.readRecord(sideIndex, data, mgr->outputBuffer, consumedBytes);
-
-                session->second.processRecord(sideIndex, record);
-
-                data = data.subspan(consumedBytes);
-            }
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << e.what() << '\n';
-        }
+        if (session->second)
+            session->second->processBytes(sideIndex, {tcpData.getData(), tcpData.getDataLength()});
+        
     }
 }
 
-void SniffPacketsFromFile(const std::string& fileName,
-                          tcp::TcpReassembly& tcpReassembly)
+void SniffPacketsFromFile(const std::string& fileName, tcp::TcpReassembly& tcpReassembly)
 {
     auto reader = pcap::IFileReaderDevice::getReader(fileName);
     if (!reader->open())
@@ -102,24 +110,18 @@ void SniffPacketsFromFile(const std::string& fileName,
 
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
-    // run in a loop that reads one packet from the file in each iteration and
-    // feeds it to the TCP reassembly instance
     layers::RawPacket rawPacket;
     while (reader->getNextPacket(rawPacket))
     {
-        // вызываются коллбэки по обработке payload
         tcpReassembly.reassemblePacket(&rawPacket);
     }
 
-    // extract number of connections before closing all of them
-    size_t numOfConnectionsProcessed =
-        tcpReassembly.getConnectionInformation().size();
+    size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
     tcpReassembly.closeAllConnections();
     reader->close();
 
-    std::cout << "Done! processed " << numOfConnectionsProcessed
-              << " connections" << std::endl;
+    std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
 }
 
 class Command final : public cmd::Command
@@ -129,8 +131,8 @@ public:
     {
         parser_.add("help, h", "Print help message");
         parser_.add("input, i", opt::Value(&options_.input), "Input PCAP file");
-        parser_.add("keylog, k", opt::Value(&options_.keylog),
-                    "Input key log file");
+        parser_.add("keylog, l", opt::Value(&options_.keylog), "Input key log file");
+        parser_.add("key, k", opt::Value(&options_.serverKeyPath), "Server key path");
     }
 
     ~Command() = default;
@@ -147,11 +149,19 @@ public:
         LogManager::Instance().enable(Type::Console);
 
         SnifferManager manager;
-        if (!options_.keylog.empty())
-            manager.secrets.parseKeyLogFile(options_.keylog);
 
-        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback,
-                                         &manager);
+        if (!options_.keylog.empty())
+        {
+            manager.secrets.parseKeyLogFile(options_.keylog);
+        }
+
+        if (!options_.serverKeyPath.empty())
+        {
+            auto serverKey = tls::LoadPrivateKey(options_.serverKeyPath);
+            manager.serverInfo.setServerKey(serverKey);
+        }
+
+        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
         SniffPacketsFromFile(options_.input, tcpReassembly);
     }
 

@@ -10,4 +10,5 @@
 #include <snet/tls/secret_node.hpp>
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/session.hpp>
-
+#include <snet/tls/server_info.hpp>
+#include <snet/tls/key.hpp>

@@ -3,12 +3,6 @@
 #include <snet/layers/packet.hpp>
 #include <snet/ip/ip_address.hpp>
 
-/// @file
-
-/**
- * \namespace pcpp
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers
 {
 /**

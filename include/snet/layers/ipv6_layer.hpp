@@ -5,12 +5,6 @@
 #include <snet/layers/ip_layer.hpp>
 #include <snet/layers/ipv6_exts.hpp>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers
 {
 

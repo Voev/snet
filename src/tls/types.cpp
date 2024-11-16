@@ -3,6 +3,23 @@
 namespace snet::tls
 {
 
+std::string toString(const RecordType type)
+{
+    switch (type)
+    {
+    case RecordType::Handshake:
+        return "Handshake";
+    case RecordType::ApplicationData:
+        return "ApplicationData";
+    case RecordType::ChangeCipherSpec:
+        return "ChangeCipherSpec";
+    case RecordType::Alert:
+        return "Alert";
+    default:;
+    };
+    return "None";
+}
+
 std::string toString(const HandshakeType type)
 {
     switch (type)

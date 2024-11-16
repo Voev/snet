@@ -6,6 +6,7 @@
 #include <ranges>
 #include <span>
 #include <type_traits>
+#include <snet/utils/exception.hpp>
 
 namespace snet {
 
@@ -99,7 +100,7 @@ inline constexpr void assert_exact_byte_length(R&& r) {
     if constexpr (statically_spanable_range<R>) {
         static_assert(s.size_bytes() == expected, "memory region does not have expected byte lengths");
     } else {
-        //BOTAN_ASSERT(s.size_bytes() == expected, "memory region does not have expected byte lengths");
+        utils::ThrowIfFalse(s.size_bytes() == expected, "memory region does not have expected byte lengths");
     }
 }
 
@@ -119,11 +120,6 @@ inline constexpr void assert_equal_byte_lengths(R0&& r0, Rs&&... rs) requires(si
     if constexpr (statically_spanable_range<R0>) {
         constexpr size_t expected_size = s0.size_bytes();
         (assert_exact_byte_length<expected_size>(rs), ...);
-    } else {
-        const size_t expected_size = s0.size_bytes();
-        BOTAN_ARG_CHECK(
-            ((std::span<const std::ranges::range_value_t<Rs>>{rs}.size_bytes() == expected_size) && ...),
-            "memory regions don't have equal lengths");
     }
 }
 

@@ -1,15 +1,8 @@
 #pragma once
 #include <string.h>
-
 #include <snet/layers/layer.hpp>
 #include <snet/layers/tlv.hpp>
 
-/// @file
-
-/**
- * \namespace snet::layers
- * \brief The main namespace for the PcapPlusPlus lib
- */
 namespace snet::layers
 {
 
