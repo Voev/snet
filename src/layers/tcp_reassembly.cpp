@@ -1,4 +1,4 @@
-#include <snet/tcp/tcp_reassembly.hpp>
+#include <snet/layers/tcp_reassembly.hpp>
 #include <snet/layers/ipv4_layer.hpp>
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>

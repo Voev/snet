@@ -65,7 +65,7 @@ void Session::processBytes(const int8_t sideIndex, std::span<const uint8_t> inpu
 void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
-    stream::DataReader reader("Client Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("Client Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     reader.get_byte();
     reader.get_byte();
@@ -93,7 +93,7 @@ void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint
 void Session::processHandshakeServerHello(int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-    stream::DataReader reader("Server Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("Server Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     version_ = ProtocolVersion(reader.get_uint16_t());
     serverRandom_ = reader.get_fixed<uint8_t>(32);
@@ -131,7 +131,7 @@ void Session::processHandshakeServerHello(int8_t sideIndex, std::span<const uint
 void Session::processHandshakeCertificate(int8_t sideIndex, std::span<const uint8_t> message)
 {
     static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
-    stream::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     if (version_ == ProtocolVersion::TLSv1_3)
     {
@@ -179,7 +179,7 @@ void Session::processHandshakeSessionTicket(int8_t sideIndex, std::span<const ui
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     if (version_ == ProtocolVersion::TLSv1_3)
     {
-        stream::DataReader reader("TLSv1.3 New Session Ticket",
+        utils::DataReader reader("TLSv1.3 New Session Ticket",
                                   message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
         // ticket_lifetime_hint
@@ -199,7 +199,7 @@ void Session::processHandshakeSessionTicket(int8_t sideIndex, std::span<const ui
     }
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
-        stream::DataReader reader("TLSv1.2 New Session Ticket",
+        utils::DataReader reader("TLSv1.2 New Session Ticket",
                                   message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         utils::ThrowIfTrue(reader.remaining_bytes() < 6,
                            "Session ticket message too short to be valid");
@@ -218,7 +218,7 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    stream::DataReader reader("Encrypted Extensions", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("Encrypted Extensions", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     utils::ThrowIfTrue(reader.remaining_bytes() < 2,
                        "Server sent an empty Encrypted Extensions message");
@@ -232,7 +232,7 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    stream::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     auto kex = cipherSuite_.getKeyExchAlg();
 
@@ -276,7 +276,7 @@ void Session::processHandshakeCertificateRequest(int8_t sideIndex, std::span<con
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    stream::DataReader reader("Certificate Request", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("Certificate Request", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     utils::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
@@ -303,7 +303,7 @@ void Session::processHandshakeCertificateRequest(int8_t sideIndex, std::span<con
 void Session::processHandshakeServerHelloDone(int8_t sideIndex, std::span<const uint8_t> message)
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    stream::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.assert_done();
     handshakeHash_.update(message);
 }
@@ -312,7 +312,7 @@ void Session::processHandshakeCertificateVerify(int8_t sideIndex, std::span<cons
 {
     utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    stream::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.get_uint16_t();
     reader.get_range<uint8_t>(2, 0, 65535);
     reader.assert_done();
@@ -332,7 +332,7 @@ void Session::processHandshakeClientKeyExchange(int8_t sideIndex, std::span<cons
 
     if (cipherSuite_.getKeyExchAlg() == KexAlg::RSA)
     {
-        stream::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+        utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         const std::vector<uint8_t> encryptedPreMaster = reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
@@ -434,7 +434,7 @@ void Session::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_
 
 void Session::processHandshake(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    stream::DataReader reader("Handshake Message", message);
+    utils::DataReader reader("Handshake Message", message);
 
     const auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());
     const auto messageLength = reader.get_uint24_t();

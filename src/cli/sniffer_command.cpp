@@ -6,7 +6,7 @@
 #include <snet/log/log_manager.hpp>
 #include <snet/pcap/pcap_file_reader_device.hpp>
 
-#include <snet/tcp/tcp_reassembly.hpp>
+#include <snet/layers/tcp_reassembly.hpp>
 #include <snet/utils/hexlify.hpp>
 #include <snet/tls.hpp>
 

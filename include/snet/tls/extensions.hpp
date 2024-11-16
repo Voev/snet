@@ -9,7 +9,7 @@
 #include <vector>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
-#include <snet/stream/data_reader.hpp>
+#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls {
 
@@ -58,7 +58,7 @@ public:
         : hostname_(hostname) {
     }
 
-    ServerNameIndicator(stream::DataReader& reader, uint16_t extension_size);
+    ServerNameIndicator(utils::DataReader& reader, uint16_t extension_size);
 
     std::string host_name() const {
         return hostname_;
@@ -105,7 +105,7 @@ public:
         : protocols_(protocols) {
     }
 
-    ALPN(stream::DataReader& reader, uint16_t extension_size, Side from);
+    ALPN(utils::DataReader& reader, uint16_t extension_size, Side from);
 
     bool empty() const override {
         return protocols_.empty();
@@ -141,7 +141,7 @@ protected:
         const std::vector<CertificateType>& server_preference);
 
 public:
-    CertificateTypeBase(stream::DataReader& reader, uint16_t extension_size, Side from);
+    CertificateTypeBase(utils::DataReader& reader, uint16_t extension_size, Side from);
 
     void validate_selection(const CertificateTypeBase& from_server) const;
     CertificateType selected_CertificateType() const;
@@ -215,7 +215,7 @@ public:
 
     ExtendedMasterSecret() = default;
 
-    ExtendedMasterSecret(stream::DataReader& reader, uint16_t extension_size);
+    ExtendedMasterSecret(utils::DataReader& reader, uint16_t extension_size);
 };
 
 /**
@@ -237,7 +237,7 @@ public:
 
     EncryptThenMAC() = default;
 
-    EncryptThenMAC(stream::DataReader& reader, uint16_t extension_size);
+    EncryptThenMAC(utils::DataReader& reader, uint16_t extension_size);
 };
 
 /**
@@ -261,7 +261,7 @@ public:
         versions_.push_back(version);
     }
 
-    SupportedVersions(stream::DataReader& reader, uint16_t extension_size, Side from);
+    SupportedVersions(utils::DataReader& reader, uint16_t extension_size, Side from);
 
     bool supports(ProtocolVersion version) const;
 
@@ -288,7 +288,7 @@ public:
 
     explicit RecordSizeLimit(uint16_t limit);
 
-    RecordSizeLimit(stream::DataReader& reader, uint16_t extension_size, Side from);
+    RecordSizeLimit(utils::DataReader& reader, uint16_t extension_size, Side from);
 
     uint16_t limit() const {
         return limit_;
@@ -321,7 +321,7 @@ public:
         : renegData_(bits) {
     }
 
-    RenegotiationExtension(stream::DataReader& reader, uint16_t extension_size);
+    RenegotiationExtension(utils::DataReader& reader, uint16_t extension_size);
 
     const std::vector<uint8_t>& renegotiation_info() const {
         return renegData_;
@@ -340,7 +340,7 @@ private:
  */
 class UnknownExtension final : public Extension {
 public:
-    UnknownExtension(ExtensionCode type, stream::DataReader& reader, uint16_t extension_size);
+    UnknownExtension(ExtensionCode type, utils::DataReader& reader, uint16_t extension_size);
 
     const std::vector<uint8_t>& value() {
         return value_;
@@ -405,7 +405,7 @@ public:
         return (i != extensions_.end()) ? i->get() : nullptr;
     }
 
-    void deserialize(stream::DataReader& reader, Side from, HandshakeType message_type);
+    void deserialize(utils::DataReader& reader, Side from, HandshakeType message_type);
 
     /**
      * @param allowed_extensions        extension types that are allowed
@@ -464,7 +464,7 @@ public:
     Extensions(Extensions&&) = default;
     Extensions& operator=(Extensions&&) = default;
 
-    Extensions(stream::DataReader& reader, Side side, HandshakeType message_type) {
+    Extensions(utils::DataReader& reader, Side side, HandshakeType message_type) {
         deserialize(reader, side, message_type);
     }
 
