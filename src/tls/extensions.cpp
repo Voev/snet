@@ -4,7 +4,7 @@
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> make_extension(stream::DataReader& reader, ExtensionCode code,
+std::unique_ptr<Extension> make_extension(utils::DataReader& reader, ExtensionCode code,
                                           const Side from, const HandshakeType message_type)
 {
 
@@ -57,7 +57,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
     extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(stream::DataReader& reader, const Side from,
+void Extensions::deserialize(utils::DataReader& reader, const Side from,
                              const HandshakeType message_type)
 {
     if (reader.has_remaining())
@@ -84,7 +84,7 @@ void Extensions::deserialize(stream::DataReader& reader, const Side from,
             // TODO offer a function on reader that returns a byte range as a reference
             // to avoid this copy of the extension data
             const std::vector<uint8_t> extn_data = reader.get_fixed<uint8_t>(extensionSize);
-            stream::DataReader extn_reader("Extension", extn_data);
+            utils::DataReader extn_reader("Extension", extn_data);
             this->add(make_extension(extn_reader, type, from, message_type));
             extn_reader.assert_done();
         }
@@ -139,14 +139,14 @@ std::set<ExtensionCode> Extensions::extension_types() const
     return offers;
 }
 
-UnknownExtension::UnknownExtension(ExtensionCode type, stream::DataReader& reader,
+UnknownExtension::UnknownExtension(ExtensionCode type, utils::DataReader& reader,
                                    uint16_t extension_size)
     : type_(type)
     , value_(reader.get_fixed<uint8_t>(extension_size))
 {
 }
 
-ServerNameIndicator::ServerNameIndicator(stream::DataReader& reader, uint16_t extension_size)
+ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t extension_size)
 {
     /*
      * This is used by the server to confirm that it knew the name
@@ -183,7 +183,7 @@ ServerNameIndicator::ServerNameIndicator(stream::DataReader& reader, uint16_t ex
     }
 }
 
-ALPN::ALPN(stream::DataReader& reader, uint16_t extension_size, Side from)
+ALPN::ALPN(utils::DataReader& reader, uint16_t extension_size, Side from)
 {
     if (extension_size == 0)
     {
@@ -314,7 +314,7 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& CertificateT
     throw std::runtime_error("Failed to agree on CertificateType");
 }
 
-CertificateTypeBase::CertificateTypeBase(stream::DataReader& reader, uint16_t extension_size,
+CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extension_size,
                                          Side from)
     : from_(from)
 {
@@ -372,7 +372,7 @@ CertificateType CertificateTypeBase::selected_CertificateType() const
     return certTypes_.front();
 }
 
-ExtendedMasterSecret::ExtendedMasterSecret(stream::DataReader& /*unused*/, uint16_t extensionSize)
+ExtendedMasterSecret::ExtendedMasterSecret(utils::DataReader& /*unused*/, uint16_t extensionSize)
 {
     if (extensionSize != 0)
     {
@@ -380,7 +380,7 @@ ExtendedMasterSecret::ExtendedMasterSecret(stream::DataReader& /*unused*/, uint1
     }
 }
 
-EncryptThenMAC::EncryptThenMAC(stream::DataReader& /*unused*/, uint16_t extensionSize)
+EncryptThenMAC::EncryptThenMAC(utils::DataReader& /*unused*/, uint16_t extensionSize)
 {
     if (extensionSize != 0)
     {
@@ -388,7 +388,7 @@ EncryptThenMAC::EncryptThenMAC(stream::DataReader& /*unused*/, uint16_t extensio
     }
 }
 
-SupportedVersions::SupportedVersions(stream::DataReader& reader, uint16_t extension_size,
+SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extension_size,
                                        Side from)
 {
     if (from == Side::Server)
@@ -438,7 +438,7 @@ RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
                         "RFC 8449 does not allow record size limits larger than 2^14+1");
 }
 
-RecordSizeLimit::RecordSizeLimit(stream::DataReader& reader, uint16_t extension_size, Side from)
+RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extension_size, Side from)
 {
     if (extension_size != 2)
     {
@@ -476,7 +476,7 @@ RecordSizeLimit::RecordSizeLimit(stream::DataReader& reader, uint16_t extension_
     }
 }
 
-RenegotiationExtension::RenegotiationExtension(stream::DataReader& reader,
+RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader,
                                                  uint16_t extension_size)
     : renegData_(reader.get_range<uint8_t>(1, 0, 255))
 {
