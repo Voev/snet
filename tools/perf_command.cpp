@@ -32,7 +32,7 @@
 #include <snet/log/log_manager.hpp>
 
 #include <snet/tls/types.hpp>
-#include <snet/tls/tls_utils.hpp>
+#include <snet/tls/version.hpp>
 #include <snet/tls/connection.hpp>
 
 static const size_t kDefaultThreadCount = 1;
@@ -177,7 +177,7 @@ public:
     {
         if (!options.versions.empty())
         {
-            auto versions = ParseVersionRange(options.versions);
+            auto versions = ParseProtocolVersionRange(options.versions);
             if (!versions.has_value())
             {
                 throw std::runtime_error("");

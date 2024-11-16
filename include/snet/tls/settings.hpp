@@ -1,5 +1,5 @@
 #pragma once
-#include <snet/tls/types.hpp>
+#include <snet/tls/version.hpp>
 #include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
@@ -24,9 +24,9 @@ public:
 
     void useCertificate(X509* certificate);
 
-    void setMaxVersion(ProtocolVersion version);
+    void setMaxVersion(const ProtocolVersion& version);
 
-    void setMinVersion(ProtocolVersion version);
+    void setMinVersion(const ProtocolVersion& version);
 
     void setVerifyCallback(VerifyMode mode, VerifyCallback callback) noexcept;
 

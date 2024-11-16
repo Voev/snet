@@ -23,7 +23,7 @@ std::error_code GetLastError()
     const auto err = ::ERR_get_error();
     if (err)
         return TranslateError(err);
-    return std::error_code{};
+    return TranslateError(ERR_R_OPERATION_FAIL);
 }
 
 } // namespace snet::tls

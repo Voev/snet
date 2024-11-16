@@ -29,7 +29,7 @@ bool PcapFileReaderDevice::open()
     }
 
     int linkLayer = pcap_datalink(pcapDescriptor.get());
-    if (!RawPacket::isLinkTypeValid(linkLayer))
+    if (!layers::RawPacket::isLinkTypeValid(linkLayer))
     {
         log::error("Invalid link layer ({}) for reader device filename '{}'",
                    linkLayer, fileName_);
@@ -37,7 +37,7 @@ bool PcapFileReaderDevice::open()
         return false;
     }
 
-    m_PcapLinkLayerType = static_cast<LinkLayerType>(linkLayer);
+    m_PcapLinkLayerType = static_cast<layers::LinkLayerType>(linkLayer);
     descriptor_ = std::move(pcapDescriptor);
     deviceOpened_ = true;
     return true;
@@ -52,7 +52,7 @@ void PcapFileReaderDevice::getStatistics(PcapStats& stats) const
                fileName_);
 }
 
-bool PcapFileReaderDevice::getNextPacket(RawPacket& rawPacket)
+bool PcapFileReaderDevice::getNextPacket(layers::RawPacket& rawPacket)
 {
     rawPacket.clear();
     if (descriptor_ == nullptr)
@@ -74,7 +74,7 @@ bool PcapFileReaderDevice::getNextPacket(RawPacket& rawPacket)
     struct timeval ts = pkthdr.ts;
 
     if (!rawPacket.setRawData(pMyPacketData, pkthdr.caplen, ts,
-                              static_cast<LinkLayerType>(m_PcapLinkLayerType),
+                              static_cast<layers::LinkLayerType>(m_PcapLinkLayerType),
                               pkthdr.len))
     {
         log::error("Couldn't set data to raw packet");

@@ -1,6 +1,7 @@
 #pragma once
+#include <memory>
 #include <snet/pcap/i_file_device.hpp>
-#include <snet/packet/raw_packet.hpp>
+#include <snet/layers/raw_packet.hpp>
 
 namespace snet::pcap
 {
@@ -35,7 +36,7 @@ public:
      */
     uint64_t getFileSize() const;
 
-    virtual bool getNextPacket(RawPacket& rawPacket) = 0;
+    virtual bool getNextPacket(layers::RawPacket& rawPacket) = 0;
 
     /**
      * A static method that creates an instance of the reader best fit to read
@@ -46,7 +47,7 @@ public:
      * @return An instance of the reader to read the file. Notice you should
      * free this instance when done using it
      */
-    static IFileReaderDevice* getReader(const std::string& fileName);
+    static std::unique_ptr<IFileReaderDevice> getReader(const std::string& fileName);
 };
 
 } // namespace snet::pcap

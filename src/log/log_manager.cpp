@@ -4,7 +4,7 @@ namespace snet::log
 {
 
 LogManager::LogManager()
-    : maxLevel_{Level::Error}
+    : maxLevel_{Level::Warning}
 {}
 
 LogManager::~LogManager() noexcept

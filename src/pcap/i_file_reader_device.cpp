@@ -12,13 +12,13 @@ IFileReaderDevice::IFileReaderDevice(const std::string& fileName)
     numOfPacketsRead_ = 0;
 }
 
-IFileReaderDevice* IFileReaderDevice::getReader(const std::string& fileName)
+std::unique_ptr<IFileReaderDevice> IFileReaderDevice::getReader(const std::string& fileName)
 {
     const auto extensionPos = fileName.find_last_of('.');
     const auto fileExtension =
         extensionPos != std::string::npos ? fileName.substr(extensionPos) : "";
 
-    return new PcapFileReaderDevice(fileName);
+    return std::make_unique<PcapFileReaderDevice>(fileName);
 }
 
 uint64_t IFileReaderDevice::getFileSize() const
