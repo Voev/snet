@@ -2,7 +2,7 @@
 #include <map>
 #include <memory>
 #include <functional>
-#include <snet/cmd/command.hpp>
+#include <snet/cli/command.hpp>
 #include <snet/utils/singleton.hpp>
 
 namespace snet::cmd

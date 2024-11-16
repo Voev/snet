@@ -12,3 +12,4 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/key.hpp>
+#include <snet/tls/connection.hpp>

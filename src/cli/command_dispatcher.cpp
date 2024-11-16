@@ -1,5 +1,5 @@
 #include <stdexcept>
-#include <snet/cmd/command_dispatcher.hpp>
+#include <snet/cli/command_dispatcher.hpp>
 
 namespace snet::cmd
 {

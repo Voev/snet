@@ -124,17 +124,6 @@ TcpReassembly::reassemblePacket(layers::Packet& tcpData)
         return NonTcpPacket;
     }
 
-    // Ignore the packet if it's an ICMP packet that has a TCP layer
-    // Several ICMP messages (like "destination unreachable") have TCP data as
-    // part of the ICMP message. This is not real TCP data and packet can be
-    // ignored
-    if (tcpData.isPacketOfType(layers::ICMP))
-    {
-        log::debug("Packet is of type ICMP so TCP data is probably part of "
-                   "the ICMP message. Ignoring this packet");
-        return NonTcpPacket;
-    }
-
     ReassemblyStatus status = TcpMessageHandled;
 
     // set the TCP payload size

@@ -19,21 +19,15 @@
 #include <openssl/err.h>
 #include <openssl/tls1.h>
 
-#include <snet/cmd/command_dispatcher.hpp>
+#include <snet/cli/command_dispatcher.hpp>
 #include <snet/opt/option_parser.hpp>
-
-#include <snet/socket/resolver.hpp>
-#include <snet/socket/socket.hpp>
-#include <snet/socket/tcp.hpp>
-#include <snet/socket/endpoint.hpp>
 
 #include <snet/utils/error_code.hpp>
 #include <snet/event/epoll.hpp>
 #include <snet/log/log_manager.hpp>
 
-#include <snet/tls/types.hpp>
-#include <snet/tls/version.hpp>
-#include <snet/tls/connection.hpp>
+#include <snet/socket.hpp>
+#include <snet/tls.hpp>
 
 static const size_t kDefaultThreadCount = 1;
 static const size_t kDefaultSessionCount = 1;
@@ -46,7 +40,6 @@ using namespace std::chrono_literals;
 using namespace snet;
 using namespace snet::event;
 using namespace snet::log;
-using namespace snet::tls;
 using namespace snet::socket;
 
 using Clock = steady_clock;
@@ -177,7 +170,7 @@ public:
     {
         if (!options.versions.empty())
         {
-            auto versions = ParseProtocolVersionRange(options.versions);
+            auto versions = tls::ParseProtocolVersionRange(options.versions);
             if (!versions.has_value())
             {
                 throw std::runtime_error("");
@@ -192,13 +185,13 @@ public:
         {
             if (!options.advTickets)
                 settings_.setOptions(SSL_OP_NO_TICKET);
-            settings_.setSessionCacheMode(SessionCacheMode::CacheOff |
-                                          SessionCacheMode::CacheNoInternal);
+            settings_.setSessionCacheMode(tls::SessionCacheMode::CacheOff |
+                                          tls::SessionCacheMode::CacheNoInternal);
         }
         else
         {
-            settings_.setSessionCacheMode(SessionCacheMode::CacheClient |
-                                          SessionCacheMode::CacheNoAutoClear);
+            settings_.setSessionCacheMode(tls::SessionCacheMode::CacheClient |
+                                          tls::SessionCacheMode::CacheNoAutoClear);
         }
 
         if (!options.cipher.empty())
@@ -288,9 +281,9 @@ public:
         return sh;
     }
 
-    std::unique_ptr<Connection> makeConnection()
+    std::unique_ptr<tls::Connection> makeConnection()
     {
-        return std::make_unique<Connection>(settings_);
+        return std::make_unique<tls::Connection>(settings_);
     }
 };
 
@@ -307,8 +300,8 @@ private:
 private:
     SessionManager& manager_;
     Endpoint ep_;
-    std::unique_ptr<Connection> tls_;
-    SslSessionPtr session_;
+    std::unique_ptr<tls::Connection> tls_;
+    tls::SslSessionPtr session_;
     TimePoint start_;
     State state_;
     std::string sni_;
@@ -446,7 +439,7 @@ private:
         }
 
         auto want = tls_->handshake();
-        if (want == Connection::Want::Nothing)
+        if (want == tls::Connection::Want::Nothing)
         {
             const duration<double, std::milli> latency = Clock::now() - start_;
             gLocalLatencyStats.update(latency.count());
@@ -464,10 +457,10 @@ private:
 
         switch (want)
         {
-        case Connection::Want::InputAndRetry:
+        case tls::Connection::Want::InputAndRetry:
             pollForRead();
             break;
-        case Connection::Want::OutputAndRetry:
+        case tls::Connection::Want::OutputAndRetry:
             pollForWrite();
             break;
         default:
