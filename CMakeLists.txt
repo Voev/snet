@@ -9,7 +9,7 @@ project(snet
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Custom options
-option (ENABLE_UNIT_TESTS "Enable unit tests" ON)
+option (ENABLE_UNIT_TESTS "Enable unit tests" OFF)
 option (ENABLE_CODE_COVERAGE "Enable code coverage" OFF)
 
 # Include CMake modules
