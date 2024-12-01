@@ -77,6 +77,9 @@ while [ $# -ne 0 ]; do
         --verbose)
             verbose_option=ON
             ;;
+        --enable-coverage)
+            append_cache_entry ENABLE_CODE_COVERAGE BOOL true
+            ;;
         --enable-address-sanitizer)
             append_cache_entry ENABLE_ADDRESS_SANITIZER BOOL true
             ;;

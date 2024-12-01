@@ -4,6 +4,9 @@
 # Build directory
 build
 
+# CMake
+CMakeUserPresets.json
+
 # Prerequisites
 *.d
 

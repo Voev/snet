@@ -9,8 +9,9 @@ add_executable(${TEST_NAME} ${SOURCES})
 
 # Set dependencies
 target_link_libraries(${TEST_NAME}
-    snet_ip
-    GTest::GTest)
+    PRIVATE
+        snet_ip
+        GTest::GTest)
 
 # Discover tests
 gtest_discover_tests(
@@ -18,3 +19,6 @@ gtest_discover_tests(
     XML_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TEST_NAME}.reports
     WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
 )
+
+# Code coverage
+target_code_coverage(${TEST_NAME} AUTO PRIVATE)
