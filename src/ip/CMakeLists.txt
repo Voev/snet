@@ -1,5 +1,8 @@
 # Sources
 file(GLOB_RECURSE SOURCES *.cpp)
 
-# Set target library
+# Static library target
 add_library(snet_ip STATIC ${SOURCES})
+
+# Code coverage target
+target_code_coverage(snet_ip)
