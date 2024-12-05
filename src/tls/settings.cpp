@@ -29,6 +29,9 @@ Settings::Settings(Side side)
     {
         throw SystemError(GetLastError());
     }
+
+    //SSL_CTX_set_msg_callback_arg(ctx_, BIO_new_fp(stdout, BIO_NOCLOSE));
+    //SSL_CTX_set_msg_callback(ctx_, SSL_trace);
 }
 
 Settings::~Settings() noexcept

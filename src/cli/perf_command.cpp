@@ -67,8 +67,8 @@ struct Statistics
     std::atomic<uint64_t> totalHandshakes;
     std::atomic<int32_t> tcpHandshakes;
     std::atomic<int32_t> tcpConnections;
-    std::atomic<int32_t> tlsConnections;
     std::atomic<int32_t> tlsHandshakes;
+    std::atomic<int32_t> tlsConnections;
     std::atomic<int32_t> errorCount;
     int32_t noFalseSharing[9];
 
@@ -139,12 +139,58 @@ private:
 
 static thread_local LocalLatencyStats gLocalLatencyStats;
 
-struct ISession
+class SessionManager;
+class Session final
 {
-    virtual ~ISession() = default;
-    virtual bool nextState() = 0;
+private:
+    enum class State
+    {
+        Preconnect,
+        InTcpHandshaking,
+        InTlsHandshaking
+    };
 
-    Socket sd;
+private:
+    SessionManager& manager_;
+    Socket socket_;
+    Endpoint ep_;
+    std::unique_ptr<tls::Connection> tls_;
+    tls::SslSessionPtr session_;
+    TimePoint start_;
+    State state_;
+    std::string sni_;
+    bool reuseSession_;
+    int id_;
+
+public:
+    Session(SessionManager& manager, Endpoint ep, bool reuseSession, std::string sni,
+            int id) noexcept;
+
+    ~Session() noexcept;
+
+    void handleReadEvent();
+
+    void handleWriteEvent();
+
+    void connect() {
+        state_ = State::Preconnect;
+        handleWriteEvent();
+    }
+
+    void disconnect() noexcept;
+
+    int get() const
+    {
+        return socket_.get();
+    }
+
+private:
+    bool handleEstablishedTcpConn();
+    void handleConnectError(const std::error_code ec);
+
+    bool doTcpConnect();
+    bool doTcpConnected();
+    bool doTlsHandshake();
 };
 
 class SessionManager
@@ -158,8 +204,6 @@ private:
     std::array<Epoll::Event, kEventCount> events_;
     int eventCount_;
     tls::ClientSettings settings_;
-    std::list<ISession*> reconnect_q_;
-    std::list<ISession*> backlog_;
 
 public:
     SessionManager(const Options& options)
@@ -209,311 +253,251 @@ public:
 
     ~SessionManager()
     {
-        reconnect_q_.clear();
     }
 
-    void add(ISession* sh, Epoll::EventMask events)
+    void add(Session* sh, Epoll::EventMask events)
     {
         std::error_code ec;
-        epoll_.modify(sh, sh->sd.get(), snet::event::OneShot | events, ec);
+        epoll_.modify(sh, sh->get(), snet::event::OneShot | events, ec);
 
         if (ec == std::errc::no_such_file_or_directory)
         {
             ec.clear();
-            epoll_.add(sh, sh->sd.get(), events, ec);
+            epoll_.add(sh, sh->get(), events, ec);
         }
         if (ec)
             log::error("add(): {}", ec.message());
     }
 
-    void del(ISession* sh)
+    void del(Session* sh)
     {
         std::error_code ec;
-        epoll_.del(sh->sd.get(), ec);
+        epoll_.del(sh->get(), ec);
         if (ec)
             log::error("del(): {}", ec.message());
-    }
-
-    void enqueueForReconnect(ISession* sh) noexcept
-    {
-        reconnect_q_.push_back(sh);
-    }
-
-    void wait()
-    {
-        std::error_code ec;
-        while (true)
-        {
-            eventCount_ =
-                epoll_.wait(events_.data(), events_.size(), kTimeout, ec);
-            if (ec == std::errc::interrupted)
-                continue;
-
-            if (!ec)
-                break;
-
-            utils::ThrowIfError(ec);
-        }
-    }
-
-    ISession* nextSession() noexcept
-    {
-        if (eventCount_)
-        {
-            eventCount_--;
-            return (ISession*)events_[eventCount_].data.ptr;
-        }
-        return nullptr;
-    }
-
-    void backlog() noexcept
-    {
-        backlog_.swap(reconnect_q_);
-    }
-
-    ISession* nextBacklog() noexcept
-    {
-        if (backlog_.empty())
-            return nullptr;
-
-        ISession* sh = backlog_.front();
-        backlog_.pop_front();
-        return sh;
     }
 
     std::unique_ptr<tls::Connection> makeConnection()
     {
         return std::make_unique<tls::Connection>(settings_);
     }
+
+    void handleEvents()
+    {
+        std::error_code ec;
+        int numEvents = epoll_.wait(events_.data(), events_.size(), kTimeout, ec);
+
+        for (int i = 0; i < numEvents; ++i)
+        {
+            auto* session = static_cast<Session*>(events_[i].data.ptr);
+            if (events_[i].events & (EPOLLERR | EPOLLHUP))
+            {
+                session->disconnect();
+            }
+            else if (events_[i].events & EPOLLIN)
+            {
+                session->handleReadEvent();
+            }
+            else if (events_[i].events & EPOLLOUT)
+            {
+                session->handleWriteEvent();
+            }
+        }
+    }
 };
 
-class Session final : public ISession
+Session::Session(SessionManager& manager, Endpoint ep, bool reuseSession, std::string sni,
+                 int id) noexcept
+    : manager_(manager)
+    , ep_(ep)
+    , state_(State::Preconnect)
+    , sni_(std::move(sni))
+    , reuseSession_(reuseSession)
+    , id_(id)
 {
-private:
-    enum class State
-    {
-        Preconnect,
-        InTcpHandshaking,
-        InTlsHandshaking,
-    };
+    log::debug("peer {} created", id_);
+}
 
-private:
-    SessionManager& manager_;
-    Endpoint ep_;
-    std::unique_ptr<tls::Connection> tls_;
-    tls::SslSessionPtr session_;
-    TimePoint start_;
-    State state_;
-    std::string sni_;
-    bool reuseSession_;
-    int id_;
+Session::~Session() noexcept
+{
+    disconnect();
+}
 
-public:
-    Session(SessionManager& manager, Endpoint ep, bool reuseSession,
-            std::string sni, int id) noexcept
-        : manager_(manager)
-        , ep_(ep)
-        , state_(State::Preconnect)
-        , sni_(std::move(sni))
-        , reuseSession_(reuseSession)
-        , id_(id)
+void Session::handleReadEvent()
+{
+    if (state_ == State::InTlsHandshaking)
     {
-        log::debug("peer {} created", id_);
+        doTlsHandshake();
+    }
+}
+
+void Session::handleWriteEvent()
+{
+    if (state_ == State::Preconnect)
+    {
+        doTcpConnect();
+    }
+    else if (state_ == State::InTcpHandshaking)
+    {
+        doTcpConnected();
+    }
+    else if (state_ == State::InTlsHandshaking)
+    {
+        doTlsHandshake();
+    }
+}
+
+bool Session::handleEstablishedTcpConn()
+{
+    log::debug("peer {}: has established TCP connection", id_);
+    stat.tcpHandshakes--;
+    stat.tcpConnections++;
+    return doTlsHandshake();
+}
+
+void Session::handleConnectError(const std::error_code ec)
+{
+    if (ec == std::errc::operation_in_progress || ec == std::errc::resource_unavailable_try_again)
+    {
+        manager_.add(this, Write);
+        return;
     }
 
-    ~Session() noexcept
-    {
-        disconnect();
-    }
+    if (!stat.tcpConnections)
+        throw std::runtime_error("cannot establish even one TCP connection");
 
-    bool nextState() final override
+    stat.tcpHandshakes--;
+    disconnect();
+}
+
+bool Session::doTcpConnect()
+{
+    socket_.open(ep_.isIPv4() ? Tcp::v4() : Tcp::v6());
+
+    std::error_code ec;
+    setNonBlocking(socket_.get(), true, ec);
+    utils::ThrowIfError(ec);
+    socket_.connect(ep_, ec);
+
+    stat.tcpHandshakes++;
+    state_ = State::InTcpHandshaking;
+
+    if (!ec)
+        return handleEstablishedTcpConn();
+
+    handleConnectError(ec);
+    return false;
+}
+
+bool Session::doTcpConnected()
+{
+    auto ec = getSocketError(socket_.get());
+    if (!ec)
+        return handleEstablishedTcpConn();
+
+    handleConnectError(ec);
+    return false;
+}
+
+bool Session::doTlsHandshake()
+{
+    using namespace std::chrono;
+
+    state_ = State::InTlsHandshaking;
+
+    if (!tls_)
     {
-        switch (state_)
+        tls_ = manager_.makeConnection();
+
+        tls_->setSocket(socket_.get());
+
+        BIO_set_tcp_ndelay(socket_.get(), true);
+
+        if (reuseSession_ && session_)
         {
-        case State::Preconnect:
-            return doTcpConnect();
-        case State::InTcpHandshaking:
-            return doTcpConnected();
-        case State::InTlsHandshaking:
-            return doTlsHandshake();
+            tls_->setSession(session_);
         }
-        return false;
+
+        if (!sni_.empty())
+        {
+            tls_->setExtHostName(sni_);
+        }
+
+        stat.tlsHandshakes++;
+        start_ = Clock::now();
     }
 
-private:
-    void pollForRead()
+    auto want = tls_->handshake();
+    if (want == tls::Connection::Want::Nothing)
     {
-        manager_.add(this, Read | Error);
+        const duration<double, std::milli> latency = Clock::now() - start_;
+        gLocalLatencyStats.update(latency.count());
+
+        log::debug("peer {}: has completed TLS handshake", id_);
+        stat.tlsHandshakes--;
+        stat.tlsConnections++;
+        stat.totalHandshakes++;
+        disconnect();
+        stat.tcpConnections--;
+
+        connect();
+        return true;
     }
 
-    void pollForWrite()
+    switch (want)
     {
-        manager_.add(this, Write | Error);
+    case tls::Connection::Want::InputAndRetry:
+        manager_.add(this, Read);
+        break;
+    case tls::Connection::Want::OutputAndRetry:
+        manager_.add(this, Write);
+        break;
+    default:
+        if (!stat.totalHandshakes)
+            throw std::runtime_error("cannot establish even one TLS"
+                                     " connection");
+        stat.tlsHandshakes--;
+        stat.errorCount++;
+        disconnect();
+        stat.tcpConnections--;
+    }
+    return false;
+}
+
+void Session::disconnect() noexcept
+{
+    if (tls_)
+    {
+        if (reuseSession_)
+        {
+            tls_->shutdown();
+            session_ = tls_->getSession();
+        }
+        tls_.reset();
     }
 
-    void deleteFromPoll()
+    if (socket_.get() >= 0)
     {
         manager_.del(this);
-    }
-
-    bool handleEstablishedTcpConn()
-    {
-        log::debug("peer {}: has established TCP connection", id_);
-        stat.tcpHandshakes--;
-        stat.tcpConnections++;
-        return doTlsHandshake();
-    }
-
-    void handleConnectError(const std::error_code ec)
-    {
-        if (ec == std::errc::operation_in_progress ||
-            ec == std::errc::resource_unavailable_try_again)
-        {
-            pollForWrite();
-            return;
-        }
-
-        if (!stat.tcpConnections)
-            throw std::runtime_error(
-                "cannot establish even one TCP connection");
-
-        stat.tcpHandshakes--;
-        disconnect();
-    }
-
-    bool doTcpConnect()
-    {
-        sd.open(ep_.isIPv4() ? Tcp::v4() : Tcp::v6());
-
         std::error_code ec;
-        setNonBlocking(sd.get(), true, ec);
-        utils::ThrowIfError(ec);
-        sd.connect(ep_, ec);
-
-        stat.tcpHandshakes++;
-        state_ = State::InTcpHandshaking;
-
-        if (!ec)
-            return handleEstablishedTcpConn();
-
-        handleConnectError(ec);
-        return false;
+        setLinger(socket_.get(), 1, 0, ec);
+        socket_.close();
     }
-
-    bool doTcpConnected()
-    {
-        auto ec = getSocketError(sd.get());
-        if (!ec)
-            return handleEstablishedTcpConn();
-
-        handleConnectError(ec);
-        return false;
-    }
-
-    bool doTlsHandshake()
-    {
-        using namespace std::chrono;
-
-        state_ = State::InTlsHandshaking;
-
-        if (!tls_)
-        {
-            tls_ = manager_.makeConnection();
-
-            tls_->setSocket(sd.get());
-
-            BIO_set_tcp_ndelay(sd.get(), true);
-
-            if (reuseSession_ && session_)
-            {
-                tls_->setSession(session_);
-            }
-
-            if (!sni_.empty())
-            {
-                tls_->setExtHostName(sni_);
-            }
-
-            stat.tlsHandshakes++;
-            start_ = Clock::now();
-        }
-
-        auto want = tls_->handshake();
-        if (want == tls::Connection::Want::Nothing)
-        {
-            const duration<double, std::milli> latency = Clock::now() - start_;
-            gLocalLatencyStats.update(latency.count());
-
-            log::debug("peer {}: has completed TLS handshake", id_);
-            stat.tlsHandshakes--;
-            stat.tlsConnections++;
-            stat.totalHandshakes++;
-            disconnect();
-
-            stat.tcpConnections--;
-            manager_.enqueueForReconnect(this);
-            return true;
-        }
-
-        switch (want)
-        {
-        case tls::Connection::Want::InputAndRetry:
-            pollForRead();
-            break;
-        case tls::Connection::Want::OutputAndRetry:
-            pollForWrite();
-            break;
-        default:
-            if (!stat.totalHandshakes)
-                throw std::runtime_error("cannot establish even one TLS"
-                                         " connection");
-            stat.tlsHandshakes--;
-            stat.errorCount++;
-            disconnect();
-            stat.tcpConnections--;
-        }
-        return false;
-    }
-
-    void disconnect() noexcept
-    {
-        if (tls_)
-        {
-            if (reuseSession_)
-            {
-                tls_->shutdown();
-                session_ = tls_->getSession();
-            }
-            tls_.reset();
-        }
-        if (sd.get() >= 0)
-        {
-            deleteFromPoll();
-            std::error_code ec;
-            setLinger(sd.get(), 1, 0, ec);
-            sd.close();
-        }
-
-        state_ = State::Preconnect;
-    }
-};
+}
 
 void PrintOptions(const Endpoint& ep, const Options& options)
 {
     std::cout << "Running TLS benchmark with following settings:\n"
               << "Host:        " << ep.toString() << "\n"
-              << "TLS version: " << options.versions;
-    std::cout << "Cipher:      "
-              << (!options.cipher.empty() ? options.cipher : "default") << "\n"
+              << "TLS version: " << options.versions << "\n"
+              << "Cipher:      " << (!options.cipher.empty() ? options.cipher : "default") << "\n"
               << "TLS tickets: "
-              << (options.useTickets
-                      ? "on\n"
-                      : !options.advTickets ? "off\n" : "advertise\n")
+              << (options.useTickets ? "on\n" : !options.advTickets ? "off\n" : "advertise\n")
               << "Duration:    " << options.timeout << "\n"
               << std::endl;
 }
 
-std::atomic<bool> bFinish(false), bStartStats(false);
+std::atomic<bool> bFinish(false);
 
 void sig_handler(int signum) noexcept
 {
@@ -535,8 +519,7 @@ void UpdateLimits(Options& options) noexcept
     open_file_limit.rlim_cur = req_fd_n;
     if (setrlimit(RLIMIT_NOFILE, &open_file_limit))
     {
-        options.sessionLimit =
-            open_file_limit.rlim_cur / (options.threadLimit + 4);
+        options.sessionLimit = open_file_limit.rlim_cur / (options.threadLimit + 4);
         std::cerr << "WARNING: required " << req_fd_n
                   << " (peers_number * threads_number), but setrlimit(2)"
                      " fails for this rlimit. Try to run as root or"
@@ -561,26 +544,21 @@ void UpdateStatistics(const Options& options) noexcept
 
     int32_t curr_hs = (size_t)(1000 * tls_conns) / dt;
     if (!options.quiet)
-        std::cout << "TLS hs in progress " << stat.tlsHandshakes << " ["
-                  << curr_hs << " h/s],"
-                  << " TCP open conns " << stat.tcpConnections << " ["
-                  << stat.tcpHandshakes << " hs in progress],"
+        std::cout << "TLS hs in progress " << stat.tlsHandshakes << " [" << curr_hs << " h/s],"
+                  << " TCP open conns " << stat.tcpConnections << " [" << stat.tcpHandshakes
+                  << " hs in progress],"
                   << " Errors " << stat.errorCount << std::endl;
-
-    if (!bStartStats)
-        return;
 
     stat.measures++;
     if (stat.maxHandshakes < curr_hs)
         stat.maxHandshakes = curr_hs;
     if (curr_hs && (stat.minHandshakes > curr_hs || !stat.minHandshakes))
         stat.minHandshakes = curr_hs;
-    stat.avgHandshakes =
-        (stat.avgHandshakes * (stat.measures - 1) + curr_hs) / stat.measures;
-    if (stat.handshakeHistory.size() == 3600)
+    stat.avgHandshakes = (stat.avgHandshakes * (stat.measures - 1) + curr_hs) / stat.measures;
+    if (stat.handshakeHistory.size() == 100)
         std::cerr << "WARNING: benchmark is running for too long"
                   << " last history won't be stored" << std::endl;
-    if (stat.handshakeHistory.size() <= 3600)
+    if (stat.handshakeHistory.size() <= 100)
         stat.handshakeHistory.push_back(curr_hs);
 }
 
@@ -589,34 +567,31 @@ void DumpStatistics() noexcept
     auto handshakeItems = stat.handshakeHistory.size();
     auto latencyItems = gLatencyStats.stat.size();
 
-    if (!bStartStats || handshakeItems < 1 || latencyItems < 1)
+    if (handshakeItems < 1 || latencyItems < 1)
     {
         std::cerr << "ERROR: not enough statistics collected" << std::endl;
         return;
     }
 
-    std::sort(stat.handshakeHistory.begin(), stat.handshakeHistory.end(),
-              std::greater<int32_t>());
-    std::sort(gLatencyStats.stat.begin(), gLatencyStats.stat.end(),
-              std::less<int32_t>());
+    std::sort(stat.handshakeHistory.begin(), stat.handshakeHistory.end(), std::greater<int32_t>());
+    std::sort(gLatencyStats.stat.begin(), gLatencyStats.stat.end(), std::less<int32_t>());
 
     std::cout << "========================================" << std::endl;
-    std::cout << " TOTAL:           SECONDS " << stat.measures
-              << "; HANDSHAKES " << stat.totalHandshakes << std::endl;
+    std::cout << " TOTAL:           SECONDS " << stat.measures << "; HANDSHAKES "
+              << stat.totalHandshakes << std::endl;
     std::cout << " HANDSHAKES/sec: "
-              << " MIN " << stat.minHandshakes
-              << "; AVG " << stat.avgHandshakes
+              << " MIN " << stat.minHandshakes << "; AVG "
+              << stat.avgHandshakes
               // 95% handshakes are faster than this number.
-              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100]
-              << "; MAX " << stat.maxHandshakes << std::endl;
-              
+              << "; 95P " << stat.handshakeHistory[handshakeItems * 95 / 100] << "; MAX "
+              << stat.maxHandshakes << std::endl;
 
     std::cout << " LATENCY (ms):   "
               << " MIN " << gLatencyStats.stat.front() << "; AVG "
               << gLatencyStats.sum / latencyItems
               // 95% latencies are smaller than this one.
-              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100]
-              << "; MAX " << gLatencyStats.stat.back() << std::endl;
+              << "; 95P " << gLatencyStats.stat[latencyItems * 95 / 100] << "; MAX "
+              << gLatencyStats.stat.back() << std::endl;
 }
 
 bool EndOfWork(const Options& options) noexcept
@@ -627,50 +602,19 @@ bool EndOfWork(const Options& options) noexcept
 void ProcessLoop(const Options& options, const Endpoint& ep)
 {
     size_t activeSessions = 0;
-    auto newSessions =
-        std::min(options.sessionLimit, kSessionCountForSlowStart);
     SessionManager manager(options);
-    std::list<ISession*> allSessions;
+    std::list<Session*> allSessions;
+
+    for (; activeSessions < options.sessionLimit; ++activeSessions)
+    {
+        Session* p = new Session(manager, ep, options.useTickets, options.sni, activeSessions++);
+        allSessions.push_back(p);
+        p->connect();
+    }
 
     while (!EndOfWork(options))
     {
-        for (; activeSessions < options.sessionLimit && newSessions;
-             --newSessions)
-        {
-            Session* p = new Session(manager, ep, options.useTickets,
-                                     options.sni, activeSessions++);
-            allSessions.push_back(p);
-
-            if (p->nextState() &&
-                activeSessions + newSessions < options.sessionLimit)
-                ++newSessions;
-        }
-
-        manager.wait();
-        while (auto s = manager.nextSession())
-        {
-            if (s->nextState() &&
-                activeSessions + newSessions < options.sessionLimit)
-                ++newSessions;
-        }
-
-        manager.backlog();
-        while (!bFinish)
-        {
-            auto s = manager.nextBacklog();
-            if (!s)
-                break;
-            if (s->nextState() &&
-                activeSessions + newSessions < options.sessionLimit)
-                ++newSessions;
-        }
-
-        if (activeSessions == options.sessionLimit && !bStartStats)
-        {
-            bStartStats = true;
-            std::cout << "( All peers are active, start to"
-                      << " gather statistics )" << std::endl;
-        }
+        manager.handleEvents();
     }
 
     for (auto s : allSessions)
@@ -687,17 +631,14 @@ public:
     {
         parser_.add("help, h", "Print help message");
         parser_.add("debug, d", "Run in debug mode");
-        parser_.add("to, T", "Duration of the test (in seconds)");
+        parser_.add("to, T", opt::Value(&options_.timeout), "Duration of the test (in seconds)");
         parser_.add("limit, l", opt::Value(&options_.sessionLimit),
                     "Limit parallel connections for each thread");
         parser_.add("conn, n", opt::Value(&options_.handshakeLimit),
                     "Total number of handshakes to establish");
-        parser_.add("threads, t", opt::Value(&options_.threadLimit),
-                    "Number of threads");
-        parser_.add("tls", opt::Value(&options_.versions),
-                    "Set TLS version for handshake");
-        parser_.add("input, i", opt::Value(&options_.input),
-                    "Target remote host");
+        parser_.add("threads, t", opt::Value(&options_.threadLimit), "Number of threads");
+        parser_.add("tls", opt::Value(&options_.versions), "Set TLS version for handshake");
+        parser_.add("input, i", opt::Value(&options_.input), "Target remote host");
     }
 
     ~PerfCommand() = default;
@@ -769,8 +710,7 @@ public:
             if (options_.timeout > 0)
             {
                 auto endProgram(Clock::now());
-                auto duration =
-                    duration_cast<seconds>(endProgram - startProgram).count();
+                auto duration = duration_cast<seconds>(endProgram - startProgram).count();
                 if (options_.timeout <= duration)
                 {
                     bFinish = true;
