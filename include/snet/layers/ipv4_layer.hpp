@@ -149,8 +149,8 @@ enum IPv4OptionTypes {
     IPV4OPT_Unknown
 };
 
-#define PCPP_IP_DONT_FRAGMENT 0x40
-#define PCPP_IP_MORE_FRAGMENTS 0x20
+#define SNET_IP_DONT_FRAGMENT 0x40
+#define SNET_IP_MORE_FRAGMENTS 0x20
 
 /**
  * @struct IPv4TimestampOptionValue

@@ -183,9 +183,3 @@ std::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
 }
 
 } // namespace snet::ip
-
-std::ostream& operator<<(std::ostream& os, const snet::ip::IPv4Address& addr)
-{
-    os << addr.toString();
-    return os;
-}

@@ -64,7 +64,7 @@ void NullLoopbackLayer::parseNextLayer()
         uint16_t ethType = (uint16_t)family;
         switch (ethType)
         {
-        case PCPP_ETHERTYPE_IP:
+        case SNET_ETHERTYPE_IP:
             m_NextLayer =
                 IPv4Layer::isDataValid(payload, payloadLen)
                     ? static_cast<Layer*>(
@@ -72,7 +72,7 @@ void NullLoopbackLayer::parseNextLayer()
                     : static_cast<Layer*>(new PayloadLayer(payload, payloadLen,
                                                            this, m_Packet));
             return;
-        case PCPP_ETHERTYPE_IPV6:
+        case SNET_ETHERTYPE_IPV6:
             m_NextLayer =
                 IPv6Layer::isDataValid(payload, payloadLen)
                     ? static_cast<Layer*>(
@@ -88,7 +88,7 @@ void NullLoopbackLayer::parseNextLayer()
 
     switch (family)
     {
-    case PCPP_BSD_AF_INET:
+    case SNET_BSD_AF_INET:
         m_NextLayer =
             IPv4Layer::isDataValid(payload, payloadLen)
                 ? static_cast<Layer*>(
@@ -96,9 +96,9 @@ void NullLoopbackLayer::parseNextLayer()
                 : static_cast<Layer*>(
                       new PayloadLayer(payload, payloadLen, this, m_Packet));
         break;
-    case PCPP_BSD_AF_INET6_BSD:
-    case PCPP_BSD_AF_INET6_FREEBSD:
-    case PCPP_BSD_AF_INET6_DARWIN:
+    case SNET_BSD_AF_INET6_BSD:
+    case SNET_BSD_AF_INET6_FREEBSD:
+    case SNET_BSD_AF_INET6_DARWIN:
         m_NextLayer =
             IPv6Layer::isDataValid(payload, payloadLen)
                 ? static_cast<Layer*>(

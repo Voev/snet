@@ -8,6 +8,9 @@
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
+#include <snet/utils/endianness.hpp>
+
+using namespace snet::utils;
 
 namespace snet::layers
 {
@@ -42,9 +45,9 @@ TcpOption TcpOptionBuilder::build() const
     {
         if (m_RecValueLen != 0)
         {
-            log::error(
-                "TCP NOP and TCP EOL options are 1-byte long and don't have "
-                "option value. Tried to set option value of size {}", m_RecValueLen);
+            log::error("TCP NOP and TCP EOL options are 1-byte long and don't have "
+                       "option value. Tried to set option value of size {}",
+                       m_RecValueLen);
             return TcpOption(nullptr);
         }
 
@@ -70,31 +73,29 @@ TcpOption TcpOptionBuilder::build() const
 
 uint16_t TcpLayer::getSrcPort() const
 {
-    return be16toh(getTcpHeader()->portSrc);
+    return be_to_host(getTcpHeader()->portSrc);
 }
 
 uint16_t TcpLayer::getDstPort() const
 {
-    return be16toh(getTcpHeader()->portDst);
+    return be_to_host(getTcpHeader()->portDst);
 }
 
 TcpOption TcpLayer::getTcpOption(const TcpOptionEnumType option) const
 {
-    return m_OptionReader.getTLVRecord(static_cast<uint8_t>(option),
-                                       getOptionsBasePtr(),
+    return m_OptionReader.getTLVRecord(static_cast<uint8_t>(option), getOptionsBasePtr(),
                                        getHeaderLen() - sizeof(tcphdr));
 }
 
 TcpOption TcpLayer::getFirstTcpOption() const
 {
-    return m_OptionReader.getFirstTLVRecord(getOptionsBasePtr(),
-                                            getHeaderLen() - sizeof(tcphdr));
+    return m_OptionReader.getFirstTLVRecord(getOptionsBasePtr(), getHeaderLen() - sizeof(tcphdr));
 }
 
 TcpOption TcpLayer::getNextTcpOption(TcpOption& tcpOption) const
 {
-    TcpOption nextOpt = m_OptionReader.getNextTLVRecord(
-        tcpOption, getOptionsBasePtr(), getHeaderLen() - sizeof(tcphdr));
+    TcpOption nextOpt = m_OptionReader.getNextTLVRecord(tcpOption, getOptionsBasePtr(),
+                                                        getHeaderLen() - sizeof(tcphdr));
     if (nextOpt.isNotNull() && nextOpt.getType() == TCPOPT_DUMMY)
         return TcpOption(nullptr);
 
@@ -103,8 +104,7 @@ TcpOption TcpLayer::getNextTcpOption(TcpOption& tcpOption) const
 
 size_t TcpLayer::getTcpOptionCount() const
 {
-    return m_OptionReader.getTLVRecordCount(getOptionsBasePtr(),
-                                            getHeaderLen() - sizeof(tcphdr));
+    return m_OptionReader.getTLVRecordCount(getOptionsBasePtr(), getHeaderLen() - sizeof(tcphdr));
 }
 
 TcpOption TcpLayer::addTcpOption(const TcpOptionBuilder& optionBuilder)
@@ -126,7 +126,8 @@ TcpOption TcpLayer::insertTcpOptionAfter(const TcpOptionBuilder& optionBuilder,
         const TcpOption prevOpt = getTcpOption(prevOptionType);
         if (prevOpt.isNull())
         {
-            log::error("Previous option of type {} not found, cannot add a new TCP option",  (int)prevOptionType);
+            log::error("Previous option of type {} not found, cannot add a new TCP option",
+                       (int)prevOptionType);
             return TcpOption(nullptr);
         }
 
@@ -181,8 +182,7 @@ bool TcpLayer::removeAllTcpOptions()
     return true;
 }
 
-TcpOption TcpLayer::addTcpOptionAt(const TcpOptionBuilder& optionBuilder,
-                                   const int offset)
+TcpOption TcpLayer::addTcpOptionAt(const TcpOptionBuilder& optionBuilder, const int offset)
 {
     TcpOption newOption = optionBuilder.build();
     if (newOption.isNull())
@@ -207,8 +207,7 @@ TcpOption TcpLayer::addTcpOptionAt(const TcpOptionBuilder& optionBuilder,
         return TcpOption(nullptr);
     }
 
-    memcpy(m_Data + offset, newOption.getRecordBasePtr(),
-           newOption.getTotalSize());
+    memcpy(m_Data + offset, newOption.getRecordBasePtr(), newOption.getTotalSize());
 
     newOption.purgeRecordData();
 
@@ -231,16 +230,14 @@ void TcpLayer::adjustTcpOptionTrailer(const size_t totalOptSize)
         shortenLayer(sizeof(tcphdr) + totalOptSize,
                      m_NumOfTrailingBytes - newNumberOfTrailingBytes - 1);
     else if (newNumberOfTrailingBytes > m_NumOfTrailingBytes)
-        extendLayer(sizeof(tcphdr) + totalOptSize,
-                    newNumberOfTrailingBytes - m_NumOfTrailingBytes);
+        extendLayer(sizeof(tcphdr) + totalOptSize, newNumberOfTrailingBytes - m_NumOfTrailingBytes);
 
     m_NumOfTrailingBytes = newNumberOfTrailingBytes;
 
     for (int i = 0; i < m_NumOfTrailingBytes; i++)
         m_Data[sizeof(tcphdr) + totalOptSize + i] = TCPOPT_DUMMY;
 
-    getTcpHeader()->dataOffset =
-        (sizeof(tcphdr) + totalOptSize + m_NumOfTrailingBytes) / 4;
+    getTcpHeader()->dataOffset = (sizeof(tcphdr) + totalOptSize + m_NumOfTrailingBytes) / 4;
 }
 
 uint16_t TcpLayer::calculateChecksum(const bool writeResultToPacket)
@@ -256,30 +253,26 @@ uint16_t TcpLayer::calculateChecksum(const bool writeResultToPacket)
 
         if (m_PrevLayer->getProtocol() == IPv4)
         {
-            const ip::IPv4Address srcIP =
-                static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
-            const ip::IPv4Address dstIP =
-                static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
+            const ip::IPv4Address srcIP = static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
+            const ip::IPv4Address dstIP = static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
 
             checksumRes = snet::layers::computePseudoHdrChecksum(
-                reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                ip::IPAddress::IPv4, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+                reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(), ip::IPAddress::IPv4,
+                PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
         else if (m_PrevLayer->getProtocol() == IPv6)
         {
-            const ip::IPv6Address srcIP =
-                static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
-            const ip::IPv6Address dstIP =
-                static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
+            const ip::IPv6Address srcIP = static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
+            const ip::IPv6Address dstIP = static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
 
-            checksumRes = computePseudoHdrChecksum(
-                reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                ip::IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+            checksumRes =
+                computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
+                                         ip::IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
     }
 
     if (writeResultToPacket)
-        tcpHdr->headerChecksum = htobe16(checksumRes);
+        tcpHdr->headerChecksum = host_to_be(checksumRes);
     else
         tcpHdr->headerChecksum = currChecksumValue;
 
@@ -296,8 +289,7 @@ void TcpLayer::initLayer()
     getTcpHeader()->dataOffset = sizeof(tcphdr) / 4;
 }
 
-TcpLayer::TcpLayer(uint8_t* data, const size_t dataLen, Layer* prevLayer,
-                   Packet* packet)
+TcpLayer::TcpLayer(uint8_t* data, const size_t dataLen, Layer* prevLayer, Packet* packet)
     : Layer(data, dataLen, prevLayer, packet, TCP)
 {
     m_NumOfTrailingBytes = 0;
@@ -311,8 +303,8 @@ TcpLayer::TcpLayer()
 TcpLayer::TcpLayer(const uint16_t portSrc, const uint16_t portDst)
 {
     initLayer();
-    getTcpHeader()->portDst = htobe16(portDst);
-    getTcpHeader()->portSrc = htobe16(portSrc);
+    getTcpHeader()->portDst = host_to_be(portDst);
+    getTcpHeader()->portSrc = host_to_be(portSrc);
 }
 
 void TcpLayer::copyLayerData(const TcpLayer& other)
@@ -381,8 +373,7 @@ std::string TcpLayer::toString() const
     srcPortStream << getSrcPort();
     std::ostringstream dstPortStream;
     dstPortStream << getDstPort();
-    result += "Src port: " + srcPortStream.str() +
-              ", Dst port: " + dstPortStream.str();
+    result += "Src port: " + srcPortStream.str() + ", Dst port: " + dstPortStream.str();
 
     return result;
 }

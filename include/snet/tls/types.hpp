@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <snet/utils/custom_unique_ptr.hpp>
 
 #include <openssl/kdf.h>

@@ -36,7 +36,7 @@ struct SessionCallbacks
     OnAppDataReceived onAppData{nullptr};
 };
 
-struct Session
+class Session
 {
 public:
     Session();

@@ -13,7 +13,7 @@ class RecordDecoder
 public:
     RecordDecoder();
 
-    ~RecordDecoder();
+    ~RecordDecoder() noexcept;
 
     RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey, std::span<const uint8_t> encKey,
                   std::span<const uint8_t> iv);
