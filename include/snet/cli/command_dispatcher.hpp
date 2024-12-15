@@ -3,12 +3,12 @@
 #include <memory>
 #include <functional>
 #include <snet/cli/command.hpp>
-#include <snet/utils/singleton.hpp>
+#include <casket/utils/singleton.hpp>
 
 namespace snet::cmd
 {
 
-class CommandDispatcher final : public utils::Singleton<CommandDispatcher>
+class CommandDispatcher final : public casket::utils::Singleton<CommandDispatcher>
 {
     typedef std::unique_ptr<Command> CommandPtr;
     typedef std::string CommandDescription;

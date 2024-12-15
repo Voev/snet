@@ -4,12 +4,12 @@
 #include <unordered_map>
 #include <snet/tls/client_random.hpp>
 #include <snet/tls/secret_node.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
-class SecretNodeManager final : public utils::NonCopyable
+class SecretNodeManager final : public casket::utils::NonCopyable
 {
 public:
     SecretNodeManager();

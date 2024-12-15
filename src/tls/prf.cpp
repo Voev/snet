@@ -7,11 +7,13 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite.hpp>
 
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
 #include <snet/utils/load_store.hpp>
 
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
+
+using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -86,20 +88,20 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
                       (context.size() + 1 /* length field*/));
 
     // length
-    utils::ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
+    ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
     const auto len = static_cast<uint16_t>(length);
     hkdfLabel.push_back(utils::get_byte<0>(len));
     hkdfLabel.push_back(utils::get_byte<1>(len));
 
     // label
     const std::string prefix = "tls13 ";
-    utils::ThrowIfFalse(prefix.size() + label.size() <= 255, "label too large");
+    ThrowIfFalse(prefix.size() + label.size() <= 255, "label too large");
     hkdfLabel.push_back(static_cast<uint8_t>(prefix.size() + label.size()));
     hkdfLabel.insert(hkdfLabel.end(), prefix.cbegin(), prefix.cend());
     hkdfLabel.insert(hkdfLabel.end(), label.cbegin(), label.cend());
 
     // context
-    utils::ThrowIfFalse(context.size() <= 255, "context too large");
+    ThrowIfFalse(context.size() <= 255, "context too large");
     hkdfLabel.push_back(static_cast<uint8_t>(context.size()));
     hkdfLabel.insert(hkdfLabel.end(), context.begin(), context.end());
 

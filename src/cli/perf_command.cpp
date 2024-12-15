@@ -21,9 +21,9 @@
 
 #include <casket/opt/option_parser.hpp>
 #include <casket/log/log_manager.hpp>
+#include <casket/utils/error_code.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/utils/error_code.hpp>
 #include <snet/event/epoll.hpp>
 
 #include <snet/socket.hpp>
@@ -377,7 +377,7 @@ bool Session::doTcpConnect()
 
     std::error_code ec;
     setNonBlocking(socket_.get(), true, ec);
-    snet::utils::ThrowIfError(ec);
+    casket::utils::ThrowIfError(ec);
     socket_.connect(ep_, ec);
 
     stat.tcpHandshakes++;

@@ -10,8 +10,10 @@
 #include <openssl/x509v3.h>
 #include <openssl/core_names.h>
 
-#include <snet/utils/exception.hpp>
-#include <snet/utils/hexlify.hpp>
+#include <casket/utils/exception.hpp>
+#include <casket/utils/hexlify.hpp>
+
+#include <snet/utils/print_hex.hpp>
 #include <snet/utils/memory_viewer.hpp>
 
 #include <snet/tls/session.hpp>
@@ -19,6 +21,8 @@
 #include <snet/tls/prf.hpp>
 #include <snet/tls/exception.hpp>
 #include <snet/tls/server_info.hpp>
+
+using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -64,7 +68,7 @@ void Session::processBytes(const int8_t sideIndex, std::span<const uint8_t> inpu
 
 void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
+    ThrowIfFalse(sideIndex == 0, "Incorrect side index");
     utils::DataReader reader("Client Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     reader.get_byte();
@@ -92,7 +96,7 @@ void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint
 
 void Session::processHandshakeServerHello(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+    ThrowIfFalse(sideIndex == 1, "Incorrect side index");
     utils::DataReader reader("Server Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     version_ = ProtocolVersion(reader.get_uint16_t());
@@ -140,12 +144,12 @@ void Session::processHandshakeCertificate(int8_t sideIndex, std::span<const uint
         // RFC 8446 4.4.2
         //    [...] in the case of server authentication, this field SHALL be
         //    zero length.
-        utils::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
-                           "Server Certificate message must not contain a request context");
+        ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
+                    "Server Certificate message must not contain a request context");
 
         const size_t certEntriesLength = reader.get_uint24_t();
-        utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength,
-                           "Certificate: Message malformed");
+        ThrowIfTrue(reader.remaining_bytes() != certEntriesLength,
+                    "Certificate: Message malformed");
 
         while (reader.has_remaining())
         {
@@ -159,8 +163,7 @@ void Session::processHandshakeCertificate(int8_t sideIndex, std::span<const uint
     else
     {
         const size_t certsLength = reader.get_uint24_t();
-        utils::ThrowIfTrue(reader.remaining_bytes() != certsLength,
-                           "Certificate: Message malformed");
+        ThrowIfTrue(reader.remaining_bytes() != certsLength, "Certificate: Message malformed");
 
         while (reader.has_remaining())
         {
@@ -176,11 +179,11 @@ void Session::processHandshakeCertificate(int8_t sideIndex, std::span<const uint
 
 void Session::processHandshakeSessionTicket(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     if (version_ == ProtocolVersion::TLSv1_3)
     {
         utils::DataReader reader("TLSv1.3 New Session Ticket",
-                                  message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+                                 message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
         // ticket_lifetime_hint
         reader.get_uint32_t();
@@ -200,28 +203,26 @@ void Session::processHandshakeSessionTicket(int8_t sideIndex, std::span<const ui
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
         utils::DataReader reader("TLSv1.2 New Session Ticket",
-                                  message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        utils::ThrowIfTrue(reader.remaining_bytes() < 6,
-                           "Session ticket message too short to be valid");
+                                 message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+        ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
         reader.get_uint32_t();
         reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
     }
     else
     {
-        throw utils::RuntimeError("NewSessionTicket can't be in TLS versions below 1.2");
+        throw RuntimeError("NewSessionTicket can't be in TLS versions below 1.2");
     }
 }
 
 void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
                                                   std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("Encrypted Extensions", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    utils::ThrowIfTrue(reader.remaining_bytes() < 2,
-                       "Server sent an empty Encrypted Extensions message");
+    ThrowIfTrue(reader.remaining_bytes() < 2, "Server sent an empty Encrypted Extensions message");
     serverExensions_.deserialize(reader, tls::Side::Server,
                                  tls::HandshakeType::EncryptedExtensions);
 
@@ -230,7 +231,7 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
 
 void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
@@ -257,7 +258,7 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
     }
     else if (kex != KexAlg::PSK)
     {
-        throw utils::RuntimeError("Server_Key_Exchange: Unsupported kex type");
+        throw RuntimeError("Server_Key_Exchange: Unsupported kex type");
     }
 
     auto auth = cipherSuite_.getAuthAlg();
@@ -274,21 +275,21 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
 
 void Session::processHandshakeCertificateRequest(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("Certificate Request", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    utils::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
+    ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
     const auto cert_type_codes = reader.get_range_vector<uint8_t>(1, 1, 255);
     const std::vector<uint8_t> algs = reader.get_range_vector<uint8_t>(2, 2, 65534);
 
-    utils::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
+    ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
 
     const uint16_t purported_size = reader.get_uint16_t();
 
-    utils::ThrowIfTrue(reader.remaining_bytes() != purported_size,
-                       "Inconsistent length in certificate request");
+    ThrowIfTrue(reader.remaining_bytes() != purported_size,
+                "Inconsistent length in certificate request");
 
     while (reader.has_remaining())
     {
@@ -302,7 +303,7 @@ void Session::processHandshakeCertificateRequest(int8_t sideIndex, std::span<con
 
 void Session::processHandshakeServerHelloDone(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.assert_done();
     handshakeHash_.update(message);
@@ -310,7 +311,7 @@ void Session::processHandshakeServerHelloDone(int8_t sideIndex, std::span<const 
 
 void Session::processHandshakeCertificateVerify(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.get_uint16_t();
@@ -322,7 +323,7 @@ void Session::processHandshakeCertificateVerify(int8_t sideIndex, std::span<cons
 
 void Session::processHandshakeClientKeyExchange(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
+    ThrowIfTrue(sideIndex != 0, "Incorrect side index");
     handshakeHash_.update(message);
 
     if (!serverInfo_.getServerKey())
@@ -438,8 +439,8 @@ void Session::processHandshake(int8_t sideIndex, std::span<const uint8_t> messag
 
     const auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());
     const auto messageLength = reader.get_uint24_t();
-    utils::ThrowIfFalse(reader.remaining_bytes() == messageLength,
-                        "Incorrect length of handshake message");
+    ThrowIfFalse(reader.remaining_bytes() == messageLength,
+                 "Incorrect length of handshake message");
 
     if (callbacks_.onHandshake)
         callbacks_.onHandshake(sideIndex, messageType, message);
@@ -501,8 +502,7 @@ void Session::processHandshake(int8_t sideIndex, std::span<const uint8_t> messag
 
 void Session::processChangeCipherSpec(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfFalse(message.size() == 1 && message[0] == 0x01,
-                        "Malformed Change Cipher Spec message");
+    ThrowIfFalse(message.size() == 1 && message[0] == 0x01, "Malformed Change Cipher Spec message");
 
     if (version_ < tls::ProtocolVersion::TLSv1_3)
     {
@@ -512,8 +512,7 @@ void Session::processChangeCipherSpec(int8_t sideIndex, std::span<const uint8_t>
 
 void Session::processAlert(int8_t sideIndex, std::span<const uint8_t> message)
 {
-    utils::ThrowIfTrue(message.size() != 2,
-                       utils::format("wrong length for alert message: {}", message.size()));
+    ThrowIfTrue(message.size() != 2, format("wrong length for alert message: {}", message.size()));
 
     if (callbacks_.onAlert)
     {
@@ -533,21 +532,19 @@ void Session::processApplicationData(int8_t sideIndex, std::span<const uint8_t> 
 Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inputBytes,
                            std::vector<uint8_t>& outputBytes, size_t& consumedBytes)
 {
-    utils::ThrowIfTrue(inputBytes.size() < TLS_HEADER_SIZE, "Inappropriate header size");
-    utils::ThrowIfTrue(inputBytes[0] < 20 || inputBytes[0] > 23,
-                       "TLS record type had unexpected value");
-    utils::ThrowIfTrue(inputBytes[1] != 3 || inputBytes[2] >= 4,
-                       "TLS record version had unexpected value");
+    ThrowIfTrue(inputBytes.size() < TLS_HEADER_SIZE, "Inappropriate header size");
+    ThrowIfTrue(inputBytes[0] < 20 || inputBytes[0] > 23, "TLS record type had unexpected value");
+    ThrowIfTrue(inputBytes[1] != 3 || inputBytes[2] >= 4,
+                "TLS record version had unexpected value");
 
     RecordType recordType = static_cast<RecordType>(inputBytes[0]);
     const ProtocolVersion recordVersion(inputBytes[1], inputBytes[2]);
     const size_t recordSize =
         utils::make_uint16(inputBytes[TLS_HEADER_SIZE - 2], inputBytes[TLS_HEADER_SIZE - 1]);
 
-    utils::ThrowIfTrue(recordSize > MAX_CIPHERTEXT_SIZE,
-                       "Received a record that exceeds maximum size");
-    utils::ThrowIfTrue(recordSize > inputBytes.size(), "Incorrect record length");
-    utils::ThrowIfTrue(recordSize == 0, "Received a empty record");
+    ThrowIfTrue(recordSize > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
+    ThrowIfTrue(recordSize > inputBytes.size(), "Incorrect record length");
+    ThrowIfTrue(recordSize == 0, "Received a empty record");
 
     consumedBytes = TLS_HEADER_SIZE + recordSize;
 
@@ -561,8 +558,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
                                  outputBytes);
 
             uint8_t lastByte = *(outputBytes.end() - 1);
-            utils::ThrowIfTrue(lastByte < 20 || lastByte > 23,
-                               "TLS record type had unexpected value");
+            ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
             recordType = static_cast<RecordType>(lastByte);
 
             return Record(recordType, recordVersion,
@@ -574,8 +570,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
                                  outputBytes);
 
             uint8_t lastByte = *(outputBytes.end() - 1);
-            utils::ThrowIfTrue(lastByte < 20 || lastByte > 23,
-                               "TLS record type had unexpected value");
+            ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
             recordType = static_cast<RecordType>(lastByte);
 
             return Record(recordType, recordVersion,
@@ -627,9 +622,9 @@ void Session::processRecord(int8_t sideIndex, const Record& record)
         processApplicationData(sideIndex, record.data());
         break;
     default:
-        throw utils::RuntimeError("Unexpected record type " +
-                                  std::to_string(static_cast<size_t>(record.type())) +
-                                  " from counterparty");
+        throw RuntimeError("Unexpected record type " +
+                           std::to_string(static_cast<size_t>(record.type())) +
+                           " from counterparty");
     }
 }
 
@@ -760,7 +755,7 @@ void Session::generateTLS13KeyMaterial()
 void Session::PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
                   std::span<const uint8_t> rnd2, std::span<uint8_t> out)
 {
-    utils::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
+    ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
     if (version_ <= tls::ProtocolVersion::SSLv3_0)
         ssl3Prf(secret, rnd1, rnd2, out);

@@ -1,9 +1,9 @@
 
 #include <snet/tls/settings.hpp>
 #include <snet/tls/error_code.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
 
-using namespace snet::utils;
+using namespace casket::utils;
 
 namespace snet::tls
 {

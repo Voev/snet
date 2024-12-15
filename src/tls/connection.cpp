@@ -4,7 +4,9 @@
 #include <snet/tls/settings.hpp>
 #include <snet/tls/error_code.hpp>
 
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
+
+using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -26,7 +28,7 @@ Connection::Connection(Settings& settings)
 
     if (!BIO_new_bio_pair(&intBio, 0, &extBio, 0))
     {
-        throw utils::SystemError(GetLastError());
+        throw SystemError(GetLastError());
     }
 
     SSL_set_bio(ssl_, intBio, intBio);
@@ -66,7 +68,7 @@ void Connection::setSocket(int fd)
 {
     if (0 >= SSL_set_fd(ssl_, fd))
     {
-        throw utils::SystemError(GetLastError());
+        throw SystemError(GetLastError());
     }
 }
 
@@ -74,7 +76,7 @@ void Connection::setSession(SSL_SESSION* session)
 {
     if (0 >= SSL_set_session(ssl_, session))
     {
-        throw utils::SystemError(GetLastError());
+        throw SystemError(GetLastError());
     }
 }
 
@@ -87,7 +89,7 @@ void Connection::setExtHostName(std::string_view hostname)
 {
     if (0 >= SSL_set_tlsext_host_name(ssl_, hostname.data()))
     {
-        throw utils::SystemError(GetLastError());
+        throw SystemError(GetLastError());
     }
 }
 

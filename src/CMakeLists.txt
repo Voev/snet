@@ -1,4 +1,3 @@
-add_subdirectory(utils)
 add_subdirectory(ip)
 add_subdirectory(layers)
 add_subdirectory(tls)

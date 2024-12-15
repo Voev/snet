@@ -673,7 +673,7 @@ inline size_t copy_out_any_word_aligned_portion(std::span<uint8_t>& out, std::sp
     const size_t full_words = out.size() / sizeof(T);
     const size_t full_word_bytes = full_words * sizeof(T);
     const size_t remaining_bytes = out.size() - full_word_bytes;
-    utils::ThrowIfFalse(in.size_bytes() >= full_word_bytes + remaining_bytes);
+    casket::utils::ThrowIfFalse(in.size_bytes() >= full_word_bytes + remaining_bytes);
 
     // copy full words
     store_any<endianness, T>(out.first(full_word_bytes), in.first(full_words));

@@ -7,7 +7,9 @@
 #include <sys/socket.h>
 
 #include <snet/socket/socket_ops.hpp>
-#include <snet/utils/error_code.hpp>
+#include <casket/utils/error_code.hpp>
+
+using namespace casket;
 
 namespace snet::socket
 {

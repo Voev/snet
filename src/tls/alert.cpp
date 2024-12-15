@@ -1,7 +1,9 @@
 /// @brief Определение класса сообщения протокола оповещения (Alert).
 
 #include <snet/tls/alert.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
+
+using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -114,10 +116,10 @@ Alert::Alert(Description description, bool fatal)
 
 Alert::Alert(std::span<const uint8_t> buf)
 {
-    utils::ThrowIfTrue(buf.size() != 2,
-                       "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
+    ThrowIfTrue(buf.size() != 2,
+                "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
 
-    utils::ThrowIfFalse(buf[0] == 1 || buf[0] == 2, "Bad code for TLS alert level");
+    ThrowIfFalse(buf[0] == 1 || buf[0] == 2, "Bad code for TLS alert level");
 
     fatal_ = (buf[0] == 2);
     description_ = static_cast<Description>(buf[1]);

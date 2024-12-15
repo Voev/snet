@@ -5,10 +5,10 @@
 #include <snet/ip/ipv4_address.hpp>
 
 #include <snet/utils/endianness.hpp>
-#include <snet/utils/error_code.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/error_code.hpp>
+#include <casket/utils/exception.hpp>
 
-using namespace snet::utils;
+using namespace casket::utils;
 
 namespace snet::ip
 {

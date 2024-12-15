@@ -1,9 +1,9 @@
 #include <iostream>
+#include <casket/utils/string.hpp>
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/utils/string.hpp>
 
+using namespace casket::utils;
 using namespace snet::cmd;
-using namespace snet::utils;
 
 int main(int argc, char* argv[])
 {

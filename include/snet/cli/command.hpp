@@ -1,12 +1,12 @@
 #pragma once
 #include <vector>
 #include <string_view>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::cmd
 {
 
-class Command : public utils::NonCopyable
+class Command : public casket::utils::NonCopyable
 {
 public:
     Command() = default;
