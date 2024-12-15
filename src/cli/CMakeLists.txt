@@ -9,10 +9,10 @@ add_executable(${EXECUTABLE_TARGET} ${SOURCES})
 
 # Link dependencies
 target_link_libraries(${EXECUTABLE_TARGET}
+    casket
     snet_ip
     snet_tls
     snet_event
-    snet_log
     snet_utils
     snet_layers
     snet_pcap

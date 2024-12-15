@@ -4,10 +4,11 @@
 #include <snet/layers/tcp_layer.hpp>
 #include <snet/layers/checksums.hpp>
 
-#include <snet/log/log_manager.hpp>
+#include <casket/log/log_manager.hpp>
 
 #include <snet/utils/endianness.hpp>
 
+using namespace casket;
 using namespace snet::utils;
 
 #define PURGE_FREQ_SECS 1
