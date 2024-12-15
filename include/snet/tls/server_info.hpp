@@ -11,7 +11,6 @@ public:
     ServerInfo()
         : hostname_()
         , address_()
-        , port_(0)
     {
     }
 
@@ -56,7 +55,6 @@ public:
 private:
     std::string hostname_;
     ip::IPAddress address_;
-    std::uint16_t port_;
     EvpPkeyPtr serverKey_;
 };
 
