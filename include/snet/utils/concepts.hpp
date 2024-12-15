@@ -6,7 +6,7 @@
 #include <ranges>
 #include <span>
 #include <type_traits>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
 
 namespace snet {
 
@@ -100,7 +100,7 @@ inline constexpr void assert_exact_byte_length(R&& r) {
     if constexpr (statically_spanable_range<R>) {
         static_assert(s.size_bytes() == expected, "memory region does not have expected byte lengths");
     } else {
-        utils::ThrowIfFalse(s.size_bytes() == expected, "memory region does not have expected byte lengths");
+        casket::utils::ThrowIfFalse(s.size_bytes() == expected, "memory region does not have expected byte lengths");
     }
 }
 

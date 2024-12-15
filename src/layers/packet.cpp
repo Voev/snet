@@ -3,7 +3,7 @@
 #include <typeinfo>
 #include <sstream>
 
-#include <snet/log/log_manager.hpp>
+#include <casket/log/log_manager.hpp>
 
 #include <snet/layers/packet.hpp>
 #include <snet/layers/eth_layer.hpp>
@@ -11,6 +11,8 @@
 #include <snet/layers/ipv4_layer.hpp>
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
+
+using namespace casket;
 
 namespace snet::layers
 {

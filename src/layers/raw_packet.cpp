@@ -1,6 +1,8 @@
 #include <cstring>
+#include <casket/log/log_manager.hpp>
 #include <snet/layers/raw_packet.hpp>
-#include <snet/log/log_manager.hpp>
+
+using namespace casket;
 
 namespace snet::layers
 {

@@ -2,9 +2,9 @@
 #include <span>
 #include <string>
 #include <vector>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
+#include <casket/utils/format.hpp>
 #include <snet/utils/load_store.hpp>
-#include <snet/utils/format.hpp>
 
 namespace snet::utils
 {
@@ -204,7 +204,7 @@ private:
 
     [[noreturn]] void throw_decode_error(std::string_view why) const
     {
-        throw snet::utils::RuntimeError(snet::utils::format("Invalid {}: {}", m_typename, why));
+        throw casket::utils::RuntimeError(casket::utils::format("Invalid {}: {}", m_typename, why));
     }
 
     const char* m_typename;

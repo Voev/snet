@@ -2,7 +2,7 @@
 #include <openssl/ssl.h>
 #include <snet/tls/exception.hpp>
 #include <snet/utils/endianness.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/exception.hpp>
 
 using namespace snet::tls;
 

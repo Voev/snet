@@ -1,6 +1,6 @@
 #pragma once
 #include <snet/tls/types.hpp>
-#include <snet/utils/singleton.hpp>
+#include <casket/utils/singleton.hpp>
 
 #include <span>
 #include <string>
@@ -188,7 +188,7 @@ private:
     bool aead_;
 };
 
-class CipherSuiteManager final : public utils::Singleton<CipherSuiteManager>
+class CipherSuiteManager final : public casket::utils::Singleton<CipherSuiteManager>
 {
 public:
     CipherSuiteManager();

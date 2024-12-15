@@ -1,7 +1,9 @@
 #include <pcap.h>
 #include <cstring>
+#include <casket/log/log_manager.hpp>
 #include <snet/pcap/pcap_file_reader_device.hpp>
-#include <snet/log/log_manager.hpp>
+
+using namespace casket;
 
 namespace snet::pcap
 {

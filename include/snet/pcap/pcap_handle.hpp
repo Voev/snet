@@ -1,13 +1,13 @@
 #pragma once
 #include <cstddef>
 #include <snet/pcap/forward_types.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::pcap
 {
 
 /// @brief A wrapper class for libpcap packet capture descriptor.
-class PcapHandle : public utils::NonCopyable
+class PcapHandle : public casket::utils::NonCopyable
 {
 public:
     /// @brief Creates an empty handle.

@@ -1,0 +1,3 @@
+[submodule "modules/casket"]
+	path = modules/casket
+	url = https://github.com/Voev/casket

@@ -1,7 +1,9 @@
 #include <string.h>
+#include <casket/log/log_manager.hpp>
 #include <snet/layers/layer.hpp>
 #include <snet/layers/packet.hpp>
-#include <snet/log/log_manager.hpp>
+
+using namespace casket;
 
 namespace snet::layers
 {

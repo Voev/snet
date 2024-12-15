@@ -1,11 +1,11 @@
 #pragma once
 #include <snet/tls/version.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
-class Settings : public utils::NonCopyable
+class Settings : public casket::utils::NonCopyable
 {
 public:
     friend class Connection;

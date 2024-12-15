@@ -1,4 +1,4 @@
-#include <snet/log/log_manager.hpp>
+#include <casket/log/log_manager.hpp>
 
 #include <snet/layers/checksums.hpp>
 #include <snet/layers/ipv4_layer.hpp>
@@ -7,6 +7,7 @@
 
 #include <snet/utils/endianness.hpp>
 
+using namespace casket;
 using namespace snet::utils;
 
 namespace snet::layers

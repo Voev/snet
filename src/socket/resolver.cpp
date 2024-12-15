@@ -12,12 +12,12 @@
 #include <snet/socket/resolver.hpp>
 #include <snet/socket/types.hpp>
 
-#include <snet/utils/error_code.hpp>
-#include <snet/utils/exception.hpp>
-#include <snet/utils/to_number.hpp>
+#include <casket/utils/error_code.hpp>
+#include <casket/utils/exception.hpp>
+#include <casket/utils/to_number.hpp>
 
 using namespace snet::ip;
-using namespace snet::utils;
+using namespace casket::utils;
 
 namespace snet::socket
 {

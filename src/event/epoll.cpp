@@ -1,8 +1,10 @@
 
 #include <unistd.h> // close
 #include <snet/event/epoll.hpp>
-#include <snet/utils/error_code.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/error_code.hpp>
+#include <casket/utils/exception.hpp>
+
+using namespace casket::utils;
 
 namespace snet::event
 {
@@ -12,7 +14,7 @@ Epoll::Epoll()
 {
     if (fd_ < 0)
     {
-        throw utils::SystemError(utils::GetLastSystemError());
+        throw SystemError(GetLastSystemError());
     }
 }
 
@@ -39,7 +41,7 @@ void Epoll::add(int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_ADD, fd, events, ec);
-    utils::ThrowIfError(ec);
+    ThrowIfError(ec);
 }
 
 void Epoll::add(void* ptr, int fd, EventMask events,
@@ -52,7 +54,7 @@ void Epoll::add(void* ptr, int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_ADD, ptr, fd, events, ec);
-    utils::ThrowIfError(ec);
+    ThrowIfError(ec);
 }
 
 void Epoll::modify(void* ptr, int fd, EventMask events,
@@ -65,7 +67,7 @@ void Epoll::modify(void* ptr, int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_MOD, ptr, fd, events, ec);
-    utils::ThrowIfError(ec);
+    ThrowIfError(ec);
 }
 
 void Epoll::modify(int fd, EventMask events, std::error_code& ec) noexcept
@@ -77,14 +79,14 @@ void Epoll::modify(int fd, EventMask events)
 {
     std::error_code ec;
     control(EPOLL_CTL_MOD, fd, events, ec);
-    utils::ThrowIfError(ec);
+    ThrowIfError(ec);
 }
 
 void Epoll::del(int fd, std::error_code& ec) noexcept
 {
     if (0 != epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr))
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 }
 
@@ -92,7 +94,7 @@ void Epoll::del(int fd)
 {
     std::error_code ec;
     del(fd, ec);
-    utils::ThrowIfError(ec);
+    ThrowIfError(ec);
 }
 
 void Epoll::control(int op, int fd, EventMask events,
@@ -103,7 +105,7 @@ void Epoll::control(int op, int fd, EventMask events,
     event.events = events;
     if (0 != epoll_ctl(fd_, op, fd, &event))
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 }
 
@@ -115,7 +117,7 @@ void Epoll::control(int op, void* ptr, int fd, EventMask events,
     event.events = events;
     if (0 != epoll_ctl(fd_, op, fd, &event))
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 }
 
@@ -124,7 +126,7 @@ int Epoll::wait(Event* events, int maxCount, int timeout, std::error_code& ec)
     auto ret = epoll_wait(fd_, events, maxCount, timeout);
     if (ret < 0)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
     return ret;
 }

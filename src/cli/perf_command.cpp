@@ -19,12 +19,12 @@
 #include <openssl/err.h>
 #include <openssl/tls1.h>
 
-#include <snet/cli/command_dispatcher.hpp>
-#include <snet/opt/option_parser.hpp>
+#include <casket/opt/option_parser.hpp>
+#include <casket/log/log_manager.hpp>
+#include <casket/utils/error_code.hpp>
 
-#include <snet/utils/error_code.hpp>
+#include <snet/cli/command_dispatcher.hpp>
 #include <snet/event/epoll.hpp>
-#include <snet/log/log_manager.hpp>
 
 #include <snet/socket.hpp>
 #include <snet/tls.hpp>
@@ -37,9 +37,10 @@ static const size_t kLatencyItems = 1024;
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
+using namespace casket;
+using namespace casket::log;
 using namespace snet;
 using namespace snet::event;
-using namespace snet::log;
 using namespace snet::socket;
 
 using Clock = steady_clock;
@@ -376,7 +377,7 @@ bool Session::doTcpConnect()
 
     std::error_code ec;
     setNonBlocking(socket_.get(), true, ec);
-    utils::ThrowIfError(ec);
+    casket::utils::ThrowIfError(ec);
     socket_.connect(ep_, ec);
 
     stat.tcpHandshakes++;
@@ -643,7 +644,7 @@ public:
 
     ~PerfCommand() = default;
 
-    void execute(const std::vector<std::string>& args) override
+    void execute(const std::vector<std::string_view>& args) override
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))

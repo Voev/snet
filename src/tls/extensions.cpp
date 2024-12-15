@@ -1,6 +1,8 @@
 #include <iterator>
 #include <snet/tls/extensions.hpp>
 
+using namespace casket::utils;
+
 namespace snet::tls
 {
 
@@ -267,8 +269,7 @@ CertificateTypeBase::CertificateTypeBase(std::vector<CertificateType> supported_
     : certTypes_(std::move(supported_cert_types))
     , from_(Side::Client)
 {
-    utils::ThrowIfFalse(certTypes_.empty(),
-                        "at least one certificate type must be supported");
+    ThrowIfFalse(certTypes_.empty(), "at least one certificate type must be supported");
 }
 
 ClientCertificateType::ClientCertificateType(const ClientCertificateType& cct)
@@ -350,8 +351,8 @@ CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t ext
 
 void CertificateTypeBase::validate_selection(const CertificateTypeBase& from_server) const
 {
-    utils::ThrowIfFalse(from_ == Side::Client, "invalid from");
-    utils::ThrowIfFalse(from_server.from_ == Side::Server, "invalid from_server");
+    ThrowIfFalse(from_ == Side::Client, "invalid from");
+    ThrowIfFalse(from_server.from_ == Side::Server, "invalid from_server");
 
     // RFC 7250 4.2
     //    The value conveyed in the [client_]CertificateType extension MUST be
@@ -360,15 +361,15 @@ void CertificateTypeBase::validate_selection(const CertificateTypeBase& from_ser
     if (!contains(certTypes_, from_server.selected_CertificateType()))
     {
         throw std::runtime_error(
-            utils::format("Selected certificate type was not offered: {}",
-                          CertificateType_to_string(from_server.selected_CertificateType())));
+            format("Selected certificate type was not offered: {}",
+                   CertificateType_to_string(from_server.selected_CertificateType())));
     }
 }
 
 CertificateType CertificateTypeBase::selected_CertificateType() const
 {
-    utils::ThrowIfFalse(from_ == Side::Server, "Invalid from_");
-    utils::ThrowIfFalse(certTypes_.size() == 1, "invalid certificate type");
+    ThrowIfFalse(from_ == Side::Server, "Invalid from_");
+    ThrowIfFalse(certTypes_.size() == 1, "invalid certificate type");
     return certTypes_.front();
 }
 
@@ -388,8 +389,7 @@ EncryptThenMAC::EncryptThenMAC(utils::DataReader& /*unused*/, uint16_t extension
     }
 }
 
-SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extension_size,
-                                       Side from)
+SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extension_size, Side from)
 {
     if (from == Side::Server)
     {
@@ -432,10 +432,9 @@ bool SupportedVersions::supports(ProtocolVersion version) const
 RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
     : limit_(limit)
 {
-    utils::ThrowIfFalse(limit >= 64,
-                        "RFC 8449 does not allow record size limits smaller than 64 bytes");
-    utils::ThrowIfFalse(limit <= MAX_PLAINTEXT_SIZE + 1 /* encrypted content type byte */,
-                        "RFC 8449 does not allow record size limits larger than 2^14+1");
+    ThrowIfFalse(limit >= 64, "RFC 8449 does not allow record size limits smaller than 64 bytes");
+    ThrowIfFalse(limit <= MAX_PLAINTEXT_SIZE + 1 /* encrypted content type byte */,
+                 "RFC 8449 does not allow record size limits larger than 2^14+1");
 }
 
 RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extension_size, Side from)
@@ -476,8 +475,7 @@ RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extension_s
     }
 }
 
-RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader,
-                                                 uint16_t extension_size)
+RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader, uint16_t extension_size)
     : renegData_(reader.get_range<uint8_t>(1, 0, 255))
 {
     if (renegData_.size() + 1 != extension_size)

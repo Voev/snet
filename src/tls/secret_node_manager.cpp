@@ -1,11 +1,13 @@
 #include <fstream>
 
-#include <snet/utils/format.hpp>
-#include <snet/utils/hexlify.hpp>
-#include <snet/utils/string.hpp>
-#include <snet/utils/exception.hpp>
+#include <casket/utils/string.hpp>
+#include <casket/utils/format.hpp>
+#include <casket/utils/hexlify.hpp>
+#include <casket/utils/exception.hpp>
 
 #include <snet/tls/secret_node_manager.hpp>
+
+using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -45,13 +47,13 @@ SecretNodeManager::getSecretNode(const ClientRandom& clientRandom)
 
 void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
 {
-    utils::ThrowIfFalse(
+    ThrowIfFalse(
         std::filesystem::is_regular_file(keylog),
-        utils::format("invalid file path '{}'", keylog.c_str()));
+        format("invalid file path '{}'", keylog.c_str()));
 
     std::ifstream stream(keylog.c_str());
-    utils::ThrowIfFalse(stream.is_open(),
-                        utils::format("failed to open '{}'", keylog.c_str()));
+    ThrowIfFalse(stream.is_open(),
+                        format("failed to open '{}'", keylog.c_str()));
 
     std::string line{};
     std::size_t lineno{};
@@ -64,7 +66,7 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
         lineno++;
 
         /* Skip white spaces and tabs on the left */
-        utils::ltrim(line);
+        ltrim(line);
 
         /* Skip comments */
         auto pos = line.find_first_of("#");
@@ -74,7 +76,7 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
         }
 
         /* Skip white spaces and tabs on the right */
-        utils::rtrim(line);
+        rtrim(line);
 
         /* Skip empty lines */
         if (line[0] == '\0' || line[0] == '\r' || line[0] == '\n')
@@ -82,32 +84,32 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
             continue;
         }
 
-        auto params = utils::split(line, " ");
-        utils::ThrowIfFalse(
+        auto params = split(line, " ");
+        ThrowIfFalse(
             params.size() == 3,
-            utils::format("invalid line #{}: {}", lineno, line));
+            format("invalid line #{}: {}", lineno, line));
 
-        if (utils::iequals(params[0], "CLIENT_RANDOM"))
+        if (iequals(params[0], "CLIENT_RANDOM"))
         {
             type = SecretNode::MasterSecret;
         }
-        else if (utils::iequals(params[0], "CLIENT_EARLY_TRAFFIC_SECRET"))
+        else if (iequals(params[0], "CLIENT_EARLY_TRAFFIC_SECRET"))
         {
             type = SecretNode::ClientEarlyTrafficSecret;
         }
-        else if (utils::iequals(params[0], "CLIENT_HANDSHAKE_TRAFFIC_SECRET"))
+        else if (iequals(params[0], "CLIENT_HANDSHAKE_TRAFFIC_SECRET"))
         {
             type = SecretNode::ClientHandshakeTrafficSecret;
         }
-        else if (utils::iequals(params[0], "SERVER_HANDSHAKE_TRAFFIC_SECRET"))
+        else if (iequals(params[0], "SERVER_HANDSHAKE_TRAFFIC_SECRET"))
         {
             type = SecretNode::ServerHandshakeTrafficSecret;
         }
-        else if (utils::iequals(params[0], "CLIENT_TRAFFIC_SECRET_0"))
+        else if (iequals(params[0], "CLIENT_TRAFFIC_SECRET_0"))
         {
             type = SecretNode::ClientTrafficSecret;
         }
-        else if (utils::iequals(params[0], "SERVER_TRAFFIC_SECRET_0"))
+        else if (iequals(params[0], "SERVER_TRAFFIC_SECRET_0"))
         {
             type = SecretNode::ServerTrafficSecret;
         }
@@ -117,8 +119,8 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
             continue;
         }
 
-        auto clientRandom = utils::unhexlify(params[1]);
-        auto secret = utils::unhexlify(params[2]);
+        auto clientRandom = unhexlify(params[1]);
+        auto secret = unhexlify(params[2]);
 
         auto found = container_.find(clientRandom);
         if (found != container_.end())

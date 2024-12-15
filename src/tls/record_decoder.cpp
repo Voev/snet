@@ -1,4 +1,6 @@
-#include <snet/log/log_manager.hpp>
+#include <casket/log/log_manager.hpp>
+#include <casket/utils/exception.hpp>
+#include <casket/utils/hexlify.hpp>
 
 #include <openssl/ssl.h>
 #include <openssl/core_names.h>
@@ -6,9 +8,8 @@
 #include <openssl/err.h>
 
 #include <snet/utils/endianness.hpp>
-#include <snet/utils/exception.hpp>
-#include <snet/utils/hexlify.hpp>
 #include <snet/utils/load_store.hpp>
+#include <snet/utils/print_hex.hpp>
 
 #include <snet/tls/exception.hpp>
 #include <snet/tls/record_decoder.hpp>
@@ -98,7 +99,7 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     utils::printHex("KEY", writeKey_);
     utils::printHex("IV", implicitIv_);
 
-    utils::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
+    ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
 
@@ -237,7 +238,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
-                utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
+                ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
@@ -272,7 +273,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
-                utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
+                ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = std::span(out.begin() + blockSize, out.begin() + outSize);
                 tls1CheckMac(rt, version, {}, content, mac);
@@ -365,8 +366,8 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
 
     actualMac.resize(actualMacSize);
 
-    utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
-                        "Bad record MAC");
+    ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
+                 "Bad record MAC");
 }
 
 void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content,
@@ -414,7 +415,7 @@ void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t>
 
     actualMac.resize(actualMacSize);
 
-    utils::ThrowIfFalse(std::equal(mac.begin(), mac.end(), actualMac.begin()), "Bad record MAC");
+    ThrowIfFalse(std::equal(mac.begin(), mac.end(), actualMac.begin()), "Bad record MAC");
 }
 
 } // namespace snet::tls

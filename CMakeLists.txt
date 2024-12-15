@@ -18,6 +18,11 @@ include(FindPackages)
 include(Sanitizers)
 include(CodeCoverage)
 
+# Set submodules path
+set(SUBMODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+add_subdirectory(${SUBMODULE_PATH}/casket)
+include_directories(${SUBMODULE_PATH}/casket/include)
+
 # Configure result directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
