@@ -84,23 +84,23 @@ struct tcphdr
 enum TcpOptionType : uint8_t
 {
     /** Padding */
-    PCPP_TCPOPT_NOP = 1,
+    SNET_TCPOPT_NOP = 1,
     /** End of options */
-    PCPP_TCPOPT_EOL = 0,
+    SNET_TCPOPT_EOL = 0,
     /** Segment size negotiating */
     TCPOPT_MSS = 2,
     /** Window scaling */
-    PCPP_TCPOPT_WINDOW = 3,
+    SNET_TCPOPT_WINDOW = 3,
     /** SACK Permitted */
     TCPOPT_SACK_PERM = 4,
     /** SACK Block */
-    PCPP_TCPOPT_SACK = 5,
-    /** Echo (obsoleted by option TcpOptionType::PCPP_TCPOPT_TIMESTAMP) */
+    SNET_TCPOPT_SACK = 5,
+    /** Echo (obsoleted by option TcpOptionType::SNET_TCPOPT_TIMESTAMP) */
     TCPOPT_ECHO = 6,
-    /** Echo Reply (obsoleted by option TcpOptionType::PCPP_TCPOPT_TIMESTAMP) */
+    /** Echo Reply (obsoleted by option TcpOptionType::SNET_TCPOPT_TIMESTAMP) */
     TCPOPT_ECHOREPLY = 7,
     /** TCP Timestamps */
-    PCPP_TCPOPT_TIMESTAMP = 8,
+    SNET_TCPOPT_TIMESTAMP = 8,
     /** CC (obsolete) */
     TCPOPT_CC = 11,
     /** CC.NEW (obsolete) */
@@ -199,52 +199,52 @@ enum class TcpOptionEnumType : uint8_t
 // TCP option lengths
 
 /** snet::layers::TcpOptionEnumType::Nop length */
-#define PCPP_TCPOLEN_NOP 1
+#define SNET_TCPOLEN_NOP 1
 /** snet::layers::TcpOptionEnumType::Eol length */
-#define PCPP_TCPOLEN_EOL 1
+#define SNET_TCPOLEN_EOL 1
 /** snet::layers::TcpOptionEnumType::Mss length */
-#define PCPP_TCPOLEN_MSS 4
+#define SNET_TCPOLEN_MSS 4
 /** snet::layers::TcpOptionEnumType::Window length */
-#define PCPP_TCPOLEN_WINDOW 3
+#define SNET_TCPOLEN_WINDOW 3
 /** snet::layers::TcpOptionEnumType::SackPerm length */
-#define PCPP_TCPOLEN_SACK_PERM 2
+#define SNET_TCPOLEN_SACK_PERM 2
 /** snet::layers::TcpOptionEnumType::Sack length */
-#define PCPP_TCPOLEN_SACK_MIN 2
+#define SNET_TCPOLEN_SACK_MIN 2
 /** snet::layers::TcpOptionEnumType::Echo length */
-#define PCPP_TCPOLEN_ECHO 6
+#define SNET_TCPOLEN_ECHO 6
 /** snet::layers::TcpOptionEnumType::EchoReply length */
-#define PCPP_TCPOLEN_ECHOREPLY 6
+#define SNET_TCPOLEN_ECHOREPLY 6
 /** snet::layers::TcpOptionEnumType::Timestamp length */
-#define PCPP_TCPOLEN_TIMESTAMP 10
+#define SNET_TCPOLEN_TIMESTAMP 10
 /** snet::layers::TcpOptionEnumType::Cc length */
-#define PCPP_TCPOLEN_CC 6
+#define SNET_TCPOLEN_CC 6
 /** snet::layers::TcpOptionEnumType::CcNew length */
-#define PCPP_TCPOLEN_CCNEW 6
+#define SNET_TCPOLEN_CCNEW 6
 /** snet::layers::TcpOptionEnumType::CcEcho length */
-#define PCPP_TCPOLEN_CCECHO 6
+#define SNET_TCPOLEN_CCECHO 6
 /** snet::layers::TcpOptionEnumType::Md5 length */
-#define PCPP_TCPOLEN_MD5 18
+#define SNET_TCPOLEN_MD5 18
 /** snet::layers::TcpOptionEnumType::MpTcp length */
-#define PCPP_TCPOLEN_MPTCP_MIN 8
+#define SNET_TCPOLEN_MPTCP_MIN 8
 /** snet::layers::TcpOptionEnumType::Scps length */
-#define PCPP_TCPOLEN_SCPS 4
+#define SNET_TCPOLEN_SCPS 4
 /** snet::layers::TcpOptionEnumType::Snack length */
-#define PCPP_TCPOLEN_SNACK 6
+#define SNET_TCPOLEN_SNACK 6
 /** snet::layers::TcpOptionEnumType::RecBound length */
-#define PCPP_TCPOLEN_RECBOUND 2
+#define SNET_TCPOLEN_RECBOUND 2
 /** snet::layers::TcpOptionEnumType::CorrExp length */
-#define PCPP_TCPOLEN_CORREXP 2
+#define SNET_TCPOLEN_CORREXP 2
 /** snet::layers::TcpOptionEnumType::Qs length */
-#define PCPP_TCPOLEN_QS 8
+#define SNET_TCPOLEN_QS 8
 /** snet::layers::TcpOptionEnumType::UserTo length */
-#define PCPP_TCPOLEN_USER_TO 4
+#define SNET_TCPOLEN_USER_TO 4
 /** snet::layers::TcpOptionEnumType::RvbdProbe length */
-#define PCPP_TCPOLEN_RVBD_PROBE_MIN 3
+#define SNET_TCPOLEN_RVBD_PROBE_MIN 3
 /** snet::layers::TcpOptionEnumType::RvbdTrpy length */
-#define PCPP_TCPOLEN_RVBD_TRPY_MIN 16
+#define SNET_TCPOLEN_RVBD_TRPY_MIN 16
 /** snet::layers::TcpOptionEnumType::ExpFd and
  * snet::layers::TcpOptionEnumType::ExpFe length */
-#define PCPP_TCPOLEN_EXP_MIN 2
+#define SNET_TCPOLEN_EXP_MIN 2
 
 /**
  * @class TcpOption

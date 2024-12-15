@@ -69,7 +69,14 @@ private:
 
 } // namespace snet::ip
 
-template <> struct std::hash<snet::ip::IPAddress>
+inline std::ostream& operator<<(std::ostream& os, const snet::ip::IPAddress& addr)
+{
+    os << addr.toString();
+    return os;
+}
+
+template <>
+struct std::hash<snet::ip::IPAddress>
 {
     std::size_t operator()(const snet::ip::IPAddress& addr) const noexcept
     {
@@ -78,5 +85,3 @@ template <> struct std::hash<snet::ip::IPAddress>
                    : std::hash<snet::ip::IPv6Address>()(addr.toIPv6());
     }
 };
-
-std::ostream& operator<<(std::ostream& os, const snet::ip::IPAddress& addr);

@@ -5,6 +5,10 @@
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 
+#include <snet/utils/endianness.hpp>
+
+using namespace snet::utils;
+
 namespace snet::layers
 {
 
@@ -30,7 +34,7 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
             // We have read the latest byte manually but this byte should be
             // properly interpreted as a 0xFF on LE and a 0xFF00 on BE to have a
             // proper checksum computation
-            localSum += be16toh(lastByte << 8);
+            localSum += be_to_host(lastByte << 8);
         }
 
         // carry count is added to the sum
@@ -51,11 +55,10 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
     result = ~result;
 
     // We return the result in BigEndian byte order
-    return htobe16(result);
+    return host_to_be(result);
 }
 
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
-                                  ip::IPAddress::Type ipAddrType,
+uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddress::Type ipAddrType,
                                   uint8_t protocolType, ip::IPAddress srcIPAddress,
                                   ip::IPAddress dstIPAddress)
 {
@@ -73,8 +76,8 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
         pseudoHeader[1] = srcIP & 0xFFFF;
         pseudoHeader[2] = dstIP >> 16;
         pseudoHeader[3] = dstIP & 0xFFFF;
-        pseudoHeader[4] = 0xffff & htobe16(dataLen);
-        pseudoHeader[5] = htobe16(0x00ff & protocolType);
+        pseudoHeader[4] = 0xffff & host_to_be(dataLen);
+        pseudoHeader[5] = host_to_be(0x00ff & protocolType);
         vec[1].buffer = pseudoHeader;
         vec[1].len = 12;
         checksumRes = computeChecksum(vec, 2);
@@ -88,17 +91,16 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
         std::copy(srcIP.begin(), srcIP.end(), pseudoHeader.begin());
         std::copy(dstIP.begin(), dstIP.end(), pseudoHeader.begin() + 8);
 
-        pseudoHeader[16] = 0xffff & htobe16(dataLen);
-        pseudoHeader[17] = htobe16(0x00ff & protocolType);
+        pseudoHeader[16] = 0xffff & host_to_be(dataLen);
+        pseudoHeader[17] = host_to_be(0x00ff & protocolType);
         vec[1].buffer = pseudoHeader.data();
         vec[1].len = 36;
         checksumRes = computeChecksum(vec, 2);
     }
     else
     {
-        log::error(
-            "Compute pseudo header checksum failed, for unknown IPAddrType = {}",
-             ipAddrType);
+        log::error("Compute pseudo header checksum failed, for unknown IPAddrType = {}",
+                   ipAddrType);
     }
 
     return checksumRes;
@@ -146,8 +148,7 @@ uint32_t hash5Tuple(Packet* packet, bool const& directionUnique)
     uint16_t portDst = 0;
     int srcPosition = 0;
 
-    TcpLayer* tcpLayer =
-        packet->getLayerOfType<TcpLayer>(true); // lookup in reverse order
+    TcpLayer* tcpLayer = packet->getLayerOfType<TcpLayer>(true); // lookup in reverse order
     if (tcpLayer != nullptr)
     {
         portSrc = tcpLayer->getTcpHeader()->portSrc;
@@ -169,15 +170,12 @@ uint32_t hash5Tuple(Packet* packet, bool const& directionUnique)
     if (ipv4Layer != nullptr)
     {
         if (!directionUnique && portSrc == portDst &&
-            ipv4Layer->getIPv4Header()->ipDst <
-                ipv4Layer->getIPv4Header()->ipSrc)
+            ipv4Layer->getIPv4Header()->ipDst < ipv4Layer->getIPv4Header()->ipSrc)
             srcPosition = 1;
 
-        vec[2 + srcPosition].buffer =
-            (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
+        vec[2 + srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
         vec[2 + srcPosition].len = 4;
-        vec[3 - srcPosition].buffer =
-            (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
+        vec[3 - srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
         vec[3 - srcPosition].len = 4;
         vec[4].buffer = &(ipv4Layer->getIPv4Header()->protocol);
         vec[4].len = 1;
@@ -186,8 +184,7 @@ uint32_t hash5Tuple(Packet* packet, bool const& directionUnique)
     {
         IPv6Layer* ipv6Layer = packet->getLayerOfType<IPv6Layer>();
         if (!directionUnique && portSrc == portDst &&
-            memcmp(ipv6Layer->getIPv6Header()->ipDst,
-                   ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
+            memcmp(ipv6Layer->getIPv6Header()->ipDst, ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
             srcPosition = 1;
 
         vec[2 + srcPosition].buffer = ipv6Layer->getIPv6Header()->ipSrc;
@@ -212,23 +209,19 @@ uint32_t hash2Tuple(Packet* packet)
     if (ipv4Layer != nullptr)
     {
         int srcPosition = 0;
-        if (ipv4Layer->getIPv4Header()->ipDst <
-            ipv4Layer->getIPv4Header()->ipSrc)
+        if (ipv4Layer->getIPv4Header()->ipDst < ipv4Layer->getIPv4Header()->ipSrc)
             srcPosition = 1;
 
-        vec[0 + srcPosition].buffer =
-            (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
+        vec[0 + srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
         vec[0 + srcPosition].len = 4;
-        vec[1 - srcPosition].buffer =
-            (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
+        vec[1 - srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
         vec[1 - srcPosition].len = 4;
     }
     else
     {
         IPv6Layer* ipv6Layer = packet->getLayerOfType<IPv6Layer>();
         int srcPosition = 0;
-        if (memcmp(ipv6Layer->getIPv6Header()->ipDst,
-                   ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
+        if (memcmp(ipv6Layer->getIPv6Header()->ipDst, ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
             srcPosition = 1;
 
         vec[0 + srcPosition].buffer = ipv6Layer->getIPv6Header()->ipSrc;

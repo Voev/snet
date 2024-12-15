@@ -1,5 +1,9 @@
 #include <snet/layers/tlv.hpp>
 
+#include <snet/utils/endianness.hpp>
+
+using namespace snet::utils;
+
 namespace snet::layers
 {
 
@@ -14,8 +18,8 @@ static int char2int(char input)
     return -1;
 }
 
-size_t hexStringToByteArray(const std::string& hexString,
-                            uint8_t* resultByteArr, size_t resultByteArrSize)
+size_t hexStringToByteArray(const std::string& hexString, uint8_t* resultByteArr,
+                            size_t resultByteArrSize)
 {
     if (hexString.size() % 2 != 0)
     {
@@ -49,8 +53,7 @@ TLVRecordBuilder::TLVRecordBuilder()
     m_RecValue = nullptr;
 }
 
-TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, const uint8_t* recValue,
-                                   uint8_t recValueLen)
+TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, const uint8_t* recValue, uint8_t recValueLen)
 {
     init(recType, recValue, recValueLen);
 }
@@ -62,25 +65,23 @@ TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint8_t recValue)
 
 TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint16_t recValue)
 {
-    recValue = htobe16(recValue);
+    recValue = host_to_be(recValue);
     init(recType, (uint8_t*)&recValue, sizeof(uint16_t));
 }
 
 TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint32_t recValue)
 {
-    recValue = htobe32(recValue);
+    recValue = host_to_be(recValue);
     init(recType, (uint8_t*)&recValue, sizeof(uint32_t));
 }
 
-TLVRecordBuilder::TLVRecordBuilder(uint32_t recType,
-                                   const ip::IPv4Address& recValue)
+TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, const ip::IPv4Address& recValue)
 {
     uint32_t recIntValue = recValue.toUint();
     init(recType, (uint8_t*)&recIntValue, sizeof(uint32_t));
 }
 
-TLVRecordBuilder::TLVRecordBuilder(uint32_t recType,
-                                   const std::string& recValue,
+TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, const std::string& recValue,
                                    bool valueIsHexString)
 {
     m_RecType = 0;
@@ -90,8 +91,7 @@ TLVRecordBuilder::TLVRecordBuilder(uint32_t recType,
     if (valueIsHexString)
     {
         uint8_t recValueByteArr[512];
-        size_t byteArraySize =
-            hexStringToByteArray(recValue, recValueByteArr, 512);
+        size_t byteArraySize = hexStringToByteArray(recValue, recValueByteArr, 512);
         if (byteArraySize > 0)
         {
             init(recType, recValueByteArr, byteArraySize);
@@ -140,8 +140,7 @@ TLVRecordBuilder::~TLVRecordBuilder()
         delete[] m_RecValue;
 }
 
-void TLVRecordBuilder::init(uint32_t recType, const uint8_t* recValue,
-                            size_t recValueLen)
+void TLVRecordBuilder::init(uint32_t recType, const uint8_t* recValue, size_t recValueLen)
 {
     m_RecType = recType;
     m_RecValueLen = recValueLen;

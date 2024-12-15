@@ -120,8 +120,7 @@ IPv6Address IPv6Address::operator&(const IPv6Address& rhs) const noexcept
 {
     IPv6Address result = *this;
     IPv6Address::iterator addressIter = result.begin();
-    for (IPv6Address::const_iterator it = rhs.begin(); it != rhs.end();
-         ++it, ++addressIter)
+    for (IPv6Address::const_iterator it = rhs.begin(); it != rhs.end(); ++it, ++addressIter)
     {
         *addressIter = *addressIter & *it;
     }
@@ -133,8 +132,7 @@ IPv6Address IPv6Address::operator|(const IPv6Address& rhs) const noexcept
 {
     IPv6Address result = *this;
     IPv6Address::iterator addressIter = result.begin();
-    for (IPv6Address::const_iterator it = rhs.begin(); it != rhs.end();
-         ++it, ++addressIter)
+    for (IPv6Address::const_iterator it = rhs.begin(); it != rhs.end(); ++it, ++addressIter)
     {
         *addressIter = *addressIter | *it;
     }
@@ -145,8 +143,8 @@ IPv6Address IPv6Address::operator|(const IPv6Address& rhs) const noexcept
 IPv6Address IPv6Address::operator~() const noexcept
 {
     IPv6Address result = *this;
-    for (IPv6Address::iterator addressIter = result.begin();
-         addressIter != result.end(); ++addressIter)
+    for (IPv6Address::iterator addressIter = result.begin(); addressIter != result.end();
+         ++addressIter)
     {
         *addressIter = ~*addressIter;
     }
@@ -167,14 +165,12 @@ std::string IPv6Address::toString() const
 
 bool IPv6Address::isLoopback() const noexcept
 {
-    return ((addr_.s6_addr[0] == 0) && (addr_.s6_addr[1] == 0) &&
-            (addr_.s6_addr[2] == 0) && (addr_.s6_addr[3] == 0) &&
-            (addr_.s6_addr[4] == 0) && (addr_.s6_addr[5] == 0) &&
-            (addr_.s6_addr[6] == 0) && (addr_.s6_addr[7] == 0) &&
-            (addr_.s6_addr[8] == 0) && (addr_.s6_addr[9] == 0) &&
-            (addr_.s6_addr[10] == 0) && (addr_.s6_addr[11] == 0) &&
-            (addr_.s6_addr[12] == 0) && (addr_.s6_addr[13] == 0) &&
-            (addr_.s6_addr[14] == 0) && (addr_.s6_addr[15] == 1));
+    return ((addr_.s6_addr[0] == 0) && (addr_.s6_addr[1] == 0) && (addr_.s6_addr[2] == 0) &&
+            (addr_.s6_addr[3] == 0) && (addr_.s6_addr[4] == 0) && (addr_.s6_addr[5] == 0) &&
+            (addr_.s6_addr[6] == 0) && (addr_.s6_addr[7] == 0) && (addr_.s6_addr[8] == 0) &&
+            (addr_.s6_addr[9] == 0) && (addr_.s6_addr[10] == 0) && (addr_.s6_addr[11] == 0) &&
+            (addr_.s6_addr[12] == 0) && (addr_.s6_addr[13] == 0) && (addr_.s6_addr[14] == 0) &&
+            (addr_.s6_addr[15] == 1));
 }
 
 bool IPv6Address::isMulticast() const noexcept
@@ -188,9 +184,3 @@ IPv6Address IPv6Address::any() noexcept
 }
 
 } // namespace snet::ip
-
-std::ostream& operator<<(std::ostream& os, const snet::ip::IPv6Address& addr)
-{
-    os << addr.toString();
-    return os;
-}

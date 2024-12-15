@@ -6,6 +6,10 @@
 #include <snet/layers/tcp_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
+#include <snet/utils/endianness.hpp>
+
+using namespace snet::utils;
+
 namespace snet::layers
 {
 
@@ -20,8 +24,7 @@ void IPv6Layer::initLayer()
     memset(m_Data, 0, sizeof(ip6_hdr));
 }
 
-IPv6Layer::IPv6Layer(uint8_t* data, size_t dataLen, Layer* prevLayer,
-                     Packet* packet)
+IPv6Layer::IPv6Layer(uint8_t* data, size_t dataLen, Layer* prevLayer, Packet* packet)
     : Layer(data, dataLen, prevLayer, packet, IPv6)
 {
     m_FirstExtension = nullptr;
@@ -30,7 +33,7 @@ IPv6Layer::IPv6Layer(uint8_t* data, size_t dataLen, Layer* prevLayer,
 
     parseExtensions();
 
-    size_t totalLen = be16toh(getIPv6Header()->payloadLength) + getHeaderLen();
+    size_t totalLen = be_to_host(getIPv6Header()->payloadLength) + getHeaderLen();
     if (totalLen < m_DataLen)
         m_DataLen = totalLen;
 }
@@ -80,9 +83,8 @@ void IPv6Layer::parseExtensions()
 
     size_t offset = sizeof(ip6_hdr);
 
-    while (offset <=
-           m_DataLen - 2 * sizeof(uint8_t)) // 2*sizeof(uint8_t) is the min len
-                                            // for IPv6 extensions
+    while (offset <= m_DataLen - 2 * sizeof(uint8_t)) // 2*sizeof(uint8_t) is the min len
+                                                      // for IPv6 extensions
     {
         IPv6Extension* newExt = nullptr;
 
@@ -178,8 +180,7 @@ size_t IPv6Layer::getExtensionCount() const
 void IPv6Layer::removeAllExtensions()
 {
     if (m_LastExtension != nullptr)
-        getIPv6Header()->nextHeader =
-            m_LastExtension->getBaseHeader()->nextHeader;
+        getIPv6Header()->nextHeader = m_LastExtension->getBaseHeader()->nextHeader;
 
     shortenLayer((int)sizeof(ip6_hdr), m_ExtensionsLen);
 
@@ -204,8 +205,7 @@ void IPv6Layer::parseNextLayer()
     uint8_t nextHdr;
     if (m_LastExtension != nullptr)
     {
-        if (m_LastExtension->getExtensionType() ==
-            IPv6Extension::IPv6Fragmentation)
+        if (m_LastExtension->getExtensionType() == IPv6Extension::IPv6Fragmentation)
         {
             m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
             return;
@@ -223,10 +223,8 @@ void IPv6Layer::parseNextLayer()
     case PACKETPP_IPPROTO_TCP:
         m_NextLayer =
             TcpLayer::isDataValid(payload, payloadLen)
-                ? static_cast<Layer*>(
-                      new TcpLayer(payload, payloadLen, this, m_Packet))
-                : static_cast<Layer*>(
-                      new PayloadLayer(payload, payloadLen, this, m_Packet));
+                ? static_cast<Layer*>(new TcpLayer(payload, payloadLen, this, m_Packet))
+                : static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
         break;
     default:
         m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
@@ -237,7 +235,7 @@ void IPv6Layer::parseNextLayer()
 void IPv6Layer::computeCalculateFields()
 {
     ip6_hdr* ipHdr = getIPv6Header();
-    ipHdr->payloadLength = htobe16(m_DataLen - sizeof(ip6_hdr));
+    ipHdr->payloadLength = host_to_be(m_DataLen - sizeof(ip6_hdr));
     ipHdr->ipVersion = (6 & 0x0f);
 
     if (m_NextLayer != nullptr)

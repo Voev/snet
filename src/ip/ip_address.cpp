@@ -81,8 +81,6 @@ std::string IPAddress::toString() const
     return ipv4_.toString();
 }
 
-
-
 bool IPAddress::isIPv4() const noexcept
 {
     return type_ == IPv4;
@@ -169,12 +167,4 @@ std::optional<IPAddress> IPAddress::fromString(const char* str)
     return std::nullopt;
 }
 
- 
-
 } // namespace snet::ip
-
-std::ostream& operator<<(std::ostream& os, const snet::ip::IPAddress& addr)
-{
-    os << addr.toString();
-    return os;
-}

@@ -262,7 +262,7 @@ enum LinkLayerType
 /**
  * Max packet size supported
  */
-#define PCPP_MAX_PACKET_SIZE 65536
+#define SNET_MAX_PACKET_SIZE 65536
 
 /**
  * @class RawPacket

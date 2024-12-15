@@ -5,21 +5,21 @@ namespace snet::layers
 {
 
 /** IPv4 protocol **/
-#define PCPP_BSD_AF_INET 2
+#define SNET_BSD_AF_INET 2
 /** XEROX NS protocols */
-#define PCPP_BSD_AF_NS 6
+#define SNET_BSD_AF_NS 6
 /** ISO */
-#define PCPP_BSD_AF_ISO 7
+#define SNET_BSD_AF_ISO 7
 /** AppleTalk */
-#define PCPP_BSD_AF_APPLETALK 16
+#define SNET_BSD_AF_APPLETALK 16
 /** IPX */
-#define PCPP_BSD_AF_IPX 23
+#define SNET_BSD_AF_IPX 23
 /** OpenBSD (and probably NetBSD), BSD/OS IPv6 */
-#define PCPP_BSD_AF_INET6_BSD 24
+#define SNET_BSD_AF_INET6_BSD 24
 /** FreeBSD IPv6 */
-#define PCPP_BSD_AF_INET6_FREEBSD 28
+#define SNET_BSD_AF_INET6_FREEBSD 28
 /** Darwin IPv6 */
-#define PCPP_BSD_AF_INET6_DARWIN 30
+#define SNET_BSD_AF_INET6_DARWIN 30
 
 /**
  * @class NullLoopbackLayer
@@ -65,9 +65,9 @@ public:
 
     /**
      * Identifies the next layers by family:
-     * - for ::PCPP_BSD_AF_INET the next layer is IPv4Layer
-     * - for ::PCPP_BSD_AF_INET6_BSD, ::PCPP_BSD_AF_INET6_FREEBSD,
-     * ::PCPP_BSD_AF_INET6_DARWIN the next layer is IPv6Layer
+     * - for ::SNET_BSD_AF_INET the next layer is IPv4Layer
+     * - for ::SNET_BSD_AF_INET6_BSD, ::SNET_BSD_AF_INET6_FREEBSD,
+     * ::SNET_BSD_AF_INET6_DARWIN the next layer is IPv6Layer
      * - for other values the next layer in PayloadLayer (unknown protocol)
      */
     void parseNextLayer() override;

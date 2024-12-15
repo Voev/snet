@@ -69,9 +69,14 @@ private:
 
 } // namespace snet::ip
 
-std::ostream& operator<<(std::ostream& os, const snet::ip::IPv4Address& addr);
+inline std::ostream& operator<<(std::ostream& os, const snet::ip::IPv4Address& addr)
+{
+    os << addr.toString();
+    return os;
+}
 
-template <> struct std::hash<snet::ip::IPv4Address>
+template <>
+struct std::hash<snet::ip::IPv4Address>
 {
     std::size_t operator()(const snet::ip::IPv4Address& addr) const noexcept
     {
