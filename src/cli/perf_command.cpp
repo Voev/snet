@@ -19,12 +19,12 @@
 #include <openssl/err.h>
 #include <openssl/tls1.h>
 
-#include <snet/cli/command_dispatcher.hpp>
-#include <snet/opt/option_parser.hpp>
+#include <casket/opt/option_parser.hpp>
+#include <casket/log/log_manager.hpp>
 
+#include <snet/cli/command_dispatcher.hpp>
 #include <snet/utils/error_code.hpp>
 #include <snet/event/epoll.hpp>
-#include <casket/log/log_manager.hpp>
 
 #include <snet/socket.hpp>
 #include <snet/tls.hpp>
@@ -644,7 +644,7 @@ public:
 
     ~PerfCommand() = default;
 
-    void execute(const std::vector<std::string>& args) override
+    void execute(const std::vector<std::string_view>& args) override
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))

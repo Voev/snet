@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include <string>
+#include <string_view>
 #include <snet/utils/noncopyable.hpp>
 
 namespace snet::cmd
@@ -13,7 +13,7 @@ public:
 
     virtual ~Command() = default;
 
-    virtual void execute(const std::vector<std::string>& args) = 0;
+    virtual void execute(const std::vector<std::string_view>& args) = 0;
 };
 
 } // namespace snet::cmd

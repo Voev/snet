@@ -1,16 +1,15 @@
 #include <iostream>
 #include <casket/log/log_manager.hpp>
+#include <casket/opt/option_parser.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/opt/option_parser.hpp>
-
 #include <snet/utils/error_code.hpp>
 #include <snet/pcap/pcap_file_reader_device.hpp>
-
 #include <snet/layers/tcp_reassembly.hpp>
 #include <snet/utils/hexlify.hpp>
 #include <snet/tls.hpp>
 
+using namespace casket;
 using namespace casket::log;
 using namespace snet::pcap;
 
@@ -138,7 +137,7 @@ public:
 
     ~Command() = default;
 
-    void execute(const std::vector<std::string>& args) override
+    void execute(const std::vector<std::string_view>& args) override
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))

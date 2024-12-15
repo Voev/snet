@@ -9,7 +9,7 @@ int main(int argc, char* argv[])
 {
     try
     {
-        std::vector<std::string> args(argv + 1, argv + argc);
+        std::vector<std::string_view> args(argv + 1, argv + argc);
 
         if (args.empty())
         {
