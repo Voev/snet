@@ -2,9 +2,9 @@
 #include <iomanip>
 
 #include <casket/opt/option_parser.hpp>
+#include <casket/utils/exception.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-
 #include <snet/tls/cipher_suite_manager.hpp>
 
 static constexpr int columnIDWidth = 12;
@@ -35,19 +35,19 @@ public:
 
 private:
     opt::OptionParser parser_;
+    std::string suite_;
     int securityLevel_;
-    bool supported_;
 };
 
 REGISTER_COMMAND("cipherlist", "List supported TLS cipher suites", CipherListCommand);
 
 CipherListCommand::CipherListCommand()
     : securityLevel_(-1)
-    , supported_(false)
 {
     parser_.add("help, h", "Print help message");
     parser_.add("level, l", opt::Value(&securityLevel_), "Security level [0..5]");
-    parser_.add("supported, s", opt::Value(&supported_), "Show only supported cipher suites");
+    parser_.add("suite, s", opt::Value(&suite_),
+                "Show selected cipher suite, format 'XX,XX', where X - hex digit");
 }
 
 void CipherListCommand::execute(const std::vector<std::string_view>& args)
@@ -63,8 +63,6 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
     {
         tls::CipherSuiteManager::getInstance().setSecurityLevel(securityLevel_);
     }
-
-    auto cipherSuites = tls::CipherSuiteManager::getInstance().getCipherSuites(supported_);
 
     // clang-format off
     std::cout << std::left
@@ -84,7 +82,28 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
                              '-')
               << std::endl;
 
-    print(cipherSuites);
+    if (!suite_.empty())
+    {
+        auto commaPosition = suite_.find(',');
+        utils::ThrowIfTrue(commaPosition == std::string::npos, "Invalid format for cipher suite");
+
+        std::string firstPart = suite_.substr(0, commaPosition);
+        std::string secondPart = suite_.substr(commaPosition + 1);
+
+        std::uint16_t firstValue = static_cast<std::uint16_t>(std::stoi(firstPart, nullptr, 16));
+        std::uint16_t secondValue = static_cast<std::uint16_t>(std::stoi(secondPart, nullptr, 16));
+
+        // Объединяем два значения в одно 16-битное число
+        std::uint16_t result = (firstValue << 8) | secondValue;
+        auto cipherSuite = tls::CipherSuiteManager::getInstance().getCipherSuiteById(result);
+        utils::ThrowIfFalse(cipherSuite.has_value(), "Cipher suite '" + suite_ + "' not found");
+        print(cipherSuite.value());
+    }
+    else
+    {
+        auto cipherSuites = tls::CipherSuiteManager::getInstance().getCipherSuites();
+        print(cipherSuites);
+    }
 }
 
 void CipherListCommand::print(const std::vector<tls::CipherSuite>& cipherSuites)
