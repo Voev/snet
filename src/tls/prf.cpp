@@ -5,7 +5,7 @@
 #include <snet/tls/prf.hpp>
 #include <snet/tls/exception.hpp>
 #include <snet/tls/types.hpp>
-#include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 
 #include <casket/utils/exception.hpp>
 #include <snet/utils/load_store.hpp>
@@ -30,8 +30,8 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
     unsigned char buf[EVP_MAX_MD_SIZE];
     unsigned int n;
 
-    auto md5 = CipherSuiteManager::Instance().fetchDigest("MD5");
-    auto sha1 = CipherSuiteManager::Instance().fetchDigest("SHA1");
+    auto md5 = CipherSuiteManager::getInstance().fetchDigest("MD5");
+    auto sha1 = CipherSuiteManager::getInstance().fetchDigest("SHA1");
 
     EvpMdCtxPtr ctx(EVP_MD_CTX_new());
     tls::ThrowIfTrue(ctx == nullptr);
@@ -57,7 +57,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
              std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
              std::span<uint8_t> out)
 {
-    auto kdf = CipherSuiteManager::Instance().fetchKdf("TLS1-PRF");
+    auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     tls::ThrowIfTrue(kdf == nullptr);
 
     EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
@@ -105,7 +105,7 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
     hkdfLabel.push_back(static_cast<uint8_t>(context.size()));
     hkdfLabel.insert(hkdfLabel.end(), context.begin(), context.end());
 
-    auto kdf = CipherSuiteManager::Instance().fetchKdf("HKDF");
+    auto kdf = CipherSuiteManager::getInstance().fetchKdf("HKDF");
 
     EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
     tls::ThrowIfTrue(kctx == nullptr);

@@ -13,6 +13,7 @@
 
 #include <snet/tls/exception.hpp>
 #include <snet/tls/record_decoder.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 
 namespace snet::tls
 {
@@ -35,7 +36,7 @@ RecordDecoder::RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey,
     , seq_(0)
 {
 
-    auto cipher = CipherSuiteManager::Instance().fetchCipher(cipherSuite_.getCipherName());
+    auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
 
     implicitIv_.resize(iv.size());
     memcpy(implicitIv_.data(), iv.data(), iv.size());
@@ -66,7 +67,7 @@ void RecordDecoder::initAEAD(CipherSuite cs, std::span<const uint8_t> encKey,
     writeKey_.resize(encKey.size());
     memcpy(writeKey_.data(), encKey.data(), encKey.size());
 
-    auto cipher = CipherSuiteManager::Instance().fetchCipher(cipherSuite_.getCipherName());
+    auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
     tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
 }
 
@@ -218,7 +219,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
     /* Block cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) > 1)
     {
-        auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
+        auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
         size_t outSize{in.size()};
 
         if (encryptThenMac)
@@ -301,7 +302,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
     /* Stream cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) == 1)
     {
-        auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
+        auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
         size_t outSize{in.size()};
 
         out.resize(outSize);
@@ -344,7 +345,7 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
                                                  const_cast<char*>(digest.c_str()), 0);
     params[1] = OSSL_PARAM_construct_end();
 
-    auto mac = CipherSuiteManager::Instance().fetchMac("HMAC");
+    auto mac = CipherSuiteManager::getInstance().fetchMac("HMAC");
 
     EvpMacCtxPtr ctx(EVP_MAC_CTX_new(mac));
     tls::ThrowIfTrue(ctx == nullptr);
@@ -379,7 +380,7 @@ void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t>
     EvpMdCtxPtr ctx(EVP_MD_CTX_new());
     tls::ThrowIfFalse(ctx != nullptr);
 
-    auto md = CipherSuiteManager::Instance().fetchDigest(cipherSuite_.getDigestName());
+    auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
     tls::ThrowIfFalse(md != nullptr);
 
     int pad_ct = EVP_MD_is_a(md, "SHA1") > 0 ? 40 : 48;
