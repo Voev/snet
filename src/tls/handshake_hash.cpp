@@ -1,6 +1,6 @@
 #include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/exception.hpp>
-#include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 
 namespace snet::tls
 {
@@ -16,7 +16,7 @@ void HandshakeHash::update(std::span<const uint8_t> in)
 
 std::vector<uint8_t> HandshakeHash::final(std::string_view algorithm) const
 {
-    auto md = CipherSuiteManager::Instance().fetchDigest(algorithm);
+    auto md = CipherSuiteManager::getInstance().fetchDigest(algorithm);
     tls::ThrowIfFalse(md != nullptr);
 
     EvpMdCtxPtr ctx(EVP_MD_CTX_new());
