@@ -85,7 +85,7 @@ void Session::processHandshakeClientHello(int8_t sideIndex, std::span<const uint
     reader.get_range_vector<uint8_t>(1, 1, 255);
 
     /// Read client extensions
-    clientExensions_.deserialize(reader, tls::Side::Client, tls::HandshakeType::ClientHello);
+    clientExtensions_.deserialize(reader, tls::Side::Client, tls::HandshakeType::ClientHello);
 
     reader.assert_done();
 
@@ -113,16 +113,16 @@ void Session::processHandshakeServerHello(int8_t sideIndex, std::span<const uint
     /// Compression Method
     reader.get_byte();
 
-    serverExensions_.deserialize(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
+    serverExtensions_.deserialize(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
 
     auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(ciphersuite);
     ThrowIfFalse(foundCipher.has_value(), "Cipher suite not found");
 
     cipherSuite_ = foundCipher.value();
 
-    if (serverExensions_.has(tls::ExtensionCode::SupportedVersions))
+    if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
     {
-        auto ext = serverExensions_.get<tls::SupportedVersions>();
+        auto ext = serverExtensions_.get<tls::SupportedVersions>();
         version_ = ext->versions()[0];
     }
 
@@ -227,7 +227,7 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
     utils::DataReader reader("Encrypted Extensions", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     ThrowIfTrue(reader.remaining_bytes() < 2, "Server sent an empty Encrypted Extensions message");
-    serverExensions_.deserialize(reader, tls::Side::Server,
+    serverExtensions_.deserialize(reader, tls::Side::Server,
                                  tls::HandshakeType::EncryptedExtensions);
 
     reader.assert_done();
@@ -587,7 +587,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
         {
             c_to_s->tls1Decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
-                                serverExensions_.has(ExtensionCode::EncryptThenMac));
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
 
             return Record(recordType, recordVersion, outputBytes);
         }
@@ -595,7 +595,7 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
         {
             s_to_c->tls1Decrypt(recordType, version,
                                 inputBytes.subspan(TLS_HEADER_SIZE, recordSize), outputBytes,
-                                serverExensions_.has(ExtensionCode::EncryptThenMac));
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
 
             return Record(recordType, recordVersion, outputBytes);
         }
@@ -650,7 +650,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
-        if (serverExensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             auto sessionHash = handshakeHash_.final(cipherSuite_.getHnshDigestName());
             PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);

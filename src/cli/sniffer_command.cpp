@@ -8,7 +8,11 @@
 #include <snet/cli/command_dispatcher.hpp>
 #include <snet/pcap/pcap_file_reader_device.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
+
 #include <snet/tls.hpp>
+
+#include <snet/tls/record_processor.hpp>
+#include <snet/tls/record_decryptor.hpp>
 
 using namespace casket;
 using namespace casket::log;
@@ -24,16 +28,35 @@ struct Options
     std::string serverKeyPath;
 };
 
-using SessionManager = std::unordered_map<uint32_t, std::unique_ptr<tls::Session>>;
+using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
+
+class RecordPrinter final : public tls::RecordHandler
+{
+public:
+    RecordPrinter() = default;
+
+    ~RecordPrinter() = default;
+
+    void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override
+    {
+        std::cout << (sideIndex == 0 ? "C -> S" : "C <- S");
+        std::cout << ", " << record.version().toString() << ", " << tls::toString(record.type())
+                  << " [" << record.totalLength() << "]" << std::endl;
+        utils::printHex(record.data());
+    }
+};
 
 struct SnifferManager
 {
     SnifferManager()
     {
+        proc.addHandler<tls::RecordDecryptor>();
+        proc.addHandler<RecordPrinter>();
     }
 
     tls::SecretNodeManager secrets;
     tls::ServerInfo serverInfo;
+    tls::RecordProcessor proc;
     SessionManager sessions;
 };
 
@@ -42,9 +65,8 @@ void OnAlert(const int8_t, const tls::Alert& alert)
     std::cout << alert.toString() << std::endl;
 }
 
-void OnAppData(const int8_t, std::span<const uint8_t> appData)
+void OnAppData(const int8_t, std::span<const uint8_t>)
 {
-    utils::printHex(appData);
 }
 
 void OnClientHello(tls::Session& session, void* userData)
@@ -61,11 +83,11 @@ void OnClientHello(tls::Session& session, void* userData)
 void OnRecord(const int8_t sideIndex, const tls::Record& record)
 {
     std::cout << (sideIndex == 0 ? "C -> S" : "S -> C");
-    std::cout << ", " << tls::toString(record.type()) << " [" << record.totalLength() << "]" << std::endl;
+    std::cout << ", " << tls::toString(record.type()) << " [" << record.totalLength() << "]"
+              << std::endl;
 }
 
-void OnHandshake(const int8_t, const tls::HandshakeType type,
-                 std::span<const uint8_t> message)
+void OnHandshake(const int8_t, const tls::HandshakeType type, std::span<const uint8_t> message)
 {
     std::cout << tls::toString(type) << "[" << message.size() << "]" << std::endl;
     utils::printHex(message);
@@ -85,18 +107,23 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
         if (session == mgr->sessions.end())
         {
             auto result = mgr->sessions.emplace(std::make_pair(tcpData.getConnectionData().flowKey,
-                                                               std::make_unique<tls::Session>()));
+                                                               std::make_shared<tls::Session>()));
             if (result.second)
             {
                 session = result.first;
                 session->second->setCallbacks(sessionCallbacks, mgr);
-                session->second->setServerInfo(mgr->serverInfo);
+                // session->second->setServerInfo(mgr->serverInfo);
             }
         }
 
         if (session->second)
-            session->second->processBytes(sideIndex, {tcpData.getData(), tcpData.getDataLength()});
-        
+        {
+            auto rd = mgr->proc.getHandler<tls::RecordDecryptor>();
+            // check for nullptr
+            rd->setSession(session->second);
+
+            mgr->proc.process(sideIndex, std::span(tcpData.getData(), tcpData.getDataLength()));
+        }
     }
 }
 
