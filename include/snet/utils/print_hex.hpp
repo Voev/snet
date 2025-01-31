@@ -51,6 +51,8 @@ inline void printHex(std::span<const uint8_t> data)
         }
     }
 
+    std::cout << std::dec;
+
     int remaining = data.size() % 16;
     if (remaining != 0)
     {
@@ -68,7 +70,7 @@ inline void printHex(std::span<const uint8_t> data)
                 std::cout << ch;
             }
             else
-            {
+            { 
                 std::cout << '.';
             }
         }

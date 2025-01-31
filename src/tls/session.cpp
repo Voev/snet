@@ -228,7 +228,7 @@ void Session::processHandshakeEncryptedExtensions(int8_t sideIndex,
 
     ThrowIfTrue(reader.remaining_bytes() < 2, "Server sent an empty Encrypted Extensions message");
     serverExtensions_.deserialize(reader, tls::Side::Server,
-                                 tls::HandshakeType::EncryptedExtensions);
+                                  tls::HandshakeType::EncryptedExtensions);
 
     reader.assert_done();
 }
@@ -266,7 +266,7 @@ void Session::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<cons
     }
 
     auto auth = cipherSuite_.getAuthName();
-    if (auth == SN_auth_dss|| auth == SN_auth_ecdsa)
+    if (auth == SN_auth_dss || auth == SN_auth_ecdsa)
     {
         reader.get_uint16_t();                  // algorithm
         reader.get_range<uint8_t>(2, 0, 65535); // signature
@@ -604,6 +604,38 @@ Record Session::readRecord(const int8_t sideIndex, std::span<const uint8_t> inpu
     return Record(recordType, recordVersion, inputBytes.subspan(TLS_HEADER_SIZE, recordSize));
 }
 
+void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
+                      ProtocolVersion recordVersion, std::span<const uint8_t> inputBytes,
+                      std::vector<std::uint8_t>& outputBytes)
+{
+    auto version = (version_ != ProtocolVersion()) ? version_ : recordVersion;
+
+    if (version == ProtocolVersion::TLSv1_3 && recordType == RecordType::ApplicationData)
+    {
+        if (sideIndex == 0 && c_to_s != nullptr)
+        {
+            c_to_s->tls13Decrypt(recordType, inputBytes, outputBytes);
+        }
+        else if (sideIndex == 1 && s_to_c != nullptr)
+        {
+            s_to_c->tls13Decrypt(recordType, inputBytes, outputBytes);
+        }
+    }
+    else if (version <= ProtocolVersion::TLSv1_2)
+    {
+        if (sideIndex == 0 && c_to_s != nullptr)
+        {
+            c_to_s->tls1Decrypt(recordType, version, inputBytes, outputBytes,
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        }
+        else if (sideIndex == 1 && s_to_c != nullptr)
+        {
+            s_to_c->tls1Decrypt(recordType, version, inputBytes, outputBytes,
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        }
+    }
+}
+
 void Session::processRecord(int8_t sideIndex, const Record& record)
 {
     if (callbacks_.onRecord)
@@ -645,8 +677,12 @@ static int tls_iv_length_within_key_block(const EVP_CIPHER* c)
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
 {
-    std::vector<uint8_t> keyBlock;
+    if (!secrets_.isValid(ProtocolVersion::TLSv1_2))
+    {
+        return;
+    }
 
+    std::vector<uint8_t> keyBlock;
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);

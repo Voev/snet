@@ -4,10 +4,12 @@
 namespace snet::tls
 {
 
-class RecordHandler
+class IRecordHandler
 {
 public:
-    virtual ~RecordHandler() = default;
+    IRecordHandler() = default;
+
+    virtual ~IRecordHandler() = default;
 
     virtual void handleRecord(const std::int8_t sideIndex, const Record& record) = 0;
 };

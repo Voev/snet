@@ -1,7 +1,9 @@
 #pragma once
 #include <vector>
 #include <memory>
-#include <snet/tls/record_handler.hpp>
+#include <snet/tls/i_record_reader.hpp>
+#include <snet/tls/i_record_handler.hpp>
+#include <snet/tls/exception.hpp>
 
 namespace snet::tls
 {
@@ -13,24 +15,35 @@ public:
 
     ~RecordProcessor() = default;
 
-    void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes)
+    void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
+
+    template <typename Reader>
+    void addReader()
     {
-        while (inputBytes.size_bytes() > 0)
+        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
+                      "Reader type must derive from IRecordReader");
+
+        reader_ = std::make_shared<Reader>();
+    }
+
+    template <typename Reader>
+    std::shared_ptr<Reader> getReader() const
+    {
+        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
+                      "Reader type must derive from IRecordReader");
+
+        if (auto castedReader = std::dynamic_pointer_cast<Reader>(reader_))
         {
-            auto record = tls::readRecord(sideIndex, inputBytes);
-            for (const auto& handler : handlers_)
-            {
-                handler->handleRecord(sideIndex, record);
-            }
-            inputBytes = inputBytes.subspan(inputBytes.size_bytes());
+            return castedReader;
         }
+        return nullptr;
     }
 
     template <typename Handler>
     void addHandler()
     {
-        static_assert(std::is_base_of<tls::RecordHandler, Handler>::value,
-                      "Handler type must derive from RecordHandler");
+        static_assert(std::is_base_of<tls::IRecordHandler, Handler>::value,
+                      "Handler type must derive from IRecordHandler");
 
         handlers_.emplace_back(std::make_shared<Handler>());
     }
@@ -38,8 +51,8 @@ public:
     template <typename Handler>
     std::shared_ptr<Handler> getHandler() const
     {
-        static_assert(std::is_base_of<tls::RecordHandler, Handler>::value,
-                      "Handler type must derive from RecordHandler");
+        static_assert(std::is_base_of<tls::IRecordHandler, Handler>::value,
+                      "Handler type must derive from IRecordHandler");
 
         for (const auto& handler : handlers_)
         {
@@ -52,7 +65,8 @@ public:
     }
 
 private:
-    std::vector<std::shared_ptr<RecordHandler>> handlers_;
+    std::shared_ptr<IRecordReader> reader_;
+    std::vector<std::shared_ptr<IRecordHandler>> handlers_;
 };
 
 } // namespace snet::tls

@@ -43,6 +43,9 @@ class Session
 public:
     Session();
 
+    void decrypt(const std::int8_t sideIndex, RecordType recordType, ProtocolVersion recordVersion,
+                 std::span<const uint8_t> inputBytes, std::vector<std::uint8_t>& outputBytes);
+
     void processBytes(const int8_t sideIndex, std::span<const uint8_t> inputBytes);
 
     Record readRecord(const int8_t sideIndex, std::span<const uint8_t> inputBytes,
@@ -57,6 +60,11 @@ public:
     void setServerInfo(const ServerInfo& serverInfo);
 
     void setCallbacks(SessionCallbacks callbacks, void* data);
+
+    bool canDecrypt(bool client2server)
+    {
+        return (client2server && c_to_s != nullptr) || (!client2server && s_to_c != nullptr);
+    }
 
     const ProtocolVersion& version() const
     {
@@ -151,7 +159,8 @@ public:
         }
     }
 
-    void updateKeys(const Side side, const std::vector<std::uint8_t>& key, const std::vector<std::uint8_t>& iv)
+    void updateKeys(const Side side, const std::vector<std::uint8_t>& key,
+                    const std::vector<std::uint8_t>& iv)
     {
         if (side == Side::Client)
         {

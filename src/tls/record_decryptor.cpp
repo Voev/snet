@@ -37,6 +37,11 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Handshake)
     {
+        if (!session_->canDecrypt(sideIndex == 0))
+        {
+            return;
+        }
+
         utils::DataReader reader("Handshake Message", data);
 
         const auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());

@@ -1,11 +1,11 @@
 #pragma once
-#include <snet/tls/record_handler.hpp>
+#include <snet/tls/i_record_handler.hpp>
 #include <snet/tls/session.hpp>
 
 namespace snet::tls
 {
 
-class RecordDecryptor final : public RecordHandler
+class RecordDecryptor final : public IRecordHandler
 {
 public:
     RecordDecryptor() = default;
