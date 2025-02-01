@@ -1,5 +1,4 @@
 #pragma once
-#include <iosfwd>
 #include <snet/tls/i_record_handler.hpp>
 
 namespace snet::tls

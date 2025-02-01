@@ -30,6 +30,7 @@ namespace snet::tls
 
 Session::Session()
     : outputBuffer_(16 * 1024)
+    , cipherState_(false)
 {
 }
 
@@ -173,6 +174,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
                                                                 serverWriteKey, serverIV);
         }
     }
+    cipherState_ = true;
 }
 
 void Session::generateTLS13KeyMaterial()
@@ -208,6 +210,7 @@ void Session::generateTLS13KeyMaterial()
                                              clientHandshakeWriteKey, clientHandshakeIV);
     s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
                                              serverHandshakeWriteKey, serverHandshakeIV);
+    cipherState_ = true;
 }
 
 void Session::PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,

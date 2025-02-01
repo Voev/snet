@@ -47,13 +47,13 @@ Record RecordReader::readRecord(const std::int8_t sideIndex,
             ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
             recordType = static_cast<RecordType>(lastByte);
             return Record(recordType, recordVersion,
-                          std::span(decryptedData_.begin(), decryptedData_.end() - 1), true);
+                          std::span(decryptedData_.begin(), decryptedData_.end() - 1));
         }
 
-        return Record(recordType, recordVersion, decryptedData_, true);
+        return Record(recordType, recordVersion, decryptedData_);
     }
 
-    return Record(recordType, recordVersion, inputBytes.subspan(TLS_HEADER_SIZE, recordSize), false);
+    return Record(recordType, recordVersion, inputBytes.subspan(TLS_HEADER_SIZE, recordSize));
 }
 
 void RecordReader::setSession(std::shared_ptr<Session> session)

@@ -28,6 +28,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
         if (session_->version() < ProtocolVersion::TLSv1_3)
         {
             session_->generateKeyMaterial(sideIndex);
+            session_->cipherState(true);
         }
     }
     else if (type == RecordType::Alert)
@@ -37,7 +38,10 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Handshake)
     {
-        /// @todo: check if encrypted
+        if (session_->cipherState() && !session_->canDecrypt(sideIndex == 0))
+        {
+            return;
+        }
 
         utils::DataReader reader("Handshake Message", data);
 
@@ -167,6 +171,7 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex,
     if (session_->getVersion() == tls::ProtocolVersion::TLSv1_3)
     {
         session_->generateTLS13KeyMaterial();
+        session_->cipherState(true);
     }
 }
 

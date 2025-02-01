@@ -11,12 +11,10 @@ namespace snet::tls
 class Record final
 {
 public:
-    explicit Record(RecordType type, ProtocolVersion version, std::span<const uint8_t> data,
-                    bool decrypted)
+    explicit Record(RecordType type, ProtocolVersion version, std::span<const uint8_t> data)
         : type_(type)
         , version_(version)
         , data_(data)
-        , decrypted_(decrypted)
     {
     }
 
@@ -40,16 +38,10 @@ public:
         return TLS_HEADER_SIZE + data_.size_bytes();
     }
 
-    bool isDecrypted() const
-    {
-        return decrypted_;
-    }
-
 private:
     RecordType type_;
     ProtocolVersion version_;
     std::span<const uint8_t> data_;
-    bool decrypted_;
 };
 
 } // namespace snet::tls

@@ -173,6 +173,16 @@ public:
         return serverInfo_;
     }
 
+    void cipherState(bool state)
+    {
+        cipherState_ = state;
+    }
+
+    bool cipherState() const
+    {
+        return cipherState_;
+    }
+
 public:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
@@ -188,6 +198,7 @@ public:
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
     std::vector<uint8_t> outputBuffer_;
+    bool cipherState_;
 };
 
 } // namespace snet::tls
