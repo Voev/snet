@@ -33,8 +33,12 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Alert)
     {
-        /// @todo: check if alert encrypted
-        /// ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
+        if (session_->cipherState() && !session_->canDecrypt(sideIndex == 0))
+        {
+            return;
+        }
+
+        ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
     }
     else if (type == RecordType::Handshake)
     {
