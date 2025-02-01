@@ -96,9 +96,9 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
 
-    utils::printHex("CipherText", in);
-    utils::printHex("KEY", writeKey_);
-    utils::printHex("IV", implicitIv_);
+    utils::printHex(std::cout, "CipherText", in);
+    utils::printHex(std::cout, "KEY", writeKey_);
+    utils::printHex(std::cout, "IV", implicitIv_);
 
     ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
@@ -122,9 +122,9 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     aad[3] = utils::get_byte<0>(size);
     aad[4] = utils::get_byte<1>(size);
 
-    utils::printHex("NONCE", aead_nonce);
-    utils::printHex("Tag", tag);
-    utils::printHex("AAD", aad);
+    utils::printHex(std::cout, "NONCE", aead_nonce);
+    utils::printHex(std::cout, "Tag", tag);
+    utils::printHex(std::cout, "AAD", aad);
 
     tls::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
 
@@ -199,18 +199,19 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
 
         seq_++;
 
-        utils::printHex("AEAD Tag", tag);
-        utils::printHex("AEAD Nonce", aead_nonce);
-        utils::printHex("CipherText", data);
+        utils::printHex(std::cout, "AEAD Tag", tag);
+        utils::printHex(std::cout, "AEAD Nonce", aead_nonce);
+        utils::printHex(std::cout, "CipherText", data);
 
         int outSize{0};
         tls::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad, sizeof(aad)));
 
+        out.resize(MAX_PLAINTEXT_SIZE);
         outSize = out.size();
-        out.resize(outSize);
 
         tls::ThrowIfFalse(
             0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
+
         out.resize(outSize);
 
         int x{0};

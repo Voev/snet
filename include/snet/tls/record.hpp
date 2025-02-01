@@ -2,6 +2,9 @@
 #include <span>
 #include <snet/tls/version.hpp>
 
+#include <snet/utils/load_store.hpp>
+#include <casket/utils/exception.hpp>
+
 namespace snet::tls
 {
 
@@ -30,7 +33,8 @@ public:
         return data_;
     }
 
-    size_t totalLength() const {
+    size_t totalLength() const
+    {
         return TLS_HEADER_SIZE + data_.size_bytes();
     }
 
