@@ -114,7 +114,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
             PRF(PMS_, "master secret", clientRandom_, serverRandom_, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
-        utils::printHex("MS", masterSecret);
+        utils::printHex(std::cout, "MS", masterSecret);
     }
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
@@ -198,11 +198,11 @@ void Session::generateTLS13KeyMaterial()
         hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
                         secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "iv", {}, 12);
 
-    utils::printHex("Server Handshake Write key", serverHandshakeWriteKey);
-    utils::printHex("Server Handshake IV", serverHandshakeIV);
+    utils::printHex(std::cout, "Server Handshake Write key", serverHandshakeWriteKey);
+    utils::printHex(std::cout, "Server Handshake IV", serverHandshakeIV);
 
-    utils::printHex("Client Handshake Write key", clientHandshakeWriteKey);
-    utils::printHex("Client Handshake IV", clientHandshakeIV);
+    utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
+    utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
 
     c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
                                              clientHandshakeWriteKey, clientHandshakeIV);

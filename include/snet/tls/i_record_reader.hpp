@@ -13,7 +13,8 @@ public:
 
     virtual ~IRecordReader() = default;
 
-    virtual Record readRecord(const std::int8_t sideIndex, std::span<const std::uint8_t> inputBytes, std::size_t& consumedBytes) = 0;
+    virtual Record readRecord(const std::int8_t sideIndex, std::span<const std::uint8_t> inputBytes,
+                              std::size_t& consumedBytes) = 0;
 };
 
 } // namespace snet::tls

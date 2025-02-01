@@ -15,8 +15,8 @@ public:
     RecordReader(const RecordReader& other) = delete;
     RecordReader& operator=(const RecordReader& other) = delete;
 
-    RecordReader(RecordReader&& other) noexcept = delete;
-    RecordReader& operator=(RecordReader&& other) noexcept = delete;
+    RecordReader(RecordReader&& other) noexcept = default;
+    RecordReader& operator=(RecordReader&& other) noexcept = default;
 
     Record readRecord(const std::int8_t sideIndex, std::span<const std::uint8_t> inputBytes,
                       std::size_t& consumedBytes) override;

@@ -16,3 +16,4 @@
 #include <snet/tls/record_reader.hpp>
 #include <snet/tls/record_decryptor.hpp>
 #include <snet/tls/record_processor.hpp>
+#include <snet/tls/record_printer.hpp>

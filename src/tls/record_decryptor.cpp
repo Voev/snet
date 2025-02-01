@@ -37,6 +37,8 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Handshake)
     {
+        /// @todo: check if encrypted
+
         utils::DataReader reader("Handshake Message", data);
 
         const auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());
@@ -425,8 +427,8 @@ void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const
 
             session_->setRecordDecoder(true, std::make_unique<RecordDecoder>(session_->getCipherSuite(), std::span<uint8_t>(),
                                                      clientWriteKey, clientIV));
-            utils::printHex("Client Write key", clientWriteKey);
-            utils::printHex("Client IV", clientIV);
+            utils::printHex(std::cout, "Client Write key", clientWriteKey);
+            utils::printHex(std::cout, "Client IV", clientIV);
         }
         else
         {
@@ -439,8 +441,8 @@ void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const
             session_->setRecordDecoder(false, std::make_unique<RecordDecoder>(session_->getCipherSuite(), std::span<uint8_t>(),
                                                      serverWriteKey, serverIV));
 
-            utils::printHex("Server Write key", serverWriteKey);
-            utils::printHex("Server IV", serverIV);
+            utils::printHex(std::cout, "Server Write key", serverWriteKey);
+            utils::printHex(std::cout, "Server IV", serverIV);
         }
     }
 }

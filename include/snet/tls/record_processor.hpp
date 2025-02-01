@@ -12,8 +12,13 @@ class RecordProcessor final
 {
 public:
     RecordProcessor() = default;
-
     ~RecordProcessor() = default;
+
+    RecordProcessor(const RecordProcessor& other) = delete;
+    RecordProcessor& operator=(const RecordProcessor& other) = delete;
+
+    RecordProcessor(RecordProcessor&& other) noexcept = default;
+    RecordProcessor& operator=(RecordProcessor&& other) noexcept = default;
 
     void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
 

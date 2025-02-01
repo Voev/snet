@@ -1,5 +1,7 @@
 #include <snet/tls/record_reader.hpp>
+#include <snet/tls/types.hpp>
 #include <casket/utils/exception.hpp>
+
 
 using namespace casket::utils;
 
@@ -7,7 +9,7 @@ namespace snet::tls
 {
 
 RecordReader::RecordReader()
-    : decryptedData_(16 * 1024)
+    : decryptedData_(MAX_PLAINTEXT_SIZE)
 {}
 
 RecordReader::~RecordReader() noexcept
@@ -45,13 +47,13 @@ Record RecordReader::readRecord(const std::int8_t sideIndex,
             ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
             recordType = static_cast<RecordType>(lastByte);
             return Record(recordType, recordVersion,
-                          std::span(decryptedData_.begin(), decryptedData_.end() - 1));
+                          std::span(decryptedData_.begin(), decryptedData_.end() - 1), true);
         }
 
-        return Record(recordType, recordVersion, decryptedData_);
+        return Record(recordType, recordVersion, decryptedData_, true);
     }
 
-    return Record(recordType, recordVersion, inputBytes.subspan(TLS_HEADER_SIZE, recordSize));
+    return Record(recordType, recordVersion, inputBytes.subspan(TLS_HEADER_SIZE, recordSize), false);
 }
 
 void RecordReader::setSession(std::shared_ptr<Session> session)

@@ -27,28 +27,6 @@ struct Options
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
 
-class RecordPrinter final : public tls::IRecordHandler
-{
-public:
-    RecordPrinter() = default;
-
-    ~RecordPrinter() = default;
-
-    void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override
-    {
-        tls::HandshakeType ht{tls::HandshakeType::None};
-        if (record.type() == tls::RecordType::Handshake)
-        {
-            ht = static_cast<tls::HandshakeType>(record.data()[0]);
-        }
-        std::cout << (sideIndex == 0 ? "C -> S" : "C <- S");
-        std::cout << ", " << record.version().toString() << ", " << tls::toString(record.type())
-                  << " [" << record.totalLength() << "] "
-                  << (ht != tls::HandshakeType::None ? tls::toString(ht) : "") << std::endl;
-        utils::printHex(record.data());
-    }
-};
-
 class SnifferHandler final : public tls::IRecordHandler
 {
 public:
@@ -82,7 +60,7 @@ struct SnifferManager
         proc.addReader<tls::RecordReader>();
         proc.addHandler<tls::RecordDecryptor>();
         proc.addHandler<SnifferHandler>();
-        proc.addHandler<RecordPrinter>();
+        proc.addHandler<tls::RecordPrinter>();
     }
 
     tls::ServerInfo serverInfo;
