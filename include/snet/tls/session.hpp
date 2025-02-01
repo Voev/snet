@@ -46,20 +46,11 @@ public:
     void decrypt(const std::int8_t sideIndex, RecordType recordType, ProtocolVersion recordVersion,
                  std::span<const uint8_t> inputBytes, std::vector<std::uint8_t>& outputBytes);
 
-    void processBytes(const int8_t sideIndex, std::span<const uint8_t> inputBytes);
-
-    Record readRecord(const int8_t sideIndex, std::span<const uint8_t> inputBytes,
-                      std::vector<uint8_t>& outputBytes, size_t& consumedBytes);
-
-    void processRecord(int8_t sideIndex, const Record& record);
-
     const ClientRandom& getClientRandom() const;
 
     void setSecrets(const SecretNode& secrets);
 
     void setServerInfo(const ServerInfo& serverInfo);
-
-    void setCallbacks(SessionCallbacks callbacks, void* data);
 
     bool canDecrypt(bool client2server)
     {
@@ -182,43 +173,7 @@ public:
         return serverInfo_;
     }
 
-private:
-    void processChangeCipherSpec(int8_t sideIndex, std::span<const uint8_t> data);
-
-    void processAlert(int8_t sideIndex, std::span<const uint8_t> data);
-
-    void processHandshake(int8_t sideIndex, std::span<const uint8_t> data);
-
-    void processApplicationData(int8_t sideIndex, std::span<const uint8_t> data);
-
-private:
-    void processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeServerHello(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeSessionTicket(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeEncryptedExtensions(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeCertificate(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeServerKeyExchange(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeCertificateRequest(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeServerHelloDone(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeCertificateVerify(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeClientKeyExchange(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t> message);
-
-    void processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_t> message);
-
 public:
-    SessionCallbacks callbacks_;
-    void* userData_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;

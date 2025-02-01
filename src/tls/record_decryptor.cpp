@@ -37,11 +37,6 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Handshake)
     {
-        if (!session_->canDecrypt(sideIndex == 0))
-        {
-            return;
-        }
-
         utils::DataReader reader("Handshake Message", data);
 
         const auto messageType = static_cast<tls::HandshakeType>(reader.get_byte());
@@ -286,7 +281,7 @@ void RecordDecryptor::processHandshakeServerKeyExchange(int8_t sideIndex,
         reader.get_string(2, 0, 65535);
     }
 
-    if (kex == SN_kx_ecdhe)
+    if (kex == SN_kx_dhe)
     {
         // 3 bigints, DH p, g, Y
         for (size_t i = 0; i != 3; ++i)
@@ -306,7 +301,7 @@ void RecordDecryptor::processHandshakeServerKeyExchange(int8_t sideIndex,
     }
 
     auto auth = session_->getCipherSuite().getAuthName();
-    if (auth == SN_auth_dss || auth == SN_auth_ecdsa)
+    if (auth == SN_auth_rsa || auth == SN_auth_dss || auth == SN_auth_ecdsa)
     {
         reader.get_uint16_t();                  // algorithm
         reader.get_range<uint8_t>(2, 0, 65535); // signature
