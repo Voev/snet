@@ -8,20 +8,39 @@
 namespace snet::tls
 {
 
+/// @brief Class for processing TLS records.
 class RecordProcessor final
 {
 public:
+    /// @brief Default constructor.
     RecordProcessor() = default;
+
+    /// @brief Destructor.
     ~RecordProcessor() = default;
 
+    /// @brief Copy constructor.
+    /// @param other constant reference to the record processor.
     RecordProcessor(const RecordProcessor& other) = delete;
+
+    /// @brief Move constructor and move assignment operator.
+    /// @param other rvalue reference to the record processor.
     RecordProcessor& operator=(const RecordProcessor& other) = delete;
 
+    /// @brief Move constructor.
+    /// @param other rvalue reference to the record processor.
     RecordProcessor(RecordProcessor&& other) noexcept = default;
+
+    /// @brief Move assignment operator.
+    /// @param other rvalue reference to the record processor.
     RecordProcessor& operator=(RecordProcessor&& other) noexcept = default;
 
+    /// @brief Processes input bytes as TLS records.
+    /// @param sideIndex The index indicating the side (client or server).
+    /// @param inputBytes The input bytes to process.
     void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
 
+    /// @brief Adds a record reader.
+    /// @tparam Reader The type of the reader.
     template <typename Reader>
     void addReader()
     {
@@ -31,6 +50,9 @@ public:
         reader_ = std::make_shared<Reader>();
     }
 
+    /// @brief Gets the record reader.
+    /// @tparam Reader The type of the reader.
+    /// @return A shared pointer to the reader if found, otherwise nullptr.
     template <typename Reader>
     std::shared_ptr<Reader> getReader() const
     {
@@ -44,6 +66,8 @@ public:
         return nullptr;
     }
 
+    /// @brief Adds a record handler.
+    /// @tparam Handler The type of the handler.
     template <typename Handler>
     void addHandler()
     {
@@ -53,6 +77,9 @@ public:
         handlers_.emplace_back(std::make_shared<Handler>());
     }
 
+    /// @brief Gets a record handler.
+    /// @tparam Handler The type of the handler.
+    /// @return A shared pointer to the handler if found, otherwise nullptr.
     template <typename Handler>
     std::shared_ptr<Handler> getHandler() const
     {

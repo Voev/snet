@@ -1,16 +1,17 @@
 #include <iterator>
 #include <snet/tls/extensions.hpp>
+#include <snet/tls/types.hpp>
 
 using namespace casket::utils;
 
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> make_extension(utils::DataReader& reader, ExtensionCode code,
-                                          const Side from, const HandshakeType message_type)
+std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCode code,
+                                          const Side from, const HandshakeType messageType)
 {
 
-    (void)message_type;
+    (void)messageType;
 
     // This cast is safe because we read exactly a 16 bit length field for
     // the extension in Extensions::deserialize
@@ -60,7 +61,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
 }
 
 void Extensions::deserialize(utils::DataReader& reader, const Side from,
-                             const HandshakeType message_type)
+                             const HandshakeType messageType)
 {
     if (reader.has_remaining())
     {
@@ -87,22 +88,22 @@ void Extensions::deserialize(utils::DataReader& reader, const Side from,
             // to avoid this copy of the extension data
             const std::vector<uint8_t> extn_data = reader.get_fixed<uint8_t>(extensionSize);
             utils::DataReader extn_reader("Extension", extn_data);
-            this->add(make_extension(extn_reader, type, from, message_type));
+            this->add(makeExtension(extn_reader, type, from, messageType));
             extn_reader.assert_done();
         }
     }
 }
 
-bool Extensions::contains_other_than(const std::set<ExtensionCode>& allowed_extensions,
-                                     const bool allow_unknown_extensions) const
+bool Extensions::containsOtherThan(const std::set<ExtensionCode>& allowedExtensions,
+                                     const bool allowUnknownExtensions) const
 {
-    const auto found = extension_types();
+    const auto found = extensionTypes();
 
     std::vector<ExtensionCode> diff;
-    std::set_difference(found.cbegin(), found.end(), allowed_extensions.cbegin(),
-                        allowed_extensions.cend(), std::back_inserter(diff));
+    std::set_difference(found.cbegin(), found.end(), allowedExtensions.cbegin(),
+                        allowedExtensions.cend(), std::back_inserter(diff));
 
-    if (allow_unknown_extensions)
+    if (allowUnknownExtensions)
     {
         // Go through the found unexpected extensions whether any of those
         // is known to this TLS implementation.
@@ -133,7 +134,7 @@ std::unique_ptr<Extension> Extensions::take(ExtensionCode type)
     return result;
 }
 
-std::set<ExtensionCode> Extensions::extension_types() const
+std::set<ExtensionCode> Extensions::extensionTypes() const
 {
     std::set<ExtensionCode> offers;
     std::transform(extensions_.cbegin(), extensions_.cend(), std::inserter(offers, offers.begin()),
@@ -142,25 +143,25 @@ std::set<ExtensionCode> Extensions::extension_types() const
 }
 
 UnknownExtension::UnknownExtension(ExtensionCode type, utils::DataReader& reader,
-                                   uint16_t extension_size)
+                                   uint16_t extensionSize)
     : type_(type)
-    , value_(reader.get_fixed<uint8_t>(extension_size))
+    , value_(reader.get_fixed<uint8_t>(extensionSize))
 {
 }
 
-ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t extension_size)
+ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t extensionSize)
 {
     /*
      * This is used by the server to confirm that it knew the name
      */
-    if (extension_size == 0)
+    if (extensionSize == 0)
     {
         return;
     }
 
     uint16_t name_bytes = reader.get_uint16_t();
 
-    if (name_bytes + 2 != extension_size)
+    if (name_bytes + 2 != extensionSize)
     {
         throw std::runtime_error("Bad encoding of SNI extension");
     }
@@ -185,27 +186,27 @@ ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t ext
     }
 }
 
-ALPN::ALPN(utils::DataReader& reader, uint16_t extension_size, Side from)
+ALPN::ALPN(utils::DataReader& reader, uint16_t extensionSize, Side from)
 {
-    if (extension_size == 0)
+    if (extensionSize == 0)
     {
         return; // empty extension
     }
 
-    const uint16_t name_bytes = reader.get_uint16_t();
+    const uint16_t nameBytes = reader.get_uint16_t();
 
-    size_t bytes_remaining = extension_size - 2;
+    size_t bytesRemaining = extensionSize - 2;
 
-    if (name_bytes != bytes_remaining)
+    if (nameBytes != bytesRemaining)
     {
         throw std::runtime_error("Bad encoding of ALPN extension, bad length field");
     }
 
-    while (bytes_remaining)
+    while (bytesRemaining)
     {
         const std::string p = reader.get_string(1, 0, 255);
 
-        if (bytes_remaining < p.size() + 1)
+        if (bytesRemaining < p.size() + 1)
         {
             throw std::runtime_error("Bad encoding of ALPN, length field too long");
         }
@@ -215,7 +216,7 @@ ALPN::ALPN(utils::DataReader& reader, uint16_t extension_size, Side from)
             throw std::runtime_error("Empty ALPN protocol not allowed");
         }
 
-        bytes_remaining -= (p.size() + 1);
+        bytesRemaining -= (p.size() + 1);
 
         protocols_.push_back(p);
     }
@@ -231,12 +232,12 @@ ALPN::ALPN(utils::DataReader& reader, uint16_t extension_size, Side from)
     }
 }
 
-std::string ALPN::single_protocol() const
+std::string ALPN::singleProtocol() const
 {
     return protocols_.front();
 }
 
-std::string CertificateType_to_string(CertificateType type)
+std::string CertificateTypeToString(CertificateType type)
 {
     switch (type)
     {
@@ -249,24 +250,24 @@ std::string CertificateType_to_string(CertificateType type)
     return "Unknown";
 }
 
-CertificateType CertificateType_from_string(const std::string& type_str)
+CertificateType CertificateTypeFromString(const std::string& typeStr)
 {
-    if (type_str == "X509")
+    if (typeStr == "X509")
     {
         return CertificateType::X509;
     }
-    else if (type_str == "RawPublicKey")
+    else if (typeStr == "RawPublicKey")
     {
         return CertificateType::RawPublicKey;
     }
     else
     {
-        throw std::runtime_error("Unknown certificate type: " + type_str);
+        throw std::runtime_error("Unknown certificate type: " + typeStr);
     }
 }
 
-CertificateTypeBase::CertificateTypeBase(std::vector<CertificateType> supported_cert_types)
-    : certTypes_(std::move(supported_cert_types))
+CertificateTypeBase::CertificateTypeBase(std::vector<CertificateType> supportedCertTypes)
+    : certTypes_(std::move(supportedCertTypes))
     , from_(Side::Client)
 {
     ThrowIfFalse(certTypes_.empty(), "at least one certificate type must be supported");
@@ -288,8 +289,8 @@ bool contains(std::vector<T> const& v, T const& x)
     return std::find(v.begin(), v.end(), x) != v.end();
 }
 
-CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& CertificateType_from_client,
-                                         const std::vector<CertificateType>& server_preference)
+CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& certificateTypeFromClient,
+                                         const std::vector<CertificateType>& serverPreference)
     : from_(Side::Server)
 {
     // RFC 7250 4.2
@@ -298,11 +299,11 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& CertificateT
     //    the server in a subsequent certificate payload. [...] With the
     //    server_CertificateType extension in the server hello, the TLS server
     //    indicates the certificate type carried in the Certificate payload.
-    for (const auto server_supported_cert_type : server_preference)
+    for (const auto serverSupportedCertType : serverPreference)
     {
-        if (contains(CertificateType_from_client.certTypes_, server_supported_cert_type))
+        if (contains(certificateTypeFromClient.certTypes_, serverSupportedCertType))
         {
-            certTypes_.push_back(server_supported_cert_type);
+            certTypes_.push_back(serverSupportedCertType);
             return;
         }
     }
@@ -315,61 +316,61 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& CertificateT
     throw std::runtime_error("Failed to agree on CertificateType");
 }
 
-CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extension_size,
+CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extensionSize,
                                          Side from)
     : from_(from)
 {
-    if (extension_size == 0)
+    if (extensionSize == 0)
     {
         throw std::runtime_error("Certificate type extension cannot be empty");
     }
 
     if (from == Side::Client)
     {
-        const auto type_bytes = reader.get_tls_length_value(1);
-        if (static_cast<size_t>(extension_size) != type_bytes.size() + 1)
+        const auto typeBytes = reader.get_tls_length_value(1);
+        if (static_cast<size_t>(extensionSize) != typeBytes.size() + 1)
         {
-            throw std::runtime_error("certificate type extension had inconsistent length");
+            throw std::runtime_error("Certificate type extension had inconsistent length");
         }
         std::transform(
-            type_bytes.begin(), type_bytes.end(), std::back_inserter(certTypes_),
-            [](const auto type_byte) { return static_cast<CertificateType>(type_byte); });
+            typeBytes.begin(), typeBytes.end(), std::back_inserter(certTypes_),
+            [](const auto typeByte) { return static_cast<CertificateType>(typeByte); });
     }
     else
     {
         // RFC 7250 4.2
         //    Note that only a single value is permitted in the
         //    server_CertificateType extension when carried in the server hello.
-        if (extension_size != 1)
+        if (extensionSize != 1)
         {
             throw std::runtime_error("Server's certificate type extension must be of length 1");
         }
-        const auto type_byte = reader.get_byte();
-        certTypes_.push_back(static_cast<CertificateType>(type_byte));
+        const auto typeByte = reader.get_byte();
+        certTypes_.push_back(static_cast<CertificateType>(typeByte));
     }
 }
 
-void CertificateTypeBase::validate_selection(const CertificateTypeBase& from_server) const
+void CertificateTypeBase::validateSelection(const CertificateTypeBase& fromServer) const
 {
     ThrowIfFalse(from_ == Side::Client, "invalid from");
-    ThrowIfFalse(from_server.from_ == Side::Server, "invalid from_server");
+    ThrowIfFalse(fromServer.from_ == Side::Server, "invalid fromServer");
 
     // RFC 7250 4.2
     //    The value conveyed in the [client_]CertificateType extension MUST be
     //    selected from one of the values provided in the [client_]CertificateType
     //    extension sent in the client hello.
-    if (!contains(certTypes_, from_server.selected_CertificateType()))
+    if (!contains(certTypes_, fromServer.selectedCertificateType()))
     {
         throw std::runtime_error(
             format("Selected certificate type was not offered: {}",
-                   CertificateType_to_string(from_server.selected_CertificateType())));
+                   CertificateTypeToString(fromServer.selectedCertificateType())));
     }
 }
 
-CertificateType CertificateTypeBase::selected_CertificateType() const
+CertificateType CertificateTypeBase::selectedCertificateType() const
 {
     ThrowIfFalse(from_ == Side::Server, "Invalid from_");
-    ThrowIfFalse(certTypes_.size() == 1, "invalid certificate type");
+    ThrowIfFalse(certTypes_.size() == 1, "Invalid certificate type");
     return certTypes_.front();
 }
 
@@ -377,7 +378,7 @@ ExtendedMasterSecret::ExtendedMasterSecret(utils::DataReader& /*unused*/, uint16
 {
     if (extensionSize != 0)
     {
-        throw std::runtime_error("Invalid ExtendedMasterSecret extension");
+        throw std::runtime_error("Invalid extended_master_secret extension");
     }
 }
 
@@ -389,11 +390,11 @@ EncryptThenMAC::EncryptThenMAC(utils::DataReader& /*unused*/, uint16_t extension
     }
 }
 
-SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extension_size, Side from)
+SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extensionSize, Side from)
 {
     if (from == Side::Server)
     {
-        if (extension_size != 2)
+        if (extensionSize != 2)
         {
             throw std::runtime_error("Server sent invalid supported_versions extension");
         }
@@ -408,7 +409,7 @@ SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extensi
             versions_.push_back(ProtocolVersion(v));
         }
 
-        if (extension_size != 1 + 2 * versions.size())
+        if (extensionSize != 1 + 2 * versions.size())
         {
             throw std::runtime_error("Client sent invalid supported_versions extension");
         }
@@ -427,8 +428,6 @@ bool SupportedVersions::supports(ProtocolVersion version) const
     return false;
 }
 
-#define MAX_PLAINTEXT_SIZE (16 * 1024)
-
 RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
     : limit_(limit)
 {
@@ -437,9 +436,9 @@ RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
                  "RFC 8449 does not allow record size limits larger than 2^14+1");
 }
 
-RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extension_size, Side from)
+RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extensionSize, Side from)
 {
-    if (extension_size != 2)
+    if (extensionSize != 2)
     {
         throw std::runtime_error("invalid record_size_limit extension");
     }
@@ -475,10 +474,10 @@ RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extension_s
     }
 }
 
-RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader, uint16_t extension_size)
+RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader, uint16_t extensionSize)
     : renegData_(reader.get_range<uint8_t>(1, 0, 255))
 {
-    if (renegData_.size() + 1 != extension_size)
+    if (renegData_.size() + 1 != extensionSize)
     {
         throw std::runtime_error("Bad encoding for secure renegotiation extn");
     }

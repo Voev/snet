@@ -1,3 +1,6 @@
+/// @file
+/// @brief Declaration of functions for loading and deserializing private keys.
+
 #pragma once
 #include <span>
 #include <snet/tls/types.hpp>
@@ -5,22 +8,27 @@
 namespace snet::tls
 {
 
-/// @brief Загружает ключ из хранилища
+/// @brief Loads a key from a storage
 ///
-/// @param uri URI для получения ключа из хранилища
-/// @param meth UI_METHOD, реализующий процедуры получения доступа к хранилищу
-/// @param data Дополнительные данные для @p meth
+/// @param uri URI to retrieve the key from the storage
+/// @param meth UI_METHOD implementing the procedures to access the storage
+/// @param data Additional data for @p meth
 ///
-/// @return Возвращает указатель на ключ
+/// @return Returns a pointer to the key
 EvpPkeyPtr LoadPrivateKey(const std::string& uri, const UI_METHOD* meth, void* data);
 
-/// @brief Загрузает ключ из хранилища
+/// @brief Loads a key from a storage
 ///
-/// @param uri URI для получения ключа из хранилища
+/// @param uri URI to retrieve the key from the storage
 ///
-/// @return Возваращает указатель на ключ
+/// @return Returns a pointer to the key
 EvpPkeyPtr LoadPrivateKey(const std::string& uri);
 
+/// @brief Deserializes a private key from a buffer
+///
+/// @param buffer The buffer containing the serialized key
+///
+/// @return Returns a pointer to the deserialized key
 EvpPkeyPtr DeserializePrivateKey(std::span<const uint8_t> buffer);
 
 } // namespace snet::tls

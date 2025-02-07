@@ -1,4 +1,5 @@
-/// @brief Объявление класса сообщения протокола оповещения (Alert).
+/// @file
+/// @brief Declaration of the Alert protocol message class.
 
 #pragma once
 #include <string>
@@ -8,11 +9,11 @@
 namespace snet::tls
 {
 
-/// @brief Класс сообщения протокола оповещения.
+/// @brief Alert protocol message class.
 class Alert final
 {
 public:
-    /// @brief Описание сообщения оповещения.
+    /// @brief Alert message description.
     enum Description
     {
         CloseNotify = 0,
@@ -49,62 +50,62 @@ public:
         UnknownPSKIdentity = 115,
         CertificateRequired = 116,
         NoApplicationProtocol = 120,
-        None = 256, // Псевдо-значение для отслеживания корректности.
+        None = 256, // Pseudo-value for tracking correctness.
     };
 
-    /// @brief Конструктор по умолчанию.
+    /// @brief Default constructor.
     Alert();
 
-    /// @brief Деструктор.
+    /// @brief Destructor.
     ~Alert() noexcept;
 
-    /// @brief Конструктор копирования.
-    /// @param other Константная ссылка на сообщение оповещения.
+    /// @brief Copy constructor.
+    /// @param other Constant reference to the alert message.
     Alert(const Alert& other);
 
-    /// @brief Конструктор перемещения.
-    /// @param other rvalue-ссылка на сообщение оповещения.
+    /// @brief Move constructor.
+    /// @param other rvalue reference to the alert message.
     Alert(Alert&& other) noexcept;
 
-    /// @brief Оператор копирования.
-    /// @param other Константная ссылка на сообщение оповещения.
-    /// @return Ссылка на сообщение оповещения.
+    /// @brief Copy assignment operator.
+    /// @param other Constant reference to the alert message.
+    /// @return Reference to the alert message.
     Alert& operator=(const Alert& other);
 
-    /// @brief Оператор перемещения.
-    /// @param other rvalue-ссылка на сообщение оповещения.
-    /// @return Ссылка на сообщение оповещения.
+    /// @brief Move assignment operator.
+    /// @param other rvalue reference to the alert message.
+    /// @return Reference to the alert message.
     Alert& operator=(Alert&& other) noexcept;
 
-    /// @brief Конструктор, формирующий сообщение оповещения из явного описания и флага критичности.
-    /// @param description Описание сообщения оповещения.
-    /// @param fatal Флаг критичности сообщения оповещения.
+    /// @brief Constructor that forms an alert message from a specific description and fatal flag.
+    /// @param description Alert message description.
+    /// @param fatal Alert message fatal flag.
     Alert(Description description, bool fatal = false);
 
-    /// @brief Конструктор, десериализующий набор байт в сообщение оповещения.
-    /// @param buf Набор байт.
+    /// @brief Constructor that deserializes a byte array into an alert message.
+    /// @param buf Byte array.
     explicit Alert(std::span<const uint8_t> buf);
 
-    /// @brief Метод проверки критичности сообщения.
-    /// @retval true - сообщение Alert критическое.
-    /// @retval false - иначе.
+    /// @brief Method to check if the alert message is fatal.
+    /// @retval true - if the Alert message is fatal.
+    /// @retval false - otherwise.
     bool isFatal() const noexcept;
 
-    /// @brief Метод проверки корректности сообщения.
-    /// @retval true - если описание оповещения было задано.
-    /// @retval false - иначе.
+    /// @brief Method to check if the alert message is valid.
+    /// @retval true - if the alert description was set.
+    /// @retval false - otherwise.
     bool isValid() const noexcept;
 
-    /// @brief Метод получения описания оповещения
-    /// @return
+    /// @brief Method to get the alert description.
+    /// @return Alert description.
     Description description() const noexcept;
 
-    /// @brief Метод преобразования в строковое представление.
-    /// @return Строковое представление.
+    /// @brief Method to convert to a string representation.
+    /// @return String representation.
     std::string toString() const;
 
-    /// @brief Метод сериализации сообщения оповещения в набор байт.
-    /// @return Набор байт.
+    /// @brief Method to serialize the alert message into a byte array.
+    /// @return Byte array.
     std::vector<uint8_t> serialize() const;
 
 private:
