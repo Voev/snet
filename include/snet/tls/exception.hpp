@@ -1,5 +1,5 @@
 /// @file
-/// @brief Общий тип исключения для ошибок в криптографии
+/// @brief General exception type for TLS errors.
 
 #pragma once
 
@@ -11,33 +11,41 @@
 
 namespace snet::tls {
 
-/// @brief Основной класс для исключений crypto_unit
+/// @brief Main class for TLS exceptions.
 class Exception final : public std::system_error {
 public:
-    /// @brief Конструктор
+    /// @brief Constructor.
     ///
-    /// @param ec Код ошибки
+    /// @param ec Error code.
     explicit Exception(std::error_code ec)
         : std::system_error(ec) {
     }
 
-    /// @brief Конструктор
+    /// @brief Constructor.
     ///
-    /// @param ec Код ошибки
-    /// @param what Дополнительное сообщение
-    explicit Exception(std::error_code ec, std::string what)
-        : std::system_error(ec, what.data()) {
+    /// @param ec Error code.
+    /// @param what_arg Error message.
+    Exception(std::error_code ec, const std::string& what_arg)
+        : std::system_error(ec, what_arg) {
+    }
+
+    /// @brief Constructor.
+    ///
+    /// @param ec Error code.
+    /// @param what_arg Error message.
+    Exception(std::error_code ec, const char* what_arg)
+        : std::system_error(ec, what_arg) {
     }
 };
 
-/// @brief Бросает исключение если @p exprResult истинно
+/// @brief Throws an exception if @p exprResult is true.
 ///
-/// @param exprResult Результат анализируемого выражения
+/// @param exprResult The result of the expression to check.
 ///
 /// @code{.cpp}
-/// /* ПРИМЕР */
+/// /* EXAMPLE */
 /// auto* somePointer = new (std::nothrow) int;
-/// Exception::throwIfTrue(somePointer == nullptr);
+/// Exception::ThrowIfTrue(somePointer == nullptr);
 /// @endcode
 inline void ThrowIfTrue(bool exprResult) {
     if (exprResult) {
@@ -45,34 +53,34 @@ inline void ThrowIfTrue(bool exprResult) {
     }
 }
 
-/// @brief Бросает исключение если @p exprResult истинно
+/// @brief Throws an exception if @p exprResult is true.
 ///
-/// @param exprResult Результат анализируемого выражения
-/// @param msg Дополнительное сообщение
+/// @param exprResult The result of the expression to check.
+/// @param msg Additional message.
 inline void ThrowIfTrue(bool exprResult, std::string msg) {
     if (exprResult) {
         throw Exception(GetLastError(), msg);
     }
 }
 
-/// @brief Бросает исключение если @p exprResult ложно
+/// @brief Throws an exception if @p exprResult is false.
 ///
-/// @param exprResult Результат анализируемого выражения
+/// @param exprResult The result of the expression to check.
 ///
 /// @code{.cpp}
-/// /* ПРИМЕР */
+/// /* EXAMPLE */
 /// void* inputData = nullptr;
 /// SomeValidator validator;
-/// Exception::throwIfFalse(validator.isValid(inputData));
+/// Exception::ThrowIfFalse(validator.isValid(inputData));
 /// @endcode
 inline void ThrowIfFalse(bool exprResult) {
     return ThrowIfTrue(!exprResult);
 }
 
-/// @brief Бросает исключение если @p exprResult ложно
+/// @brief Throws an exception if @p exprResult is false.
 ///
-/// @param exprResult Результат анализируемого выражения
-/// @param msg Дополнительное сообщение
+/// @param exprResult The result of the expression to check.
+/// @param msg Additional message.
 inline void ThrowIfFalse(bool exprResult, std::string msg) {
     return ThrowIfTrue(!exprResult, std::move(msg));
 }

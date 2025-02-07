@@ -29,8 +29,7 @@ namespace snet::tls
 {
 
 Session::Session()
-    : outputBuffer_(16 * 1024)
-    , cipherState_(false)
+    : cipherState_(false)
 {
 }
 

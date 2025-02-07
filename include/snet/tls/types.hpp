@@ -11,22 +11,25 @@
 namespace snet::tls
 {
 
+/// @brief Enum representing the side (client or server).
 enum class Side
 {
     Client = 0,
     Server
 };
 
+/// @brief Enum representing the record type.
 enum class RecordType : uint8_t
 {
-    Invalid = 0, // RFC 8446 (TLS 1.3)
+    Invalid = 0, ///< Invalid record type (RFC 8446 - TLS 1.3)
     ChangeCipherSpec = 20,
     Alert = 21,
     Handshake = 22,
     ApplicationData = 23,
-    Heartbeat = 24, // RFC 6520 (TLS 1.3)
+    Heartbeat = 24 ///< Heartbeat (RFC 6520 - TLS 1.3)
 };
 
+/// @brief Enum representing size limits for TLS.
 enum SizeLimits : size_t
 {
     TLS_HEADER_SIZE = 5,
@@ -41,16 +44,17 @@ enum SizeLimits : size_t
     MAX_CIPHERTEXT_SIZE = MAX_CIPHERTEXT_SIZE_TLS13,
 };
 
+/// @brief Enum representing the handshake type.
 enum class HandshakeType : uint8_t
 {
     HelloRequest = 0,
     ClientHello = 1,
     ServerHello = 2,
     HelloVerifyRequest = 3,
-    NewSessionTicket = 4, // RFC 5077
+    NewSessionTicket = 4, ///< RFC 5077
 
-    EndOfEarlyData = 5,      // RFC 8446 (TLS 1.3)
-    EncryptedExtensions = 8, // RFC 8446 (TLS 1.3)
+    EndOfEarlyData = 5,      ///< RFC 8446 (TLS 1.3)
+    EncryptedExtensions = 8, ///< RFC 8446 (TLS 1.3)
 
     Certificate = 11,
     ServerKeyExchange = 12,
@@ -60,18 +64,24 @@ enum class HandshakeType : uint8_t
     ClientKeyExchange = 16,
     Finished = 20,
 
-    KeyUpdate = 24, // RFC 8446 (TLS 1.3)
+    KeyUpdate = 24, ///< RFC 8446 (TLS 1.3)
 
-    HelloRetryRequest = 253, // Not a wire value (HRR appears as an ordinary Server Hello)
-    HandshakeCCS =
-        254,   // Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
-    None = 255 // Null value
+    HelloRetryRequest = 253, ///< Not a wire value (HRR appears as an ordinary Server Hello)
+    HandshakeCCS = 254,      ///< Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
+    None = 255               ///< Null value
 };
 
+/// @brief Converts a RecordType to a string representation.
+/// @param type The RecordType to convert.
+/// @return The string representation of the RecordType.
 std::string toString(const RecordType type);
 
+/// @brief Converts a HandshakeType to a string representation.
+/// @param type The HandshakeType to convert.
+/// @return The string representation of the HandshakeType.
 std::string toString(const HandshakeType type);
 
+/// @brief Enum representing the version code.
 enum class VersionCode : std::uint16_t
 {
     SSLv2_0 = SSL2_VERSION,
@@ -82,6 +92,7 @@ enum class VersionCode : std::uint16_t
     TLSv1_3 = TLS1_3_VERSION
 };
 
+/// @brief Enum representing the verify mode.
 enum class VerifyMode
 {
     None = 0x00,
@@ -91,8 +102,10 @@ enum class VerifyMode
     PostHandhsake = 0x08
 };
 
+/// @brief Type alias for the verify callback function.
 using VerifyCallback = int (*)(int, X509_STORE_CTX*);
 
+/// @brief Enum representing the mode.
 enum Mode : std::uint32_t
 {
     EnablePartialWrite = SSL_MODE_ENABLE_PARTIAL_WRITE,
@@ -106,6 +119,7 @@ enum Mode : std::uint32_t
     Async = SSL_MODE_ASYNC
 };
 
+/// @brief Enum representing the session cache mode.
 enum SessionCacheMode : std::uint16_t
 {
     CacheOff = SSL_SESS_CACHE_OFF,
@@ -134,6 +148,8 @@ DEFINE_CUSTOM_UNIQUE_PTR(EvpKdfCtxPtr, EVP_KDF_CTX, EVP_KDF_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMacPtr, EVP_MAC, EVP_MAC_free);
 DEFINE_CUSTOM_UNIQUE_PTR(EvpMacCtxPtr, EVP_MAC_CTX, EVP_MAC_CTX_free);
 
+/// @brief Frees an OSSL_STORE_CTX object.
+/// @param ctx The OSSL_STORE_CTX object to free.
 inline void OSSL_STORE_CTX_free(OSSL_STORE_CTX* ctx)
 {
     OSSL_STORE_close(ctx);
