@@ -35,7 +35,7 @@ Record RecordReader::readRecord(const std::int8_t sideIndex,
 
     consumedBytes = TLS_HEADER_SIZE + recordSize;
 
-    if (session_ && session_->canDecrypt((sideIndex == 0)))
+    if (session_ && session_->canDecrypt((sideIndex == 0)) && recordType != RecordType::ChangeCipherSpec)
     {
         decryptedData_.clear();
         session_->decrypt(sideIndex, recordType, recordVersion,
