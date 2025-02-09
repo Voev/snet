@@ -14,6 +14,11 @@ using namespace casket;
 namespace snet::tls
 {
 
+void RecordDecryptor::setSession(std::shared_ptr<Session> session)
+{
+    session_ = session;
+}
+
 void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& record)
 {
     ThrowIfTrue(session_ == nullptr, "Session is not setted");
@@ -38,7 +43,8 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
             return;
         }
 
-        ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
+        ThrowIfTrue(data.size() != 2,
+                    ::utils::format("wrong length for alert message: {}", data.size()));
     }
     else if (type == RecordType::Handshake)
     {
@@ -291,8 +297,7 @@ void RecordDecryptor::processHandshakeServerKeyExchange(int8_t sideIndex,
     {
         reader.get_string(2, 0, 65535);
     }
-
-    if (kex == SN_kx_dhe)
+    else if (kex == SN_kx_dhe)
     {
         // 3 bigints, DH p, g, Y
         for (size_t i = 0; i != 3; ++i)
@@ -314,8 +319,15 @@ void RecordDecryptor::processHandshakeServerKeyExchange(int8_t sideIndex,
     auto auth = session_->getCipherSuite().getAuthName();
     if (auth == SN_auth_rsa || auth == SN_auth_dss || auth == SN_auth_ecdsa)
     {
-        reader.get_uint16_t();                  // algorithm
-        reader.get_range<uint8_t>(2, 0, 65535); // signature
+        if (session_->getVersion() == ProtocolVersion::TLSv1_2)
+        {
+            reader.get_uint16_t();                  // algorithm
+            reader.get_range<uint8_t>(2, 0, 65535); // signature
+        }
+        else /// < TLSv1.2
+        {
+            reader.get_range<uint8_t>(2, 0, 65535); // signature
+        }
     }
 
     reader.assert_done();
@@ -391,7 +403,8 @@ void RecordDecryptor::processHandshakeClientKeyExchange(int8_t sideIndex,
         const std::vector<uint8_t> encryptedPreMaster = reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
-        EvpPkeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, session_->getServerInfo().getServerKey(), nullptr));
+        EvpPkeyCtxPtr ctx(
+            EVP_PKEY_CTX_new_from_pkey(nullptr, session_->getServerInfo().getServerKey(), nullptr));
         tls::ThrowIfFalse(ctx != nullptr);
 
         tls::ThrowIfFalse(0 < EVP_PKEY_decrypt_init(ctx));
@@ -434,8 +447,9 @@ void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const
                 hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
                                 session_->getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
 
-            session_->setRecordDecoder(true, std::make_unique<RecordDecoder>(session_->getCipherSuite(), std::span<uint8_t>(),
-                                                     clientWriteKey, clientIV));
+            session_->setRecordDecoder(true, std::make_unique<RecordDecoder>(
+                                                 session_->getCipherSuite(), std::span<uint8_t>(),
+                                                 clientWriteKey, clientIV));
             utils::printHex(std::cout, "Client Write key", clientWriteKey);
             utils::printHex(std::cout, "Client IV", clientIV);
         }
@@ -447,8 +461,9 @@ void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const
             auto serverIV =
                 hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
                                 session_->getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
-            session_->setRecordDecoder(false, std::make_unique<RecordDecoder>(session_->getCipherSuite(), std::span<uint8_t>(),
-                                                     serverWriteKey, serverIV));
+            session_->setRecordDecoder(false, std::make_unique<RecordDecoder>(
+                                                  session_->getCipherSuite(), std::span<uint8_t>(),
+                                                  serverWriteKey, serverIV));
 
             utils::printHex(std::cout, "Server Write key", serverWriteKey);
             utils::printHex(std::cout, "Server IV", serverIV);
