@@ -75,9 +75,6 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
     implicitIv_.resize(encIV.size());
     memcpy(implicitIv_.data(), encIV.data(), encIV.size());
 
-    // writeKey_.resize(encKey.size());
-    // memcpy(writeKey_.data(), encKey.data(), encKey.size());
-
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
     tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, encKey.data(), nullptr, 0));
     inited_ = true;
@@ -98,6 +95,20 @@ size_t GetTagLength(EVP_CIPHER_CTX* ctx)
         return EVP_CCM_TLS_TAG_LEN;
     }
     return EVP_CIPHER_CTX_get_tag_length(ctx);
+}
+
+
+void RecordDecoder::decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                            std::vector<uint8_t>& out, bool encryptThenMac)
+{
+    if (version == ProtocolVersion::TLSv1_3)
+    {
+        tls13Decrypt(rt, in, out);
+    }
+    else if (version <= ProtocolVersion::TLSv1_2)
+    {
+        tls1Decrypt(rt, version, in, out, encryptThenMac);
+    }
 }
 
 void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
