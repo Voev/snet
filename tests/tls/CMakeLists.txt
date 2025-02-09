@@ -11,6 +11,8 @@ add_executable(${TEST_NAME} ${SOURCES})
 target_link_libraries(${TEST_NAME}
     PRIVATE
         snet_tls
+        OpenSSL::Crypto
+        OpenSSL::SSL
         GTest::GTest)
 
 # Discover tests
