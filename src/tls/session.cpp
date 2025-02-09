@@ -151,6 +151,9 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto macSize = EVP_MD_get_size(md);
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
+
+        utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
+
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
             clientRandom_, keyBlock);
 
@@ -161,6 +164,14 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto serverWriteKey = viewer.view(keySize);
         auto clientIV = viewer.view(ivSize);
         auto serverIV = viewer.view(ivSize);
+
+
+        utils::printHex(std::cout, "Client MAC key", clientMacKey);
+        utils::printHex(std::cout, "Client Write key", clientWriteKey);
+        utils::printHex(std::cout, "Client IV", clientIV);
+        utils::printHex(std::cout, "Server MAC key", serverMacKey);
+        utils::printHex(std::cout, "Server Write key", serverWriteKey);
+        utils::printHex(std::cout, "Server IV", serverIV);
 
         if (sideIndex == 0)
         {
@@ -221,7 +232,12 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
         ssl3Prf(secret, rnd1, rnd2, out);
     else
     {
-        tls1Prf(cipherSuite_.getHnshDigestName(), secret, usage, rnd1, rnd2, out);
+        auto digest = cipherSuite_.getHnshDigestName();
+        if (digest == "MD5-SHA1")
+        {
+            digest = "SHA256";
+        }
+        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
     }
 }
 
