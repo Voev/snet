@@ -12,7 +12,7 @@ namespace snet::tls
 {
 
 /// @brief Class for decoding TLS records.
-class RecordDecoder
+class RecordDecoder final
 {
 public:
     /// @brief Default constructor.
@@ -21,14 +21,15 @@ public:
     /// @brief Destructor.
     ~RecordDecoder() noexcept;
 
-    /// @brief Constructor with cipher suite, MAC key, encryption key, and IV.
-    /// @param cs The cipher suite.
-    /// @param macKey The MAC key.
-    /// @param encKey The encryption key.
-    /// @param iv The initialization vector.
-    RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey, std::span<const uint8_t> encKey,
-                  std::span<const uint8_t> iv);
+    bool isInited() const noexcept;
 
+    void reset() noexcept;
+
+    /// @brief Initializes the encryption context and MAC computation.
+    /// @param cs The cipher suite.
+    /// @param encKey The encryption key.
+    /// @param encIV The encryption IV.
+    /// @param macKey The MAC key.
     void init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV,
               std::span<const std::uint8_t> macKey);
 
@@ -36,7 +37,7 @@ public:
     /// @param cs The cipher suite.
     /// @param encKey The encryption key.
     /// @param encIV The encryption IV.
-    void initAEAD(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV);
+    void init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV);
 
     /// @brief Decrypts a TLS 1.x record.
     /// @param rt The record type.
@@ -82,6 +83,7 @@ private:
     std::vector<uint8_t> writeKey_;   /* for AEAD ciphers */
     EvpCipherCtxPtr cipher_;
     uint64_t seq_;
+    bool inited_;
 };
 
 } // namespace snet::tls

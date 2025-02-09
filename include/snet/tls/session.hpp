@@ -56,7 +56,7 @@ public:
     /// @return True if the session can decrypt data, false otherwise.
     bool canDecrypt(bool client2server)
     {
-        return (client2server && c_to_s != nullptr) || (!client2server && s_to_c != nullptr);
+        return (client2server && c_to_s.isInited()) || (!client2server && s_to_c.isInited());
     }
 
     /// @brief Gets the protocol version of the session.
@@ -188,11 +188,11 @@ public:
     {
         if (side == Side::Client)
         {
-            c_to_s->tls13UpdateKeys(key, iv);
+            c_to_s.tls13UpdateKeys(key, iv);
         }
         else
         {
-            s_to_c->tls13UpdateKeys(key, iv);
+            s_to_c.tls13UpdateKeys(key, iv);
         }
     }
 
@@ -233,12 +233,11 @@ private:
     ServerRandom serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> sessionId_;
-    std::unique_ptr<RecordDecoder> c_to_s;
-    std::unique_ptr<RecordDecoder> s_to_c;
+    RecordDecoder c_to_s;
+    RecordDecoder s_to_c;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
-    std::vector<uint8_t> outputBuffer_;
     bool cipherState_;
 };
 

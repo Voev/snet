@@ -58,25 +58,25 @@ void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
 
     if (version == ProtocolVersion::TLSv1_3 && recordType == RecordType::ApplicationData)
     {
-        if (sideIndex == 0 && c_to_s != nullptr)
+        if (sideIndex == 0 && c_to_s.isInited())
         {
-            c_to_s->tls13Decrypt(recordType, inputBytes, outputBytes);
+            c_to_s.tls13Decrypt(recordType, inputBytes, outputBytes);
         }
-        else if (sideIndex == 1 && s_to_c != nullptr)
+        else if (sideIndex == 1 && s_to_c.isInited())
         {
-            s_to_c->tls13Decrypt(recordType, inputBytes, outputBytes);
+            s_to_c.tls13Decrypt(recordType, inputBytes, outputBytes);
         }
     }
     else if (version <= ProtocolVersion::TLSv1_2)
     {
-        if (sideIndex == 0 && c_to_s != nullptr)
+        if (sideIndex == 0 && c_to_s.isInited())
         {
-            c_to_s->tls1Decrypt(recordType, version, inputBytes, outputBytes,
+            c_to_s.tls1Decrypt(recordType, version, inputBytes, outputBytes,
                                 serverExtensions_.has(ExtensionCode::EncryptThenMac));
         }
-        else if (sideIndex == 1 && s_to_c != nullptr)
+        else if (sideIndex == 1 && s_to_c.isInited())
         {
-            s_to_c->tls1Decrypt(recordType, version, inputBytes, outputBytes,
+            s_to_c.tls1Decrypt(recordType, version, inputBytes, outputBytes,
                                 serverExtensions_.has(ExtensionCode::EncryptThenMac));
         }
     }
@@ -136,13 +136,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            c_to_s = std::make_unique<snet::tls::RecordDecoder>();
-            c_to_s->initAEAD(cipherSuite_, clientWriteKey, clientIV);
+            c_to_s.init(cipherSuite_, clientWriteKey, clientIV);
         }
         else
         {
-            s_to_c = std::make_unique<snet::tls::RecordDecoder>();
-            s_to_c->initAEAD(cipherSuite_, serverWriteKey, serverIV);
+            s_to_c.init(cipherSuite_, serverWriteKey, serverIV);
         }
     }
     else
@@ -174,13 +172,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            c_to_s = std::make_unique<snet::tls::RecordDecoder>();
-            c_to_s->init(cipherSuite_, clientMacKey, clientWriteKey, clientIV);
+            c_to_s.init(cipherSuite_, clientMacKey, clientWriteKey, clientIV);
         }
         else
         {
-            s_to_c = std::make_unique<snet::tls::RecordDecoder>();
-            s_to_c->init(cipherSuite_, serverMacKey, serverWriteKey, serverIV);
+            s_to_c.init(cipherSuite_, serverMacKey, serverWriteKey, serverIV);
         }
     }
     cipherState_ = true;
@@ -215,11 +211,8 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
 
-    c_to_s = std::make_unique<RecordDecoder>();
-    s_to_c = std::make_unique<RecordDecoder>();
-
-    c_to_s->initAEAD(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
-    s_to_c->initAEAD(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
+    c_to_s.init(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
+    s_to_c.init(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
 
     cipherState_ = true;
 }
@@ -239,8 +232,7 @@ void Session::processFinished(const std::int8_t sideIndex)
                 hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
                                 getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
 
-            c_to_s = std::make_unique<RecordDecoder>();
-            c_to_s->initAEAD(cipherSuite_, clientWriteKey, clientIV);
+            c_to_s.init(cipherSuite_, clientWriteKey, clientIV);
 
             utils::printHex(std::cout, "Client Write key", clientWriteKey);
             utils::printHex(std::cout, "Client IV", clientIV);
@@ -254,8 +246,7 @@ void Session::processFinished(const std::int8_t sideIndex)
                 hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
                                 getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
 
-            s_to_c = std::make_unique<RecordDecoder>();
-            s_to_c->initAEAD(getCipherSuite(), serverWriteKey, serverIV);
+            s_to_c.init(getCipherSuite(), serverWriteKey, serverIV);
 
             utils::printHex(std::cout, "Server Write key", serverWriteKey);
             utils::printHex(std::cout, "Server IV", serverIV);
