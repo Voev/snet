@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <sstream>
+#include <algorithm>
 #include <snet/cli/command_dispatcher.hpp>
 
 namespace snet::cmd
@@ -17,10 +18,25 @@ CommandDispatcher::CommandPtr CommandDispatcher::createCommand(const std::string
 
 void CommandDispatcher::printCommands(std::ostream& os)
 {
+    auto maxElement = std::max_element(
+        commands_.begin(), commands_.end(),
+        [](const auto& lhs, const auto& rhs) {
+            return lhs.first.size() < rhs.first.size();
+        }
+    );
+
+    const auto offset = (maxElement != commands_.end()) ? maxElement->first.size() + 4 : 4;
+
     for(auto [name, meta] : commands_)
     {
-        os << name << "        " << std::get<CommandDescription>(meta) << std::endl;
+        os << name;
+
+        const std::size_t padding = offset - name.size();
+        os << std::string(padding, ' ');
+
+        os << std::get<CommandDescription>(meta) << std::endl;
     }
+
     os << std::endl;
 }
 
