@@ -433,42 +433,7 @@ void RecordDecryptor::processHandshakeClientKeyExchange(int8_t sideIndex,
 void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t> message)
 {
     (void)message;
-
-    if (session_->version() == tls::ProtocolVersion::TLSv1_3)
-    {
-        auto keySize = session_->getCipherSuite().getKeyBits() / 8;
-
-        if (sideIndex == 0)
-        {
-            auto clientWriteKey = hkdfExpandLabel(
-                session_->getCipherSuite().getHnshDigestName(),
-                session_->getSecret(SecretNode::ClientTrafficSecret), "key", {}, keySize);
-            auto clientIV =
-                hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
-                                session_->getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
-
-            session_->setRecordDecoder(true, std::make_unique<RecordDecoder>(
-                                                 session_->getCipherSuite(), std::span<uint8_t>(),
-                                                 clientWriteKey, clientIV));
-            utils::printHex(std::cout, "Client Write key", clientWriteKey);
-            utils::printHex(std::cout, "Client IV", clientIV);
-        }
-        else
-        {
-            auto serverWriteKey = hkdfExpandLabel(
-                session_->getCipherSuite().getHnshDigestName(),
-                session_->getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
-            auto serverIV =
-                hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
-                                session_->getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
-            session_->setRecordDecoder(false, std::make_unique<RecordDecoder>(
-                                                  session_->getCipherSuite(), std::span<uint8_t>(),
-                                                  serverWriteKey, serverIV));
-
-            utils::printHex(std::cout, "Server Write key", serverWriteKey);
-            utils::printHex(std::cout, "Server IV", serverIV);
-        }
-    }
+    session_->processFinished(sideIndex);
 }
 
 void RecordDecryptor::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_t> message)

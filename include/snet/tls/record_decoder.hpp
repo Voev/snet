@@ -29,6 +29,9 @@ public:
     RecordDecoder(CipherSuite cs, std::span<const uint8_t> macKey, std::span<const uint8_t> encKey,
                   std::span<const uint8_t> iv);
 
+    void init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV,
+              std::span<const std::uint8_t> macKey);
+
     /// @brief Initializes AEAD mode.
     /// @param cs The cipher suite.
     /// @param encKey The encryption key.

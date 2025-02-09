@@ -177,20 +177,7 @@ public:
         return secrets_.getSecret(type);
     }
 
-    /// @brief Sets the record decoder for a specific direction.
-    /// @param client2server Indicates if the direction is client to server.
-    /// @param decoder The record decoder to set.
-    void setRecordDecoder(bool client2server, std::unique_ptr<RecordDecoder> decoder)
-    {
-        if (client2server)
-        {
-            c_to_s = std::move(decoder);
-        }
-        else
-        {
-            s_to_c = std::move(decoder);
-        }
-    }
+    void processFinished(const std::int8_t sideIndex);
 
     /// @brief Updates the keys for a specific side.
     /// @param side The side (client or server).

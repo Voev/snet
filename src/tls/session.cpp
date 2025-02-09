@@ -165,7 +165,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto clientIV = viewer.view(ivSize);
         auto serverIV = viewer.view(ivSize);
 
-
         utils::printHex(std::cout, "Client MAC key", clientMacKey);
         utils::printHex(std::cout, "Client Write key", clientWriteKey);
         utils::printHex(std::cout, "Client IV", clientIV);
@@ -175,13 +174,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            c_to_s = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, clientMacKey,
-                                                                clientWriteKey, clientIV);
+            c_to_s = std::make_unique<snet::tls::RecordDecoder>();
+            c_to_s->init(cipherSuite_, clientMacKey, clientWriteKey, clientIV);
         }
         else
         {
-            s_to_c = std::make_unique<snet::tls::RecordDecoder>(cipherSuite_, serverMacKey,
-                                                                serverWriteKey, serverIV);
+            s_to_c = std::make_unique<snet::tls::RecordDecoder>();
+            s_to_c->init(cipherSuite_, serverMacKey, serverWriteKey, serverIV);
         }
     }
     cipherState_ = true;
@@ -216,11 +215,52 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
 
-    c_to_s = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
-                                             clientHandshakeWriteKey, clientHandshakeIV);
-    s_to_c = std::make_unique<RecordDecoder>(cipherSuite_, std::span<uint8_t>(),
-                                             serverHandshakeWriteKey, serverHandshakeIV);
+    c_to_s = std::make_unique<RecordDecoder>();
+    s_to_c = std::make_unique<RecordDecoder>();
+
+    c_to_s->initAEAD(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
+    s_to_c->initAEAD(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
+
     cipherState_ = true;
+}
+
+void Session::processFinished(const std::int8_t sideIndex)
+{
+    if (version_ == tls::ProtocolVersion::TLSv1_3)
+    {
+        auto keySize = cipherSuite_.getKeyBits() / 8;
+
+        if (sideIndex == 0)
+        {
+            auto clientWriteKey =
+                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
+                                getSecret(SecretNode::ClientTrafficSecret), "key", {}, keySize);
+            auto clientIV =
+                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
+                                getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
+
+            c_to_s = std::make_unique<RecordDecoder>();
+            c_to_s->initAEAD(cipherSuite_, clientWriteKey, clientIV);
+
+            utils::printHex(std::cout, "Client Write key", clientWriteKey);
+            utils::printHex(std::cout, "Client IV", clientIV);
+        }
+        else
+        {
+            auto serverWriteKey =
+                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
+                                getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
+            auto serverIV =
+                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
+                                getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
+
+            s_to_c = std::make_unique<RecordDecoder>();
+            s_to_c->initAEAD(getCipherSuite(), serverWriteKey, serverIV);
+
+            utils::printHex(std::cout, "Server Write key", serverWriteKey);
+            utils::printHex(std::cout, "Server IV", serverIV);
+        }
+    }
 }
 
 void Session::PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
