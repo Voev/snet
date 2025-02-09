@@ -78,11 +78,10 @@ private:
 
 private:
     CipherSuite cipherSuite_;
-    std::vector<uint8_t> macKey_;
+    std::vector<uint8_t> macKey_; /* for NON-AEAD ciphers */
     std::vector<uint8_t> implicitIv_; /* for AEAD ciphers */
-    std::vector<uint8_t> writeKey_;   /* for AEAD ciphers */
     EvpCipherCtxPtr cipher_;
-    uint64_t seq_;
+    std::uint64_t seq_;
     bool inited_;
 };
 

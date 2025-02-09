@@ -48,15 +48,12 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
 {
     reset();
 
+    utils::printHex(std::cout, "KEY", encKey);
+    utils::printHex(std::cout, "IV", encIV);
+
     cipherSuite_ = std::move(cs);
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cs.getCipherName());
-
-    implicitIv_.resize(encIV.size());
-    memcpy(implicitIv_.data(), encIV.data(), encIV.size());
-
-    writeKey_.resize(encKey.size());
-    memcpy(writeKey_.data(), encKey.data(), encKey.size());
 
     macKey_.resize(macKey.size());
     memcpy(macKey_.data(), macKey.data(), macKey.size());
@@ -70,25 +67,28 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
 {
     reset();
 
+    utils::printHex(std::cout, "KEY", encKey);
+    utils::printHex(std::cout, "IV", encIV);
+
     cipherSuite_ = std::move(cs);
 
     implicitIv_.resize(encIV.size());
     memcpy(implicitIv_.data(), encIV.data(), encIV.size());
 
-    writeKey_.resize(encKey.size());
-    memcpy(writeKey_.data(), encKey.data(), encKey.size());
+    // writeKey_.resize(encKey.size());
+    // memcpy(writeKey_.data(), encKey.data(), encKey.size());
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
-    tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
+    tls::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, encKey.data(), nullptr, 0));
     inited_ = true;
 }
 
 void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey,
                                     const std::vector<uint8_t>& newiv)
 {
-    std::copy(newkey.begin(), newkey.end(), writeKey_.begin());
+    tls::ThrowIfFalse(0 < EVP_DecryptInit(cipher_, nullptr, newkey.data(), nullptr));
     std::copy(newiv.begin(), newiv.end(), implicitIv_.begin());
-    seq_ = 0;
+    seq_ = 0U;
 }
 
 size_t GetTagLength(EVP_CIPHER_CTX* ctx)
@@ -109,9 +109,6 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
     std::array<uint8_t, 12> aead_nonce;
 
     utils::printHex(std::cout, "CipherText", in);
-    utils::printHex(std::cout, "KEY", writeKey_);
-    utils::printHex(std::cout, "IV", implicitIv_);
-
     ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
@@ -146,8 +143,8 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
                                                   const_cast<uint8_t*>(tag.data())));
     }
 
-    tls::ThrowIfFalse(
-        0 < EVP_DecryptInit_ex(cipher_, nullptr, nullptr, writeKey_.data(), aead_nonce.data()));
+    tls::ThrowIfFalse(0 <
+                      EVP_DecryptInit_ex(cipher_, nullptr, nullptr, nullptr, aead_nonce.data()));
 
     int outSize{0};
 
@@ -191,7 +188,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         aead_nonce.insert(aead_nonce.end(), recordIv.begin(), recordIv.end());
 
         tls::ThrowIfFalse(0 <
-                          EVP_DecryptInit(cipher_, nullptr, writeKey_.data(), aead_nonce.data()));
+                          EVP_DecryptInit(cipher_, nullptr, nullptr, aead_nonce.data()));
 
         auto tagLength = GetTagLength(cipher_);
         auto data = in.subspan(0, in.size() - tagLength);
