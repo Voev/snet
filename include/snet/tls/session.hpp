@@ -54,17 +54,11 @@ public:
     /// @brief Checks if the session can decrypt data.
     /// @param client2server Indicates if the direction is client to server.
     /// @return True if the session can decrypt data, false otherwise.
-    bool canDecrypt(bool client2server)
-    {
-        return (client2server && clientToServer_.isInited()) || (!client2server && serverToClient_.isInited());
-    }
+    bool canDecrypt(bool client2server) const noexcept;
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
-    const ProtocolVersion& version() const
-    {
-        return version_;
-    }
+    const ProtocolVersion& version() const;
 
     /// @brief Generates key material using the PRF.
     /// @param secret The secret to use.
@@ -85,97 +79,50 @@ public:
     /// @brief Gets the extensions for a specific side.
     /// @param side The side (client or server).
     /// @return The extensions for the specified side.
-    const Extensions& getExtensions(const Side side) const noexcept
-    {
-        if (side == Side::Client)
-        {
-            return clientExtensions_;
-        }
-        else
-        {
-            return serverExtensions_;
-        }
-    }
+    const Extensions& getExtensions(const Side side) const noexcept;
 
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
-    void updateHash(std::span<const uint8_t> message)
-    {
-        handshakeHash_.update(message);
-    }
+    void updateHash(std::span<const uint8_t> message);
 
     /// @brief Sets the client random value.
     /// @param random The client random value to set.
-    void setClientRandom(const ClientRandom& random)
-    {
-        clientRandom_ = random;
-    }
+    void setClientRandom(const ClientRandom& random);
 
     /// @brief Sets the server random value.
     /// @param random The server random value to set.
-    void setServerRandom(ServerRandom random)
-    {
-        serverRandom_ = std::move(random);
-    }
+    void setServerRandom(ServerRandom random);
 
     /// @brief Sets the session ID.
     /// @param sessionID The session ID to set.
-    void setSessionID(std::vector<std::uint8_t> sessionID)
-    {
-        sessionId_ = std::move(sessionID);
-    }
+    void setSessionID(std::vector<std::uint8_t> sessionID);
 
     /// @brief Sets the protocol version.
     /// @param version The protocol version to set.
-    void setVersion(ProtocolVersion version)
-    {
-        version_ = std::move(version);
-    }
+    void setVersion(ProtocolVersion version);
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
-    const ProtocolVersion& getVersion() const noexcept
-    {
-        return version_;
-    }
+    const ProtocolVersion& getVersion() const noexcept;
 
     /// @brief Sets the cipher suite for the session.
     /// @param cipherSuite The cipher suite to set.
-    void setCipherSuite(CipherSuite cipherSuite)
-    {
-        cipherSuite_ = std::move(cipherSuite);
-    }
+    void setCipherSuite(CipherSuite cipherSuite);
 
     /// @brief Gets the cipher suite of the session.
     /// @return The cipher suite.
-    const CipherSuite& getCipherSuite() const noexcept
-    {
-        return cipherSuite_;
-    }
+    const CipherSuite& getCipherSuite() const noexcept;
 
     /// @brief Deserializes extensions from a data reader.
     /// @param reader The data reader.
     /// @param side The side (client or server).
     /// @param ht The handshake type.
-    void deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht)
-    {
-        if (side == Side::Client)
-        {
-            clientExtensions_.deserialize(reader, side, ht);
-        }
-        else if (side == Side::Server)
-        {
-            serverExtensions_.deserialize(reader, side, ht);
-        }
-    }
+    void deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht);
 
     /// @brief Gets a secret of a specific type.
     /// @param type The type of the secret.
     /// @return The secret of the specified type.
-    const Secret& getSecret(const SecretNode::Type type) const
-    {
-        return secrets_.getSecret(type);
-    }
+    const Secret& getSecret(const SecretNode::Type type) const;
 
     void processFinished(const std::int8_t sideIndex);
 
@@ -184,45 +131,23 @@ public:
     /// @param key The new encryption key.
     /// @param iv The new initialization vector.
     void updateKeys(const Side side, const std::vector<std::uint8_t>& key,
-                    const std::vector<std::uint8_t>& iv)
-    {
-        if (side == Side::Client)
-        {
-            clientToServer_.tls13UpdateKeys(key, iv);
-        }
-        else
-        {
-            serverToClient_.tls13UpdateKeys(key, iv);
-        }
-    }
+                    const std::vector<std::uint8_t>& iv);
 
     /// @brief Sets the premaster secret for the session.
     /// @param pms The premaster secret to set.
-    void setPremasterSecret(std::vector<std::uint8_t> pms)
-    {
-        PMS_ = std::move(pms);
-    }
+    void setPremasterSecret(std::vector<std::uint8_t> pms);
 
     /// @brief Gets the server information of the session.
     /// @return The server information.
-    const ServerInfo& getServerInfo() const
-    {
-        return serverInfo_;
-    }
+    const ServerInfo& getServerInfo() const;
 
     /// @brief Sets the cipher state.
     /// @param state The cipher state to set.
-    void cipherState(bool state)
-    {
-        cipherState_ = state;
-    }
+    void cipherState(bool state);
 
     /// @brief Gets the cipher state.
     /// @return The cipher state.
-    bool cipherState() const
-    {
-        return cipherState_;
-    }
+    bool cipherState() const;
 
 private:
     ServerInfo serverInfo_;

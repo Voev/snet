@@ -53,7 +53,7 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
 
     cipherSuite_ = std::move(cs);
 
-    auto cipher = CipherSuiteManager::getInstance().fetchCipher(cs.getCipherName());
+    auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
 
     macKey_.resize(macKey.size());
     memcpy(macKey_.data(), macKey.data(), macKey.size());

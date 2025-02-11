@@ -59,12 +59,12 @@ void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
     if (sideIndex == 0 && clientToServer_.isInited())
     {
         clientToServer_.decrypt(recordType, version, inputBytes, outputBytes,
-                       serverExtensions_.has(ExtensionCode::EncryptThenMac));
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
     {
         serverToClient_.decrypt(recordType, version, inputBytes, outputBytes,
-                       serverExtensions_.has(ExtensionCode::EncryptThenMac));
+                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
     }
 }
 
@@ -158,11 +158,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherSuite_, clientMacKey, clientWriteKey, clientIV);
+            clientToServer_.init(cipherSuite_, clientWriteKey, clientIV, clientMacKey);
         }
         else
         {
-            serverToClient_.init(cipherSuite_, serverMacKey, serverWriteKey, serverIV);
+            serverToClient_.init(cipherSuite_, serverWriteKey, serverIV, serverMacKey);
         }
     }
     cipherState_ = true;
@@ -256,6 +256,120 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
         }
         tls1Prf(digest, secret, usage, rnd1, rnd2, out);
     }
+}
+
+bool Session::canDecrypt(bool client2server) const noexcept
+{
+    return (client2server && clientToServer_.isInited()) ||
+           (!client2server && serverToClient_.isInited());
+}
+
+const ProtocolVersion& Session::version() const
+{
+    return version_;
+}
+
+const Extensions& Session::getExtensions(const Side side) const noexcept
+{
+    if (side == Side::Client)
+    {
+        return clientExtensions_;
+    }
+    else
+    {
+        return serverExtensions_;
+    }
+}
+
+void Session::updateHash(std::span<const uint8_t> message)
+{
+    handshakeHash_.update(message);
+}
+
+void Session::setClientRandom(const ClientRandom& random)
+{
+    clientRandom_ = random;
+}
+
+void Session::setServerRandom(ServerRandom random)
+{
+    serverRandom_ = std::move(random);
+}
+
+void Session::setSessionID(std::vector<std::uint8_t> sessionID)
+{
+    sessionId_ = std::move(sessionID);
+}
+
+void Session::setVersion(ProtocolVersion version)
+{
+    version_ = std::move(version);
+}
+
+const ProtocolVersion& Session::getVersion() const noexcept
+{
+    return version_;
+}
+
+void Session::setCipherSuite(CipherSuite cipherSuite)
+{
+    cipherSuite_ = std::move(cipherSuite);
+}
+
+const CipherSuite& Session::getCipherSuite() const noexcept
+{
+    return cipherSuite_;
+}
+
+void Session::deserializeExtensions(utils::DataReader& reader, const Side side,
+                                    const HandshakeType ht)
+{
+    if (side == Side::Client)
+    {
+        clientExtensions_.deserialize(reader, side, ht);
+    }
+    else if (side == Side::Server)
+    {
+        serverExtensions_.deserialize(reader, side, ht);
+    }
+}
+
+const Secret& Session::getSecret(const SecretNode::Type type) const
+{
+    return secrets_.getSecret(type);
+}
+
+void Session::updateKeys(const Side side, const std::vector<std::uint8_t>& key,
+                         const std::vector<std::uint8_t>& iv)
+{
+    if (side == Side::Client)
+    {
+        clientToServer_.tls13UpdateKeys(key, iv);
+    }
+    else
+    {
+        serverToClient_.tls13UpdateKeys(key, iv);
+    }
+}
+
+void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
+{
+    PMS_ = std::move(pms);
+}
+
+const ServerInfo& Session::getServerInfo() const
+{
+    return serverInfo_;
+}
+
+void Session::cipherState(bool state)
+{
+    cipherState_ = state;
+}
+
+bool Session::cipherState() const
+{
+    return cipherState_;
 }
 
 } // namespace snet::tls
