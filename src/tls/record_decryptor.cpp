@@ -30,7 +30,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     {
         ThrowIfFalse(data.size() == 1 && data[0] == 0x01, "Malformed Change Cipher Spec message");
 
-        if (session_->version() < ProtocolVersion::TLSv1_3)
+        if (session_->getVersion() < ProtocolVersion::TLSv1_3)
         {
             session_->generateKeyMaterial(sideIndex);
             session_->cipherState(true);
@@ -191,7 +191,7 @@ void RecordDecryptor::processHandshakeCertificate(int8_t sideIndex,
     static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
     utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    if (session_->version() == ProtocolVersion::TLSv1_3)
+    if (session_->getVersion() == ProtocolVersion::TLSv1_3)
     {
         auto requestContext = reader.get_range<uint8_t>(1, 0, 255);
 
@@ -235,7 +235,7 @@ void RecordDecryptor::processHandshakeSessionTicket(int8_t sideIndex,
                                                     std::span<const uint8_t> message)
 {
     ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    if (session_->version() == ProtocolVersion::TLSv1_3)
+    if (session_->getVersion() == ProtocolVersion::TLSv1_3)
     {
         utils::DataReader reader("TLSv1.3 New Session Ticket",
                                  message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -255,7 +255,7 @@ void RecordDecryptor::processHandshakeSessionTicket(int8_t sideIndex,
 
         reader.assert_done();
     }
-    else if (session_->version() == ProtocolVersion::TLSv1_2)
+    else if (session_->getVersion() == ProtocolVersion::TLSv1_2)
     {
         utils::DataReader reader("TLSv1.2 New Session Ticket",
                                  message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -411,7 +411,7 @@ void RecordDecryptor::processHandshakeClientKeyExchange(int8_t sideIndex,
         tls::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_WITH_TLS_PADDING));
 
         OSSL_PARAM params[2];
-        unsigned int value = session_->version().code();
+        unsigned int value = session_->getVersion().code();
         params[0] = OSSL_PARAM_construct_uint(OSSL_ASYM_CIPHER_PARAM_TLS_CLIENT_VERSION, &value);
         params[1] = OSSL_PARAM_construct_end();
 
@@ -426,82 +426,20 @@ void RecordDecryptor::processHandshakeClientKeyExchange(int8_t sideIndex,
                                                encryptedPreMaster.size()));
         pms.resize(size);
 
-        session_->setPremasterSecret(pms);
+        session_->setPremasterSecret(std::move(pms));
     }
 }
 
 void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const uint8_t> message)
 {
     (void)message;
-
-    if (session_->version() == tls::ProtocolVersion::TLSv1_3)
-    {
-        auto keySize = session_->getCipherSuite().getKeyBits() / 8;
-
-        if (sideIndex == 0)
-        {
-            auto clientWriteKey = hkdfExpandLabel(
-                session_->getCipherSuite().getHnshDigestName(),
-                session_->getSecret(SecretNode::ClientTrafficSecret), "key", {}, keySize);
-            auto clientIV =
-                hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
-                                session_->getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
-
-            session_->setRecordDecoder(true, std::make_unique<RecordDecoder>(
-                                                 session_->getCipherSuite(), std::span<uint8_t>(),
-                                                 clientWriteKey, clientIV));
-            utils::printHex(std::cout, "Client Write key", clientWriteKey);
-            utils::printHex(std::cout, "Client IV", clientIV);
-        }
-        else
-        {
-            auto serverWriteKey = hkdfExpandLabel(
-                session_->getCipherSuite().getHnshDigestName(),
-                session_->getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
-            auto serverIV =
-                hkdfExpandLabel(session_->getCipherSuite().getHnshDigestName(),
-                                session_->getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
-            session_->setRecordDecoder(false, std::make_unique<RecordDecoder>(
-                                                  session_->getCipherSuite(), std::span<uint8_t>(),
-                                                  serverWriteKey, serverIV));
-
-            utils::printHex(std::cout, "Server Write key", serverWriteKey);
-            utils::printHex(std::cout, "Server IV", serverIV);
-        }
-    }
+    session_->processFinished(sideIndex);
 }
 
 void RecordDecryptor::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_t> message)
 {
     (void)message;
-
-    std::vector<uint8_t> newsecret;
-    std::vector<uint8_t> newkey;
-    std::vector<uint8_t> newiv;
-
-    auto cs = session_->getCipherSuite();
-    auto md = CipherSuiteManager::getInstance().fetchDigest(cs.getHnshDigestName());
-    auto keySize = cs.getKeyBits() / 8;
-
-    if (sideIndex == 0)
-    {
-        auto CTS = hkdfExpandLabel(EVP_MD_get0_name(md),
-                                   session_->getSecret(SecretNode::ClientTrafficSecret),
-                                   "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(EVP_MD_get0_name(md), CTS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(EVP_MD_get0_name(md), CTS, "iv", {}, 12);
-        session_->updateKeys(Side::Client, newkey, newiv);
-    }
-    else
-    {
-        auto STS = hkdfExpandLabel(EVP_MD_get0_name(md),
-                                   session_->getSecret(SecretNode::ServerTrafficSecret),
-                                   "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(EVP_MD_get0_name(md), STS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(EVP_MD_get0_name(md), STS, "iv", {}, 12);
-
-        session_->updateKeys(Side::Server, newkey, newiv);
-    }
+    session_->processKeyUpdate(sideIndex);
 }
 
 } // namespace snet::tls

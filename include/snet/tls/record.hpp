@@ -20,28 +20,28 @@ public:
     /// @param data The record data.
     explicit Record(RecordType type, ProtocolVersion version, std::span<const uint8_t> data)
         : type_(type)
-        , version_(version)
+        , version_(std::move(version))
         , data_(data)
     {
     }
 
     /// @brief Gets the record type.
     /// @return The record type.
-    RecordType type() const
+    RecordType type() const noexcept
     {
         return type_;
     }
 
     /// @brief Gets the protocol version.
     /// @return The protocol version.
-    ProtocolVersion version() const
+    const ProtocolVersion& version() const noexcept
     {
         return version_;
     }
 
     /// @brief Gets the record data.
     /// @return The record data.
-    std::span<const uint8_t> data() const
+    std::span<const uint8_t> data() const noexcept
     {
         return data_;
     }
