@@ -245,16 +245,23 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
 {
     ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
-    if (version_ <= tls::ProtocolVersion::SSLv3_0)
-        ssl3Prf(secret, rnd1, rnd2, out);
-    else
+    if (version_ == tls::ProtocolVersion::TLSv1_2)
     {
         auto digest = cipherSuite_.getHnshDigestName();
         if (digest == "MD5-SHA1")
         {
-            digest = "SHA256";
+            digest = cipherSuite_.getDigestName();
         }
         tls1Prf(digest, secret, usage, rnd1, rnd2, out);
+    }
+    else if (version_ >= tls::ProtocolVersion::TLSv1_0)
+    {
+        auto digest = cipherSuite_.getHnshDigestName();
+        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
+    }
+    else
+    {
+        ssl3Prf(secret, rnd1, rnd2, out);
     }
 }
 
