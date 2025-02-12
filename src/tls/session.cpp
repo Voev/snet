@@ -216,16 +216,33 @@ void Session::processFinished(const std::int8_t sideIndex)
     }
 }
 
-void Session::updateKeys(const Side side, const std::vector<std::uint8_t>& key,
-                         const std::vector<std::uint8_t>& iv)
+void Session::processKeyUpdate(const std::int8_t sideIndex)
 {
-    if (side == Side::Client)
+    std::vector<uint8_t> newsecret;
+    std::vector<uint8_t> newkey;
+    std::vector<uint8_t> newiv;
+
+    const auto& digest = cipherSuite_.getHnshDigestName();
+    auto md = CipherSuiteManager::getInstance().fetchDigest(digest);
+    auto keySize = cipherSuite_.getKeyBits() / 8;
+
+    if (sideIndex == 0)
     {
-        clientToServer_.tls13UpdateKeys(key, iv);
+        const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
+        auto newsecret = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
+        newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
+        newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
+
+        clientToServer_.tls13UpdateKeys(newkey, newiv);
     }
     else
     {
-        serverToClient_.tls13UpdateKeys(key, iv);
+        const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
+        auto newsecret = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
+        newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
+        newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
+
+        serverToClient_.tls13UpdateKeys(newkey, newiv);
     }
 }
 

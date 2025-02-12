@@ -439,35 +439,7 @@ void RecordDecryptor::processHandshakeFinished(int8_t sideIndex, std::span<const
 void RecordDecryptor::processHandshakeKeyUpdate(int8_t sideIndex, std::span<const uint8_t> message)
 {
     (void)message;
-
-    /// @todo: move it inside session
-
-    std::vector<uint8_t> newsecret;
-    std::vector<uint8_t> newkey;
-    std::vector<uint8_t> newiv;
-
-    auto cs = session_->getCipherSuite();
-    const auto& digest = cs.getHnshDigestName();
-    auto md = CipherSuiteManager::getInstance().fetchDigest(digest);
-    auto keySize = cs.getKeyBits() / 8;
-
-    if (sideIndex == 0)
-    {
-        const auto& secret = session_->getSecret(SecretNode::ClientTrafficSecret);
-        auto CTS = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(digest, CTS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(digest, CTS, "iv", {}, 12);
-        session_->updateKeys(Side::Client, newkey, newiv);
-    }
-    else
-    {
-        const auto& secret = session_->getSecret(SecretNode::ServerTrafficSecret);
-        auto STS = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(digest, STS, "key", {}, keySize);
-        newiv = hkdfExpandLabel(digest, STS, "iv", {}, 12);
-
-        session_->updateKeys(Side::Server, newkey, newiv);
-    }
+    session_->processKeyUpdate(sideIndex);
 }
 
 } // namespace snet::tls

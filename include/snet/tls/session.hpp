@@ -64,12 +64,9 @@ public:
     /// @param sideIndex The side (client or server).
     void processFinished(const std::int8_t sideIndex);
 
-    /// @brief Updates the keys for a specific side.
-    /// @param side The side (client or server).
-    /// @param key The new encryption key.
-    /// @param iv The new initialization vector.
-    void updateKeys(const Side side, const std::vector<std::uint8_t>& key,
-                    const std::vector<std::uint8_t>& iv);
+    /// @brief Handles KeyUpdate message to update key material if it's necessary.
+    /// @param sideIndex The side (client or server).
+    void processKeyUpdate(const std::int8_t sideIndex);
 
     /// @brief Deserializes extensions from a data reader.
     /// @param reader The data reader.
