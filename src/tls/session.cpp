@@ -3,13 +3,6 @@
 #include <limits>
 #include <memory>
 
-#include <openssl/err.h>
-#include <openssl/kdf.h>
-#include <openssl/ssl.h>
-#include <openssl/evp.h>
-#include <openssl/x509v3.h>
-#include <openssl/core_names.h>
-
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
 
@@ -25,6 +18,16 @@
 
 using namespace casket::utils;
 
+static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
+{
+    if (EVP_CIPHER_get_mode(c) == EVP_CIPH_GCM_MODE)
+        return EVP_GCM_TLS_FIXED_IV_LEN;
+    else if (EVP_CIPHER_get_mode(c) == EVP_CIPH_CCM_MODE)
+        return EVP_CCM_TLS_FIXED_IV_LEN;
+    else
+        return EVP_CIPHER_get_iv_length(c);
+}
+
 namespace snet::tls
 {
 
@@ -33,21 +36,10 @@ Session::Session()
 {
 }
 
-const ClientRandom& Session::getClientRandom() const
+bool Session::canDecrypt(bool client2server) const noexcept
 {
-    return clientRandom_;
-}
-
-void Session::setSecrets(const SecretNode& secrets)
-{
-    secrets_ = secrets;
-}
-
-void Session::setServerInfo(const ServerInfo& serverInfo)
-{
-    serverInfo_.setHostname(serverInfo.getHostname());
-    serverInfo_.setIPAddress(serverInfo.getIPAddress());
-    serverInfo_.setServerKey(serverInfo.getServerKey());
+    return (client2server && clientToServer_.isInited()) ||
+           (!client2server && serverToClient_.isInited());
 }
 
 void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
@@ -66,17 +58,6 @@ void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
         serverToClient_.decrypt(recordType, version, inputBytes, outputBytes,
                                 serverExtensions_.has(ExtensionCode::EncryptThenMac));
     }
-}
-
-static int tls_iv_length_within_key_block(const EVP_CIPHER* c)
-{
-    /* If GCM/CCM mode only part of IV comes from PRF */
-    if (EVP_CIPHER_get_mode(c) == EVP_CIPH_GCM_MODE)
-        return EVP_GCM_TLS_FIXED_IV_LEN;
-    else if (EVP_CIPHER_get_mode(c) == EVP_CIPH_CCM_MODE)
-        return EVP_CCM_TLS_FIXED_IV_LEN;
-    else
-        return EVP_CIPHER_get_iv_length(c);
 }
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
@@ -106,7 +87,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
 
     size_t keySize = EVP_CIPHER_get_key_length(cipher);
-    size_t ivSize = tls_iv_length_within_key_block(cipher);
+    size_t ivSize = ::GetIvLengthWithinKeyBlock(cipher);
 
     if (cipherSuite_.isAEAD())
     {
@@ -177,19 +158,16 @@ void Session::generateTLS13KeyMaterial()
 
     auto keySize = cipherSuite_.getKeyBits() / 8;
 
-    auto serverHandshakeWriteKey = hkdfExpandLabel(
-        cipherSuite_.getHnshDigestName(),
-        secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "key", {}, keySize);
-    auto serverHandshakeIV =
-        hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                        secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret), "iv", {}, 12);
+    const auto& digest = cipherSuite_.getHnshDigestName();
+    const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
-    auto clientHandshakeWriteKey = hkdfExpandLabel(
-        cipherSuite_.getHnshDigestName(),
-        secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "key", {}, keySize);
-    auto clientHandshakeIV =
-        hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                        secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret), "iv", {}, 12);
+    auto serverHandshakeWriteKey = hkdfExpandLabel(digest, shts, "key", {}, keySize);
+    auto serverHandshakeIV = hkdfExpandLabel(digest, shts, "iv", {}, 12);
+
+    const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
+
+    auto clientHandshakeWriteKey = hkdfExpandLabel(digest, chts, "key", {}, keySize);
+    auto clientHandshakeIV = hkdfExpandLabel(digest, chts, "iv", {}, 12);
 
     utils::printHex(std::cout, "Server Handshake Write key", serverHandshakeWriteKey);
     utils::printHex(std::cout, "Server Handshake IV", serverHandshakeIV);
@@ -211,12 +189,11 @@ void Session::processFinished(const std::int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            auto clientWriteKey =
-                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                                getSecret(SecretNode::ClientTrafficSecret), "key", {}, keySize);
-            auto clientIV =
-                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                                getSecret(SecretNode::ClientTrafficSecret), "iv", {}, 12);
+            const auto& digest = cipherSuite_.getHnshDigestName();
+            const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
+
+            auto clientWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
+            auto clientIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
             clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
 
@@ -225,18 +202,30 @@ void Session::processFinished(const std::int8_t sideIndex)
         }
         else
         {
-            auto serverWriteKey =
-                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                                getSecret(SecretNode::ServerTrafficSecret), "key", {}, keySize);
-            auto serverIV =
-                hkdfExpandLabel(cipherSuite_.getHnshDigestName(),
-                                getSecret(SecretNode::ServerTrafficSecret), "iv", {}, 12);
+            const auto& digest = cipherSuite_.getHnshDigestName();
+            const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
 
-            serverToClient_.init(getCipherSuite(), serverWriteKey, serverIV);
+            auto serverWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
+            auto serverIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
+
+            serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
 
             utils::printHex(std::cout, "Server Write key", serverWriteKey);
             utils::printHex(std::cout, "Server IV", serverIV);
         }
+    }
+}
+
+void Session::updateKeys(const Side side, const std::vector<std::uint8_t>& key,
+                         const std::vector<std::uint8_t>& iv)
+{
+    if (side == Side::Client)
+    {
+        clientToServer_.tls13UpdateKeys(key, iv);
+    }
+    else
+    {
+        serverToClient_.tls13UpdateKeys(key, iv);
     }
 }
 
@@ -265,15 +254,17 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     }
 }
 
-bool Session::canDecrypt(bool client2server) const noexcept
+void Session::deserializeExtensions(utils::DataReader& reader, const Side side,
+                                    const HandshakeType ht)
 {
-    return (client2server && clientToServer_.isInited()) ||
-           (!client2server && serverToClient_.isInited());
-}
-
-const ProtocolVersion& Session::version() const
-{
-    return version_;
+    if (side == Side::Client)
+    {
+        clientExtensions_.deserialize(reader, side, ht);
+    }
+    else if (side == Side::Server)
+    {
+        serverExtensions_.deserialize(reader, side, ht);
+    }
 }
 
 const Extensions& Session::getExtensions(const Side side) const noexcept
@@ -293,9 +284,14 @@ void Session::updateHash(std::span<const uint8_t> message)
     handshakeHash_.update(message);
 }
 
-void Session::setClientRandom(const ClientRandom& random)
+void Session::setClientRandom(ClientRandom random)
 {
-    clientRandom_ = random;
+    clientRandom_ = std::move(random);
+}
+
+const ClientRandom& Session::getClientRandom() const noexcept
+{
+    return clientRandom_;
 }
 
 void Session::setServerRandom(ServerRandom random)
@@ -318,9 +314,9 @@ const ProtocolVersion& Session::getVersion() const noexcept
     return version_;
 }
 
-void Session::setCipherSuite(CipherSuite cipherSuite)
+void Session::setCipherSuite(const CipherSuite& cipherSuite)
 {
-    cipherSuite_ = std::move(cipherSuite);
+    cipherSuite_ = cipherSuite;
 }
 
 const CipherSuite& Session::getCipherSuite() const noexcept
@@ -328,17 +324,9 @@ const CipherSuite& Session::getCipherSuite() const noexcept
     return cipherSuite_;
 }
 
-void Session::deserializeExtensions(utils::DataReader& reader, const Side side,
-                                    const HandshakeType ht)
+void Session::setSecrets(SecretNode secrets)
 {
-    if (side == Side::Client)
-    {
-        clientExtensions_.deserialize(reader, side, ht);
-    }
-    else if (side == Side::Server)
-    {
-        serverExtensions_.deserialize(reader, side, ht);
-    }
+    secrets_ = std::move(secrets);
 }
 
 const Secret& Session::getSecret(const SecretNode::Type type) const
@@ -346,35 +334,29 @@ const Secret& Session::getSecret(const SecretNode::Type type) const
     return secrets_.getSecret(type);
 }
 
-void Session::updateKeys(const Side side, const std::vector<std::uint8_t>& key,
-                         const std::vector<std::uint8_t>& iv)
-{
-    if (side == Side::Client)
-    {
-        clientToServer_.tls13UpdateKeys(key, iv);
-    }
-    else
-    {
-        serverToClient_.tls13UpdateKeys(key, iv);
-    }
-}
-
 void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
 {
     PMS_ = std::move(pms);
 }
 
-const ServerInfo& Session::getServerInfo() const
+void Session::setServerInfo(const ServerInfo& serverInfo)
+{
+    serverInfo_.setHostname(serverInfo.getHostname());
+    serverInfo_.setIPAddress(serverInfo.getIPAddress());
+    serverInfo_.setServerKey(serverInfo.getServerKey());
+}
+
+const ServerInfo& Session::getServerInfo() const noexcept
 {
     return serverInfo_;
 }
 
-void Session::cipherState(bool state)
+void Session::cipherState(bool state) noexcept
 {
     cipherState_ = state;
 }
 
-bool Session::cipherState() const
+bool Session::cipherState() const noexcept
 {
     return cipherState_;
 }

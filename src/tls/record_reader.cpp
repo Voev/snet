@@ -41,7 +41,7 @@ Record RecordReader::readRecord(const std::int8_t sideIndex,
         session_->decrypt(sideIndex, recordType, recordVersion,
                           inputBytes.subspan(TLS_HEADER_SIZE, recordSize), decryptedData_);
 
-        if (session_->version() == ProtocolVersion::TLSv1_3)
+        if (session_->getVersion() == ProtocolVersion::TLSv1_3)
         {
             uint8_t lastByte = *(decryptedData_.end() - 1);
             ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
