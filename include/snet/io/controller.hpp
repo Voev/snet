@@ -2,11 +2,14 @@
 #include <string_view>
 #include <snet/api/daq.h>
 
-namespace snet::io {
+namespace snet::io
+{
 
-class Controller {
+class Controller
+{
 public:
-    enum class State {
+    enum class State
+    {
         Unknown = 0,
         Uninitialized,
         Initialized,
@@ -21,7 +24,7 @@ public:
     void stop();
     void reload();
 
-    void init(DAQ_Config_h config);
+    void init(DAQ_Config_t* config);
     void final();
     void setFilter(std::string_view filter);
 
@@ -42,7 +45,8 @@ public:
     void getStats(DAQ_Stats_t* stats);
     void resetStats();
 
-    const char* getError() {
+    const char* getError()
+    {
         return instance_.errbuf;
     }
 
@@ -51,4 +55,4 @@ private:
     State state_;
 };
 
-} // namespace io
+} // namespace snet::io
