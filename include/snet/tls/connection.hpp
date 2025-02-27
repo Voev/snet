@@ -79,6 +79,12 @@ public:
     Want write(std::uint8_t* data, const std::size_t dataLength,
                std::size_t& bytesTransferred);
 
+    /// @brief Performs the handshake operation.
+    /// @param data The buffer to operate on.
+    /// @param length The length of the data.
+    /// @return The result of the handshake operation.
+    int doHandshake(void*, std::size_t);
+
 private:
     /// @brief Performs an operation on the connection.
     /// @param op The operation to perform.
@@ -88,12 +94,6 @@ private:
     /// @return The state of the connection after the operation.
     Want perform(const Operation& op, void* data, std::size_t length,
                  std::size_t* bytesTransferred);
-
-    /// @brief Performs the handshake operation.
-    /// @param data The buffer to operate on.
-    /// @param length The length of the data.
-    /// @return The result of the handshake operation.
-    int doHandshake(void*, std::size_t);
 
     /// @brief Performs the shutdown operation.
     /// @param data The buffer to operate on.

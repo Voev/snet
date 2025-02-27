@@ -153,7 +153,7 @@ private:
 
 private:
     SessionManager& manager_;
-    Socket socket_;
+    SocketType socket_;
     Endpoint ep_;
     std::unique_ptr<tls::Connection> tls_;
     tls::SslSessionPtr session_;
@@ -182,7 +182,7 @@ public:
 
     int get() const
     {
-        return socket_.get();
+        return socket_;
     }
 
 private:
@@ -373,12 +373,16 @@ void Session::handleConnectError(const std::error_code ec)
 
 bool Session::doTcpConnect()
 {
-    socket_.open(ep_.isIPv4() ? Tcp::v4() : Tcp::v6());
-
     std::error_code ec;
-    setNonBlocking(socket_.get(), true, ec);
+
+    socket_ = CreateSocket(ep_.isIPv4() ? Tcp::v4() : Tcp::v6(), ec);
     casket::utils::ThrowIfError(ec);
-    socket_.connect(ep_, ec);
+
+    SetNonBlocking(socket_, true, ec);
+    casket::utils::ThrowIfError(ec);
+
+    Connect(socket_, ep_.data(), ep_.size(), ec);
+    casket::utils::ThrowIfError(ec);
 
     stat.tcpHandshakes++;
     state_ = State::InTcpHandshaking;
@@ -392,7 +396,7 @@ bool Session::doTcpConnect()
 
 bool Session::doTcpConnected()
 {
-    auto ec = getSocketError(socket_.get());
+    auto ec = GetSocketError(socket_);
     if (!ec)
         return handleEstablishedTcpConn();
 
@@ -410,9 +414,9 @@ bool Session::doTlsHandshake()
     {
         tls_ = manager_.makeConnection();
 
-        tls_->setSocket(socket_.get());
+        tls_->setSocket(socket_);
 
-        BIO_set_tcp_ndelay(socket_.get(), true);
+        BIO_set_tcp_ndelay(socket_, true);
 
         if (reuseSession_ && session_)
         {
@@ -477,12 +481,15 @@ void Session::disconnect() noexcept
         tls_.reset();
     }
 
-    if (socket_.get() >= 0)
+    if (socket_ != InvalidSocket)
     {
         manager_.del(this);
+
         std::error_code ec;
-        setLinger(socket_.get(), 1, 0, ec);
-        socket_.close();
+        SetLinger(socket_, 1, 0, ec);
+
+        CloseSocket(socket_);
+        socket_ = InvalidSocket;
     }
 }
 

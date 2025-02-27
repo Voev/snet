@@ -19,7 +19,7 @@ snet::tls::CipherSuite CreateCipherSuite(const SSL_CIPHER* cs)
     auto hdigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cs));
 
     return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr), kexch,
-                                  auth, cipher, digest, hdigest, SSL_CIPHER_standard_name(cs),
+                                  auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
                                   SSL_CIPHER_get_version(cs), SSL_CIPHER_is_aead(cs));
 }
 
@@ -36,6 +36,8 @@ public:
         , ssl(nullptr)
     {
         tls::ThrowIfFalse(ctx != nullptr);
+
+        SSL_CTX_set_cipher_list(ctx, "ALL:COMPLEMENTOFALL");
 
         ssl = SSL_new(ctx);
         tls::ThrowIfFalse(ssl != nullptr);
