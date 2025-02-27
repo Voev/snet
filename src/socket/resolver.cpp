@@ -57,7 +57,6 @@ ResolverOptions& ResolverOptions::ipv6(bool value)
 ResolverOptions& ResolverOptions::expectPort(bool value)
 {
     portExpected_ = value;
-
     return *this;
 }
 
@@ -103,17 +102,7 @@ bool ResolverOptions::allowPath() const
     return pathAllowed_;
 }
 
-/*
-io_service service;
-ip::tcp::resolver resolver(service);
-ip::tcp::resolver::query query("www.yahoo.com", "80");
-ip::tcp::resolver::iterator iter = resolver.resolve( query);
-ip::tcp::endpoint ep = *iter;
-std::cout << ep.address().to_string() << std::endl;
- */
-
-Resolver::ConstIterator Resolver::resolve(const std::string& str,
-                                          const ResolverOptions& options)
+Resolver::ConstIterator Resolver::resolve(const std::string& str, const ResolverOptions& options)
 {
     std::string addr;
     std::uint16_t port;
@@ -165,8 +154,7 @@ Resolver::ConstIterator Resolver::resolve(const std::string& str,
     }
 
     const size_t bracketsLen = 2;
-    if (addr.size() >= bracketsLen && addr[0] == '[' &&
-        addr[addr.size() - 1] == ']')
+    if (addr.size() >= bracketsLen && addr[0] == '[' && addr[addr.size() - 1] == ']')
     {
         addr = addr.substr(1, addr.size() - bracketsLen);
     }
@@ -178,33 +166,25 @@ Resolver::ConstIterator Resolver::resolve(const std::string& str,
     }
     else
     {
-        HostEntry* entry = gethostbyname(addr.data());
-        if (!entry)
+        struct addrinfo hints{};
+        hints.ai_family = options.ipv6() ? AF_INET6 : AF_INET;
+
+        if (options.bindable())
+            hints.ai_flags |= AI_PASSIVE;
+
+        struct addrinfo* result = nullptr;
+        int error = getaddrinfo(addr.c_str(), nullptr, &hints, &result);
+        if (error != 0)
         {
             throw SystemError(GetLastSystemError());
         }
 
-        IPAddress ip;
-        for (auto addrlistp = entry->h_addr_list; *addrlistp != nullptr;
-             ++addrlistp)
+        for (auto ptr = result; ptr != nullptr; ptr = ptr->ai_next)
         {
-            IPAddress ip;
-            if (entry->h_addrtype == AF_INET)
-            {
-                auto bytes =
-                    std::span{(uint8_t*)*addrlistp,
-                              (uint8_t*)*addrlistp + (size_t)entry->h_length};
-                ip = IPv4Address(bytes);
-                hosts_.emplace_back(Endpoint(ip, port));
-            }
-            else
-            {
-                auto bytes =
-                    std::span{(uint8_t*)*addrlistp,
-                              (uint8_t*)*addrlistp + (size_t)entry->h_length};
-                ip = IPv6Address(bytes);
-                hosts_.emplace_back(Endpoint(ip, port));
-            }
+            Endpoint ep;
+            std::memcpy(ep.data(), ptr->ai_addr, ptr->ai_addrlen);
+            ep.port(port);
+            hosts_.emplace_back(std::move(ep));
         }
     }
 

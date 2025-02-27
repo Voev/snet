@@ -14,7 +14,7 @@ using namespace casket;
 namespace snet::socket
 {
 
-SocketType socket(int domain, int socktype, int protocol, std::error_code& ec)
+SocketType CreateSocket(int domain, int socktype, int protocol, std::error_code& ec)
 {
     int sock{InvalidSocket};
 
@@ -27,7 +27,7 @@ SocketType socket(int domain, int socktype, int protocol, std::error_code& ec)
     return sock;
 }
 
-void close(SocketType sock)
+void CloseSocket(SocketType sock)
 {
     if (sock != InvalidSocket)
     {
@@ -35,8 +35,8 @@ void close(SocketType sock)
     }
 }
 
-SocketType connect(SocketType sock, const SocketAddrType* addr,
-                   SocketLengthType addrlen, std::error_code& ec)
+SocketType Connect(SocketType sock, const SocketAddrType* addr, SocketLengthType addrlen,
+                   std::error_code& ec)
 {
     if (sock == InvalidSocket)
     {
@@ -53,8 +53,8 @@ SocketType connect(SocketType sock, const SocketAddrType* addr,
     return ret;
 }
 
-SocketType accept(SocketType sock, SocketAddrType* addr,
-                  SocketLengthType* addrlen, std::error_code& ec)
+SocketType Accept(SocketType sock, SocketAddrType* addr, SocketLengthType* addrlen,
+                  std::error_code& ec)
 {
     if (sock == InvalidSocket)
     {
@@ -71,11 +71,10 @@ SocketType accept(SocketType sock, SocketAddrType* addr,
     return ret;
 }
 
-int setSocketOption(SocketType s, int level, int optname, void* optval,
-                    size_t optlen, std::error_code& ec)
+int SetSocketOption(SocketType s, int level, int optname, void* optval, size_t optlen,
+                    std::error_code& ec)
 {
-    int ret = ::setsockopt(s, level, optname, optval,
-                           static_cast<SocketLengthType>(optlen));
+    int ret = ::setsockopt(s, level, optname, optval, static_cast<SocketLengthType>(optlen));
     if (ret == InvalidSocket)
     {
         ec = utils::GetLastSystemError();
@@ -83,14 +82,14 @@ int setSocketOption(SocketType s, int level, int optname, void* optval,
     return ret;
 }
 
-void setLinger(SocketType s, int onoff, int linger, std::error_code& ec)
+void SetLinger(SocketType s, int onoff, int linger, std::error_code& ec)
 {
     struct linger sl = {.l_onoff = onoff, .l_linger = linger};
-    setSocketOption(s, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl), ec);
+    SetSocketOption(s, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl), ec);
 }
 
-int getSocketOption(SocketType s, int level, int optname, void* optval,
-                    size_t* optlen, std::error_code& ec)
+int GetSocketOption(SocketType s, int level, int optname, void* optval, size_t* optlen,
+                    std::error_code& ec)
 {
     assert(optlen != nullptr);
 
@@ -107,14 +106,13 @@ int getSocketOption(SocketType s, int level, int optname, void* optval,
     return ret;
 }
 
-std::error_code getSocketError(SocketType s)
+std::error_code GetSocketError(SocketType s)
 {
     std::error_code ec;
     int sockType{};
     size_t sockTypeLen = sizeof(sockType);
 
-    int ret =
-        getSocketOption(s, SOL_SOCKET, SO_ERROR, &sockType, &sockTypeLen, ec);
+    int ret = GetSocketOption(s, SOL_SOCKET, SO_ERROR, &sockType, &sockTypeLen, ec);
     if (ret == InvalidSocket)
     {
         return ec;
@@ -122,32 +120,28 @@ std::error_code getSocketError(SocketType s)
     return std::make_error_code(static_cast<std::errc>(ret));
 }
 
-bool setNonBlocking(SocketType s, bool value, std::error_code& ec)
+void SetNonBlocking(SocketType s, bool value, std::error_code& ec)
 {
     if (s == InvalidSocket)
     {
         ec = std::make_error_code(std::errc::invalid_argument);
-        return false;
+        return;
     }
 
-    int result = ::fcntl(s, F_GETFL, 0);
-    if (result < 0)
+    int ret = ::fcntl(s, F_GETFL, 0);
+    if (ret < 0)
     {
         ec = utils::GetLastSystemError();
-        return false;
     }
     else
     {
-        int flag = (value ? (result | O_NONBLOCK) : (result & ~O_NONBLOCK));
-        result = ::fcntl(s, F_SETFL, flag);
-        if (result < 0)
+        int flag = (value ? (ret | O_NONBLOCK) : (ret & ~O_NONBLOCK));
+        ret = ::fcntl(s, F_SETFL, flag);
+        if (ret < 0)
         {
             ec = utils::GetLastSystemError();
-            return false;
         }
     }
-
-    return true;
 }
 
 } // namespace snet::socket
