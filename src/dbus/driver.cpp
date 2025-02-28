@@ -1,9 +1,8 @@
 #include <stdexcept>
-#include <snet/io/driver.hpp>
+#include <snet/dbus/driver.hpp>
+#include <snet/io/daq.h>
 
-#include <snet/api/daq.h>
-
-namespace snet::io
+namespace snet::dbus
 {
 
 Driver::Driver(std::string_view file_path)
@@ -33,7 +32,7 @@ void Driver::reload()
     }
 
     lib_ = std::make_unique<DynamicLibrary>(path_);
-    api_ = lib_->resolve<DAQ_ModuleAPI_t*>("DAQ_MODULE_DATA");
+    api_ = lib_->resolve<DriverAPI_t*>("DAQ_MODULE_DATA");
 
     DAQ_BaseAPI_t base;
     populate_base_api(&base);
@@ -41,4 +40,4 @@ void Driver::reload()
     api_->load(&base);
 }
 
-} // namespace snet::io
+} // namespace snet::dbus

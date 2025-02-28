@@ -1,8 +1,5 @@
 # Sources
-file(GLOB_RECURSE SOURCES *.cpp)
+file(GLOB_RECURSE SOURCES *.c)
 
 # Set target library
 add_library(snet_io STATIC ${SOURCES})
-
-# Building drivers
-add_subdirectory(drivers)

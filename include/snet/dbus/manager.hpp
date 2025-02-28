@@ -1,13 +1,11 @@
 #pragma once
 #include <algorithm>
-#include <iostream>
-#include <dlfcn.h>
 #include <string>
 #include <memory>
 #include <unordered_set>
-#include <snet/io/driver.hpp>
+#include <snet/dbus/driver.hpp>
 
-namespace snet::io
+namespace snet::dbus
 {
 
 class Manager
@@ -89,4 +87,4 @@ private:
     std::unordered_set<std::shared_ptr<Driver>, Hash, Equal> libs_;
 };
 
-} // namespace snet::io
+} // namespace snet::dbus

@@ -1,8 +1,8 @@
 #pragma once
 #include <string_view>
-#include <snet/api/daq.h>
+#include <snet/io/daq.h>
 
-namespace snet::io
+namespace snet::dbus
 {
 
 class Controller
@@ -17,8 +17,8 @@ public:
         Stopped,
     };
 
-    Controller() = default;
-    ~Controller() = default;
+    Controller();
+    ~Controller() noexcept;
 
     void start();
     void stop();
@@ -55,4 +55,4 @@ private:
     State state_;
 };
 
-} // namespace snet::io
+} // namespace snet::dbus

@@ -1,5 +1,5 @@
-add_subdirectory(api)
 add_subdirectory(io)
+add_subdirectory(dbus)
 add_subdirectory(ip)
 add_subdirectory(layers)
 add_subdirectory(tls)

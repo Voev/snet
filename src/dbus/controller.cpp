@@ -1,10 +1,20 @@
 #include <stdexcept>
 #include <cstring>
-#include <snet/io/controller.hpp>
-#include <snet/api/daq_config.h>
+#include <snet/dbus/controller.hpp>
+#include <snet/io/daq_config.h>
 
-namespace snet::io
+namespace snet::dbus
 {
+
+Controller::Controller()
+{
+    std::memset(&instance_, 0, sizeof(instance_));
+    state_ = State::Unknown;
+}
+
+Controller::~Controller() noexcept
+{
+}
 
 void Controller::init(DAQ_Config_t* config)
 {
@@ -27,15 +37,15 @@ void Controller::init(DAQ_Config_t* config)
     /* Build out the instance from the bottom of the configuration stack up. */
     do
     {
-        DAQ_ModuleInstance_t* modinst = new DAQ_ModuleInstance_t();
+        DriverController_t* modinst = new DriverController_t();
 
         modinst->instance = &instance_;
         modinst->module = daq_module_config_get_module(modcfg);
 
         /* Push this on top of the module instance stack.  This must be done before instantiating
             the module so that it can be referenced inside of that call. */
-        modinst->next = instance_.module_instances;
-        instance_.module_instances = modinst;
+        modinst->next = instance_.drivers;
+        instance_.drivers = modinst;
 
         int rval = modinst->module->instantiate(modcfg, modinst, &modinst->context);
         if (rval != DAQ_SUCCESS)
@@ -47,20 +57,20 @@ void Controller::init(DAQ_Config_t* config)
 
     } while (modcfg);
 
-    resolve_instance_api(&instance_.api, instance_.module_instances, true);
+    resolve_instance_api(&instance_.api, instance_.drivers, true);
 
     state_ = State::Initialized;
 }
 
 void Controller::final()
 {
-    DAQ_ModuleInstance_t* modinst;
-    while ((modinst = instance_.module_instances) != NULL)
+    DriverController_t* controller;
+    while ((controller = instance_.drivers) != NULL)
     {
-        instance_.module_instances = modinst->next;
-        if (modinst->context)
-            modinst->module->destroy(modinst->context);
-        delete modinst;
+        instance_.drivers = controller->next;
+        if (controller->context)
+            controller->module->destroy(controller->context);
+        delete controller;
     }
 }
 
@@ -232,4 +242,4 @@ void Controller::getMsgPoolInfo(DAQ_MsgPoolInfo_t* info)
         throw std::runtime_error("failed to get message pool: " + std::string(getError()));
 }
 
-} // namespace snet::io
+} // namespace snet::dbus

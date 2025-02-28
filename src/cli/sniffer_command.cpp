@@ -9,6 +9,11 @@
 #include <snet/pcap/pcap_file_reader_device.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
 
+#include <snet/dbus.hpp>
+
+#include <snet/io/daq.h>
+#include <snet/io/daq_config.h>
+
 #include <snet/tls.hpp>
 
 using namespace casket;
@@ -23,6 +28,7 @@ struct Options
     std::string input;
     std::string keylog;
     std::string serverKeyPath;
+    std::string driverPath;
 };
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
@@ -30,7 +36,6 @@ using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session
 class SnifferHandler final : public tls::IRecordHandler
 {
 public:
-
     SnifferHandler() = default;
 
     void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override
@@ -115,27 +120,61 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
     }
 }
 
-void SniffPacketsFromFile(const std::string& fileName, tcp::TcpReassembly& tcpReassembly)
+void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
+                          tcp::TcpReassembly& tcpReassembly)
 {
-    auto reader = pcap::IFileReaderDevice::getReader(fileName);
-    if (!reader->open())
-    {
-        std::cerr << "Cannot open pcap/pcapng file" << std::endl;
-        return;
-    }
+    dbus::Manager::getInstance().loadModule(ioDriver);
+
+    dbus::Controller controller;
+
+    DAQ_Config_t* config{nullptr};
+
+    daq_config_new(&config);
+
+    daq_config_set_total_instances(config, 1);
+    daq_config_set_instance_id(config, 0);
+    daq_config_set_input(config, fileName.c_str());
+    daq_config_set_msg_pool_size(config, 128);
+    daq_config_set_timeout(config, 0);
+    daq_config_set_snaplen(config, 1024);
+
+    auto driver = dbus::Manager::getInstance().getModule("pcap");
+
+    DAQ_ModuleConfig_t* driverConfig{nullptr};
+    daq_module_config_new(&driverConfig, config, driver->get());
+    daq_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
+
+    /// @todo: зачем вообще этот метод
+    daq_config_push_module_config(config, driverConfig);
+
+    controller.init(config);
+
+    controller.start();
 
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
     layers::RawPacket rawPacket;
-    while (reader->getNextPacket(rawPacket))
+    DAQ_Msg_h msgs[128] = {};
+    DAQ_RecvStatus status{DAQ_RSTAT_OK};
+    do
     {
-        tcpReassembly.reassemblePacket(&rawPacket);
-    }
+        int count = controller.receiveMessages(128, msgs, &status);
+        for (int i = 0; i < count; ++i)
+        {
+            struct timespec ts{};
+            rawPacket.setRawData(msgs[i]->data, msgs[i]->data_len, ts,
+                                 static_cast<layers::LinkLayerType>(controller.getDataLinkType()),
+                                 -1);
+            tcpReassembly.reassemblePacket(&rawPacket);
+        }
+    } while (status == DAQ_RSTAT_OK);
+
+    controller.stop();
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
     tcpReassembly.closeAllConnections();
-    reader->close();
+    // reader->close();
 
     std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
 }
@@ -149,6 +188,7 @@ public:
         parser_.add("input, i", opt::Value(&options_.input), "Input PCAP file");
         parser_.add("keylog, l", opt::Value(&options_.keylog), "Input key log file");
         parser_.add("key, k", opt::Value(&options_.serverKeyPath), "Server key path");
+        parser_.add("driver, d", opt::Value(&options_.driverPath), "Driver path");
     }
 
     ~Command() = default;
@@ -179,7 +219,7 @@ public:
         }
 
         tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
-        SniffPacketsFromFile(options_.input, tcpReassembly);
+        SniffPacketsFromFile(options_.driverPath, options_.input, tcpReassembly);
     }
 
 private:

@@ -1,9 +1,9 @@
 #include <dlfcn.h>
 #include <stdexcept>
-#include <snet/io/dynamic_library.hpp>
+#include <snet/dbus/dynamic_library.hpp>
 #include <casket/utils/exception.hpp>
 
-namespace snet::io
+namespace snet::dbus
 {
 
 DynamicLibrary::DynamicLibrary(std::string path)
@@ -11,7 +11,7 @@ DynamicLibrary::DynamicLibrary(std::string path)
     , handle_(nullptr)
 {
     handle_ = ::dlopen(path_.c_str(), RTLD_LAZY);
-    casket::utils::ThrowIfFalse(handle_, "{}: {}", path_, ::dlerror());
+    casket::utils::ThrowIfFalse(handle_, "{}", ::dlerror());
 }
 
 DynamicLibrary::~DynamicLibrary() noexcept
@@ -26,4 +26,4 @@ void* DynamicLibrary::resolveSymbol(const std::string& symbol)
     return addr;
 }
 
-} // namespace snet::io
+} // namespace snet::dbus

@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace snet::io
+namespace snet::dbus
 {
 
 class DynamicLibrary final
@@ -30,4 +30,4 @@ private:
     void* handle_;
 };
 
-} // namespace snet::io
+} // namespace snet::dbus

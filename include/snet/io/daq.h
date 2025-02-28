@@ -54,12 +54,10 @@ extern "C"
 
 #define DAQ_LINKAGE DAQ_SO_PUBLIC
 
-    typedef const struct daq_module_api_st* DAQ_Module_h;
     typedef struct daq_module_config_st* DAQ_ModuleConfig_h;
     typedef struct daq_config_st* DAQ_Config_h;
 
     typedef struct _daq_instance* DAQ_Instance_h;
-    typedef struct _daq_module_instance* DAQ_ModuleInstance_h;
     typedef const struct _daq_msg* DAQ_Msg_h;
 
 #define DAQ_SUCCESS 0       /* Success! */
@@ -110,7 +108,7 @@ extern "C"
         void* hdr;     /* Pointer to the message header structure for this message */
         uint8_t* data; /* Pointer to the variable-length message data (Optional) */
         void* meta[DAQ_MSG_META_SLOTS]; /* Dynamic message metadata slots */
-        DAQ_ModuleInstance_h owner;     /* Handle for the module instance this message belongs to */
+        DriverController_t* owner;      /* Handle for the module instance this message belongs to */
         void* priv;     /* Pointer to module instance's private data for this message (Optional) */
         size_t hdr_len; /* Length of the header structure pointed to by 'hdr' */
         DAQ_MsgType type; /* Message type (one of DAQ_MsgType or from the user-defined range) */
@@ -600,9 +598,10 @@ extern "C"
 
 #define DAQ_EFLOW_FLOAT 0x01 /* the expected flow can float to a different reader */
 #define DAQ_EFLOW_ALLOW_MULTIPLE                                                                   \
-    0x02                       /* allow multiple connections to use the same expected flow entry */
-#define DAQ_EFLOW_PERSIST 0x04 /* expected flow entry persists even if control channel terminates  \
-                                */
+    0x02 /* allow multiple connections to use the same expected flow entry */
+#define DAQ_EFLOW_PERSIST                                                                          \
+    0x04 /* expected flow entry persists even if control channel terminates                        \
+          */
 #define DAQ_EFLOW_BIDIRECTIONAL 0x08 /* create expected flow in both direction */
 
     typedef struct
@@ -835,14 +834,14 @@ extern "C"
         int (*config_next_variable)(DAQ_ModuleConfig_h modcfg, const char** key,
                                     const char** value);
         /* Module/Instance operations */
-        int (*resolve_subapi)(DAQ_ModuleInstance_h modinst, DAQ_InstanceAPI_t* api);
-        void (*set_errbuf)(DAQ_ModuleInstance_h modinst, const char* format, ...)
+        int (*resolve_subapi)(DriverController_t* modinst, DAQ_InstanceAPI_t* api);
+        void (*set_errbuf)(DriverController_t* modinst, const char* format, ...)
             __attribute__((format(printf, 2, 3)));
     } DAQ_BaseAPI_t;
 
 #define DAQ_MODULE_API_VERSION 0x00030001
 
-    typedef struct daq_module_api_st
+    struct driver_api_st
     {
         /* The version of the API this module implements. */
         const uint32_t api_version;
@@ -865,7 +864,7 @@ extern "C"
         int (*get_variable_descs)(const DAQ_VariableDesc_t** var_desc_table);
         /* Instantiate the module with the supplied configuration.  Initialize it as much as
            possible without causing packets to start being queued for the application. */
-        int (*instantiate)(const DAQ_ModuleConfig_h config, DAQ_ModuleInstance_h modinst,
+        int (*instantiate)(const DAQ_ModuleConfig_h config, DriverController_t* modinst,
                            void** ctxt_ptr);
         /* Clean up and destroy an instantiation of this module. */
         void (*destroy)(void* handle);
@@ -907,32 +906,32 @@ extern "C"
 
         /* Query message pool info */
         daq_module_get_msg_pool_info_func get_msg_pool_info;
-    } DAQ_ModuleAPI_t;
+    };
 
-    typedef struct _daq_module_instance
+    struct driver_controller_st
     {
-        struct _daq_module_instance* next;
-        struct _daq_instance* instance; // Backreference to the DAQ instance that this is a part of
-        const DAQ_ModuleAPI_t* module;
+        struct driver_controller_st* next;
+        struct _daq_instance* instance;
+        const DriverAPI_t* module;
         void* context;
-    } DAQ_ModuleInstance_t;
+    };
 
 #define DAQ_ERRBUF_SIZE 256
     typedef struct _daq_instance
     {
-        DAQ_ModuleInstance_t* module_instances;
+        DriverController_t* drivers;
         DAQ_InstanceAPI_t api;
         DAQ_State state;
         char errbuf[DAQ_ERRBUF_SIZE];
     } DAQ_Instance_t;
 
     DAQ_Config_t* daq_module_config_get_config(DAQ_ModuleConfig_t* modcfg);
-    void daq_instance_set_errbuf(DAQ_Instance_h instance, const char* format, ...);
+    void daq_instance_set_errbuf(DAQ_Instance_t* instance, const char* format, ...);
     void daq_instance_set_errbuf_va(DAQ_Instance_h instance, const char* format, va_list ap);
     void populate_base_api(DAQ_BaseAPI_t* base_api);
 
-    int daq_modinst_resolve_subapi(DAQ_ModuleInstance_h modinst, DAQ_InstanceAPI_t* api);
-    void resolve_instance_api(DAQ_InstanceAPI_t* api, DAQ_ModuleInstance_t* modinst,
+    int daq_modinst_resolve_subapi(DriverController_t* modinst, DAQ_InstanceAPI_t* api);
+    void resolve_instance_api(DAQ_InstanceAPI_t* api, DriverController_t* modinst,
                               int default_impl);
 
 #ifdef __cplusplus

@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <snet/api/daq.h>
-#include <snet/api/daq_dlt.h>
-#include <snet/api/daq_config.h>
+#include <snet/io/daq.h>
+#include <snet/io/daq_dlt.h>
+#include <snet/io/daq_config.h>
 
 struct daq_config_st
 {
@@ -239,7 +239,7 @@ static unsigned base_api_config_get_instance_id(DAQ_ModuleConfig_h modcfg)
     return daq_config_get_instance_id(cfg);
 }
 
-static void base_api_set_errbuf(DAQ_ModuleInstance_h modinst, const char *format, ...)
+static void base_api_set_errbuf(DriverController_t* modinst, const char *format, ...)
 {
     DAQ_Instance_h instance = modinst->instance;
     va_list ap;
@@ -398,7 +398,7 @@ int daq_default_get_msg_pool_info(void *handle, DAQ_MsgPoolInfo_t *info)
 
 #define RESOLVE_INSTANCE_API(api, root, fname, dflt)    \
 {                                                       \
-    for (DAQ_ModuleInstance_t *mi = root;               \
+    for (DriverController_t *mi = root;               \
          mi;                                            \
          mi = mi->next)                                 \
     {                                                   \
@@ -413,7 +413,7 @@ int daq_default_get_msg_pool_info(void *handle, DAQ_MsgPoolInfo_t *info)
         api->fname.func = daq_default_ ## fname;        \
 }
 
-void resolve_instance_api(DAQ_InstanceAPI_t *api, DAQ_ModuleInstance_t *modinst, int default_impl)
+void resolve_instance_api(DAQ_InstanceAPI_t *api, DriverController_t *modinst, int default_impl)
 {
     memset(api, 0, sizeof(*api));
     RESOLVE_INSTANCE_API(api, modinst, set_filter, default_impl);
@@ -436,7 +436,7 @@ void resolve_instance_api(DAQ_InstanceAPI_t *api, DAQ_ModuleInstance_t *modinst,
     RESOLVE_INSTANCE_API(api, modinst, get_msg_pool_info, default_impl);
 }
 
-int daq_modinst_resolve_subapi(DAQ_ModuleInstance_t *modinst, DAQ_InstanceAPI_t *api)
+int daq_modinst_resolve_subapi(DriverController_t* modinst, DAQ_InstanceAPI_t *api)
 {
     if (!modinst->next)
         return DAQ_ERROR_INVAL;

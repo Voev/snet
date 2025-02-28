@@ -1,10 +1,9 @@
 #pragma once
 #include <memory>
-#include <snet/io/dynamic_library.hpp>
+#include <snet/dbus/dynamic_library.hpp>
+#include <snet/io/daq.h>
 
-#include <snet/api/daq.h>
-
-namespace snet::io
+namespace snet::dbus
 {
 
 class Driver final
@@ -50,15 +49,15 @@ public:
         }
     }
 
-    inline const DAQ_ModuleAPI_t* get() const
+    inline const DriverAPI_t* get() const
     {
         return api_;
     }
 
 private:
     std::string path_;
-    DAQ_ModuleAPI_t* api_{nullptr};
+    DriverAPI_t* api_{nullptr};
     std::unique_ptr<DynamicLibrary> lib_;
 };
 
-} // namespace snet::io
+} // namespace snet::dbus

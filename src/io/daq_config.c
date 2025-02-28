@@ -1,6 +1,6 @@
 #include <string.h>
 #include <stdlib.h>
-#include <snet/api/daq_config.h>
+#include <snet/io/daq_config.h>
 
 typedef struct daq_dict_entry_st
 {
@@ -20,7 +20,7 @@ struct daq_module_config_st
     DAQ_ModuleConfig_t* next;
     DAQ_ModuleConfig_t* prev;
     DAQ_Config_t* config;          /* Backreference to the configuration this is contained within */
-    const DAQ_ModuleAPI_t* module; /* Module that will be instantiated with this configuration */
+    const DriverAPI_t* module; /* Module that will be instantiated with this configuration */
     DAQ_Mode mode;                 /* Module mode (DAQ_MODE_*) */
     DAQ_Dict_t variables;          /* Dictionary of arbitrary key[:value] string pairs */
 };
@@ -134,7 +134,7 @@ static DAQ_DictEntry_t* daq_dict_next_entry(DAQ_Dict_t* dict)
  * DAQ Module Configuration Functions
  */
 
-DAQ_LINKAGE int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, const DAQ_ModuleAPI_t* module)
+DAQ_LINKAGE int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, DAQ_Config_t* config, const DriverAPI_t* module)
 {
     DAQ_ModuleConfig_t* modcfg;
 
@@ -146,6 +146,8 @@ DAQ_LINKAGE int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, const DAQ_
         return DAQ_ERROR_NOMEM;
 
     modcfg->module = module;
+    modcfg->config = config;
+
     *modcfgptr = modcfg;
 
     return DAQ_SUCCESS;
@@ -156,7 +158,7 @@ DAQ_Config_t* daq_module_config_get_config(DAQ_ModuleConfig_t* modcfg)
     return modcfg ? modcfg->config : NULL;
 }
 
-DAQ_LINKAGE const DAQ_ModuleAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE const DriverAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* modcfg)
 {
     if (!modcfg)
         return NULL;

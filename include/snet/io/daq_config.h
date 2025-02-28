@@ -1,14 +1,14 @@
 #pragma once
-#include <snet/api/daq.h>
-#include <snet/api/types.h>
+#include <snet/io/daq.h>
+#include <snet/io/types.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, const DAQ_ModuleAPI_t* module);
+int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, DAQ_Config_t* config, const DriverAPI_t* module);
 
-const DAQ_ModuleAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* modcfg);
+const DriverAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* modcfg);
 
 int daq_module_config_set_mode(DAQ_ModuleConfig_t* modcfg, DAQ_Mode mode);
 

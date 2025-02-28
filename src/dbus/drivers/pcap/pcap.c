@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <snet/api/daq.h>
+#include <snet/io/daq.h>
 
 #define DAQ_PCAP_VERSION 4
 
@@ -43,7 +43,7 @@ typedef struct _pcap_context
     DAQ_Mode mode;
     bool readback_timeout;
     /* State */
-    DAQ_ModuleInstance_h modinst;
+    DriverController_t* modinst;
     DAQ_Stats_t stats;
     char pcap_errbuf[PCAP_ERRBUF_SIZE];
     PcapMsgPool pool;
@@ -213,7 +213,7 @@ static int pcap_daq_get_variable_descs(const DAQ_VariableDesc_t **var_desc_table
     return sizeof(pcap_variable_descriptions) / sizeof(DAQ_VariableDesc_t);
 }
 
-static int pcap_daq_instantiate(const DAQ_ModuleConfig_h modcfg, DAQ_ModuleInstance_h modinst, void **ctxt_ptr)
+static int pcap_daq_instantiate(const DAQ_ModuleConfig_h modcfg, DriverController_t* modinst, void **ctxt_ptr)
 {
     Pcap_Context_t *pc;
 
@@ -745,10 +745,10 @@ static int pcap_daq_get_msg_pool_info(void *handle, DAQ_MsgPoolInfo_t *info)
     return DAQ_SUCCESS;
 }
 
-DAQ_SO_PUBLIC const DAQ_ModuleAPI_t DAQ_MODULE_DATA =
+DAQ_SO_PUBLIC const DriverAPI_t DAQ_MODULE_DATA =
 {
     /* .api_version = */ DAQ_MODULE_API_VERSION,
-    /* .api_size = */ sizeof(DAQ_ModuleAPI_t),
+    /* .api_size = */ sizeof(DriverAPI_t),
     /* .module_version = */ DAQ_PCAP_VERSION,
     /* .name = */ "pcap",
     /* .type = */ DAQ_TYPE_FILE_CAPABLE | DAQ_TYPE_INTF_CAPABLE | DAQ_TYPE_MULTI_INSTANCE,
