@@ -54,11 +54,7 @@ extern "C"
 
 #define DAQ_LINKAGE DAQ_SO_PUBLIC
 
-    typedef struct daq_module_config_st* DAQ_ModuleConfig_h;
-    typedef struct daq_config_st* DAQ_Config_h;
-
-    typedef struct _daq_instance* DAQ_Instance_h;
-    typedef const struct _daq_msg* DAQ_Msg_h;
+typedef struct _daq_instance* DAQ_Instance_h;
 
 #define DAQ_SUCCESS 0       /* Success! */
 #define DAQ_ERROR -1        /* Generic error */
@@ -84,37 +80,9 @@ extern "C"
         MAX_DAQ_RSTAT
     } DAQ_RecvStatus;
 
-    typedef enum
-    {
-        DAQ_MSG_TYPE_PACKET = 1, /* Packet data */
-        DAQ_MSG_TYPE_PAYLOAD,    /* Payload data */
-        DAQ_MSG_TYPE_SOF,        /* Start of Flow statistics */
-        DAQ_MSG_TYPE_EOF,        /* End of Flow statistics */
-        DAQ_MSG_TYPE_HA_STATE,   /* HA State blob */
-        LAST_BUILTIN_DAQ_MSG_TYPE =
-            1024, /* End of reserved space for "official" DAQ message types.
-                     Any externally defined message types should be larger than this. */
-        MAX_DAQ_MSG_TYPE = UINT16_MAX
-    } DAQ_MsgType;
-
 /* NOTE: The internals of this message structure are only visible for performance reasons and
-    for use by DAQ modules.  Applications should use the pseudo-opaque DAQ_Msg_h and the inline
+    for use by DAQ modules.  Applications should use the pseudo-opaque SNetIO_Message_t and the inline
     accessor functions (daq_msg_*) from daq.h. */
-
-/* The DAQ message structure.  Ordered by element size to avoid padding. */
-#define DAQ_MSG_META_SLOTS 8
-    typedef struct _daq_msg
-    {
-        void* hdr;     /* Pointer to the message header structure for this message */
-        uint8_t* data; /* Pointer to the variable-length message data (Optional) */
-        void* meta[DAQ_MSG_META_SLOTS]; /* Dynamic message metadata slots */
-        DriverController_t* owner;      /* Handle for the module instance this message belongs to */
-        void* priv;     /* Pointer to module instance's private data for this message (Optional) */
-        size_t hdr_len; /* Length of the header structure pointed to by 'hdr' */
-        DAQ_MsgType type; /* Message type (one of DAQ_MsgType or from the user-defined range) */
-        uint32_t
-            data_len; /* Length of the data pointed to by 'data'.  Should be 0 if 'data' is NULL */
-    } DAQ_Msg_t;
 
 /* The DAQ packet header structure. */
 #define DAQ_PKT_FLAG_OPAQUE_IS_VALID                                                               \
@@ -462,7 +430,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;  // [in] Message belonging to the flow to be modified
+        SNetIO_Message_t* msg;  // [in] Message belonging to the flow to be modified
         uint32_t value; // [in] The 32-bit opaque value to be set
     } DIOCTL_SetFlowOpaque;
 
@@ -477,7 +445,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;   // [in] Message belonging to the flow to be modified
+        SNetIO_Message_t* msg;   // [in] Message belonging to the flow to be modified
         uint8_t* data;   // [in] (SET_FLOW_HA_STATE) / [out] (GET_FLOW_HA_STATE) HA state blob data
         uint32_t length; // [in] (SET_FLOW_HA_STATE) / [out] (GET_FLOW_HA_STATE) HA state blob size
     } DIOCTL_FlowHAState;
@@ -489,7 +457,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;   // [in] Message belonging to the flow to be modified
+        SNetIO_Message_t* msg;   // [in] Message belonging to the flow to be modified
         uint64_t qos_id; // [in] QoS Rule ID (low 32b), QoS Flags (high 32b)
     } DIOCTL_SetFlowQosID;
 
@@ -500,7 +468,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;           // [in] Message to add tracing data to
+        SNetIO_Message_t* msg;           // [in] Message to add tracing data to
         uint8_t verdict_reason;  // [in] Magic integer (0-255) reflecting the reason for the
                                  // application's
                                  //  verdict on this message
@@ -515,7 +483,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;          // [in] Message to add verdict reason to
+        SNetIO_Message_t* msg;          // [in] Message to add verdict reason to
         uint8_t verdict_reason; // [in] Magic integer (0-255) reflecting the reason for the
                                 // application's
                                 //  verdict on this message
@@ -525,7 +493,7 @@ extern "C"
      * Command: DIOCTL_SET_FLOW_PRESERVE
      * Description: Enable preserving the flow associated with the DAQ message when the
      *              application is unavailable.
-     * Argument: DAQ_Msg_h (Message belonging to the flow to be modified)
+     * Argument: SNetIO_Message_t (Message belonging to the flow to be modified)
      */
 
     /*
@@ -559,7 +527,7 @@ extern "C"
 
     typedef struct
     {
-        DAQ_Msg_h msg; // [in] Message associated with the flow being queried
+        SNetIO_Message_t* msg; // [in] Message associated with the flow being queried
         DAQ_TCP_Opts_t*
             tcp_opts; // [out] Original TCP options prior to modification by the dataplane
     } DIOCTL_GetFlowScrubbedTcp;
@@ -606,7 +574,7 @@ extern "C"
 
     typedef struct
     {
-        DAQ_Msg_h ctrl_msg;  // [in] Message containing the companion control channel packet
+        SNetIO_Message_t* ctrl_msg;  // [in] Message containing the companion control channel packet
         DAQ_EFlow_Key_t key; // [in] Flow key describing the expected flow
         unsigned flags;      /* DAQ_EFLOW_* flags*/
         unsigned timeout_ms; /* timeout of the expected flow entry in milliseconds */
@@ -628,7 +596,7 @@ extern "C"
 
     typedef struct
     {
-        DAQ_Msg_h msg; // [in] Message belonging to the flow to be injected on
+        SNetIO_Message_t* msg; // [in] Message belonging to the flow to be injected on
         const DAQ_DIPayloadSegment** segments; // [in] Array of data segments to be injected
         uint8_t num_segments;                  // [in] Number of elements in the data segment array
         uint8_t reverse; // [in] If non-zero, inject the data in the opposite direction
@@ -646,7 +614,7 @@ extern "C"
 #define DAQ_DIR_BOTH 2    // Both forward and reverse injection
     typedef struct
     {
-        DAQ_Msg_h msg;     // [in] Message belonging to the flow to be injected on
+        SNetIO_Message_t* msg;     // [in] Message belonging to the flow to be injected on
         uint8_t direction; // [in] Direction in which to inject the reset relative to the message
                            // (DAQ_DIR_*)
     } DIOCTL_DirectInjectReset;
@@ -658,7 +626,7 @@ extern "C"
      */
     typedef struct
     {
-        DAQ_Msg_h msg;          // [in] Message from which to get priv data length.
+        SNetIO_Message_t* msg;          // [in] Message from which to get priv data length.
         uint16_t priv_data_len; // [out] Length of priv data.
     } DIOCTL_GetPrivDataLen;
 
@@ -689,63 +657,6 @@ extern "C"
                                              minutes */
     } DIOCTL_GetSnortLatencyData;
 
-    /* DAQ Configuration Functions */
-    DAQ_LINKAGE int daq_config_new(DAQ_Config_t** cfgptr);
-    DAQ_LINKAGE int daq_config_set_input(DAQ_Config_t* cfg, const char* input);
-    DAQ_LINKAGE const char* daq_config_get_input(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_set_msg_pool_size(DAQ_Config_t* cfg, uint32_t num_msgs);
-    DAQ_LINKAGE uint32_t daq_config_get_msg_pool_size(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_set_snaplen(DAQ_Config_t* cfg, int snaplen);
-    DAQ_LINKAGE int daq_config_get_snaplen(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_set_timeout(DAQ_Config_t* cfg, unsigned timeout);
-    DAQ_LINKAGE unsigned daq_config_get_timeout(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_set_total_instances(DAQ_Config_t* cfg, unsigned total);
-    DAQ_LINKAGE unsigned daq_config_get_total_instances(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_set_instance_id(DAQ_Config_t* cfg, unsigned id);
-    DAQ_LINKAGE unsigned daq_config_get_instance_id(DAQ_Config_t* cfg);
-    DAQ_LINKAGE int daq_config_push_module_config(DAQ_Config_t* cfg, DAQ_ModuleConfig_h modcfg);
-    DAQ_LINKAGE DAQ_ModuleConfig_h daq_config_pop_module_config(DAQ_Config_t* cfg);
-    DAQ_LINKAGE DAQ_ModuleConfig_h daq_config_top_module_config(DAQ_Config_t* cfg);
-    DAQ_LINKAGE DAQ_ModuleConfig_h daq_config_bottom_module_config(DAQ_Config_t* cfg);
-    DAQ_LINKAGE DAQ_ModuleConfig_h daq_config_next_module_config(DAQ_Config_t* cfg);
-    DAQ_LINKAGE DAQ_ModuleConfig_h daq_config_previous_module_config(DAQ_Config_t* cfg);
-    DAQ_LINKAGE void daq_config_destroy(DAQ_Config_t* cfg);
-
-    /* DAQ Message convenience functions */
-    static inline DAQ_MsgType daq_msg_get_type(DAQ_Msg_h msg)
-    {
-        return msg->type;
-    }
-
-    static inline size_t daq_msg_get_hdr_len(DAQ_Msg_h msg)
-    {
-        return msg->hdr_len;
-    }
-
-    static inline const void* daq_msg_get_hdr(DAQ_Msg_h msg)
-    {
-        return msg->hdr;
-    }
-
-    static inline const DAQ_PktHdr_t* daq_msg_get_pkthdr(DAQ_Msg_h msg)
-    {
-        return (const DAQ_PktHdr_t*)msg->hdr;
-    }
-
-    static inline uint32_t daq_msg_get_data_len(DAQ_Msg_h msg)
-    {
-        return msg->data_len;
-    }
-
-    static inline uint8_t* daq_msg_get_data(DAQ_Msg_h msg)
-    {
-        return msg->data;
-    }
-
-    static inline const void* daq_msg_get_meta(DAQ_Msg_h msg, uint8_t slot)
-    {
-        return msg->meta[slot];
-    }
 
     static inline int daq_napt_info_src_addr_family(const DAQ_NAPTInfo_t* napti)
     {
@@ -757,16 +668,11 @@ extern "C"
         return (napti->flags & DAQ_NAPT_INFO_FLAG_DIP_V6) ? AF_INET6 : AF_INET;
     }
 
-    static inline const void* daq_msg_get_priv_data(DAQ_Msg_h msg)
-    {
-        return msg->priv;
-    }
-
     typedef int (*daq_module_set_filter_func)(void* handle, const char* filter);
     typedef int (*daq_module_start_func)(void* handle);
     typedef int (*daq_module_inject_func)(void* handle, DAQ_MsgType type, const void* hdr,
                                           const uint8_t* data, uint32_t data_len);
-    typedef int (*daq_module_inject_relative_func)(void* handle, DAQ_Msg_h msg, const uint8_t* data,
+    typedef int (*daq_module_inject_relative_func)(void* handle, SNetIO_Message_t msg, const uint8_t* data,
                                                    uint32_t data_len, int reverse);
     typedef int (*daq_module_interrupt_func)(void* handle);
     typedef int (*daq_module_stop_func)(void* handle);
@@ -780,8 +686,8 @@ extern "C"
     typedef int (*daq_module_config_swap_func)(void* handle, void* new_config, void** old_config);
     typedef int (*daq_module_config_free_func)(void* handle, void* old_config);
     typedef unsigned (*daq_module_msg_receive_func)(void* handle, const unsigned max_recv,
-                                                    const DAQ_Msg_t* msgs[], DAQ_RecvStatus* rstat);
-    typedef int (*daq_module_msg_finalize_func)(void* handle, const DAQ_Msg_t* msg,
+                                                    const SNetIO_Message_t* msgs[], DAQ_RecvStatus* rstat);
+    typedef int (*daq_module_msg_finalize_func)(void* handle, const SNetIO_Message_t* msg,
                                                 DAQ_Verdict verdict);
     typedef int (*daq_module_get_msg_pool_info_func)(void* handle, DAQ_MsgPoolInfo_t* info);
 
@@ -815,33 +721,33 @@ extern "C"
 
 #define DAQ_BASE_API_VERSION 0x00030002
 
-    typedef struct _daq_base_api
+    typedef struct snet_io_base_api
     {
         /* Sanity/Version checking */
         uint32_t api_version;
         uint32_t api_size;
         /* Configuration accessors */
-        const char* (*config_get_input)(DAQ_ModuleConfig_h modcfg);
-        int (*config_get_snaplen)(DAQ_ModuleConfig_h modcfg);
-        unsigned (*config_get_timeout)(DAQ_ModuleConfig_h modcfg);
-        unsigned (*config_get_msg_pool_size)(DAQ_ModuleConfig_h modcfg);
-        unsigned (*config_get_total_instances)(DAQ_ModuleConfig_h modcfg);
-        unsigned (*config_get_instance_id)(DAQ_ModuleConfig_h modcfg);
-        DAQ_Mode (*config_get_mode)(DAQ_ModuleConfig_h modcfg);
-        const char* (*config_get_variable)(DAQ_ModuleConfig_h modcfg, const char* key);
-        int (*config_first_variable)(DAQ_ModuleConfig_h modcfg, const char** key,
+        const char* (*config_get_input)(const SNetIO_DriverConfig_t* modcfg);
+        int (*config_get_snaplen)(const SNetIO_DriverConfig_t* modcfg);
+        unsigned (*config_get_timeout)(const SNetIO_DriverConfig_t* modcfg);
+        unsigned (*config_get_msg_pool_size)(const SNetIO_DriverConfig_t* modcfg);
+        unsigned (*config_get_total_instances)(const SNetIO_DriverConfig_t* modcfg);
+        unsigned (*config_get_instance_id)(const SNetIO_DriverConfig_t* modcfg);
+        DAQ_Mode (*config_get_mode)(const SNetIO_DriverConfig_t* modcfg);
+        const char* (*config_get_variable)(SNetIO_DriverConfig_t* modcfg, const char* key);
+        int (*config_first_variable)(SNetIO_DriverConfig_t* modcfg, const char** key,
                                      const char** value);
-        int (*config_next_variable)(DAQ_ModuleConfig_h modcfg, const char** key,
+        int (*config_next_variable)(SNetIO_DriverConfig_t* modcfg, const char** key,
                                     const char** value);
         /* Module/Instance operations */
-        int (*resolve_subapi)(DriverController_t* modinst, DAQ_InstanceAPI_t* api);
-        void (*set_errbuf)(DriverController_t* modinst, const char* format, ...)
+        int (*resolve_subapi)(SNetIO_DriverController_t* modinst, DAQ_InstanceAPI_t* api);
+        void (*set_errbuf)(SNetIO_DriverController_t* modinst, const char* format, ...)
             __attribute__((format(printf, 2, 3)));
-    } DAQ_BaseAPI_t;
+    } SNetIO_BaseAPI_t;
 
 #define DAQ_MODULE_API_VERSION 0x00030001
 
-    struct driver_api_st
+    struct snet_io_driver_api_st
     {
         /* The version of the API this module implements. */
         const uint32_t api_version;
@@ -855,7 +761,7 @@ extern "C"
         const uint32_t type;
         /* The function the module loader *must* call first to prepare the module for any other
          * function calls. */
-        int (*load)(const DAQ_BaseAPI_t* base_api);
+        int (*load)(const SNetIO_BaseAPI_t* base_api);
         /* Called when the module is unloaded.  No more calls will be made without calling load()
          * again first. */
         int (*unload)(void);
@@ -864,7 +770,7 @@ extern "C"
         int (*get_variable_descs)(const DAQ_VariableDesc_t** var_desc_table);
         /* Instantiate the module with the supplied configuration.  Initialize it as much as
            possible without causing packets to start being queued for the application. */
-        int (*instantiate)(const DAQ_ModuleConfig_h config, DriverController_t* modinst,
+        int (*instantiate)(SNetIO_DriverConfig_t* config, SNetIO_DriverController_t* modinst,
                            void** ctxt_ptr);
         /* Clean up and destroy an instantiation of this module. */
         void (*destroy)(void* handle);
@@ -908,30 +814,30 @@ extern "C"
         daq_module_get_msg_pool_info_func get_msg_pool_info;
     };
 
-    struct driver_controller_st
+    struct snet_io_driver_controller_st
     {
-        struct driver_controller_st* next;
+        struct snet_io_driver_controller_st* next;
         struct _daq_instance* instance;
-        const DriverAPI_t* module;
+        const SNetIO_DriverAPI_t* module;
         void* context;
     };
 
 #define DAQ_ERRBUF_SIZE 256
     typedef struct _daq_instance
     {
-        DriverController_t* drivers;
+        SNetIO_DriverController_t* drivers;
         DAQ_InstanceAPI_t api;
         DAQ_State state;
         char errbuf[DAQ_ERRBUF_SIZE];
     } DAQ_Instance_t;
 
-    DAQ_Config_t* daq_module_config_get_config(DAQ_ModuleConfig_t* modcfg);
+    SNetIO_BaseConfig_t* daq_module_config_get_config(const SNetIO_DriverConfig_t* modcfg);
     void daq_instance_set_errbuf(DAQ_Instance_t* instance, const char* format, ...);
     void daq_instance_set_errbuf_va(DAQ_Instance_h instance, const char* format, va_list ap);
-    void populate_base_api(DAQ_BaseAPI_t* base_api);
+    void populate_base_api(SNetIO_BaseAPI_t* base_api);
 
-    int daq_modinst_resolve_subapi(DriverController_t* modinst, DAQ_InstanceAPI_t* api);
-    void resolve_instance_api(DAQ_InstanceAPI_t* api, DriverController_t* modinst,
+    int daq_modinst_resolve_subapi(SNetIO_DriverController_t* modinst, DAQ_InstanceAPI_t* api);
+    void resolve_instance_api(DAQ_InstanceAPI_t* api, SNetIO_DriverController_t* modinst,
                               int default_impl);
 
 #ifdef __cplusplus

@@ -140,7 +140,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
 
     auto driver = dbus::Manager::getInstance().getModule("pcap");
 
-    DAQ_ModuleConfig_t* driverConfig{nullptr};
+    DriverConfig_t* driverConfig{nullptr};
     daq_module_config_new(&driverConfig, config, driver->get());
     daq_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
 

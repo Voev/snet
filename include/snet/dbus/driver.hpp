@@ -49,14 +49,14 @@ public:
         }
     }
 
-    inline const DriverAPI_t* get() const
+    inline const SNetIO_DriverAPI_t* get() const
     {
         return api_;
     }
 
 private:
     std::string path_;
-    DriverAPI_t* api_{nullptr};
+    SNetIO_DriverAPI_t* api_{nullptr};
     std::unique_ptr<DynamicLibrary> lib_;
 };
 

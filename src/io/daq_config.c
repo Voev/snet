@@ -2,40 +2,40 @@
 #include <stdlib.h>
 #include <snet/io/daq_config.h>
 
-typedef struct daq_dict_entry_st
+typedef struct snet_io_dict_entry_st
 {
     char* key;
     char* value;
-    struct daq_dict_entry_st* next;
+    struct snet_io_dict_entry_st* next;
 } DAQ_DictEntry_t;
 
-typedef struct _daq_dict
+typedef struct snet_io_dict_st
 {
     DAQ_DictEntry_t* entries;
     DAQ_DictEntry_t* iterator;
 } DAQ_Dict_t;
 
-struct daq_module_config_st
+struct snet_io_driver_config_st
 {
-    DAQ_ModuleConfig_t* next;
-    DAQ_ModuleConfig_t* prev;
-    DAQ_Config_t* config;          /* Backreference to the configuration this is contained within */
-    const DriverAPI_t* module; /* Module that will be instantiated with this configuration */
+    SNetIO_DriverConfig_t* next;
+    SNetIO_DriverConfig_t* prev;
+    SNetIO_BaseConfig_t* config;          /* Backreference to the configuration this is contained within */
+    const SNetIO_DriverAPI_t* module; /* Module that will be instantiated with this configuration */
     DAQ_Mode mode;                 /* Module mode (DAQ_MODE_*) */
     DAQ_Dict_t variables;          /* Dictionary of arbitrary key[:value] string pairs */
 };
 
-struct daq_module_config_list_st
+struct snet_io_driver_config_list_st
 {
-    DAQ_ModuleConfig_t* entries;
-    DAQ_ModuleConfig_t* iterator;
+    SNetIO_DriverConfig_t* entries;
+    SNetIO_DriverConfig_t* iterator;
 };
 
 /*
  * DAQ Dictionary Functions
  */
 
-static int daq_dict_insert_entry(DAQ_Dict_t* dict, const char* key, const char* value)
+static int snet_io_dict_insert_entry(DAQ_Dict_t* dict, const char* key, const char* value)
 {
     DAQ_DictEntry_t* entry;
 
@@ -64,7 +64,7 @@ static int daq_dict_insert_entry(DAQ_Dict_t* dict, const char* key, const char* 
     return DAQ_SUCCESS;
 }
 
-static DAQ_DictEntry_t* daq_dict_find_entry(DAQ_Dict_t* dict, const char* key)
+static DAQ_DictEntry_t* snet_io_dict_find_entry(DAQ_Dict_t* dict, const char* key)
 {
     DAQ_DictEntry_t* entry;
 
@@ -77,7 +77,7 @@ static DAQ_DictEntry_t* daq_dict_find_entry(DAQ_Dict_t* dict, const char* key)
     return NULL;
 }
 
-static int daq_dict_delete_entry(DAQ_Dict_t* dict, const char* key)
+static int snet_io_dict_delete_entry(DAQ_Dict_t* dict, const char* key)
 {
     DAQ_DictEntry_t *entry, *prev = NULL;
 
@@ -101,7 +101,7 @@ static int daq_dict_delete_entry(DAQ_Dict_t* dict, const char* key)
     return 0;
 }
 
-static void daq_dict_clear(DAQ_Dict_t* dict)
+static void snet_io_dict_clear(DAQ_Dict_t* dict)
 {
     DAQ_DictEntry_t* entry;
 
@@ -115,14 +115,14 @@ static void daq_dict_clear(DAQ_Dict_t* dict)
     dict->iterator = NULL;
 }
 
-static DAQ_DictEntry_t* daq_dict_first_entry(DAQ_Dict_t* dict)
+static DAQ_DictEntry_t* snet_io_dict_first_entry(DAQ_Dict_t* dict)
 {
     dict->iterator = dict->entries;
 
     return dict->iterator;
 }
 
-static DAQ_DictEntry_t* daq_dict_next_entry(DAQ_Dict_t* dict)
+static DAQ_DictEntry_t* snet_io_dict_next_entry(DAQ_Dict_t* dict)
 {
     if (dict->iterator)
         dict->iterator = dict->iterator->next;
@@ -134,14 +134,14 @@ static DAQ_DictEntry_t* daq_dict_next_entry(DAQ_Dict_t* dict)
  * DAQ Module Configuration Functions
  */
 
-DAQ_LINKAGE int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, DAQ_Config_t* config, const DriverAPI_t* module)
+DAQ_LINKAGE int snet_io_module_config_new(SNetIO_DriverConfig_t** modcfgptr, SNetIO_BaseConfig_t* config, const SNetIO_DriverAPI_t* module)
 {
-    DAQ_ModuleConfig_t* modcfg;
+    SNetIO_DriverConfig_t* modcfg;
 
     if (!modcfgptr || !module)
         return DAQ_ERROR_INVAL;
 
-    modcfg = calloc(1, sizeof(DAQ_ModuleConfig_t));
+    modcfg = calloc(1, sizeof(SNetIO_DriverConfig_t));
     if (!modcfg)
         return DAQ_ERROR_NOMEM;
 
@@ -153,12 +153,12 @@ DAQ_LINKAGE int daq_module_config_new(DAQ_ModuleConfig_t** modcfgptr, DAQ_Config
     return DAQ_SUCCESS;
 }
 
-DAQ_Config_t* daq_module_config_get_config(DAQ_ModuleConfig_t* modcfg)
+SNetIO_BaseConfig_t* snet_io_module_config_get_config(const SNetIO_DriverConfig_t* modcfg)
 {
-    return modcfg ? modcfg->config : NULL;
+    return modcfg != NULL ? modcfg->config : NULL;
 }
 
-DAQ_LINKAGE const DriverAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE const SNetIO_DriverAPI_t* snet_io_module_config_get_module(const SNetIO_DriverConfig_t* modcfg)
 {
     if (!modcfg)
         return NULL;
@@ -166,7 +166,7 @@ DAQ_LINKAGE const DriverAPI_t* daq_module_config_get_module(DAQ_ModuleConfig_t* 
     return modcfg->module;
 }
 
-DAQ_LINKAGE int daq_module_config_set_mode(DAQ_ModuleConfig_t* modcfg, DAQ_Mode mode)
+DAQ_LINKAGE int snet_io_module_config_set_mode(SNetIO_DriverConfig_t* modcfg, DAQ_Mode mode)
 {
     if (!modcfg)
         return DAQ_ERROR_INVAL;
@@ -181,7 +181,7 @@ DAQ_LINKAGE int daq_module_config_set_mode(DAQ_ModuleConfig_t* modcfg, DAQ_Mode 
     return DAQ_SUCCESS;
 }
 
-DAQ_LINKAGE DAQ_Mode daq_module_config_get_mode(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE DAQ_Mode snet_io_module_config_get_mode(const SNetIO_DriverConfig_t* modcfg)
 {
     if (modcfg)
         return modcfg->mode;
@@ -189,7 +189,7 @@ DAQ_LINKAGE DAQ_Mode daq_module_config_get_mode(DAQ_ModuleConfig_t* modcfg)
     return DAQ_MODE_NONE;
 }
 
-DAQ_LINKAGE int daq_module_config_set_variable(DAQ_ModuleConfig_t* modcfg, const char* key,
+DAQ_LINKAGE int snet_io_module_config_set_variable(SNetIO_DriverConfig_t* modcfg, const char* key,
                                                const char* value)
 {
     DAQ_DictEntry_t* entry;
@@ -199,7 +199,7 @@ DAQ_LINKAGE int daq_module_config_set_variable(DAQ_ModuleConfig_t* modcfg, const
     if (!modcfg || !key)
         return DAQ_ERROR_INVAL;
 
-    entry = daq_dict_find_entry(&modcfg->variables, key);
+    entry = snet_io_dict_find_entry(&modcfg->variables, key);
     if (entry)
     {
         if (value)
@@ -217,37 +217,37 @@ DAQ_LINKAGE int daq_module_config_set_variable(DAQ_ModuleConfig_t* modcfg, const
             entry->value = NULL;
         }
     }
-    else if ((rval = daq_dict_insert_entry(&modcfg->variables, key, value)) != DAQ_SUCCESS)
+    else if ((rval = snet_io_dict_insert_entry(&modcfg->variables, key, value)) != DAQ_SUCCESS)
         return rval;
     return DAQ_SUCCESS;
 }
 
-DAQ_LINKAGE const char* daq_module_config_get_variable(DAQ_ModuleConfig_t* modcfg, const char* key)
+DAQ_LINKAGE const char* snet_io_module_config_get_variable(SNetIO_DriverConfig_t* modcfg, const char* key)
 {
     DAQ_DictEntry_t* entry;
 
     if (!modcfg || !key)
         return NULL;
 
-    entry = daq_dict_find_entry(&modcfg->variables, key);
+    entry = snet_io_dict_find_entry(&modcfg->variables, key);
     if (!entry)
         return NULL;
 
     return entry->value;
 }
 
-DAQ_LINKAGE int daq_module_config_delete_variable(DAQ_ModuleConfig_t* modcfg, const char* key)
+DAQ_LINKAGE int snet_io_module_config_delete_variable(SNetIO_DriverConfig_t* modcfg, const char* key)
 {
     if (!modcfg || !key)
         return DAQ_ERROR_INVAL;
 
-    if (daq_dict_delete_entry(&modcfg->variables, key))
+    if (snet_io_dict_delete_entry(&modcfg->variables, key))
         return DAQ_SUCCESS;
 
     return DAQ_ERROR;
 }
 
-DAQ_LINKAGE int daq_module_config_first_variable(DAQ_ModuleConfig_t* modcfg, const char** key,
+DAQ_LINKAGE int snet_io_module_config_first_variable(SNetIO_DriverConfig_t* modcfg, const char** key,
                                                  const char** value)
 {
     DAQ_DictEntry_t* entry;
@@ -255,7 +255,7 @@ DAQ_LINKAGE int daq_module_config_first_variable(DAQ_ModuleConfig_t* modcfg, con
     if (!modcfg || !key || !value)
         return DAQ_ERROR_INVAL;
 
-    entry = daq_dict_first_entry(&modcfg->variables);
+    entry = snet_io_dict_first_entry(&modcfg->variables);
     if (entry)
     {
         *key = entry->key;
@@ -270,7 +270,7 @@ DAQ_LINKAGE int daq_module_config_first_variable(DAQ_ModuleConfig_t* modcfg, con
     return DAQ_SUCCESS;
 }
 
-DAQ_LINKAGE int daq_module_config_next_variable(DAQ_ModuleConfig_t* modcfg, const char** key,
+DAQ_LINKAGE int snet_io_module_config_next_variable(SNetIO_DriverConfig_t* modcfg, const char** key,
                                                 const char** value)
 {
     DAQ_DictEntry_t* entry;
@@ -278,7 +278,7 @@ DAQ_LINKAGE int daq_module_config_next_variable(DAQ_ModuleConfig_t* modcfg, cons
     if (!modcfg || !key || !value)
         return DAQ_ERROR_INVAL;
 
-    entry = daq_dict_next_entry(&modcfg->variables);
+    entry = snet_io_dict_next_entry(&modcfg->variables);
     if (entry)
     {
         *key = entry->key;
@@ -292,15 +292,15 @@ DAQ_LINKAGE int daq_module_config_next_variable(DAQ_ModuleConfig_t* modcfg, cons
     return DAQ_SUCCESS;
 }
 
-DAQ_LINKAGE void daq_module_config_clear_variables(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE void snet_io_module_config_clear_variables(SNetIO_DriverConfig_t* modcfg)
 {
     if (modcfg != NULL)
     {
-        daq_dict_clear(&modcfg->variables);
+        snet_io_dict_clear(&modcfg->variables);
     }
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* daq_module_config_get_next(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE SNetIO_DriverConfig_t* snet_io_module_config_get_next(const SNetIO_DriverConfig_t* modcfg)
 {
     if (!modcfg)
         return NULL;
@@ -308,21 +308,21 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* daq_module_config_get_next(DAQ_ModuleConfig_t* m
     return modcfg->next;
 }
 
-DAQ_LINKAGE void daq_module_config_destroy(DAQ_ModuleConfig_t* modcfg)
+DAQ_LINKAGE void snet_io_module_config_destroy(SNetIO_DriverConfig_t* modcfg)
 {
     if (modcfg != NULL)
     {
-        daq_dict_clear(&modcfg->variables);
+        snet_io_dict_clear(&modcfg->variables);
         free(modcfg);
     }
 }
 
-DAQ_LINKAGE DAQ_ModuleConfigList_t* module_config_list_new()
+DAQ_LINKAGE SNetIO_DriverConfigList_t* module_config_list_new()
 {
-    return calloc(1, sizeof(DAQ_ModuleConfigList_t));
+    return calloc(1, sizeof(SNetIO_DriverConfigList_t));
 }
 
-DAQ_LINKAGE int module_config_list_push_front(DAQ_ModuleConfigList_t* list, DAQ_ModuleConfig_t *modcfg)
+DAQ_LINKAGE int module_config_list_push_front(SNetIO_DriverConfigList_t* list, SNetIO_DriverConfig_t *modcfg)
 {
     if (list == NULL || modcfg == NULL)
     {
@@ -349,11 +349,11 @@ DAQ_LINKAGE int module_config_list_push_front(DAQ_ModuleConfigList_t* list, DAQ_
     return DAQ_SUCCESS;
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_pop_front(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE SNetIO_DriverConfig_t* module_config_list_pop_front(SNetIO_DriverConfigList_t* list)
 {
     if (list != NULL && list->entries != NULL)
     {
-        DAQ_ModuleConfig_t* modcfg;
+        SNetIO_DriverConfig_t* modcfg;
 
         modcfg = list->entries;
 
@@ -369,7 +369,7 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_pop_front(DAQ_ModuleConfigLis
     return NULL;
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_front(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE SNetIO_DriverConfig_t* module_config_list_front(SNetIO_DriverConfigList_t* list)
 {
     if (list != NULL)
     {
@@ -379,7 +379,7 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_front(DAQ_ModuleConfigList_t*
     return NULL;
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_back(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE SNetIO_DriverConfig_t* module_config_list_back(SNetIO_DriverConfigList_t* list)
 {
     if (list == NULL)
         return NULL;
@@ -391,7 +391,7 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_back(DAQ_ModuleConfigList_t* 
     return list->iterator;
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_next(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE SNetIO_DriverConfig_t* module_config_list_next(SNetIO_DriverConfigList_t* list)
 {
     if (list != NULL && list->iterator != NULL)
     {
@@ -401,7 +401,7 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_next(DAQ_ModuleConfigList_t* 
     return NULL;
 }
 
-DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_prev(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE SNetIO_DriverConfig_t* module_config_list_prev(SNetIO_DriverConfigList_t* list)
 {
     if (list != NULL && list->iterator != NULL)
     {
@@ -411,16 +411,214 @@ DAQ_LINKAGE DAQ_ModuleConfig_t* module_config_list_prev(DAQ_ModuleConfigList_t* 
     return NULL;
 }
 
-DAQ_LINKAGE void module_config_list_free(DAQ_ModuleConfigList_t* list)
+DAQ_LINKAGE void module_config_list_free(SNetIO_DriverConfigList_t* list)
 {
     if (list != NULL)
     {
-        DAQ_ModuleConfig_t* modcfg;
+        SNetIO_DriverConfig_t* modcfg;
         while ((modcfg = list->entries) != NULL)
         {
             list->entries = modcfg->next;
-            daq_module_config_destroy(modcfg);
+            snet_io_module_config_destroy(modcfg);
         }
         free(list);
+    }
+}
+
+
+struct snet_io_config_st
+{
+    char *input;                    /* Name of the interface(s) or file to be opened */
+    uint32_t msg_pool_size;         /* Size of the message pool to create (quantity) */
+    int snaplen;                    /* Maximum packet capture length */
+    unsigned timeout;               /* Read timeout for acquire loop in milliseconds (0 = unlimited) */
+    unsigned total_instances;       /* Total number of concurrent DAQ instances expected (0 = unspecified) */
+    unsigned instance_id;           /* ID for the instance to be created (0 = unspecified) */
+    SNetIO_DriverConfigList_t* modules;
+};
+
+/*
+ * DAQ (Top-level) Configuration Functions
+ */
+
+DAQ_LINKAGE int snet_io_config_new(SNetIO_BaseConfig_t **cfgptr)
+{
+    SNetIO_BaseConfig_t *cfg;
+
+    if (!cfgptr)
+        return DAQ_ERROR_INVAL;
+
+    cfg = calloc(1, sizeof(SNetIO_BaseConfig_t));
+    if (!cfg)
+        return DAQ_ERROR_NOMEM;
+
+    cfg->modules = module_config_list_new();
+
+    *cfgptr = cfg;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE int snet_io_config_set_input(SNetIO_BaseConfig_t *cfg, const char *input)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    if (cfg->input)
+    {
+        free(cfg->input);
+        cfg->input = NULL;
+    }
+
+    if (input)
+    {
+        cfg->input = strdup(input);
+        if (!cfg->input)
+            return DAQ_ERROR_NOMEM;
+    }
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE const char *snet_io_config_get_input(const SNetIO_BaseConfig_t *cfg)
+{
+    if (cfg)
+        return cfg->input;
+
+    return NULL;
+}
+
+DAQ_LINKAGE int snet_io_config_set_msg_pool_size(SNetIO_BaseConfig_t *cfg, uint32_t num_msgs)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    cfg->msg_pool_size = num_msgs;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE uint32_t snet_io_config_get_msg_pool_size(const SNetIO_BaseConfig_t *cfg)
+{
+    if (cfg)
+        return cfg->msg_pool_size;
+
+    return 0;
+}
+
+DAQ_LINKAGE int snet_io_config_set_snaplen(SNetIO_BaseConfig_t *cfg, int snaplen)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    cfg->snaplen = snaplen;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE int snet_io_config_get_snaplen(const SNetIO_BaseConfig_t *cfg)
+{
+    if (cfg)
+        return cfg->snaplen;
+
+    return 0;
+}
+
+DAQ_LINKAGE int snet_io_config_set_timeout(SNetIO_BaseConfig_t *cfg, unsigned timeout)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    cfg->timeout = timeout;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE unsigned snet_io_config_get_timeout(const SNetIO_BaseConfig_t *cfg)
+{
+    if (cfg)
+        return cfg->timeout;
+
+    return 0;
+}
+
+DAQ_LINKAGE int snet_io_config_set_total_instances(SNetIO_BaseConfig_t* cfg, unsigned total)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    cfg->total_instances = total;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE unsigned snet_io_config_get_total_instances(const SNetIO_BaseConfig_t* cfg)
+{
+    if (cfg)
+        return cfg->total_instances;
+
+    return 0;
+}
+
+DAQ_LINKAGE int snet_io_config_set_instance_id(SNetIO_BaseConfig_t* cfg, unsigned id)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    cfg->instance_id = id;
+
+    return DAQ_SUCCESS;
+}
+
+DAQ_LINKAGE unsigned snet_io_config_get_instance_id(const SNetIO_BaseConfig_t* cfg)
+{
+    if (cfg)
+        return cfg->instance_id;
+
+    return 0;
+}
+
+DAQ_LINKAGE int snet_io_config_push_module_config(SNetIO_BaseConfig_t *cfg, SNetIO_DriverConfig_t *modcfg)
+{
+    if (!cfg)
+        return DAQ_ERROR_INVAL;
+
+    return module_config_list_push_front(cfg->modules, modcfg);
+}
+
+DAQ_LINKAGE SNetIO_DriverConfig_t *snet_io_config_pop_module_config(SNetIO_BaseConfig_t *cfg)
+{
+    if (!cfg)
+        return NULL;
+    return module_config_list_pop_front(cfg->modules);
+}
+
+DAQ_LINKAGE SNetIO_DriverConfig_t *snet_io_config_top_module_config(SNetIO_BaseConfig_t *cfg)
+{
+    return cfg ? module_config_list_front(cfg->modules) : NULL;
+}
+
+DAQ_LINKAGE SNetIO_DriverConfig_t *snet_io_config_bottom_module_config(SNetIO_BaseConfig_t *cfg)
+{
+    return cfg ? module_config_list_back(cfg->modules) : NULL;
+}
+
+DAQ_LINKAGE SNetIO_DriverConfig_t *snet_io_config_next_module_config(SNetIO_BaseConfig_t *cfg)
+{
+    return cfg ? module_config_list_next(cfg->modules) : NULL;
+}
+
+DAQ_LINKAGE SNetIO_DriverConfig_t *snet_io_config_previous_module_config(SNetIO_BaseConfig_t *cfg)
+{
+    return cfg ? module_config_list_prev(cfg->modules) : NULL;
+}
+
+DAQ_LINKAGE void snet_io_config_destroy(SNetIO_BaseConfig_t *cfg)
+{
+    if (cfg != NULL)
+    {
+        module_config_list_free(cfg->modules);
+        free(cfg->input);
+        free(cfg);
     }
 }

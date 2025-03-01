@@ -75,7 +75,7 @@ static DAQ_VariableDesc_t pcap_variable_descriptions[] = {
     { "readback_timeout", "Return timeout receive status in file readback mode", DAQ_VAR_DESC_FORBIDS_ARGUMENT },
 };
 
-static DAQ_BaseAPI_t daq_base_api;
+static SNetIO_BaseAPI_t daq_base_api;
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void destroy_packet_pool(Pcap_Context_t *pc)
@@ -190,9 +190,9 @@ static inline int set_nonblocking(Pcap_Context_t *pc, bool nonblocking)
     return 0;
 }
 
-static int pcap_daq_module_load(const DAQ_BaseAPI_t *base_api)
+static int pcap_daq_module_load(const SNetIO_BaseAPI_t *base_api)
 {
-    if (base_api->api_version != DAQ_BASE_API_VERSION || base_api->api_size != sizeof(DAQ_BaseAPI_t))
+    if (base_api->api_version != DAQ_BASE_API_VERSION || base_api->api_size != sizeof(SNetIO_BaseAPI_t))
         return DAQ_ERROR;
 
     daq_base_api = *base_api;
@@ -213,7 +213,7 @@ static int pcap_daq_get_variable_descs(const DAQ_VariableDesc_t **var_desc_table
     return sizeof(pcap_variable_descriptions) / sizeof(DAQ_VariableDesc_t);
 }
 
-static int pcap_daq_instantiate(const DAQ_ModuleConfig_h modcfg, DriverController_t* modinst, void **ctxt_ptr)
+static int pcap_daq_instantiate(DriverConfig_t* modcfg, DriverController_t* modinst, void **ctxt_ptr)
 {
     Pcap_Context_t *pc;
 

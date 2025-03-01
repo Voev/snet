@@ -5,241 +5,43 @@
 #include <snet/io/daq_dlt.h>
 #include <snet/io/daq_config.h>
 
-struct daq_config_st
+static const char *base_api_config_get_input(const SNetIO_DriverConfig_t* modcfg)
 {
-    char *input;                    /* Name of the interface(s) or file to be opened */
-    uint32_t msg_pool_size;         /* Size of the message pool to create (quantity) */
-    int snaplen;                    /* Maximum packet capture length */
-    unsigned timeout;               /* Read timeout for acquire loop in milliseconds (0 = unlimited) */
-    unsigned total_instances;       /* Total number of concurrent DAQ instances expected (0 = unspecified) */
-    unsigned instance_id;           /* ID for the instance to be created (0 = unspecified) */
-    DAQ_ModuleConfigList_t* modules;
-};
-
-/*
- * DAQ (Top-level) Configuration Functions
- */
-
-DAQ_LINKAGE int daq_config_new(DAQ_Config_t **cfgptr)
-{
-    DAQ_Config_t *cfg;
-
-    if (!cfgptr)
-        return DAQ_ERROR_INVAL;
-
-    cfg = calloc(1, sizeof(DAQ_Config_t));
-    if (!cfg)
-        return DAQ_ERROR_NOMEM;
-
-    cfg->modules = module_config_list_new();
-
-    *cfgptr = cfg;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE int daq_config_set_input(DAQ_Config_t *cfg, const char *input)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    if (cfg->input)
-    {
-        free(cfg->input);
-        cfg->input = NULL;
-    }
-
-    if (input)
-    {
-        cfg->input = strdup(input);
-        if (!cfg->input)
-            return DAQ_ERROR_NOMEM;
-    }
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE const char *daq_config_get_input(DAQ_Config_t *cfg)
-{
-    if (cfg)
-        return cfg->input;
-
-    return NULL;
-}
-
-DAQ_LINKAGE int daq_config_set_msg_pool_size(DAQ_Config_t *cfg, uint32_t num_msgs)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    cfg->msg_pool_size = num_msgs;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE uint32_t daq_config_get_msg_pool_size(DAQ_Config_t *cfg)
-{
-    if (cfg)
-        return cfg->msg_pool_size;
-
-    return 0;
-}
-
-DAQ_LINKAGE int daq_config_set_snaplen(DAQ_Config_t *cfg, int snaplen)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    cfg->snaplen = snaplen;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE int daq_config_get_snaplen(DAQ_Config_t *cfg)
-{
-    if (cfg)
-        return cfg->snaplen;
-
-    return 0;
-}
-
-DAQ_LINKAGE int daq_config_set_timeout(DAQ_Config_t *cfg, unsigned timeout)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    cfg->timeout = timeout;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE unsigned daq_config_get_timeout(DAQ_Config_t *cfg)
-{
-    if (cfg)
-        return cfg->timeout;
-
-    return 0;
-}
-
-DAQ_LINKAGE int daq_config_set_total_instances(DAQ_Config_t* cfg, unsigned total)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    cfg->total_instances = total;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE unsigned daq_config_get_total_instances(DAQ_Config_t* cfg)
-{
-    if (cfg)
-        return cfg->total_instances;
-
-    return 0;
-}
-
-DAQ_LINKAGE int daq_config_set_instance_id(DAQ_Config_t* cfg, unsigned id)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    cfg->instance_id = id;
-
-    return DAQ_SUCCESS;
-}
-
-DAQ_LINKAGE unsigned daq_config_get_instance_id(DAQ_Config_t* cfg)
-{
-    if (cfg)
-        return cfg->instance_id;
-
-    return 0;
-}
-
-DAQ_LINKAGE int daq_config_push_module_config(DAQ_Config_t *cfg, DAQ_ModuleConfig_t *modcfg)
-{
-    if (!cfg)
-        return DAQ_ERROR_INVAL;
-
-    return module_config_list_push_front(cfg->modules, modcfg);
-}
-
-DAQ_LINKAGE DAQ_ModuleConfig_t *daq_config_pop_module_config(DAQ_Config_t *cfg)
-{
-    if (!cfg)
-        return NULL;
-    return module_config_list_pop_front(cfg->modules);
-}
-
-DAQ_LINKAGE DAQ_ModuleConfig_t *daq_config_top_module_config(DAQ_Config_t *cfg)
-{
-    return cfg ? module_config_list_front(cfg->modules) : NULL;
-}
-
-DAQ_LINKAGE DAQ_ModuleConfig_t *daq_config_bottom_module_config(DAQ_Config_t *cfg)
-{
-    return cfg ? module_config_list_back(cfg->modules) : NULL;
-}
-
-DAQ_LINKAGE DAQ_ModuleConfig_t *daq_config_next_module_config(DAQ_Config_t *cfg)
-{
-    return cfg ? module_config_list_next(cfg->modules) : NULL;
-}
-
-DAQ_LINKAGE DAQ_ModuleConfig_t *daq_config_previous_module_config(DAQ_Config_t *cfg)
-{
-    return cfg ? module_config_list_prev(cfg->modules) : NULL;
-}
-
-DAQ_LINKAGE void daq_config_destroy(DAQ_Config_t *cfg)
-{
-    if (cfg != NULL)
-    {
-        module_config_list_free(cfg->modules);
-        free(cfg->input);
-        free(cfg);
-    }
-}
-
-
-static const char *base_api_config_get_input(DAQ_ModuleConfig_h modcfg)
-{
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_input(cfg);
 }
 
-static uint32_t base_api_config_get_msg_pool_size(DAQ_ModuleConfig_h modcfg)
+static uint32_t base_api_config_get_msg_pool_size(const SNetIO_DriverConfig_t* modcfg)
 {
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_msg_pool_size(cfg);
 }
 
-static int base_api_config_get_snaplen(DAQ_ModuleConfig_h modcfg)
+static int base_api_config_get_snaplen(const SNetIO_DriverConfig_t* modcfg)
 {
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_snaplen(cfg);
 }
 
-static unsigned base_api_config_get_timeout(DAQ_ModuleConfig_h modcfg)
+static unsigned base_api_config_get_timeout(const SNetIO_DriverConfig_t* modcfg)
 {
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_timeout(cfg);
 }
 
-static unsigned base_api_config_get_total_instances(DAQ_ModuleConfig_h modcfg)
+static unsigned base_api_config_get_total_instances(const SNetIO_DriverConfig_t* modcfg)
 {
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_total_instances(cfg);
 }
 
-static unsigned base_api_config_get_instance_id(DAQ_ModuleConfig_h modcfg)
+static unsigned base_api_config_get_instance_id(const SNetIO_DriverConfig_t* modcfg)
 {
-    DAQ_Config_t* cfg = daq_module_config_get_config(modcfg);
+    SNetIO_BaseConfig_t* cfg = daq_module_config_get_config(modcfg);
     return daq_config_get_instance_id(cfg);
 }
 
-static void base_api_set_errbuf(DriverController_t* modinst, const char *format, ...)
+static void base_api_set_errbuf(SNetIO_DriverController_t* modinst, const char *format, ...)
 {
     DAQ_Instance_h instance = modinst->instance;
     va_list ap;
@@ -248,10 +50,10 @@ static void base_api_set_errbuf(DriverController_t* modinst, const char *format,
     va_end(ap);
 }
 
-void populate_base_api(DAQ_BaseAPI_t *base_api)
+void populate_base_api(SNetIO_BaseAPI_t *base_api)
 {
     base_api->api_version = DAQ_BASE_API_VERSION;
-    base_api->api_size = sizeof(DAQ_BaseAPI_t);
+    base_api->api_size = sizeof(SNetIO_BaseAPI_t);
     base_api->config_get_input = base_api_config_get_input;
     base_api->config_get_snaplen = base_api_config_get_snaplen;
     base_api->config_get_timeout = base_api_config_get_timeout;
@@ -413,7 +215,7 @@ int daq_default_get_msg_pool_info(void *handle, DAQ_MsgPoolInfo_t *info)
         api->fname.func = daq_default_ ## fname;        \
 }
 
-void resolve_instance_api(DAQ_InstanceAPI_t *api, DriverController_t *modinst, int default_impl)
+void resolve_instance_api(DAQ_InstanceAPI_t *api, SNetIO_DriverController_t *modinst, int default_impl)
 {
     memset(api, 0, sizeof(*api));
     RESOLVE_INSTANCE_API(api, modinst, set_filter, default_impl);

@@ -24,19 +24,19 @@ public:
     void stop();
     void reload();
 
-    void init(DAQ_Config_t* config);
+    void init(SNetIO_BaseConfig_t* config);
     void final();
     void setFilter(std::string_view filter);
 
     void inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len);
-    void injectRelative(DAQ_Msg_h msg, const uint8_t* data, uint32_t data_len, int reverse);
+    void injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len, int reverse);
 
     void interrupt();
 
     int getDataLinkType();
 
-    unsigned receiveMessages(const unsigned max_recv, DAQ_Msg_h msgs[], DAQ_RecvStatus* rstat);
-    void finalizeMessage(DAQ_Msg_h msg, DAQ_Verdict verdict);
+    unsigned receiveMessages(const unsigned max_recv, SNetIO_Message_t* msgs[], DAQ_RecvStatus* rstat);
+    void finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict);
     void getMsgPoolInfo(DAQ_MsgPoolInfo_t* info);
 
     State getState() const;

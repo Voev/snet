@@ -26,7 +26,7 @@ void Controller::init(DAQ_Config_t* config)
         throw std::runtime_error("Can't instantiate with an invalid instance ID!");
     }
 
-    DAQ_ModuleConfig_t* modcfg = daq_config_bottom_module_config(config);
+    DriverConfig_t* modcfg = daq_config_bottom_module_config(config);
     if (!modcfg)
     {
         throw std::runtime_error("Can't instantiate without a module configuration!");
