@@ -5,7 +5,7 @@
 
 /* The DAQ message structure.  Ordered by element size to avoid padding. */
 #define DAQ_MSG_META_SLOTS 8
-typedef struct snet_io_msg_st
+struct snet_io_msg_st
 {
     void* hdr;                        /* Pointer to the message header structure for this message */
     uint8_t* data;                    /* Pointer to the variable-length message data (Optional) */

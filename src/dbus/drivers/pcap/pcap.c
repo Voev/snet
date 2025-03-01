@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <snet/io/daq.h>
+#include <snet/io/message.h>
 
 #define DAQ_PCAP_VERSION 4
 
@@ -16,7 +17,7 @@
 
 typedef struct _pcap_pkt_desc
 {
-    DAQ_Msg_t msg;
+    SNetIO_Message_t msg;
     DAQ_PktHdr_t pkthdr;
     uint8_t *data;
     struct _pcap_pkt_desc *next;
@@ -43,7 +44,7 @@ typedef struct _pcap_context
     DAQ_Mode mode;
     bool readback_timeout;
     /* State */
-    DriverController_t* modinst;
+    SNetIO_DriverController_t* modinst;
     DAQ_Stats_t stats;
     char pcap_errbuf[PCAP_ERRBUF_SIZE];
     PcapMsgPool pool;
@@ -125,7 +126,7 @@ static int create_packet_pool(Pcap_Context_t *pc, unsigned size)
         pkthdr->egress_group = DAQ_PKTHDR_UNKNOWN;
 
         /* Initialize non-zero invariant message header fields. */
-        DAQ_Msg_t *msg = &desc->msg;
+        SNetIO_Message_t* msg = &desc->msg;
         msg->type = DAQ_MSG_TYPE_PACKET;
         msg->hdr_len = sizeof(desc->pkthdr);
         msg->hdr = &desc->pkthdr;
@@ -213,7 +214,7 @@ static int pcap_daq_get_variable_descs(const DAQ_VariableDesc_t **var_desc_table
     return sizeof(pcap_variable_descriptions) / sizeof(DAQ_VariableDesc_t);
 }
 
-static int pcap_daq_instantiate(DriverConfig_t* modcfg, DriverController_t* modinst, void **ctxt_ptr)
+static int pcap_daq_instantiate(SNetIO_DriverConfig_t* modcfg, SNetIO_DriverController_t* modinst, void **ctxt_ptr)
 {
     Pcap_Context_t *pc;
 
@@ -563,7 +564,7 @@ static int pcap_daq_get_datalink_type(void *handle)
     return DLT_NULL;
 }
 
-static unsigned pcap_daq_msg_receive(void *handle, const unsigned max_recv, const DAQ_Msg_t *msgs[], DAQ_RecvStatus *rstat)
+static unsigned pcap_daq_msg_receive(void *handle, const unsigned max_recv, SNetIO_Message_t *msgs[], DAQ_RecvStatus *rstat)
 {
     struct pcap_pkthdr *pcaphdr;
     Pcap_Context_t *pc = (Pcap_Context_t *) handle;
@@ -676,7 +677,7 @@ static unsigned pcap_daq_msg_receive(void *handle, const unsigned max_recv, cons
         memcpy(desc->data, data, caplen);
 
         /* Next, set up the DAQ message.  Most fields are prepopulated and unchanging. */
-        DAQ_Msg_t *msg = &desc->msg;
+        SNetIO_Message_t *msg = &desc->msg;
         msg->data_len = caplen;
 
         /* Then, set up the DAQ packet header. */
@@ -718,7 +719,7 @@ static unsigned pcap_daq_msg_receive(void *handle, const unsigned max_recv, cons
     return idx;
 }
 
-static int pcap_daq_msg_finalize(void *handle, const DAQ_Msg_t *msg, DAQ_Verdict verdict)
+static int pcap_daq_msg_finalize(void *handle, const SNetIO_Message_t *msg, DAQ_Verdict verdict)
 {
     Pcap_Context_t *pc = (Pcap_Context_t *) handle;
     PcapPktDesc *desc = (PcapPktDesc *) msg->priv;
@@ -745,10 +746,10 @@ static int pcap_daq_get_msg_pool_info(void *handle, DAQ_MsgPoolInfo_t *info)
     return DAQ_SUCCESS;
 }
 
-DAQ_SO_PUBLIC const DriverAPI_t DAQ_MODULE_DATA =
+DAQ_SO_PUBLIC const SNetIO_DriverAPI_t DAQ_MODULE_DATA =
 {
     /* .api_version = */ DAQ_MODULE_API_VERSION,
-    /* .api_size = */ sizeof(DriverAPI_t),
+    /* .api_size = */ sizeof(SNetIO_DriverAPI_t),
     /* .module_version = */ DAQ_PCAP_VERSION,
     /* .name = */ "pcap",
     /* .type = */ DAQ_TYPE_FILE_CAPABLE | DAQ_TYPE_INTF_CAPABLE | DAQ_TYPE_MULTI_INSTANCE,

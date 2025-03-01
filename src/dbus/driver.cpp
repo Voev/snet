@@ -32,9 +32,9 @@ void Driver::reload()
     }
 
     lib_ = std::make_unique<DynamicLibrary>(path_);
-    api_ = lib_->resolve<DriverAPI_t*>("DAQ_MODULE_DATA");
+    api_ = lib_->resolve<SNetIO_DriverAPI_t*>("DAQ_MODULE_DATA");
 
-    BaseAPI_t base;
+    SNetIO_BaseAPI_t base;
     populate_base_api(&base);
 
     api_->load(&base);

@@ -4,7 +4,7 @@
 #include <casket/utils/exception.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/dbus/manager.hpp>
+#include <snet/dbus.hpp>
 
 using namespace casket;
 
@@ -43,7 +43,8 @@ void IoTestCommand::execute(const std::vector<std::string_view>& args)
         return;
     }
 
-    dbus::Manager::getInstance().loadModule(driverPath_);
+    dbus::Loader loader;
+    loader.loadModule(driverPath_);
 }
 
 } // namespace snet

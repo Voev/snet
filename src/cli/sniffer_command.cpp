@@ -12,6 +12,7 @@
 #include <snet/dbus.hpp>
 
 #include <snet/io/daq.h>
+#include <snet/io/message.h>
 #include <snet/io/daq_config.h>
 
 #include <snet/tls.hpp>
@@ -123,29 +124,30 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
 void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
                           tcp::TcpReassembly& tcpReassembly)
 {
-    dbus::Manager::getInstance().loadModule(ioDriver);
+    dbus::Loader loader;
+    loader.loadModule(ioDriver);
 
     dbus::Controller controller;
 
-    DAQ_Config_t* config{nullptr};
+    SNetIO_BaseConfig_t* config{nullptr};
 
-    daq_config_new(&config);
+    snet_io_config_new(&config);
 
-    daq_config_set_total_instances(config, 1);
-    daq_config_set_instance_id(config, 0);
-    daq_config_set_input(config, fileName.c_str());
-    daq_config_set_msg_pool_size(config, 128);
-    daq_config_set_timeout(config, 0);
-    daq_config_set_snaplen(config, 1024);
+    snet_io_config_set_total_instances(config, 1);
+    snet_io_config_set_instance_id(config, 0);
+    snet_io_config_set_input(config, fileName.c_str());
+    snet_io_config_set_msg_pool_size(config, 128);
+    snet_io_config_set_timeout(config, 0);
+    snet_io_config_set_snaplen(config, 1024);
 
-    auto driver = dbus::Manager::getInstance().getModule("pcap");
+    auto driver = loader.getModule("pcap");
 
-    DriverConfig_t* driverConfig{nullptr};
-    daq_module_config_new(&driverConfig, config, driver->get());
-    daq_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
+    SNetIO_DriverConfig_t* driverConfig{nullptr};
+    snet_io_module_config_new(&driverConfig, config, driver->get());
+    snet_io_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
 
     /// @todo: зачем вообще этот метод
-    daq_config_push_module_config(config, driverConfig);
+    snet_io_config_push_module_config(config, driverConfig);
 
     controller.init(config);
 
@@ -154,7 +156,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
     layers::RawPacket rawPacket;
-    DAQ_Msg_h msgs[128] = {};
+    SNetIO_Message_t* msgs[128] = {};
     DAQ_RecvStatus status{DAQ_RSTAT_OK};
     do
     {

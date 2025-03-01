@@ -8,13 +8,13 @@
 namespace snet::dbus
 {
 
-class Manager
+class Loader
 {
 public:
-    static Manager& getInstance()
+    Loader() = default;
+
+    ~Loader()
     {
-        static Manager instance;
-        return instance;
     }
 
     std::string loadModule(const std::string& path)
@@ -48,9 +48,6 @@ public:
         return nullptr;
     }
 
-    ~Manager()
-    {
-    }
 
     auto begin()
     {
@@ -63,9 +60,8 @@ public:
     }
 
 private:
-    Manager() = default;
-    Manager(const Manager&) = delete;
-    Manager& operator=(const Manager&) = delete;
+    Loader(const Loader&) = delete;
+    Loader& operator=(const Loader&) = delete;
 
     struct Hash
     {

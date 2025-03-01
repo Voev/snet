@@ -16,17 +16,17 @@ Controller::~Controller() noexcept
 {
 }
 
-void Controller::init(DAQ_Config_t* config)
+void Controller::init(SNetIO_BaseConfig_t* config)
 {
-    unsigned total_instances = daq_config_get_total_instances(config);
-    unsigned instance_id = daq_config_get_instance_id(config);
+    unsigned total_instances = snet_io_config_get_total_instances(config);
+    unsigned instance_id = snet_io_config_get_instance_id(config);
 
     if (total_instances && instance_id > total_instances)
     {
         throw std::runtime_error("Can't instantiate with an invalid instance ID!");
     }
 
-    DriverConfig_t* modcfg = daq_config_bottom_module_config(config);
+    SNetIO_DriverConfig_t* modcfg = snet_io_config_bottom_module_config(config);
     if (!modcfg)
     {
         throw std::runtime_error("Can't instantiate without a module configuration!");
@@ -37,10 +37,10 @@ void Controller::init(DAQ_Config_t* config)
     /* Build out the instance from the bottom of the configuration stack up. */
     do
     {
-        DriverController_t* modinst = new DriverController_t();
+        SNetIO_DriverController_t* modinst = new SNetIO_DriverController_t();
 
         modinst->instance = &instance_;
-        modinst->module = daq_module_config_get_module(modcfg);
+        modinst->module = snet_io_module_config_get_module(modcfg);
 
         /* Push this on top of the module instance stack.  This must be done before instantiating
             the module so that it can be referenced inside of that call. */
@@ -53,7 +53,7 @@ void Controller::init(DAQ_Config_t* config)
             throw std::runtime_error("failed to instantiate");
         }
 
-        modcfg = daq_config_previous_module_config(config);
+        modcfg = snet_io_config_previous_module_config(config);
 
     } while (modcfg);
 
@@ -64,7 +64,7 @@ void Controller::init(DAQ_Config_t* config)
 
 void Controller::final()
 {
-    DriverController_t* controller;
+    SNetIO_DriverController_t* controller;
     while ((controller = instance_.drivers) != NULL)
     {
         instance_.drivers = controller->next;
@@ -121,7 +121,7 @@ void Controller::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, 
         throw std::runtime_error("failed to inject: " + std::string(getError()));
 }
 
-void Controller::injectRelative(DAQ_Msg_h msg, const uint8_t* data, uint32_t data_len, int reverse)
+void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len, int reverse)
 {
 
     if (!msg)
@@ -198,7 +198,7 @@ int Controller::getDataLinkType()
     return instance_.api.get_datalink_type.func(instance_.api.get_datalink_type.context);
 }
 
-unsigned Controller::receiveMessages(const unsigned max_recv, DAQ_Msg_h msgs[],
+unsigned Controller::receiveMessages(const unsigned max_recv, SNetIO_Message_t* msgs[],
                                      DAQ_RecvStatus* rstat)
 {
     if (!rstat)
@@ -221,7 +221,7 @@ unsigned Controller::receiveMessages(const unsigned max_recv, DAQ_Msg_h msgs[],
     return instance_.api.msg_receive.func(instance_.api.msg_receive.context, max_recv, msgs, rstat);
 }
 
-void Controller::finalizeMessage(DAQ_Msg_h msg, DAQ_Verdict verdict)
+void Controller::finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict)
 {
 
     if (!msg)

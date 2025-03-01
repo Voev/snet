@@ -113,23 +113,6 @@ typedef struct _daq_instance* DAQ_Instance_h;
     0x8000                           /* Interface groups should be used for flow classification. */
 #define DAQ_PKT_FLAG_SKIP_EF 0x10000 /* Skip processing for EF. */
 
-#define DAQ_PKTHDR_UNKNOWN -1 /* Ingress or Egress not known */
-#define DAQ_PKTHDR_FLOOD -2   /* Egress is flooding */
-    typedef struct _daq_pkt_hdr
-    {
-        struct timeval ts;     /* Timestamp */
-        uint32_t pktlen;       /* Original length of this packet (off the wire) */
-        int32_t ingress_index; /* Index of the inbound interface. */
-        int32_t egress_index;  /* Index of the outbound interface. */
-        int16_t ingress_group; /* Index of the inbound group. */
-        int16_t egress_group;  /* Index of the outbound group. */
-        uint32_t opaque;       /* Opaque context value from the DAQ module or underlying hardware.
-                                   Directly related to the opaque value in DAQ_FlowStats_t. */
-        uint32_t flow_id; /* Flow ID value provided from the DAQ module or underlying hardware. */
-        uint32_t flags;   /* Flags for the packet (DAQ_PKT_FLAG_*) */
-        uint32_t address_space_id; /* Unique ID of the address space */
-        uint32_t tenant_id;        /* Unique ID of the tenant */
-    } DAQ_PktHdr_t;
 
 #define DAQ_PKT_META_NAPT_INFO 0
 #define DAQ_PKT_META_DECODE_DATA 1
@@ -672,7 +655,7 @@ typedef struct _daq_instance* DAQ_Instance_h;
     typedef int (*daq_module_start_func)(void* handle);
     typedef int (*daq_module_inject_func)(void* handle, DAQ_MsgType type, const void* hdr,
                                           const uint8_t* data, uint32_t data_len);
-    typedef int (*daq_module_inject_relative_func)(void* handle, SNetIO_Message_t msg, const uint8_t* data,
+    typedef int (*daq_module_inject_relative_func)(void* handle, SNetIO_Message_t* msg, const uint8_t* data,
                                                    uint32_t data_len, int reverse);
     typedef int (*daq_module_interrupt_func)(void* handle);
     typedef int (*daq_module_stop_func)(void* handle);
@@ -686,7 +669,7 @@ typedef struct _daq_instance* DAQ_Instance_h;
     typedef int (*daq_module_config_swap_func)(void* handle, void* new_config, void** old_config);
     typedef int (*daq_module_config_free_func)(void* handle, void* old_config);
     typedef unsigned (*daq_module_msg_receive_func)(void* handle, const unsigned max_recv,
-                                                    const SNetIO_Message_t* msgs[], DAQ_RecvStatus* rstat);
+                                                    SNetIO_Message_t* msgs[], DAQ_RecvStatus* rstat);
     typedef int (*daq_module_msg_finalize_func)(void* handle, const SNetIO_Message_t* msg,
                                                 DAQ_Verdict verdict);
     typedef int (*daq_module_get_msg_pool_info_func)(void* handle, DAQ_MsgPoolInfo_t* info);
