@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <cstring>
+#include <filesystem>
 #include <snet/dbus/controller.hpp>
 #include <snet/io/daq_config.h>
 
@@ -14,6 +15,20 @@ Controller::Controller()
 
 Controller::~Controller() noexcept
 {
+}
+
+SNetIO_DriverAPI_t* Controller::loadDriver(const std::string& driverPath)
+{
+    auto path = std::filesystem::absolute(driverPath).string();
+
+    std::unique_ptr<DynamicLibrary>& dynamicLibrary = drivers_[path];
+
+    if (!dynamicLibrary)
+    {
+        dynamicLibrary = std::make_unique<DynamicLibrary>(path);
+    }
+
+    return dynamicLibrary->resolve<SNetIO_DriverAPI_t*>("DAQ_MODULE_DATA");
 }
 
 void Controller::init(SNetIO_BaseConfig_t* config)
@@ -121,7 +136,8 @@ void Controller::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, 
         throw std::runtime_error("failed to inject: " + std::string(getError()));
 }
 
-void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len, int reverse)
+void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len,
+                                int reverse)
 {
 
     if (!msg)

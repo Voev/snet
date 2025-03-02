@@ -124,10 +124,9 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
 void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
                           tcp::TcpReassembly& tcpReassembly)
 {
-    dbus::Loader loader;
-    loader.loadModule(ioDriver);
-
     dbus::Controller controller;
+
+    auto driver = controller.loadDriver(ioDriver);
 
     SNetIO_BaseConfig_t* config{nullptr};
 
@@ -140,10 +139,8 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     snet_io_config_set_timeout(config, 0);
     snet_io_config_set_snaplen(config, 1024);
 
-    auto driver = loader.getModule("pcap");
-
     SNetIO_DriverConfig_t* driverConfig{nullptr};
-    snet_io_module_config_new(&driverConfig, config, driver->get());
+    snet_io_module_config_new(&driverConfig, config, driver);
     snet_io_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
 
     /// @todo: зачем вообще этот метод

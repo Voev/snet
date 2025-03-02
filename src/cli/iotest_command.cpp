@@ -43,8 +43,6 @@ void IoTestCommand::execute(const std::vector<std::string_view>& args)
         return;
     }
 
-    dbus::Loader loader;
-    loader.loadModule(driverPath_);
 }
 
 } // namespace snet

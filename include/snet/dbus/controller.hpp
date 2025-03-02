@@ -1,5 +1,9 @@
 #pragma once
-#include <string_view>
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <snet/dbus/dynamic_library.hpp>
+
 #include <snet/io/daq.h>
 
 namespace snet::dbus
@@ -20,9 +24,10 @@ public:
     Controller();
     ~Controller() noexcept;
 
+    SNetIO_DriverAPI_t* loadDriver(const std::string& driverPath);
+
     void start();
     void stop();
-    void reload();
 
     void init(SNetIO_BaseConfig_t* config);
     void final();
@@ -53,6 +58,7 @@ public:
 private:
     DAQ_Instance_t instance_;
     State state_;
+    std::unordered_map<std::string, std::unique_ptr<DynamicLibrary>> drivers_;
 };
 
 } // namespace snet::dbus
