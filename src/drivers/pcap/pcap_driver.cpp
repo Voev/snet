@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <vector>
+
 #include <snet/daq/daq.h>
 #include <snet/daq/message.h>
 
@@ -30,47 +32,25 @@ namespace snet::drivers
 
 typedef struct _pcap_pkt_desc
 {
-    SNetIO_Message_t msg;
-    DAQ_PktHdr_t pkthdr;
-    uint8_t* data;
-    struct _pcap_pkt_desc* next;
+    SNetIO_Message_t msg{};
+    DAQ_PktHdr_t pkthdr{};
+    std::vector<uint8_t> data;
+    struct _pcap_pkt_desc* next{nullptr};
 } PcapPktDesc;
 
-typedef struct _pcap_msg_pool
+struct PcapMsgPool
 {
-    PcapPktDesc* pool;
-    PcapPktDesc* freelist;
-    DAQ_MsgPoolInfo_t info;
-} PcapMsgPool;
-
-struct Pcap::Impl
-{
-    Impl();
-    ~Impl() noexcept;
-
-    int createPacketPool(unsigned size)
+    void create(std::size_t poolSize, std::size_t snapLength)
     {
-        PcapMsgPool* p = &pool;
-        p->pool = (PcapPktDesc*)calloc(sizeof(PcapPktDesc), size);
-        if (!p->pool)
+        pool.resize(poolSize);
+        info.mem_size = sizeof(PcapPktDesc) * pool.capacity();
+
+        while (info.size < poolSize)
         {
-            SET_ERROR(modinst, "%s: Could not allocate %zu bytes for a packet descriptor pool!",
-                      __func__, sizeof(PcapPktDesc) * size);
-            return DAQ_ERROR_NOMEM;
-        }
-        p->info.mem_size = sizeof(PcapPktDesc) * size;
-        while (p->info.size < size)
-        {
-            PcapPktDesc* desc = &p->pool[p->info.size];
-            desc->data = (uint8_t*)malloc(snaplen);
-            if (!desc->data)
-            {
-                SET_ERROR(modinst,
-                          "%s: Could not allocate %d bytes for a packet descriptor message buffer!",
-                          __func__, snaplen);
-                return DAQ_ERROR_NOMEM;
-            }
-            p->info.mem_size += snaplen;
+            PcapPktDesc* desc = &pool[info.size];
+            desc->data.resize(snapLength);
+
+            info.mem_size += snapLength;
 
             DAQ_PktHdr_t* pkthdr = &desc->pkthdr;
             pkthdr->ingress_index = DAQ_PKTHDR_UNKNOWN;
@@ -82,33 +62,36 @@ struct Pcap::Impl
             msg->type = DAQ_MSG_TYPE_PACKET;
             msg->hdr_len = sizeof(desc->pkthdr);
             msg->hdr = &desc->pkthdr;
-            msg->data = desc->data;
-            msg->owner = modinst;
+            msg->data = desc->data.data();
             msg->priv = desc;
 
-            desc->next = p->freelist;
-            p->freelist = desc;
+            desc->next = freelist;
+            freelist = desc;
 
-            p->info.size++;
+            info.size++;
         }
-        p->info.available = p->info.size;
-        return DAQ_SUCCESS;
+
+        info.available = info.size;
     }
 
-    void destroyPacketPool() noexcept
+    void cleanup() noexcept
     {
-        PcapMsgPool* p = &pool;
-        if (p->pool)
-        {
-            while (p->info.size > 0)
-                free(p->pool[--p->info.size].data);
-            free(p->pool);
-            p->pool = NULL;
-        }
-        p->freelist = NULL;
-        p->info.available = 0;
-        p->info.mem_size = 0;
+        pool.clear();
+
+        freelist = nullptr;
+        info.available = 0;
+        info.mem_size = 0;
     }
+
+    std::vector<PcapPktDesc> pool;
+    PcapPktDesc* freelist{nullptr};
+    DAQ_MsgPoolInfo_t info{};
+};
+
+struct Pcap::Impl
+{
+    Impl();
+    ~Impl() noexcept;
 
     int setNonBlocking(bool nb)
     {
@@ -182,7 +165,7 @@ struct Pcap::Impl
 
     /* Configuration */
     std::string device;
-    char* filter_string;
+    std::string filter_string;
     unsigned snaplen;
     bool promisc_mode;
     bool immediate_mode;
@@ -221,9 +204,8 @@ Pcap::Impl::~Impl()
         pcap_close(handle);
     if (fp)
         fclose(fp);
-    if (filter_string)
-        free(filter_string);
-    destroyPacketPool();
+
+    pool.cleanup();
 }
 
 /*
@@ -245,8 +227,7 @@ static DAQ_VariableDesc_t pcap_variable_descriptions[] = {
 }*/
 
 Pcap::Impl::Impl()
-    : filter_string(nullptr)
-    , snaplen(0)
+    : snaplen(0)
     , promisc_mode(false)
     , immediate_mode(false)
     , timeout(0)
@@ -298,7 +279,7 @@ Pcap::Pcap(const io::DriverConfig& config)
     }
 
     uint32_t pool_size = base.getMsgPoolSize();
-    impl_->createPacketPool(pool_size ? pool_size : PCAP_DEFAULT_POOL_SIZE);
+    impl_->pool.create(pool_size ? pool_size : PCAP_DEFAULT_POOL_SIZE, impl_->snaplen);
 
     impl_->mode = config.getMode();
     if (impl_->mode == DAQ_MODE_READ_FILE)
@@ -367,16 +348,7 @@ int Pcap::setFilter(const std::string& filter)
         pcap_freecode(&fcode);
         pcap_close(dead_handle);
 
-        if (impl_->filter_string)
-            free(impl_->filter_string);
-        impl_->filter_string = strdup(filter.c_str());
-        if (!impl_->filter_string)
-        {
-            SET_ERROR(impl_->modinst,
-                      "%s: Could not allocate space to store a copy of the filter string!",
-                      __func__);
-            return DAQ_ERROR_NOMEM;
-        }
+        impl_->filter_string = filter;
     }
 
     return DAQ_SUCCESS;
@@ -421,16 +393,15 @@ int Pcap::start()
     }
     impl_->netmask = netmask;
 
-    if (impl_->filter_string)
+    if (!impl_->filter_string.empty())
     {
-        if ((status = impl_->installFilter(impl_->filter_string)) != DAQ_SUCCESS)
+        if ((status = impl_->installFilter(impl_->filter_string.c_str())) != DAQ_SUCCESS)
         {
             pcap_close(impl_->handle);
             impl_->handle = NULL;
             return status;
         }
-        free(impl_->filter_string);
-        impl_->filter_string = NULL;
+        impl_->filter_string.clear();
     }
 
     resetStats();
@@ -663,7 +634,7 @@ DAQ_RecvStatus Pcap::receiveMsgs(SNetIO_Message_t* msgs[], const size_t maxSize,
 
         /* Populate the packet descriptor */
         int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
-        memcpy(desc->data, data, caplen);
+        memcpy(desc->data.data(), data, caplen);
 
         /* Next, set up the DAQ message.  Most fields are prepopulated and unchanging. */
         SNetIO_Message_t* msg = &desc->msg;

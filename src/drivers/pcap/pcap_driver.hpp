@@ -14,6 +14,7 @@ public:
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 
     int start() override;
+
     int stop() override;
 
     int interrupt() override;
@@ -35,7 +36,6 @@ public:
     int getStats(DAQ_Stats_t* stats) override;
     void resetStats() override;
 
-private:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

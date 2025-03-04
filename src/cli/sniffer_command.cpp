@@ -130,7 +130,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     config.setInput(fileName);
     config.setMsgPoolSize(128);
     config.setTimeout(0);
-    config.setSnaplen(1024);
+    config.setSnaplen(2048);
 
     auto& drv = config.addDriver("pcap");
 
@@ -140,10 +140,8 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     controller.init(config);
 
     controller.start();
-
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
-    layers::RawPacket rawPacket;
     SNetIO_Message_t* msgs[128] = {};
     DAQ_RecvStatus status{DAQ_RSTAT_OK};
     do
@@ -153,19 +151,17 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
         for (size_t i = 0; i < count; ++i)
         {
             struct timespec ts{};
-            rawPacket.setRawData(msgs[i]->data, msgs[i]->data_len, ts,
-                                 static_cast<layers::LinkLayerType>(controller.getDataLinkType()),
-                                 -1);
-            tcpReassembly.reassemblePacket(&rawPacket);
+            layers::RawPacket packet(
+                msgs[i]->data, msgs[i]->data_len, ts, false,
+                static_cast<layers::LinkLayerType>(controller.getDataLinkType()));
+            tcpReassembly.reassemblePacket(&packet);
         }
     } while (status == DAQ_RSTAT_OK);
-
-    controller.stop();
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
     tcpReassembly.closeAllConnections();
-    // reader->close();
+    controller.stop();
 
     std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
 }
