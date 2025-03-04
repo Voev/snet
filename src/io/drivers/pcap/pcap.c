@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <snet/io/daq.h>
-#include <snet/io/message.h>
+#include <snet/daq/daq.h>
+#include <snet/daq/message.h>
 
 #define DAQ_PCAP_VERSION 4
 

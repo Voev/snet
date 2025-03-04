@@ -1,6 +1,6 @@
 #pragma once
-#include <snet/io/daq.h>
-#include <snet/io/types.h>
+#include <snet/daq/daq.h>
+#include <snet/daq/types.h>
 
 #ifdef __cplusplus
 extern "C"

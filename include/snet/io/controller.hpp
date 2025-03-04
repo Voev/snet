@@ -2,11 +2,12 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
-#include <snet/dbus/dynamic_library.hpp>
+//#include <snet/io/dynamic_library.hpp>
+#include <snet/io/driver.hpp>
+#include <snet/io/config.hpp>
+#include <snet/daq/daq.h>
 
-#include <snet/io/daq.h>
-
-namespace snet::dbus
+namespace snet::io
 {
 
 class Controller
@@ -24,13 +25,12 @@ public:
     Controller();
     ~Controller() noexcept;
 
-    SNetIO_DriverAPI_t* loadDriver(const std::string& driverPath);
+    void init(const Config& config);
+    void final();
 
     void start();
     void stop();
 
-    void init(SNetIO_BaseConfig_t* config);
-    void final();
     void setFilter(std::string_view filter);
 
     void inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len);
@@ -40,7 +40,8 @@ public:
 
     int getDataLinkType();
 
-    unsigned receiveMessages(const unsigned max_recv, SNetIO_Message_t* msgs[], DAQ_RecvStatus* rstat);
+    DAQ_RecvStatus receiveMessages(SNetIO_Message_t* msgs[], const std::size_t maxSize,
+                                   std::size_t* received);
     void finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict);
     void getMsgPoolInfo(DAQ_MsgPoolInfo_t* info);
 
@@ -57,8 +58,9 @@ public:
 
 private:
     DAQ_Instance_t instance_;
+    //std::unordered_map<std::string, std::unique_ptr<DynamicLibrary>> driverLibs_;
+    std::shared_ptr<Driver> driver_;
     State state_;
-    std::unordered_map<std::string, std::unique_ptr<DynamicLibrary>> drivers_;
 };
 
-} // namespace snet::dbus
+} // namespace snet::io

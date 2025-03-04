@@ -9,11 +9,11 @@
 #include <snet/pcap/pcap_file_reader_device.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
 
-#include <snet/dbus.hpp>
+#include <snet/io.hpp>
 
-#include <snet/io/daq.h>
-#include <snet/io/message.h>
-#include <snet/io/daq_config.h>
+#include <snet/daq/daq.h>
+#include <snet/daq/message.h>
+#include <snet/daq/daq_config.h>
 
 #include <snet/tls.hpp>
 
@@ -124,27 +124,18 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
 void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
                           tcp::TcpReassembly& tcpReassembly)
 {
-    dbus::Controller controller;
+    io::Controller controller;
 
-    auto driver = controller.loadDriver(ioDriver);
+    io::Config config;
+    config.setInput(fileName);
+    config.setMsgPoolSize(128);
+    config.setTimeout(0);
+    config.setSnaplen(1024);
 
-    SNetIO_BaseConfig_t* config{nullptr};
+    auto& drv = config.addDriver("pcap");
 
-    snet_io_config_new(&config);
-
-    snet_io_config_set_total_instances(config, 1);
-    snet_io_config_set_instance_id(config, 0);
-    snet_io_config_set_input(config, fileName.c_str());
-    snet_io_config_set_msg_pool_size(config, 128);
-    snet_io_config_set_timeout(config, 0);
-    snet_io_config_set_snaplen(config, 1024);
-
-    SNetIO_DriverConfig_t* driverConfig{nullptr};
-    snet_io_module_config_new(&driverConfig, config, driver);
-    snet_io_module_config_set_mode(driverConfig, DAQ_MODE_READ_FILE);
-
-    /// @todo: зачем вообще этот метод
-    snet_io_config_push_module_config(config, driverConfig);
+    drv.setMode(DAQ_MODE_READ_FILE);
+    drv.setPath(ioDriver);
 
     controller.init(config);
 
@@ -157,8 +148,9 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     DAQ_RecvStatus status{DAQ_RSTAT_OK};
     do
     {
-        int count = controller.receiveMessages(128, msgs, &status);
-        for (int i = 0; i < count; ++i)
+        std::size_t count{};
+        status = controller.receiveMessages(msgs, 128, &count);
+        for (size_t i = 0; i < count; ++i)
         {
             struct timespec ts{};
             rawPacket.setRawData(msgs[i]->data, msgs[i]->data_len, ts,

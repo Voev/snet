@@ -1,9 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <snet/io/daq.h>
-#include <snet/io/daq_dlt.h>
-#include <snet/io/daq_config.h>
+#include <snet/daq/daq.h>
+#include <snet/daq/daq_dlt.h>
+#include <snet/daq/daq_config.h>
+
 
 static const char* base_api_config_get_input(const SNetIO_DriverConfig_t* modcfg)
 {

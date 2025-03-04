@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
-#include <snet/io/types.h>
+#include <snet/daq/types.h>
 
 /* The DAQ message structure.  Ordered by element size to avoid padding. */
 #define DAQ_MSG_META_SLOTS 8
