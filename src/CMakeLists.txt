@@ -1,4 +1,3 @@
-add_subdirectory(daq)
 add_subdirectory(io)
 add_subdirectory(drivers)
 add_subdirectory(ip)

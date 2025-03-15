@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <snet/io/controller.hpp>
 #include <snet/io/config.hpp>
-#include <snet/daq/daq_config.h>
 
 namespace snet::io
 {
@@ -72,7 +71,7 @@ void Controller::start()
     if (ret == DAQ_SUCCESS)
         state_ = State::Started;
     else
-        throw std::runtime_error("failed to start: " + std::string(getError()));
+        throw std::runtime_error("failed to start");
 }
 
 void Controller::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len)
@@ -90,7 +89,7 @@ void Controller::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, 
 
     int ret = driver_->inject(type, hdr, data, data_len);
     if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to inject: " + std::string(getError()));
+        throw std::runtime_error("failed to inject");
 }
 
 void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len,
@@ -109,14 +108,14 @@ void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint
 
     int ret = driver_->injectRelative(msg, data, data_len, reverse);
     if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to inject relative: " + std::string(getError()));
+        throw std::runtime_error("failed to inject relative");
 }
 
 void Controller::interrupt()
 {
     int ret = driver_->interrupt();
     if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to interrupt: " + std::string(getError()));
+        throw std::runtime_error("failed to interrupt");
 }
 
 void Controller::stop()
@@ -128,7 +127,7 @@ void Controller::stop()
 
     int ret = driver_->stop();
     if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to stop: " + std::string(getError()));
+        throw std::runtime_error("failed to stop");
     else
         state_ = State::Stopped;
 }
@@ -147,7 +146,7 @@ void Controller::getStats(DAQ_Stats_t* stats)
 
     int ret = driver_->getStats(stats);
     if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to stop: " + std::string(getError()));
+        throw std::runtime_error("failed to stop");
 }
 
 void Controller::resetStats()
@@ -194,7 +193,7 @@ void Controller::finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict)
 
     int ret = driver_->finalizeMsg(msg, verdict);
     if (DAQ_SUCCESS != ret)
-        throw std::runtime_error("failed to finalize message: " + std::string(getError()));
+        throw std::runtime_error("failed to finalize message");
 }
 
 void Controller::getMsgPoolInfo(DAQ_MsgPoolInfo_t* info)
@@ -204,7 +203,7 @@ void Controller::getMsgPoolInfo(DAQ_MsgPoolInfo_t* info)
 
     int ret = driver_->getMsgPoolInfo(info);
     if (DAQ_SUCCESS != ret)
-        throw std::runtime_error("failed to get message pool: " + std::string(getError()));
+        throw std::runtime_error("failed to get message pool");
 }
 
 } // namespace snet::io

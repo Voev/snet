@@ -1,8 +1,9 @@
 #pragma once
 #include <memory>
 #include <functional>
+
+#include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
-#include <snet/daq/daq.h>
 #include <snet/io/driver_config.hpp>
 
 namespace snet::io
@@ -17,69 +18,71 @@ public:
 
     virtual int start()
     {
+        if (next_)
+            return next_->start();
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int stop()
     {
+        if (next_)
+            return next_->stop();
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int setFilter(const std::string& filter)
     {
-        (void)filter;
+        if (next_)
+            return next_->setFilter(filter);
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len)
     {
-        (void)type;
-        (void)hdr;
-        (void)data;
-        (void)data_len;
+        if (next_)
+            return next_->inject(type, hdr, data, data_len);
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len,
                                int reverse)
     {
-        (void)msg;
-        (void)data;
-        (void)data_len;
-        (void)reverse;
+        if (next_)
+            return next_->injectRelative(msg,data, data_len, reverse);
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int interrupt()
     {
-        return DAQ_ERROR_NOTSUP;
-    }
-
-    virtual int ioctl(DAQ_IoctlCmd cmd, void* arg, size_t arglen)
-    {
-        (void)cmd;
-        (void)arg;
-        (void)arglen;
+        if (next_)
+            return next_->interrupt();
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual int getStats(DAQ_Stats_t* stats)
     {
-        (void)stats;
+        if (next_)
+            return next_->getStats(stats);
         return DAQ_ERROR_NOTSUP;
     }
 
     virtual void resetStats()
     {
+        if (next_)
+            next_->resetStats();
     }
 
     virtual int getSnaplen() const
     {
+        if (next_)
+            return next_->getSnaplen();
         return 0;
     }
 
     virtual uint32_t getType() const
     {
+        if (next_)
+            return next_->getType();
         return 0U;
     }
 

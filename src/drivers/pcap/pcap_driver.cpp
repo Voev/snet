@@ -7,9 +7,6 @@
 
 #include <vector>
 
-#include <snet/daq/daq.h>
-#include <snet/daq/message.h>
-
 #include "pcap_driver.hpp"
 #include <snet/io/export_function.hpp>
 
@@ -20,9 +17,6 @@
 #define PCAP_DEFAULT_POOL_SIZE 16
 #define DAQ_PCAP_ROLLOVER_LIM 1000000000 // Check for rollover every billionth packet
 
-#define SET_ERROR(modinst, ...) daq_base_api.set_errbuf(modinst, __VA_ARGS__)
-
-static SNetIO_BaseAPI_t daq_base_api;
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace casket::utils;
@@ -100,7 +94,7 @@ struct Pcap::Impl
             int status;
             if ((status = pcap_setnonblock(handle, nonblocking ? 1 : 0, pcap_errbuf)) < 0)
             {
-                SET_ERROR(modinst, "%s", pcap_errbuf);
+                //SET_ERROR(modinst, "%s", pcap_errbuf);
                 return status;
             }
             nonblocking = nb;
@@ -116,7 +110,7 @@ struct Pcap::Impl
         if (pcap_compile(handle, &fcode, filter.c_str(), 1, netmask) < 0)
         {
             pthread_mutex_unlock(&bpf_mutex);
-            SET_ERROR(modinst, "%s: pcap_compile: %s", __func__, pcap_geterr(handle));
+            //SET_ERROR(modinst, "%s: pcap_compile: %s", __func__, pcap_geterr(handle));
             return DAQ_ERROR;
         }
         pthread_mutex_unlock(&bpf_mutex);
@@ -124,7 +118,7 @@ struct Pcap::Impl
         if (pcap_setfilter(handle, &fcode) < 0)
         {
             pcap_freecode(&fcode);
-            SET_ERROR(modinst, "%s: pcap_setfilter: %s", __func__, pcap_geterr(handle));
+            //SET_ERROR(modinst, "%s: pcap_setfilter: %s", __func__, pcap_geterr(handle));
             return DAQ_ERROR;
         }
 
@@ -142,7 +136,7 @@ struct Pcap::Impl
             memset(&ps, 0, sizeof(struct pcap_stat));
             if (pcap_stats(handle, &ps) == -1)
             {
-                SET_ERROR(modinst, "%s", pcap_geterr(handle));
+                //SET_ERROR(modinst, "%s", pcap_geterr(handle));
                 return DAQ_ERROR;
             }
 
@@ -175,7 +169,7 @@ struct Pcap::Impl
     DAQ_Mode mode;
     bool readback_timeout;
     /* State */
-    SNetIO_DriverController_t* modinst;
+    //SNetIO_DriverController_t* modinst;
     DAQ_Stats_t stats;
     char pcap_errbuf[PCAP_ERRBUF_SIZE];
     PcapMsgPool pool;
@@ -235,7 +229,7 @@ Pcap::Impl::Impl()
     , buffer_size(0)
     , mode(DAQ_MODE_NONE)
     , readback_timeout(0)
-    , modinst(nullptr)
+    //, modinst(nullptr)
     , stats()
     , handle(nullptr)
     , fp(nullptr)
@@ -292,8 +286,8 @@ Pcap::Pcap(const io::DriverConfig& config)
             impl_->fp = fopen(fname.c_str(), "rb");
             if (!impl_->fp)
             {
-                SET_ERROR(impl_->modinst, "%s: Couldn't open file '%s' for reading: %s", __func__,
-                          fname.c_str(), strerror(errno));
+                //SET_ERROR(impl_->modinst, "%s: Couldn't open file '%s' for reading: %s", __func__,
+                //          fname.c_str(), strerror(errno));
             }
         }
     }
@@ -302,8 +296,8 @@ Pcap::Pcap(const io::DriverConfig& config)
         impl_->device = base.getInput();
         if (impl_->device.empty())
         {
-            SET_ERROR(impl_->modinst, "%s: Couldn't allocate memory for the device string!",
-                      __func__);
+            //SET_ERROR(impl_->modinst, "%s: Couldn't allocate memory for the device string!",
+            //          __func__);
         }
     }
 
@@ -333,15 +327,15 @@ int Pcap::setFilter(const std::string& filter)
         pcap_t* dead_handle = pcap_open_dead(DLT_EN10MB, impl_->snaplen);
         if (!dead_handle)
         {
-            SET_ERROR(impl_->modinst, "%s: Could not allocate a dead PCAP handle!", __func__);
-            return DAQ_ERROR_NOMEM;
+            //SET_ERROR(impl_->modinst, "%s: Could not allocate a dead PCAP handle!", __func__);
+            //return DAQ_ERROR_NOMEM;
         }
         struct bpf_program fcode;
         pthread_mutex_lock(&bpf_mutex);
         if (pcap_compile(dead_handle, &fcode, filter.c_str(), 1, impl_->netmask) < 0)
         {
             pthread_mutex_unlock(&bpf_mutex);
-            SET_ERROR(impl_->modinst, "%s: pcap_compile: %s", __func__, pcap_geterr(dead_handle));
+            //SET_ERROR(impl_->modinst, "%s: pcap_compile: %s", __func__, pcap_geterr(dead_handle));
             return DAQ_ERROR;
         }
         pthread_mutex_unlock(&bpf_mutex);
@@ -411,16 +405,17 @@ int Pcap::start()
 fail:
     if (impl_->handle)
     {
-        if (status == PCAP_ERROR || status == PCAP_ERROR_NO_SUCH_DEVICE ||
+        /*if (status == PCAP_ERROR || status == PCAP_ERROR_NO_SUCH_DEVICE ||
             status == PCAP_ERROR_PERM_DENIED)
-            SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
+            ;//SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
         else
-            SET_ERROR(impl_->modinst, "%s: %s", impl_->device.c_str(), pcap_statustostr(status));
+            ;//SET_ERROR(impl_->modinst, "%s: %s", impl_->device.c_str(), pcap_statustostr(status));
+        */
         pcap_close(impl_->handle);
         impl_->handle = NULL;
     }
-    else
-        SET_ERROR(impl_->modinst, "%s", impl_->pcap_errbuf);
+   //else
+   //     SET_ERROR(impl_->modinst, "%s", impl_->pcap_errbuf);
     return DAQ_ERROR;
 }
 
@@ -433,7 +428,7 @@ int Pcap::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_
 
     if (pcap_inject(impl_->handle, data, data_len) < 0)
     {
-        SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
+        //SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
         return DAQ_ERROR;
     }
 
@@ -499,18 +494,19 @@ int Pcap::getSnaplen() const
 
 uint32_t Pcap::getType() const
 {
-    return DAQ_TYPE_FILE_CAPABLE | DAQ_TYPE_INTF_CAPABLE | DAQ_TYPE_MULTI_INSTANCE;
+    return 0;//DAQ_TYPE_FILE_CAPABLE | DAQ_TYPE_INTF_CAPABLE | DAQ_TYPE_MULTI_INSTANCE;
 }
 
 uint32_t Pcap::getCapabilities() const
 {
-    uint32_t capabilities = DAQ_CAPA_BPF | DAQ_CAPA_INTERRUPT;
+    uint32_t capabilities{0};// = DAQ_CAPA_BPF | DAQ_CAPA_INTERRUPT;
 
+    /*
     if (!impl_->device.empty())
         capabilities |= DAQ_CAPA_INJECT;
     else
         capabilities |= DAQ_CAPA_UNPRIV_START;
-
+    */
     return capabilities;
 }
 
@@ -599,7 +595,7 @@ DAQ_RecvStatus Pcap::receiveMsgs(SNetIO_Message_t* msgs[], const size_t maxSize,
                 rstat = (idx == 0) ? DAQ_RSTAT_TIMEOUT : DAQ_RSTAT_WOULD_BLOCK;
             else if (pcap_rval == -1)
             {
-                SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
+                //SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
                 rstat = DAQ_RSTAT_ERROR;
             }
             else if (pcap_rval == -2)

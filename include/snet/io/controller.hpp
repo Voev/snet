@@ -2,10 +2,8 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
-//#include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver.hpp>
 #include <snet/io/config.hpp>
-#include <snet/daq/daq.h>
 
 namespace snet::io
 {
@@ -51,14 +49,7 @@ public:
     void getStats(DAQ_Stats_t* stats);
     void resetStats();
 
-    const char* getError()
-    {
-        return instance_.errbuf;
-    }
-
 private:
-    DAQ_Instance_t instance_;
-    //std::unordered_map<std::string, std::unique_ptr<DynamicLibrary>> driverLibs_;
     std::shared_ptr<Driver> driver_;
     State state_;
 };

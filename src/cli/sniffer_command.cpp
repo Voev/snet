@@ -11,10 +11,6 @@
 
 #include <snet/io.hpp>
 
-#include <snet/daq/daq.h>
-#include <snet/daq/message.h>
-#include <snet/daq/daq_config.h>
-
 #include <snet/tls.hpp>
 
 using namespace casket;

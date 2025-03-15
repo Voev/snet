@@ -1,7 +1,7 @@
 #pragma once
-#include <snet/daq/daq.h>
 #include <string>
 #include <unordered_map>
+#include <snet/io/types.hpp>
 
 namespace snet::io
 {
