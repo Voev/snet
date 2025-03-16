@@ -517,7 +517,7 @@ public:
      * @return A enum of `TcpReassembly::ReassemblyStatus`, indicating status of
      * TCP reassembly
      */
-    ReassemblyStatus reassemblePacket(layers::RawPacket* tcpRawData);
+    ReassemblyStatus reassemblePacket(io::RawPacket* tcpRawData);
 
     /**
      * Close a connection manually. If the connection doesn't exist or already

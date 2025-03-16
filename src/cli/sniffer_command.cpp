@@ -6,7 +6,6 @@
 #include <snet/utils/print_hex.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/pcap/pcap_file_reader_device.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
 
 #include <snet/io.hpp>
@@ -15,7 +14,6 @@
 
 using namespace casket;
 using namespace casket::log;
-using namespace snet::pcap;
 
 namespace snet::sniffer
 {
@@ -130,7 +128,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
 
     auto& drv = config.addDriver("pcap");
 
-    drv.setMode(DAQ_MODE_READ_FILE);
+    drv.setMode(Mode::ReadFile);
     drv.setPath(ioDriver);
 
     controller.init(config);
@@ -138,21 +136,13 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     controller.start();
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
-    SNetIO_Message_t* msgs[128] = {};
-    DAQ_RecvStatus status{DAQ_RSTAT_OK};
+    RecvStatus status{RecvStatus::Ok};
+    io::RawPacket rawPacket(nullptr, 0, timeval{}, false);
     do
     {
-        std::size_t count{};
-        status = controller.receiveMessages(msgs, 128, &count);
-        for (size_t i = 0; i < count; ++i)
-        {
-            struct timespec ts{};
-            layers::RawPacket packet(
-                msgs[i]->data, msgs[i]->data_len, ts, false,
-                static_cast<layers::LinkLayerType>(controller.getDataLinkType()));
-            tcpReassembly.reassemblePacket(&packet);
-        }
-    } while (status == DAQ_RSTAT_OK);
+        status = controller.receivePacket(rawPacket);
+        tcpReassembly.reassemblePacket(&rawPacket);
+    } while (status == RecvStatus::Ok);
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 

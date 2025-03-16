@@ -1,7 +1,7 @@
 #pragma once
 #include <snet/io.hpp>
 
-namespace snet::drivers
+namespace snet::driver
 {
 
 class Trace final : public io::Driver
@@ -13,15 +13,15 @@ public:
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 
-    int start() override;
+    Status start() override;
 
-    int stop() override;
+    Status stop() override;
 
-    int finalizeMsg(const SNetIO_Message_t* msg, DAQ_Verdict verdict) override;
+    Status finalizePacket(const io::RawPacket& rawPacket, Verdict verdict) override;
 
     uint32_t getCapabilities() const override;
 
-    int getStats(DAQ_Stats_t* stats) override;
+    Status getStats(Stats* stats) override;
 
     void resetStats() override;
 
@@ -30,4 +30,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace snet::drivers
+} // namespace snet::driver

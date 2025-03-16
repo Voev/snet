@@ -31,22 +31,21 @@ public:
 
     void setFilter(std::string_view filter);
 
-    void inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len);
-    void injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len, int reverse);
+    void inject(const uint8_t* data, uint32_t data_len);
 
     void interrupt();
 
     int getDataLinkType();
 
-    DAQ_RecvStatus receiveMessages(SNetIO_Message_t* msgs[], const std::size_t maxSize,
-                                   std::size_t* received);
-    void finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict);
-    void getMsgPoolInfo(DAQ_MsgPoolInfo_t* info);
+    RecvStatus receivePacket(RawPacket& rawPacket);
 
+    void finalizePacket(const RawPacket& rawPacket, Verdict verdict);
+
+    void getMsgPoolInfo(PacketPoolInfo* info);
     State getState() const;
     int getSnapLen();
     uint32_t getCapabilities();
-    void getStats(DAQ_Stats_t* stats);
+    void getStats(Stats* stats);
     void resetStats();
 
 private:

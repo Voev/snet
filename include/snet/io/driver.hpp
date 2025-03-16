@@ -5,6 +5,7 @@
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver_config.hpp>
+#include <snet/io/raw_packet.hpp>
 
 namespace snet::io
 {
@@ -16,54 +17,46 @@ public:
 
     virtual ~Driver() noexcept = default;
 
-    virtual int start()
+    virtual Status start()
     {
         if (next_)
             return next_->start();
-        return DAQ_ERROR_NOTSUP;
+        return Status::NotSupported;
     }
 
-    virtual int stop()
+    virtual Status stop()
     {
         if (next_)
             return next_->stop();
-        return DAQ_ERROR_NOTSUP;
+        return Status::NotSupported;
     }
 
-    virtual int setFilter(const std::string& filter)
+    virtual Status setFilter(const std::string& filter)
     {
         if (next_)
             return next_->setFilter(filter);
-        return DAQ_ERROR_NOTSUP;
+        return Status::NotSupported;
     }
 
-    virtual int inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len)
+    virtual Status inject(const uint8_t* data, uint32_t data_len)
     {
         if (next_)
-            return next_->inject(type, hdr, data, data_len);
-        return DAQ_ERROR_NOTSUP;
+            return next_->inject(data, data_len);
+        return Status::NotSupported;
     }
 
-    virtual int injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len,
-                               int reverse)
-    {
-        if (next_)
-            return next_->injectRelative(msg,data, data_len, reverse);
-        return DAQ_ERROR_NOTSUP;
-    }
-
-    virtual int interrupt()
+    virtual Status interrupt()
     {
         if (next_)
             return next_->interrupt();
-        return DAQ_ERROR_NOTSUP;
+        return Status::NotSupported;
     }
 
-    virtual int getStats(DAQ_Stats_t* stats)
+    virtual Status getStats(Stats* stats)
     {
         if (next_)
             return next_->getStats(stats);
-        return DAQ_ERROR_NOTSUP;
+        return Status::NotSupported;
     }
 
     virtual void resetStats()
@@ -88,34 +81,37 @@ public:
 
     virtual uint32_t getCapabilities() const
     {
+        if (next_)
+            return next_->getCapabilities();
         return 0U;
     }
 
-    virtual int getDataLinkType() const
+    virtual io::LinkLayerType getDataLinkType() const
     {
-        return 0;
+        if (next_)
+            return next_->getDataLinkType();
+        return io::LINKTYPE_NULL;
     }
 
-    virtual DAQ_RecvStatus receiveMsgs(SNetIO_Message_t* msgs[], const size_t maxSize,
-                                       size_t* received)
+    virtual RecvStatus receivePacket(RawPacket& rawPacket)
     {
-        (void)msgs;
-        (void)maxSize;
-        (void)received;
-        return DAQ_RSTAT_ERROR;
+        if (next_)
+            return next_->receivePacket(rawPacket);
+        return RecvStatus::Error;
     }
 
-    virtual int finalizeMsg(const SNetIO_Message_t* msg, DAQ_Verdict verdict)
+    virtual Status finalizePacket(const RawPacket& rawPacket, Verdict verdict)
     {
-        (void)msg;
-        (void)verdict;
-        return DAQ_ERROR_NOTSUP;
+        if (next_)
+            return next_->finalizePacket(rawPacket, verdict);
+        return Status::NotSupported;
     }
 
-    virtual int getMsgPoolInfo(DAQ_MsgPoolInfo_t* info)
+    virtual Status getMsgPoolInfo(PacketPoolInfo* info)
     {
-        (void)info;
-        return DAQ_ERROR_NOTSUP;
+        if (next_)
+            return next_->getMsgPoolInfo(info);
+        return Status::NotSupported;
     }
 
     void setNext(std::shared_ptr<Driver> next)

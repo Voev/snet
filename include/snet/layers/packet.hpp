@@ -1,13 +1,13 @@
 #pragma once
 #include <vector>
+#include <snet/io/raw_packet.hpp>
 #include <snet/layers/layer.hpp>
-#include <snet/layers/raw_packet.hpp>
 
 namespace snet::layers {
 
 /**
  * @class Packet
- * This class represents a parsed packet. It contains the raw data (RawPacket instance), and a linked list of
+ * This class represents a parsed packet. It contains the raw data (io::RawPacket instance), and a linked list of
  * layers, each layer is a parsed protocol that this packet contains. The layers linked list is ordered where the
  * first layer is the lowest in the packet, the next layer will be L2.5 or L3 (e.g VLAN, IPv4, IPv6, etc.), and so on. etc.), etc. The
  * last layer in the linked list will be the highest in the packet. For example: for a standard HTTP request packet
@@ -18,7 +18,7 @@ class Packet {
     friend class Layer;
 
 private:
-    RawPacket* m_RawPacket;
+    io::RawPacket* m_RawPacket;
     Layer* m_FirstLayer;
     Layer* m_LastLayer;
     size_t m_MaxPacketLen;
@@ -65,7 +65,7 @@ public:
      * Default value is ::OsiModelLayerUnknown which means don't take this parameter into account
      */
     explicit Packet(
-        RawPacket* rawPacket, bool freeRawPacket = false, ProtocolType parseUntil = UnknownProtocol,
+        io::RawPacket* rawPacket, bool freeRawPacket = false, ProtocolType parseUntil = UnknownProtocol,
         OsiModelLayer parseUntilLayer = OsiModelLayerUnknown);
 
     /**
@@ -79,7 +79,7 @@ public:
      * cases when you need to parse only up to a certain layer and want to avoid the performance impact and memory
      * consumption of parsing the whole packet
      */
-    explicit Packet(RawPacket* rawPacket, ProtocolType parseUntil);
+    explicit Packet(io::RawPacket* rawPacket, ProtocolType parseUntil);
 
     /**
      * A constructor for creating a packet out of already allocated RawPacket. Very useful when parsing packets that
@@ -92,7 +92,7 @@ public:
      * useful for cases when you need to parse only up to a certain layer and want to avoid the performance impact
      * and memory consumption of parsing the whole packet
      */
-    explicit Packet(RawPacket* rawPacket, ProtocolTypeFamily parseUntilFamily);
+    explicit Packet(io::RawPacket* rawPacket, ProtocolTypeFamily parseUntilFamily);
 
     /**
      * A constructor for creating a packet out of already allocated RawPacket. Very useful when parsing packets that
@@ -106,7 +106,7 @@ public:
      * model (inclusive). Can be useful for cases when you need to parse only up to a certain OSI layer (for example
      * transport layer) and want to avoid the performance impact and memory consumption of parsing the whole packet
      */
-    explicit Packet(RawPacket* rawPacket, OsiModelLayer parseUntilLayer);
+    explicit Packet(io::RawPacket* rawPacket, OsiModelLayer parseUntilLayer);
 
     /**
      * A destructor for this class. Frees all layers allocated by this instance (Notice: it doesn't free layers that
@@ -141,7 +141,7 @@ public:
      * Get a pointer to the Packet's RawPacket
      * @return A pointer to the Packet's RawPacket
      */
-    RawPacket* getRawPacket() const {
+    io::RawPacket* getRawPacket() const {
         return m_RawPacket;
     }
 
@@ -160,14 +160,14 @@ public:
      * into account
      */
     void setRawPacket(
-        RawPacket* rawPacket, bool freeRawPacket, ProtocolTypeFamily parseUntil = UnknownProtocol,
+        io::RawPacket* rawPacket, bool freeRawPacket, ProtocolTypeFamily parseUntil = UnknownProtocol,
         OsiModelLayer parseUntilLayer = OsiModelLayerUnknown);
 
     /**
      * Get a pointer to the Packet's RawPacket in a read-only manner
      * @return A pointer to the Packet's RawPacket
      */
-    RawPacket* getRawPacketReadOnly() const {
+    io::RawPacket* getRawPacketReadOnly() const {
         return m_RawPacket;
     }
 
@@ -382,7 +382,8 @@ private:
 
     std::string printPacketInfo(bool timeAsLocalTime) const;
 
-    Layer* createFirstLayer(LinkLayerType linkType);
+    Layer* createFirstLayer(io::LinkLayerType linkType);
+
 }; // class Packet
 
 // implementation of inline methods

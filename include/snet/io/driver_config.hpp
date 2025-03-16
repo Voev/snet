@@ -16,7 +16,7 @@ public:
     explicit DriverConfig(const Config& config, std::string name)
         : config_(config)
         , name_(std::move(name))
-        , mode(DAQ_MODE_NONE)
+        , mode(Mode::None)
     {
     }
 
@@ -40,23 +40,19 @@ public:
         return name_;
     }
 
-    int setMode(DAQ_Mode newMode)
+    void setMode(Mode newMode)
     {
         mode = newMode;
-        return DAQ_SUCCESS;
     }
 
-    DAQ_Mode getMode() const
+    Mode getMode() const
     {
         return mode;
     }
 
-    int setVariable(const std::string& key, const std::string& value)
+    void setVariable(const std::string& key, const std::string& value)
     {
-        if (key.empty())
-            return DAQ_ERROR_INVAL;
         parameters_[key] = value;
-        return DAQ_SUCCESS;
     }
 
     const std::string getVariable(const std::string& key) const
@@ -70,11 +66,9 @@ public:
         return parameters_;
     }
 
-    int deleteVariable(const std::string& key)
+    void deleteVariable(const std::string& key)
     {
-        if (key.empty())
-            return DAQ_ERROR_INVAL;
-        return parameters_.erase(key) ? DAQ_SUCCESS : DAQ_ERROR;
+        parameters_.erase(key);
     }
 
 private:
@@ -82,7 +76,7 @@ private:
     Parameters parameters_;
     std::string name_;
     std::string path_;
-    DAQ_Mode mode;
+    Mode mode;
 };
 
 } // namespace snet::io

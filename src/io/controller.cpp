@@ -53,8 +53,8 @@ void Controller::setFilter(std::string_view filter)
         throw std::runtime_error("Can't set filter on uninitialized instance!");
     }
 
-    int rval = driver_->setFilter(filter.data());
-    if (rval != DAQ_SUCCESS)
+    auto status = driver_->setFilter(filter.data());
+    if (status != Status::Success)
     {
         throw std::runtime_error("failed to set filter");
     }
@@ -67,54 +67,24 @@ void Controller::start()
         throw std::runtime_error("Can't start an instance that isn't initialized!");
     }
 
-    int ret = driver_->start();
-    if (ret == DAQ_SUCCESS)
+    auto status = driver_->start();
+    if (status == Status::Success)
         state_ = State::Started;
     else
         throw std::runtime_error("failed to start");
 }
 
-void Controller::inject(DAQ_MsgType type, const void* hdr, const uint8_t* data, uint32_t data_len)
+void Controller::inject(const uint8_t* data, uint32_t data_len)
 {
-
-    if (!hdr)
-    {
-        throw std::invalid_argument("No message header given!");
-    }
-
-    if (!data)
-    {
-        throw std::runtime_error("No message data specified!");
-    }
-
-    int ret = driver_->inject(type, hdr, data, data_len);
-    if (ret != DAQ_SUCCESS)
+    auto status = driver_->inject(data, data_len);
+    if (status != Status::Success)
         throw std::runtime_error("failed to inject");
-}
-
-void Controller::injectRelative(SNetIO_Message_t* msg, const uint8_t* data, uint32_t data_len,
-                                int reverse)
-{
-
-    if (!msg)
-    {
-        throw std::invalid_argument("No original message header given!");
-    }
-
-    if (!data)
-    {
-        throw std::invalid_argument("No message data given!");
-    }
-
-    int ret = driver_->injectRelative(msg, data, data_len, reverse);
-    if (ret != DAQ_SUCCESS)
-        throw std::runtime_error("failed to inject relative");
 }
 
 void Controller::interrupt()
 {
-    int ret = driver_->interrupt();
-    if (ret != DAQ_SUCCESS)
+    auto status = driver_->interrupt();
+    if (status != Status::Success)
         throw std::runtime_error("failed to interrupt");
 }
 
@@ -125,8 +95,8 @@ void Controller::stop()
         throw std::runtime_error("Can't stop an instance that hasn't started!");
     }
 
-    int ret = driver_->stop();
-    if (ret != DAQ_SUCCESS)
+    auto status = driver_->stop();
+    if (status != Status::Success)
         throw std::runtime_error("failed to stop");
     else
         state_ = State::Stopped;
@@ -137,15 +107,15 @@ Controller::State Controller::getState() const
     return state_;
 }
 
-void Controller::getStats(DAQ_Stats_t* stats)
+void Controller::getStats(Stats* stats)
 {
     if (!stats)
     {
         throw std::invalid_argument("No place to put the statistics!");
     }
 
-    int ret = driver_->getStats(stats);
-    if (ret != DAQ_SUCCESS)
+    auto status = driver_->getStats(stats);
+    if (status != Status::Success)
         throw std::runtime_error("failed to stop");
 }
 
@@ -169,40 +139,25 @@ int Controller::getDataLinkType()
     return driver_->getDataLinkType();
 }
 
-DAQ_RecvStatus Controller::receiveMessages(SNetIO_Message_t* msgs[], const std::size_t maxSize,
-                                           std::size_t* received)
+RecvStatus Controller::receivePacket(RawPacket& rawPacket)
 {
-    if (!msgs)
-    {
-        return DAQ_RSTAT_INVALID;
-    }
-
-    if (!maxSize)
-    {
-        return DAQ_RSTAT_OK;
-    }
-
-    return driver_->receiveMsgs(msgs, maxSize, received);
+    return driver_->receivePacket(rawPacket);
 }
 
-void Controller::finalizeMessage(SNetIO_Message_t* msg, DAQ_Verdict verdict)
+void Controller::finalizePacket(const RawPacket& rawPacket, Verdict verdict)
 {
-
-    if (!msg)
-        throw std::invalid_argument("msg");
-
-    int ret = driver_->finalizeMsg(msg, verdict);
-    if (DAQ_SUCCESS != ret)
+    auto status = driver_->finalizePacket(rawPacket, verdict);
+    if (status != Status::Success)
         throw std::runtime_error("failed to finalize message");
 }
 
-void Controller::getMsgPoolInfo(DAQ_MsgPoolInfo_t* info)
+void Controller::getMsgPoolInfo(PacketPoolInfo* info)
 {
     if (!info)
         throw std::invalid_argument("info");
 
-    int ret = driver_->getMsgPoolInfo(info);
-    if (DAQ_SUCCESS != ret)
+    auto status = driver_->getMsgPoolInfo(info);
+    if (status != Status::Success)
         throw std::runtime_error("failed to get message pool");
 }
 
