@@ -1,10 +1,10 @@
 #include <cstring>
 #include <casket/log/log_manager.hpp>
-#include <snet/layers/raw_packet.hpp>
+#include <snet/io/raw_packet.hpp>
 
 using namespace casket;
 
-namespace snet::layers
+namespace snet::io
 {
 
 void RawPacket::init(bool deleteRawDataAtDestructor)
@@ -131,7 +131,7 @@ bool RawPacket::initWithRawData(const uint8_t* pRawData, int rawDataLen,
 
 void RawPacket::clear()
 {
-    if (m_RawData != nullptr)
+    if (m_RawData != nullptr && m_DeleteRawDataAtDestructor)
         delete[] m_RawData;
 
     m_RawData = nullptr;

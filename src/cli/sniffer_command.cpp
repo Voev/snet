@@ -6,14 +6,14 @@
 #include <snet/utils/print_hex.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/pcap/pcap_file_reader_device.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
+
+#include <snet/io.hpp>
 
 #include <snet/tls.hpp>
 
 using namespace casket;
 using namespace casket::log;
-using namespace snet::pcap;
 
 namespace snet::sniffer
 {
@@ -23,6 +23,7 @@ struct Options
     std::string input;
     std::string keylog;
     std::string serverKeyPath;
+    std::string driverPath;
 };
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
@@ -30,7 +31,6 @@ using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session
 class SnifferHandler final : public tls::IRecordHandler
 {
 public:
-
     SnifferHandler() = default;
 
     void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override
@@ -115,27 +115,39 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
     }
 }
 
-void SniffPacketsFromFile(const std::string& fileName, tcp::TcpReassembly& tcpReassembly)
+void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
+                          tcp::TcpReassembly& tcpReassembly)
 {
-    auto reader = pcap::IFileReaderDevice::getReader(fileName);
-    if (!reader->open())
-    {
-        std::cerr << "Cannot open pcap/pcapng file" << std::endl;
-        return;
-    }
+    io::Controller controller;
 
+    io::Config config;
+    config.setInput(fileName);
+    config.setMsgPoolSize(128);
+    config.setTimeout(0);
+    config.setSnaplen(2048);
+
+    auto& drv = config.addDriver("pcap");
+
+    drv.setMode(Mode::ReadFile);
+    drv.setPath(ioDriver);
+
+    controller.init(config);
+
+    controller.start();
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
-    layers::RawPacket rawPacket;
-    while (reader->getNextPacket(rawPacket))
+    RecvStatus status{RecvStatus::Ok};
+    io::RawPacket rawPacket(nullptr, 0, timeval{}, false);
+    do
     {
+        status = controller.receivePacket(rawPacket);
         tcpReassembly.reassemblePacket(&rawPacket);
-    }
+    } while (status == RecvStatus::Ok);
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
     tcpReassembly.closeAllConnections();
-    reader->close();
+    controller.stop();
 
     std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
 }
@@ -149,6 +161,7 @@ public:
         parser_.add("input, i", opt::Value(&options_.input), "Input PCAP file");
         parser_.add("keylog, l", opt::Value(&options_.keylog), "Input key log file");
         parser_.add("key, k", opt::Value(&options_.serverKeyPath), "Server key path");
+        parser_.add("driver, d", opt::Value(&options_.driverPath), "Driver path");
     }
 
     ~Command() = default;
@@ -179,7 +192,7 @@ public:
         }
 
         tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
-        SniffPacketsFromFile(options_.input, tcpReassembly);
+        SniffPacketsFromFile(options_.driverPath, options_.input, tcpReassembly);
     }
 
 private:

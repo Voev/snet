@@ -509,7 +509,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     }
 }
 
-TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::RawPacket* tcpRawData)
+TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(io::RawPacket* tcpRawData)
 {
     layers::Packet parsedPacket(tcpRawData, false);
     return reassemblePacket(parsedPacket);

@@ -1,7 +1,7 @@
 #include <pcap.h>
-#include <snet/pcap/pcap_handle.hpp>
+#include "pcap_handle.hpp"
 
-namespace snet::pcap
+namespace snet::driver
 {
 
 void PcapHandle::reset(PcapType* pcapDescriptor) noexcept

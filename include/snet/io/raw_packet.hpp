@@ -3,7 +3,7 @@
 #include <sys/time.h>
 #include <stddef.h>
 
-namespace snet::layers
+namespace snet::io
 {
 
 enum LinkLayerType

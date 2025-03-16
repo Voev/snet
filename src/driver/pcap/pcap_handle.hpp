@@ -1,9 +1,9 @@
 #pragma once
 #include <cstddef>
-#include <snet/pcap/forward_types.hpp>
+#include "forward_types.hpp"
 #include <casket/utils/noncopyable.hpp>
 
-namespace snet::pcap
+namespace snet::driver
 {
 
 /// @brief A wrapper class for libpcap packet capture descriptor.
@@ -92,6 +92,11 @@ public:
         return isValid();
     }
 
+    operator PcapType*() const
+    {
+        return this->get();
+    }
+
     bool operator==(std::nullptr_t) const noexcept
     {
         return !isValid();
@@ -106,4 +111,4 @@ private:
     PcapType* descriptor_{nullptr};
 };
 
-} // namespace snet::pcap
+} // namespace snet::driver

@@ -13,6 +13,7 @@
 #include <snet/layers/payload_layer.hpp>
 
 using namespace casket;
+using namespace snet::io;
 
 namespace snet::layers
 {
