@@ -139,11 +139,12 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
     RecvStatus status{RecvStatus::Ok};
-    io::RawPacket rawPacket(nullptr, 0, timeval{}, false);
+    io::RawPacket* rawPacket{nullptr};
     do
     {
-        status = controller.receivePacket(rawPacket);
-        tcpReassembly.reassemblePacket(&rawPacket);
+        status = controller.receivePacket(&rawPacket);
+        tcpReassembly.reassemblePacket(rawPacket);
+        controller.finalizePacket(rawPacket, Verdict::Verdict_PASS);
     } while (status == RecvStatus::Ok);
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();

@@ -1,8 +1,5 @@
 #include <cstring>
-#include <casket/log/log_manager.hpp>
 #include <snet/io/raw_packet.hpp>
-
-using namespace casket;
 
 namespace snet::io
 {
@@ -36,7 +33,7 @@ RawPacket::RawPacket(const uint8_t* pRawData, int rawDataLen,
 
 RawPacket::RawPacket()
 {
-    init();
+    init(false);
 }
 
 RawPacket::~RawPacket()
@@ -174,10 +171,6 @@ bool RawPacket::reallocateData(size_t newBufferLength)
 
     if ((int)newBufferLength < m_RawDataLen)
     {
-        log::error("Cannot reallocate raw packet to a smaller size. "
-                   "Current data length: {}"
-                   "; requested length: {}",
-                   m_RawDataLen, newBufferLength);
         return false;
     }
 
@@ -197,7 +190,6 @@ bool RawPacket::removeData(int atIndex, size_t numOfBytesToRemove)
 {
     if ((atIndex + (int)numOfBytesToRemove) > m_RawDataLen)
     {
-        log::error("Remove section is out of raw packet bound");
         return false;
     }
 
