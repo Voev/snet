@@ -139,12 +139,12 @@ int Controller::getDataLinkType()
     return driver_->getDataLinkType();
 }
 
-RecvStatus Controller::receivePacket(RawPacket& rawPacket)
+RecvStatus Controller::receivePacket(RawPacket** rawPacket)
 {
     return driver_->receivePacket(rawPacket);
 }
 
-void Controller::finalizePacket(const RawPacket& rawPacket, Verdict verdict)
+void Controller::finalizePacket(RawPacket* rawPacket, Verdict verdict)
 {
     auto status = driver_->finalizePacket(rawPacket, verdict);
     if (status != Status::Success)

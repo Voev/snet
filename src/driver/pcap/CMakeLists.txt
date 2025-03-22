@@ -9,4 +9,4 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCAP REQUIRED libpcap)
 
 include_directories(${PCAP_INCLUDE_DIRS})
-target_link_libraries(snet_pcap ${PCAP_LIBRARIES})
+target_link_libraries(snet_pcap snet_io ${PCAP_LIBRARIES})

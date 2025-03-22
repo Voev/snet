@@ -104,7 +104,7 @@ const char* Verdict_strings[MAX_Verdict] = {
     "Ignore"     // Verdict_IGNORE
 };
 
-Status Trace::finalizePacket(const io::RawPacket& rawPacket, Verdict verdict)
+Status Trace::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 {
     impl_->stats.verdicts[verdict]++;
 

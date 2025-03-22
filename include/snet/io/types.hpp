@@ -37,7 +37,7 @@ struct PacketPoolInfo
 {
     uint32_t size;
     uint32_t available;
-    size_t mem_size;
+    size_t memorySize;
 };
 
 enum class Status

@@ -17,7 +17,7 @@ public:
 
     Status stop() override;
 
-    Status finalizePacket(const io::RawPacket& rawPacket, Verdict verdict) override;
+    Status finalizePacket(io::RawPacket* rawPacket, Verdict verdict) override;
 
     uint32_t getCapabilities() const override;
 

@@ -37,9 +37,9 @@ public:
 
     int getDataLinkType();
 
-    RecvStatus receivePacket(RawPacket& rawPacket);
+    RecvStatus receivePacket(RawPacket** rawPacket);
 
-    void finalizePacket(const RawPacket& rawPacket, Verdict verdict);
+    void finalizePacket(RawPacket* rawPacket, Verdict verdict);
 
     void getMsgPoolInfo(PacketPoolInfo* info);
     State getState() const;

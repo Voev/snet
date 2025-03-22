@@ -30,7 +30,7 @@ Packet::Packet(size_t maxPacketLen)
     gettimeofday(&time, nullptr);
     uint8_t* data = new uint8_t[maxPacketLen];
     memset(data, 0, maxPacketLen);
-    m_RawPacket = new RawPacket(data, 0, time, true, LINKTYPE_ETHERNET);
+    m_RawPacket = new io::RawPacket(data, 0, time, true, LINKTYPE_ETHERNET);
 }
 
 Packet::Packet(uint8_t* buffer, size_t bufferSize)
