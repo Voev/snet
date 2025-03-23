@@ -141,8 +141,11 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     do
     {
         status = controller.receivePacket(&rawPacket);
-        tcpReassembly.reassemblePacket(rawPacket);
-        controller.finalizePacket(rawPacket, Verdict::Verdict_PASS);
+        if (status == RecvStatus::Ok)
+        {
+            tcpReassembly.reassemblePacket(rawPacket);
+            controller.finalizePacket(rawPacket, Verdict::Verdict_PASS);
+        }
     } while (status == RecvStatus::Ok);
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();

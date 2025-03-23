@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include <snet/io/raw_packet.hpp>
 #include "forward_types.hpp"
 
@@ -12,7 +13,7 @@ public:
         : RawPacket(nullptr, 0, timeval{}, false)
     {}
 
-    uint8_t* nlmsg_buf;
+    std::vector<uint8_t> nlmsg_buf;
     const NlMessageHeader* mh;
     NlMessagePacketHeader* ph;
 };

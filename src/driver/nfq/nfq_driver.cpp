@@ -28,15 +28,6 @@ namespace snet::driver
 #define NFQ_DEFAULT_POOL_SIZE 16
 #define DEFAULT_QUEUE_MAXLEN 1024 // Based on NFQNL_QMAX_DEFAULT from nfnetlnk_queue_core.c
 
-struct NfqRawPacket;
-
-struct PacketPoolInfo
-{
-    uint32_t size;
-    uint32_t available;
-    size_t mem_size;
-};
-
 /* Netlink message building routines vaguely lifted from libmnl's netfilter queue example
     (nf-queue.c) to avoid having to link the seemingly deprecated libnetfilter_queue (which uses
     libmnl anyway). */
@@ -59,9 +50,7 @@ static struct nlmsghdr* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t co
 {
     struct nlmsghdr* nlh = nfq_hdr_put(buf, NFQNL_MSG_CONFIG, queue_num);
     struct nfqnl_msg_config_cmd cmd;
-    cmd.command = command,
-    cmd.pf = htons(pf),
-    mnl_attr_put(nlh, NFQA_CFG_CMD, sizeof(cmd), &cmd);
+    cmd.command = command, cmd.pf = htons(pf), mnl_attr_put(nlh, NFQA_CFG_CMD, sizeof(cmd), &cmd);
 
     return nlh;
 }
@@ -119,11 +108,11 @@ static int parse_attr_cb(const struct nlattr* attr, void* data)
             return MNL_CB_ERROR;
         break;
     case NFQA_TIMESTAMP:
-        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_timestamp)) <
+        /*if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_timestamp)) <
             0)
         {
             return MNL_CB_ERROR;
-        }
+        }*/
         break;
     case NFQA_HWADDR:
         if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_hw)) < 0)
@@ -154,6 +143,7 @@ static int process_message_cb(const struct nlmsghdr* nlh, void* data)
 
     /* FIXIT-L In the event that there is actually more than one packet per message, handle it
        gracefully. I haven't actually seen this happen yet. */
+    
     if (rawPacket->mh)
         return MNL_CB_ERROR;
 
@@ -168,9 +158,16 @@ static int process_message_cb(const struct nlmsghdr* nlh, void* data)
     timeval tv{};
     gettimeofday(&tv, NULL);
 
-    rawPacket->setRawData((uint8_t*)mnl_attr_get_payload(attr[NFQA_PAYLOAD]),
-                          (int)ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN])), tv, io::LINKTYPE_RAW,
-                          mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]));
+    uint8_t* packetData = static_cast<uint8_t*>(mnl_attr_get_payload(attr[NFQA_PAYLOAD]));
+    int frameLength = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
+    int dataLength{};
+
+    if (attr[NFQA_CAP_LEN])
+        dataLength = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
+    else
+        dataLength = frameLength;
+
+    rawPacket->setRawData(packetData, dataLength, tv, io::LINKTYPE_RAW, frameLength);
 
     return MNL_CB_OK;
 }
@@ -180,7 +177,7 @@ struct NfQueue::Impl
     Impl();
     ~Impl() noexcept;
 
-    ssize_t socket_recv(void* buf, size_t bufsiz, bool blocking)
+    ssize_t socket_recv(void* buf, size_t bufsiz, bool blocking, std::error_code& ec) noexcept
     {
         ssize_t ret;
         struct sockaddr_nl addr;
@@ -193,24 +190,31 @@ struct NfQueue::Impl
             .msg_namelen = sizeof(struct sockaddr_nl),
             .msg_iov = &iov,
             .msg_iovlen = 1,
-            .msg_control = NULL,
+            .msg_control = nullptr,
             .msg_controllen = 0,
             .msg_flags = 0,
         };
+
         ret = recvmsg(nlsock_fd, &msg, blocking ? 0 : MSG_DONTWAIT);
         if (ret == -1)
-            return ret;
+        {
+            ec = std::error_code(errno, std::system_category());
+            return -1;
+        }
 
         if (msg.msg_flags & MSG_TRUNC)
         {
-            errno = ENOSPC;
+            ec = std::make_error_code(std::errc::no_buffer_space);
             return -1;
         }
+
         if (msg.msg_namelen != sizeof(struct sockaddr_nl))
         {
-            errno = EINVAL;
+            ec = std::make_error_code(std::errc::invalid_argument);
             return -1;
         }
+
+        ec.clear();
         return ret;
     }
 
@@ -277,6 +281,11 @@ NfQueue::NfQueue(const io::DriverConfig& config)
 
     impl_->pool.allocatePool(NFQ_DEFAULT_POOL_SIZE);
     impl_->nlsock = mnl_socket_open(NETLINK_NETFILTER);
+    if (!impl_->nlsock)
+    {
+        throw std::runtime_error("Couldn't open netfilter netlink socket");
+    }
+
     impl_->nlsock_fd = mnl_socket_get_fd(impl_->nlsock);
 
     /* Implement the requested timeout by way of the receive timeout on the netlink socket */
@@ -295,16 +304,22 @@ NfQueue::NfQueue(const io::DriverConfig& config)
        bookkeeping overhead, so the default of 1024 * 1500 will end up allocating about 3MB of
        receive buffer space.  The unmodified default tends to be around 208KB. */
     unsigned int socket_rcvbuf_size = impl_->queue_maxlen * impl_->snaplen;
-    if (setsockopt(impl_->nlsock_fd, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size,
-                   sizeof(socket_rcvbuf_size)) == -1)
+    if (-1 == setsockopt(impl_->nlsock_fd, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size,
+                         sizeof(socket_rcvbuf_size)))
     {
-        setsockopt(impl_->nlsock_fd, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size,
-                       sizeof(socket_rcvbuf_size));
+        if (-1 == setsockopt(impl_->nlsock_fd, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size,
+                             sizeof(socket_rcvbuf_size)))
+        {
+            throw std::runtime_error("failed to setsockopt");
+        }
     }
     if (impl_->debug)
         printf("Set socket receive buffer size to %u\n", socket_rcvbuf_size);
 
-    mnl_socket_bind(impl_->nlsock, 0, MNL_SOCKET_AUTOPID);
+    if (-1 == mnl_socket_bind(impl_->nlsock, 0, MNL_SOCKET_AUTOPID))
+    {
+        throw std::runtime_error("socket bind failed: " + std::string(strerror(errno)));
+    }
     impl_->portid = mnl_socket_get_portid(impl_->nlsock);
 
     struct nlmsghdr* nlh;
@@ -312,21 +327,35 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     /* The following four packet family unbind/bind commands do nothing on modern (3.8+) kernels.
         They used to handle binding the netfilter socket to a particular address family. */
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
-    
+    if (0 > mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed (NFQNL_CFG_CMD_PF_UNBIND)");
+    }
+
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
+    if (-1 == mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed: " + std::string(strerror(errno)));
+    }
 
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
+    if (-1 == mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed: " + std::string(strerror(errno)));
+    }
 
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
+    if (-1 == mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed: " + std::string(strerror(errno)));
+    }
 
     /* Now, actually bind to the netfilter queue.  The address family specified is irrelevant. */
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queue_num);
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
-
+    if (-1 == mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed: " + std::string(strerror(errno)));
+    }
     /*
      * Set the queue into packet copying mode with a max copying length of our snaplen.
      * While we're building a configuration message, we might as well tack on our requested
@@ -344,8 +373,11 @@ NfQueue::NfQueue(const io::DriverConfig& config)
         mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_FAIL_OPEN));
         mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_FAIL_OPEN));
     }
-    
-    mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
+
+    if (-1 == mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len))
+    {
+        throw std::runtime_error("mnl_socket_sendto failed: " + std::string(strerror(errno)));
+    }
 }
 
 std::shared_ptr<io::Driver> NfQueue::create(const io::DriverConfig& config)
@@ -426,22 +458,31 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
         return RecvStatus::Error;
     }
 
+    rawPacket->nlmsg_buf.resize(impl_->nlmsg_bufsize);
+
     ssize_t ret;
+    std::error_code ec;
+
     do
     {
-        ret = impl_->socket_recv(rawPacket->nlmsg_buf, impl_->nlmsg_bufsize, true);
+        ret = impl_->socket_recv(rawPacket->nlmsg_buf.data(), impl_->nlmsg_bufsize, true, ec);
         if (ret < 0)
         {
-            if (errno == ENOBUFS)
+            if (ec == std::errc::no_buffer_space)
             {
                 continue;
             }
-            else if (errno == EAGAIN || errno == EWOULDBLOCK)
+            else if (ec == std::errc::resource_unavailable_try_again ||
+                     ec == std::errc::operation_would_block)
+            {
                 rstat = RecvStatus::Interrupted;
-            else if (errno == EINTR)
+            }
+            else if (ec == std::errc::interrupted)
             {
                 if (!impl_->interrupted)
+                {
                     continue;
+                }
                 impl_->interrupted = false;
                 rstat = RecvStatus::Interrupted;
             }
@@ -451,14 +492,16 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
             }
             break;
         }
+
+        ret = mnl_cb_run(rawPacket->nlmsg_buf.data(), ret, 0, impl_->portid, process_message_cb, rawPacket);
+        if (ret < 0)
+        {
+            rstat = RecvStatus::Error;
+        }
+        *pRawPacket = rawPacket;
+
     } while (false);
-    errno = 0;
-    ret = mnl_cb_run(impl_->nlmsg_buf, ret, 0, impl_->portid, process_message_cb, rawPacket);
-    if (ret < 0)
-    {
-        rstat = RecvStatus::Error;
-    }
-    *pRawPacket = rawPacket;
+
     return rstat;
 }
 
@@ -484,16 +527,12 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
         return Status::Error;
     }
 
+    nlPacket->mh = nullptr;
+    nlPacket->ph = nullptr;
     impl_->pool.releasePacket(nlPacket);
 
     return Status::Success;
 }
-
-/*Status NfQueue::getMsgPoolInfo(PacketPoolInfo* info)
-{
-    (void)info;
-    return Status::Success;
-}*/
 
 } // namespace snet::driver
 

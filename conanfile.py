@@ -36,6 +36,7 @@ class SecureNetwork(ConanFile):
         self.requires("openssl/3.0.15", headers=True, libs=True, run=True)
         self.requires("zlib/1.3.1")
         self.requires("libpcap/1.10.4")
+        self.requires("libmnl/1.0.5")
         if self.options.enable_tests:
             self.requires("gtest/1.15.0")
 
