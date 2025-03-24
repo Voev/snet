@@ -1,8 +1,9 @@
 #include <openssl/err.h>
 
+#include <snet/crypto/exception.hpp>
+
 #include <snet/tls/connection.hpp>
 #include <snet/tls/settings.hpp>
-#include <snet/tls/error_code.hpp>
 
 #include <casket/utils/exception.hpp>
 
@@ -26,10 +27,7 @@ Connection::Connection(Settings& settings)
     BIO* intBio{nullptr};
     BIO* extBio{nullptr};
 
-    if (!BIO_new_bio_pair(&intBio, 0, &extBio, 0))
-    {
-        throw SystemError(GetLastError());
-    }
+    crypto::ThrowIfFalse(0 < BIO_new_bio_pair(&intBio, 0, &extBio, 0));
 
     SSL_set_bio(ssl_, intBio, intBio);
     extBio_.reset(extBio);
@@ -66,18 +64,12 @@ Connection& Connection::operator=(Connection&& other) noexcept
 
 void Connection::setSocket(int fd)
 {
-    if (0 >= SSL_set_fd(ssl_, fd))
-    {
-        throw SystemError(GetLastError());
-    }
+    crypto::ThrowIfFalse(0 < SSL_set_fd(ssl_, fd));
 }
 
 void Connection::setSession(SSL_SESSION* session)
 {
-    if (0 >= SSL_set_session(ssl_, session))
-    {
-        throw SystemError(GetLastError());
-    }
+    crypto::ThrowIfFalse(0 < SSL_set_session(ssl_, session));
 }
 
 SslSessionPtr Connection::getSession()
@@ -87,10 +79,7 @@ SslSessionPtr Connection::getSession()
 
 void Connection::setExtHostName(std::string_view hostname)
 {
-    if (0 >= SSL_set_tlsext_host_name(ssl_, hostname.data()))
-    {
-        throw SystemError(GetLastError());
-    }
+    crypto::ThrowIfFalse(0 < SSL_set_tlsext_host_name(ssl_, hostname.data()));
 }
 
 bool Connection::handshakeDone() const noexcept
@@ -100,47 +89,44 @@ bool Connection::handshakeDone() const noexcept
 
 Connection::Want Connection::handshake()
 {
-    Operation op = std::bind(&Connection::doHandshake, this,
-                             std::placeholders::_1, std::placeholders::_2);
+    Operation op =
+        std::bind(&Connection::doHandshake, this, std::placeholders::_1, std::placeholders::_2);
     return perform(op, nullptr, 0, 0);
 }
 
 Connection::Want Connection::shutdown()
 {
-    Operation op = std::bind(&Connection::doShutdown, this,
-                             std::placeholders::_1, std::placeholders::_2);
+    Operation op =
+        std::bind(&Connection::doShutdown, this, std::placeholders::_1, std::placeholders::_2);
     return perform(op, nullptr, 0, 0);
 }
 
-Connection::Want Connection::read(std::uint8_t* data,
-                                  const std::size_t dataLength,
+Connection::Want Connection::read(std::uint8_t* data, const std::size_t dataLength,
                                   std::size_t& bytesTransferred)
 {
     if (dataLength == 0)
     {
         return Want::Nothing;
     }
-    Operation op = std::bind(&Connection::doRead, this, std::placeholders::_1,
-                             std::placeholders::_2);
+    Operation op =
+        std::bind(&Connection::doRead, this, std::placeholders::_1, std::placeholders::_2);
     return perform(op, data, dataLength, &bytesTransferred);
 }
 
-Connection::Want Connection::write(std::uint8_t* data,
-                                   const std::size_t dataLength,
+Connection::Want Connection::write(std::uint8_t* data, const std::size_t dataLength,
                                    std::size_t& bytesTransferred)
 {
     if (dataLength == 0)
     {
         return Want::Nothing;
     }
-    Operation op = std::bind(&Connection::doWrite, this, std::placeholders::_1,
-                             std::placeholders::_2);
-    return perform(op, const_cast<std::uint8_t*>(data), dataLength,
-                   &bytesTransferred);
+    Operation op =
+        std::bind(&Connection::doWrite, this, std::placeholders::_1, std::placeholders::_2);
+    return perform(op, const_cast<std::uint8_t*>(data), dataLength, &bytesTransferred);
 }
 
 Connection::Want Connection::perform(const Operation& op, void* data, std::size_t length,
-                         std::size_t* bytesTransferred)
+                                     std::size_t* bytesTransferred)
 {
 
     std::size_t pendingOutputBefore = BIO_ctrl_pending(extBio_);
@@ -151,14 +137,12 @@ Connection::Want Connection::perform(const Operation& op, void* data, std::size_
 
     if (sslError == SSL_ERROR_SSL)
     {
-        return pendingOutputAfter > pendingOutputBefore ? Want::Output
-                                                        : Want::Nothing;
+        return pendingOutputAfter > pendingOutputBefore ? Want::Output : Want::Nothing;
     }
 
     if (sslError == SSL_ERROR_SYSCALL)
     {
-        return pendingOutputAfter > pendingOutputBefore ? Want::Output
-                                                        : Want::Nothing;
+        return pendingOutputAfter > pendingOutputBefore ? Want::Output : Want::Nothing;
     }
 
     if (result > 0 && bytesTransferred)
@@ -194,14 +178,12 @@ int Connection::doShutdown(void*, std::size_t)
 
 int Connection::doRead(void* data, std::size_t length)
 {
-    return SSL_read(ssl_, data,
-                    length < INT_MAX ? static_cast<int>(length) : INT_MAX);
+    return SSL_read(ssl_, data, length < INT_MAX ? static_cast<int>(length) : INT_MAX);
 }
 
 int Connection::doWrite(void* data, std::size_t length)
 {
-    return SSL_write(ssl_, data,
-                     length < INT_MAX ? static_cast<int>(length) : INT_MAX);
+    return SSL_write(ssl_, data, length < INT_MAX ? static_cast<int>(length) : INT_MAX);
 }
 
 } // namespace snet::tls

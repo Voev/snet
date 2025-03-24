@@ -13,6 +13,7 @@ target_link_libraries(${EXECUTABLE_TARGET}
     snet_io
     snet_ip
     snet_tls
+    snet_crypto
     snet_event
     snet_layers
     snet_pcap

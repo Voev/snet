@@ -1,8 +1,8 @@
-#include <snet/tls/error_code.hpp>
-#include <snet/tls/error_category.hpp>
 #include <openssl/err.h>
+#include <snet/crypto/error_code.hpp>
+#include <snet/crypto/error_category.hpp>
 
-namespace snet::tls
+namespace snet::crypto
 {
 
 std::error_code TranslateError(unsigned long error)
@@ -10,12 +10,11 @@ std::error_code TranslateError(unsigned long error)
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     if (ERR_SYSTEM_ERROR(error))
     {
-        return std::error_code{static_cast<int>(ERR_GET_REASON(error)),
-                               std::system_category()};
+        return std::error_code{static_cast<int>(ERR_GET_REASON(error)), std::system_category()};
     }
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-    return std::error_code{static_cast<int>(error), ErrorCategory::Instance()};
+    return std::error_code{static_cast<int>(error), ErrorCategory::getInstance()};
 }
 
 std::error_code GetLastError()
@@ -26,4 +25,4 @@ std::error_code GetLastError()
     return TranslateError(ERR_R_OPERATION_FAIL);
 }
 
-} // namespace snet::tls
+} // namespace snet::crypto

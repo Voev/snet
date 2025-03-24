@@ -3,7 +3,6 @@
 #include <memory>
 #include <snet/tls/i_record_reader.hpp>
 #include <snet/tls/i_record_handler.hpp>
-#include <snet/tls/exception.hpp>
 
 namespace snet::tls
 {

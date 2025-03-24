@@ -1,7 +1,29 @@
-#include <snet/tls/error_category.hpp>
 #include <openssl/err.h>
+#include <openssl/x509_vfy.h>
+#include <snet/crypto/error_category.hpp>
 
-namespace snet::tls
+namespace snet::crypto::verify
+{
+
+const char* ErrorCategory::name() const noexcept
+{
+    return "X.509 verification";
+}
+
+std::string ErrorCategory::message(int value) const
+{
+    return X509_verify_cert_error_string(value);
+}
+
+ErrorCategory& ErrorCategory::getInstance()
+{
+    static ErrorCategory instance;
+    return instance;
+}
+
+} // namespace snet::crypto::verify
+
+namespace snet::crypto
 {
 
 const char* ErrorCategory::name() const noexcept
@@ -38,4 +60,10 @@ std::string ErrorCategory::message(int value) const
     return "OpenSSL error";
 }
 
-} // namespace snet::tls
+ErrorCategory& ErrorCategory::getInstance()
+{
+    static ErrorCategory instance;
+    return instance;
+}
+
+} // namespace snet::crypto

@@ -1,6 +1,6 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <openssl/ssl.h>
-#include <snet/tls/exception.hpp>
+#include <snet/crypto/exception.hpp>
 #include <snet/utils/endianness.hpp>
 #include <casket/utils/exception.hpp>
 

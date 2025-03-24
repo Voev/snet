@@ -7,6 +7,8 @@
 #include <snet/tls.hpp>
 #include <snet/socket.hpp>
 
+#include <snet/crypto/exception.hpp>
+
 using namespace snet::socket;
 using namespace snet::tls;
 
@@ -78,7 +80,7 @@ void CheckCipher(const Endpoint& endpoint, const std::string& cipherSuite, Queue
         Connection conn(settings);
         conn.setSocket(socket);
 
-        snet::tls::ThrowIfFalse(0 < conn.doHandshake(nullptr, 0));
+        snet::crypto::ThrowIfFalse(0 < conn.doHandshake(nullptr, 0));
         ret.push(cipherSuite);
     }
     catch (const std::exception& e)

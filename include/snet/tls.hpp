@@ -1,9 +1,6 @@
 #pragma once
 
 #include <snet/tls/alert.hpp>
-#include <snet/tls/error_category.hpp>
-#include <snet/tls/error_code.hpp>
-#include <snet/tls/exception.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/extensions.hpp>

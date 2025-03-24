@@ -1,5 +1,5 @@
 #include <snet/tls/handshake_hash.hpp>
-#include <snet/tls/exception.hpp>
+#include <snet/crypto/exception.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
 namespace snet::tls
@@ -17,18 +17,18 @@ void HandshakeHash::update(std::span<const uint8_t> in)
 std::vector<uint8_t> HandshakeHash::final(std::string_view algorithm) const
 {
     auto md = CipherSuiteManager::getInstance().fetchDigest(algorithm);
-    tls::ThrowIfFalse(md != nullptr);
+    crypto::ThrowIfFalse(md != nullptr);
 
     EvpMdCtxPtr ctx(EVP_MD_CTX_new());
-    tls::ThrowIfFalse(ctx != nullptr);
+    crypto::ThrowIfFalse(ctx != nullptr);
 
-    tls::ThrowIfFalse(0 < EVP_DigestInit(ctx, md));
-    tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, messages_.data(), messages_.size()));
+    crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, md));
+    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, messages_.data(), messages_.size()));
 
     unsigned int outlen(EVP_MD_get_size(md));
     std::vector<uint8_t> out(outlen);
 
-    tls::ThrowIfFalse(0 < EVP_DigestFinal(ctx, out.data(), &outlen));
+    crypto::ThrowIfFalse(0 < EVP_DigestFinal(ctx, out.data(), &outlen));
     out.resize(outlen);
 
     return out;
