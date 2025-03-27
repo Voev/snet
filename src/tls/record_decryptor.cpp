@@ -1,8 +1,10 @@
-#include <snet/tls/record_decryptor.hpp>
 #include <snet/crypto/exception.hpp>
-#include <snet/tls/cipher_suite_manager.hpp>
+#include <snet/crypto/pointers.hpp>
 
+#include <snet/tls/record_decryptor.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/prf.hpp>
+
 #include <snet/utils/print_hex.hpp>
 
 #include <casket/utils/format.hpp>
@@ -10,6 +12,7 @@
 #include <openssl/core_names.h>
 
 using namespace casket;
+using namespace snet::crypto;
 
 namespace snet::tls
 {
@@ -408,7 +411,7 @@ void RecordDecryptor::processHandshakeClientKeyExchange(int8_t sideIndex,
         const std::vector<uint8_t> encryptedPreMaster = reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
-        EvpPkeyCtxPtr ctx(
+        KeyCtxPtr ctx(
             EVP_PKEY_CTX_new_from_pkey(nullptr, session_->getServerInfo().getServerKey(), nullptr));
         crypto::ThrowIfFalse(ctx != nullptr);
 

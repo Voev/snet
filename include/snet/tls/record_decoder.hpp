@@ -4,6 +4,7 @@
 #pragma once
 #include <vector>
 #include <span>
+#include <snet/crypto/pointers.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/version.hpp>
@@ -89,7 +90,7 @@ private:
     CipherSuite cipherSuite_;
     std::vector<uint8_t> macKey_;     /* for NON-AEAD ciphers */
     std::vector<uint8_t> implicitIv_; /* for AEAD ciphers */
-    EvpCipherCtxPtr cipher_;
+    crypto::CipherCtxPtr cipher_;
     std::uint64_t seq_;
     bool inited_;
 };

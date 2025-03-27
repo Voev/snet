@@ -47,6 +47,13 @@ using Hash = struct evp_md_st;
 using HashCtx = struct evp_md_ctx_st;
 using Key = struct evp_pkey_st;
 using KeyCtx = struct evp_pkey_ctx_st;
+using Cipher = struct evp_cipher_st;
+using CipherCtx = struct evp_cipher_ctx_st;
+using Kdf = struct evp_kdf_st;
+using KdfCtx = struct evp_kdf_ctx_st;
+using Mac = struct evp_mac_st;
+using MacCtx = struct evp_mac_ctx_st;
+
 using StoreCtx = struct ossl_store_ctx_st;
 using StoreInfo = struct ossl_store_info_st;
 using UiMethod = struct ui_method_st;

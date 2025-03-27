@@ -9,7 +9,6 @@
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/session.hpp>
 #include <snet/tls/server_info.hpp>
-#include <snet/tls/key.hpp>
 #include <snet/tls/connection.hpp>
 #include <snet/tls/record_reader.hpp>
 #include <snet/tls/record_decryptor.hpp>

@@ -1,6 +1,9 @@
-#include <snet/tls/handshake_hash.hpp>
 #include <snet/crypto/exception.hpp>
+#include <snet/crypto/pointers.hpp>
+#include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
+
+using namespace snet::crypto;
 
 namespace snet::tls
 {
@@ -19,7 +22,7 @@ std::vector<uint8_t> HandshakeHash::final(std::string_view algorithm) const
     auto md = CipherSuiteManager::getInstance().fetchDigest(algorithm);
     crypto::ThrowIfFalse(md != nullptr);
 
-    EvpMdCtxPtr ctx(EVP_MD_CTX_new());
+    HashCtxPtr ctx(EVP_MD_CTX_new());
     crypto::ThrowIfFalse(ctx != nullptr);
 
     crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, md));

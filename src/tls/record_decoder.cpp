@@ -369,7 +369,7 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
 
     auto mac = CipherSuiteManager::getInstance().fetchMac("HMAC");
 
-    EvpMacCtxPtr ctx(EVP_MAC_CTX_new(mac));
+    crypto::MacCtxPtr ctx(EVP_MAC_CTX_new(mac));
     crypto::ThrowIfTrue(ctx == nullptr);
 
     crypto::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(ctx, params));
@@ -399,7 +399,7 @@ void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t>
     unsigned int actualMacSize{EVP_MAX_MD_SIZE};
     std::vector<uint8_t> actualMac(actualMacSize);
 
-    EvpMdCtxPtr ctx(EVP_MD_CTX_new());
+    crypto::HashCtxPtr ctx(EVP_MD_CTX_new());
     crypto::ThrowIfFalse(ctx != nullptr);
 
     auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());

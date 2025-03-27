@@ -7,8 +7,8 @@
 #include <optional>
 #include <string_view>
 #include <memory>
-
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
@@ -59,22 +59,22 @@ public:
     /// @brief Fetches a Key Derivation Function (KDF) by its algorithm name.
     /// @param algorithm The name of the KDF algorithm.
     /// @return A pointer to the KDF object.
-    EvpKdfPtr fetchKdf(std::string_view algorithm);
+    crypto::KdfPtr fetchKdf(std::string_view algorithm);
 
     /// @brief Fetches a Message Authentication Code (MAC) by its algorithm name.
     /// @param algorithm The name of the MAC algorithm.
     /// @return A pointer to the MAC object.
-    EvpMacPtr fetchMac(std::string_view algorithm);
+    crypto::MacPtr fetchMac(std::string_view algorithm);
 
     /// @brief Fetches a Message Digest (MD) by its algorithm name.
     /// @param algorithm The name of the MD algorithm.
     /// @return A pointer to the MD object.
-    EvpMdPtr fetchDigest(std::string_view algorithm);
+    crypto::HashPtr fetchDigest(std::string_view algorithm);
 
     /// @brief Fetches a Cipher by its algorithm name.
     /// @param algorithm The name of the Cipher algorithm.
     /// @return A pointer to the Cipher object.
-    EvpCipherPtr fetchCipher(std::string_view algorithm);
+    crypto::CipherPtr fetchCipher(std::string_view algorithm);
 
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.

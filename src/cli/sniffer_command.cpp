@@ -10,6 +10,8 @@
 
 #include <snet/io.hpp>
 
+#include <snet/crypto/asymm_key.hpp>
+
 #include <snet/tls.hpp>
 
 using namespace casket;
@@ -187,7 +189,7 @@ public:
 
         if (!options_.serverKeyPath.empty())
         {
-            auto serverKey = tls::LoadPrivateKey(options_.serverKeyPath);
+            auto serverKey = crypto::akey::fromStorage(KeyType::Private, options_.serverKeyPath);
             manager.serverInfo.setServerKey(serverKey);
         }
 

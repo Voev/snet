@@ -9,6 +9,8 @@
 #include <openssl/cms.h>
 #include <openssl/safestack.h>
 
+#include <openssl/kdf.h>
+
 #include <snet/crypto/typedefs.hpp>
 #include <snet/utils/custom_unique_ptr.hpp>
 
@@ -50,19 +52,29 @@ struct CertExtOwningStackDeleter
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1IntegerPtr, Asn1Integer, ASN1_INTEGER_free);
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1TimePtr, Asn1Time, ASN1_TIME_free);
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1OctetStringPtr, Asn1OctetString, ASN1_OCTET_STRING_free);
+
 DEFINE_CUSTOM_UNIQUE_PTR(BigNumPtr, BigNum, BN_free);
 DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, Bio, BIO_free_all);
-DEFINE_CUSTOM_UNIQUE_PTR(CertExtPtr, CertExt, X509_EXTENSION_free);
-DEFINE_CUSTOM_UNIQUE_PTR(CertNamePtr, CertName, X509_NAME_free);
+
 DEFINE_CUSTOM_UNIQUE_PTR(CertPtr, Cert, X509_free);
-DEFINE_CUSTOM_UNIQUE_PTR(CertStorePtr, CertStore, X509_STORE_free);
-DEFINE_CUSTOM_UNIQUE_PTR(CertStoreCtxPtr, CertStoreCtx, X509_STORE_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(CsrPtr, Csr, X509_REQ_free);
 DEFINE_CUSTOM_UNIQUE_PTR(CrlPtr, Crl, X509_CRL_free);
-DEFINE_CUSTOM_UNIQUE_PTR(KeyCtxPtr, KeyCtx, EVP_PKEY_CTX_free);
-DEFINE_CUSTOM_UNIQUE_PTR(KeyPtr, Key, EVP_PKEY_free);
-DEFINE_CUSTOM_UNIQUE_PTR(HashCtxPtr, HashCtx, EVP_MD_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CertExtPtr, CertExt, X509_EXTENSION_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CertNamePtr, CertName, X509_NAME_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CertStorePtr, CertStore, X509_STORE_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CertStoreCtxPtr, CertStoreCtx, X509_STORE_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(StoreInfoPtr, StoreInfo, OSSL_STORE_INFO_free);
+
+DEFINE_CUSTOM_UNIQUE_PTR(KeyPtr, Key, EVP_PKEY_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KeyCtxPtr, KeyCtx, EVP_PKEY_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(HashPtr, Hash, EVP_MD_free);
+DEFINE_CUSTOM_UNIQUE_PTR(HashCtxPtr, HashCtx, EVP_MD_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CipherPtr, Cipher, EVP_CIPHER_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CipherCtxPtr, CipherCtx, EVP_CIPHER_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KdfPtr, Kdf, EVP_KDF_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KdfCtxPtr, KdfCtx, EVP_KDF_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(MacPtr, Mac, EVP_MAC_free);
+DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, EVP_MAC_CTX_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertStackPtr, CertStack, CertStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtStackPtr, CertExtStack, CertExtStackDeleter);
@@ -70,6 +82,5 @@ DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtOwningStackPtr, CertExtStack,
                                       CertExtOwningStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(StoreCtxPtr, StoreCtx, StoreCtxDeleter);
 
-DEFINE_CUSTOM_UNIQUE_PTR(HashPtr, Hash, EVP_MD_free);
 
 } // namespace snet::crypto

@@ -2,8 +2,10 @@
 #include <cstring>
 #include <limits>
 
-#include <snet/tls/prf.hpp>
 #include <snet/crypto/exception.hpp>
+#include <snet/crypto/pointers.hpp>
+
+#include <snet/tls/prf.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
@@ -14,6 +16,7 @@
 #include <openssl/core_names.h>
 
 using namespace casket::utils;
+using namespace snet::crypto;
 
 namespace snet::tls
 {
@@ -33,7 +36,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
     auto md5 = CipherSuiteManager::getInstance().fetchDigest("MD5");
     auto sha1 = CipherSuiteManager::getInstance().fetchDigest("SHA1");
 
-    EvpMdCtxPtr ctx(EVP_MD_CTX_new());
+    HashCtxPtr ctx(EVP_MD_CTX_new());
     crypto::ThrowIfTrue(ctx == nullptr);
 
     for (size_t i = 0; i < 3; ++i)
@@ -60,7 +63,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
 
-    EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
     crypto::ThrowIfTrue(kctx == nullptr);
 
     OSSL_PARAM params[6], *p = params;
@@ -107,7 +110,7 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("HKDF");
 
-    EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
     crypto::ThrowIfTrue(kctx == nullptr);
 
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};

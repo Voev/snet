@@ -2,7 +2,10 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/crypto/exception.hpp>
+#include <snet/crypto/pointers.hpp>
 #include <snet/utils/endianness.hpp>
+
+using namespace snet::crypto;
 
 namespace
 {
@@ -108,30 +111,30 @@ std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
     return cipherSuites;
 }
 
-EvpMacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
+MacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
 {
-    auto mac = EvpMacPtr(EVP_MAC_fetch(nullptr, algorithm.data(), nullptr));
+    auto mac = MacPtr(EVP_MAC_fetch(nullptr, algorithm.data(), nullptr));
     crypto::ThrowIfTrue(mac == nullptr);
     return mac;
 }
 
-EvpKdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
+KdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
 {
-    auto kdf = EvpKdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
+    auto kdf = KdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
     crypto::ThrowIfTrue(kdf == nullptr);
     return kdf;
 }
 
-EvpMdPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
+HashPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
 {
-    auto digest = EvpMdPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
+    auto digest = HashPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
     crypto::ThrowIfTrue(digest == nullptr);
     return digest;
 }
 
-EvpCipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
+CipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
 {
-    auto cipher = EvpCipherPtr(EVP_CIPHER_fetch(nullptr, algorithm.data(), nullptr));
+    auto cipher = CipherPtr(EVP_CIPHER_fetch(nullptr, algorithm.data(), nullptr));
     crypto::ThrowIfTrue(cipher == nullptr);
     return cipher;
 }

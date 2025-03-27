@@ -2,6 +2,7 @@
 /// @brief Declaration of the ServerInfo class.
 
 #pragma once
+#include <snet/crypto/pointers.hpp>
 #include <snet/ip/ip_address.hpp>
 #include <snet/tls/types.hpp>
 
@@ -73,7 +74,7 @@ public:
 private:
     std::string hostname_;
     ip::IPAddress address_;
-    EvpPkeyPtr serverKey_;
+    crypto::KeyPtr serverKey_;
 };
 
 } // namespace snet::tls
