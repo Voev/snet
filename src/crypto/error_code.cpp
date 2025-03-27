@@ -26,3 +26,13 @@ std::error_code GetLastError()
 }
 
 } // namespace snet::crypto
+
+namespace snet::crypto::verify
+{
+
+std::error_code MakeErrorCode(Error e)
+{
+    return std::error_code(static_cast<int>(e), ErrorCategory::getInstance());
+}
+
+} // namespace snet::crypto::verify
