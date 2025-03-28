@@ -1,9 +1,11 @@
 #include <cassert>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
-#include <snet/tls/exception.hpp>
-
+#include <snet/crypto/exception.hpp>
+#include <snet/crypto/pointers.hpp>
 #include <snet/utils/endianness.hpp>
+
+using namespace snet::crypto;
 
 namespace
 {
@@ -18,8 +20,8 @@ snet::tls::CipherSuite CreateCipherSuite(const SSL_CIPHER* cs)
     auto auth = OBJ_nid2sn(SSL_CIPHER_get_auth_nid(cs));
     auto hdigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cs));
 
-    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr), kexch,
-                                  auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
+    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr),
+                                  kexch, auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
                                   SSL_CIPHER_get_version(cs), SSL_CIPHER_is_aead(cs));
 }
 
@@ -35,12 +37,12 @@ public:
         : ctx(SSL_CTX_new_ex(nullptr, nullptr, TLS_method()))
         , ssl(nullptr)
     {
-        tls::ThrowIfFalse(ctx != nullptr);
+        crypto::ThrowIfFalse(ctx != nullptr);
 
         SSL_CTX_set_cipher_list(ctx, "ALL:COMPLEMENTOFALL");
 
         ssl = SSL_new(ctx);
-        tls::ThrowIfFalse(ssl != nullptr);
+        crypto::ThrowIfFalse(ssl != nullptr);
     }
 
     ~Impl() noexcept
@@ -91,7 +93,7 @@ std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
     else
         ciphers = SSL_get_ciphers(impl_->ssl);
 
-    tls::ThrowIfTrue(ciphers == nullptr, "Failed to get supported cipher suites");
+    crypto::ThrowIfTrue(ciphers == nullptr, "Failed to get supported cipher suites");
 
     std::vector<CipherSuite> cipherSuites(sk_SSL_CIPHER_num(ciphers));
 
@@ -109,38 +111,38 @@ std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
     return cipherSuites;
 }
 
-EvpMacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
+MacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
 {
-    auto mac = EvpMacPtr(EVP_MAC_fetch(nullptr, algorithm.data(), nullptr));
-    tls::ThrowIfTrue(mac == nullptr);
+    auto mac = MacPtr(EVP_MAC_fetch(nullptr, algorithm.data(), nullptr));
+    crypto::ThrowIfTrue(mac == nullptr);
     return mac;
 }
 
-EvpKdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
+KdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
 {
-    auto kdf = EvpKdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
-    tls::ThrowIfTrue(kdf == nullptr);
+    auto kdf = KdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
+    crypto::ThrowIfTrue(kdf == nullptr);
     return kdf;
 }
 
-EvpMdPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
+HashPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
 {
-    auto digest = EvpMdPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
-    tls::ThrowIfTrue(digest == nullptr);
+    auto digest = HashPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
+    crypto::ThrowIfTrue(digest == nullptr);
     return digest;
 }
 
-EvpCipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
+CipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
 {
-    auto cipher = EvpCipherPtr(EVP_CIPHER_fetch(nullptr, algorithm.data(), nullptr));
-    tls::ThrowIfTrue(cipher == nullptr);
+    auto cipher = CipherPtr(EVP_CIPHER_fetch(nullptr, algorithm.data(), nullptr));
+    crypto::ThrowIfTrue(cipher == nullptr);
     return cipher;
 }
 
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)
 {
-    ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5,
-                 "Security level must be in range [0..5]");
+    crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5,
+                         "Security level must be in range [0..5]");
     SSL_set_security_level(impl_->ssl, securityLevel);
 }
 

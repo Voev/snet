@@ -2,8 +2,10 @@
 #include <cstring>
 #include <limits>
 
+#include <snet/crypto/exception.hpp>
+#include <snet/crypto/pointers.hpp>
+
 #include <snet/tls/prf.hpp>
-#include <snet/tls/exception.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
@@ -14,6 +16,7 @@
 #include <openssl/core_names.h>
 
 using namespace casket::utils;
+using namespace snet::crypto;
 
 namespace snet::tls
 {
@@ -33,21 +36,21 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
     auto md5 = CipherSuiteManager::getInstance().fetchDigest("MD5");
     auto sha1 = CipherSuiteManager::getInstance().fetchDigest("SHA1");
 
-    EvpMdCtxPtr ctx(EVP_MD_CTX_new());
-    tls::ThrowIfTrue(ctx == nullptr);
+    HashCtxPtr ctx(EVP_MD_CTX_new());
+    crypto::ThrowIfTrue(ctx == nullptr);
 
     for (size_t i = 0; i < 3; ++i)
     {
-        tls::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, sha1, nullptr));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, salt[i], strlen((const char*)salt[i])));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, clientRandom.data(), clientRandom.size()));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, serverRandom.data(), serverRandom.size()));
-        tls::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buf, &n));
-        tls::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, md5, nullptr));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
-        tls::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, n));
-        tls::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, out.data(), &n));
+        crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, sha1, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, salt[i], strlen((const char*)salt[i])));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, clientRandom.data(), clientRandom.size()));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, serverRandom.data(), serverRandom.size()));
+        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buf, &n));
+        crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, md5, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, n));
+        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, out.data(), &n));
 
         out = out.subspan(n);
     }
@@ -58,10 +61,10 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
              std::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
-    tls::ThrowIfTrue(kdf == nullptr);
+    crypto::ThrowIfTrue(kdf == nullptr);
 
-    EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
-    tls::ThrowIfTrue(kctx == nullptr);
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    crypto::ThrowIfTrue(kctx == nullptr);
 
     OSSL_PARAM params[6], *p = params;
     *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
@@ -76,7 +79,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
         OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()), serverRandom.size());
     *p = OSSL_PARAM_construct_end();
 
-    tls::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
@@ -107,8 +110,8 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("HKDF");
 
-    EvpKdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
-    tls::ThrowIfTrue(kctx == nullptr);
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    crypto::ThrowIfTrue(kctx == nullptr);
 
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
     OSSL_PARAM params[6], *p = params;
@@ -123,7 +126,7 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
     std::size_t outlen(length);
     std::vector<uint8_t> out(outlen);
-    tls::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
     out.resize(outlen);
 
     return out;

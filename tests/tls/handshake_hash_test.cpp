@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <snet/tls/handshake_hash.hpp>
-#include <snet/tls/exception.hpp>
+#include <snet/crypto/exception.hpp>
 
 using namespace snet::tls;
 
@@ -64,5 +64,5 @@ TEST_F(HandshakeHashTest, FinalMethodEmptyInput) {
 TEST_F(HandshakeHashTest, FinalMethodUnsupportedAlgorithm) {
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
     hash.update(data);
-    ASSERT_THROW(hash.final("UNSUPPORTED_ALGORITHM"), snet::tls::Exception);
+    ASSERT_THROW(hash.final("UNSUPPORTED_ALGORITHM"), snet::crypto::Exception);
 }

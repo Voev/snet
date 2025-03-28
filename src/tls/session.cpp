@@ -12,7 +12,7 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/prf.hpp>
-#include <snet/tls/exception.hpp>
+#include <snet/crypto/exception.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 

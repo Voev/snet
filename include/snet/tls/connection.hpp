@@ -5,6 +5,7 @@
 #include <functional>
 #include <snet/tls/settings.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
@@ -115,7 +116,7 @@ private:
 
 private:
     SslPtr ssl_;
-    BioPtr extBio_;
+    crypto::BioPtr extBio_;
 };
 
 } // namespace snet::tls

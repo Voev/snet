@@ -1,9 +1,6 @@
 #pragma once
 
 #include <snet/tls/alert.hpp>
-#include <snet/tls/error_category.hpp>
-#include <snet/tls/error_code.hpp>
-#include <snet/tls/exception.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/extensions.hpp>
@@ -12,7 +9,6 @@
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/session.hpp>
 #include <snet/tls/server_info.hpp>
-#include <snet/tls/key.hpp>
 #include <snet/tls/connection.hpp>
 #include <snet/tls/record_reader.hpp>
 #include <snet/tls/record_decryptor.hpp>

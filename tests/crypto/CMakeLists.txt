@@ -1,5 +1,5 @@
 # Application name
-set(TEST_NAME snet_tls_test)
+set(TEST_NAME snet_crypto_test)
 
 # Sources
 file(GLOB_RECURSE SOURCES *.cpp)
@@ -10,10 +10,8 @@ add_executable(${TEST_NAME} ${SOURCES})
 # Set dependencies
 target_link_libraries(${TEST_NAME}
     PRIVATE
-        snet_tls
         snet_crypto
         OpenSSL::Crypto
-        OpenSSL::SSL
         GTest::GTest)
 
 # Discover tests

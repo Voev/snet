@@ -7,18 +7,21 @@
 #include <system_error>
 #include <stdexcept>
 
-#include <snet/tls/error_code.hpp>
+#include <snet/crypto/error_code.hpp>
 
-namespace snet::tls {
+namespace snet::crypto
+{
 
 /// @brief Main class for TLS exceptions.
-class Exception final : public std::system_error {
+class Exception final : public std::system_error
+{
 public:
     /// @brief Constructor.
     ///
     /// @param ec Error code.
     explicit Exception(std::error_code ec)
-        : std::system_error(ec) {
+        : std::system_error(ec)
+    {
     }
 
     /// @brief Constructor.
@@ -26,7 +29,8 @@ public:
     /// @param ec Error code.
     /// @param what_arg Error message.
     Exception(std::error_code ec, const std::string& what_arg)
-        : std::system_error(ec, what_arg) {
+        : std::system_error(ec, what_arg)
+    {
     }
 
     /// @brief Constructor.
@@ -34,7 +38,8 @@ public:
     /// @param ec Error code.
     /// @param what_arg Error message.
     Exception(std::error_code ec, const char* what_arg)
-        : std::system_error(ec, what_arg) {
+        : std::system_error(ec, what_arg)
+    {
     }
 };
 
@@ -47,8 +52,10 @@ public:
 /// auto* somePointer = new (std::nothrow) int;
 /// Exception::ThrowIfTrue(somePointer == nullptr);
 /// @endcode
-inline void ThrowIfTrue(bool exprResult) {
-    if (exprResult) {
+inline void ThrowIfTrue(bool exprResult)
+{
+    if (exprResult)
+    {
         throw Exception(GetLastError());
     }
 }
@@ -57,8 +64,10 @@ inline void ThrowIfTrue(bool exprResult) {
 ///
 /// @param exprResult The result of the expression to check.
 /// @param msg Additional message.
-inline void ThrowIfTrue(bool exprResult, std::string msg) {
-    if (exprResult) {
+inline void ThrowIfTrue(bool exprResult, std::string msg)
+{
+    if (exprResult)
+    {
         throw Exception(GetLastError(), msg);
     }
 }
@@ -73,7 +82,8 @@ inline void ThrowIfTrue(bool exprResult, std::string msg) {
 /// SomeValidator validator;
 /// Exception::ThrowIfFalse(validator.isValid(inputData));
 /// @endcode
-inline void ThrowIfFalse(bool exprResult) {
+inline void ThrowIfFalse(bool exprResult)
+{
     return ThrowIfTrue(!exprResult);
 }
 
@@ -81,8 +91,9 @@ inline void ThrowIfFalse(bool exprResult) {
 ///
 /// @param exprResult The result of the expression to check.
 /// @param msg Additional message.
-inline void ThrowIfFalse(bool exprResult, std::string msg) {
+inline void ThrowIfFalse(bool exprResult, std::string msg)
+{
     return ThrowIfTrue(!exprResult, std::move(msg));
 }
 
-} // namespace snet::tls
+} // namespace snet::crypto
