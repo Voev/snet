@@ -132,9 +132,19 @@ enum SessionCacheMode : std::uint16_t
     CacheNoInternalStore = SSL_SESS_CACHE_NO_INTERNAL_STORE,
 };
 
+/// @brief Security level for TLS settings.
+enum class SecurityLevel : int
+{
+    Level0 = 0,
+    Level1,
+    Level2,
+    Level3,
+    Level4,
+    Level5,
+};
+
 DEFINE_CUSTOM_UNIQUE_PTR(SslPtr, SSL, SSL_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslSessionPtr, SSL_SESSION, SSL_SESSION_free);
-
 
 } // namespace snet::tls

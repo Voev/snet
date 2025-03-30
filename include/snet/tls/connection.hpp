@@ -19,7 +19,6 @@ public:
     /// @brief Enum representing the state of the connection.
     enum class Want
     {
-        AlreadyCreated = -3,
         InputAndRetry = -2,
         OutputAndRetry = -1,
         Nothing = 0,

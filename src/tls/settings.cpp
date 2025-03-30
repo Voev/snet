@@ -97,4 +97,9 @@ void Settings::setCipherSuites(std::string_view cipherSuites)
     crypto::ThrowIfFalse(0 < SSL_CTX_set_ciphersuites(ctx_, cipherSuites.data()));
 }
 
+void Settings::setSecurityLevel(SecurityLevel level) noexcept
+{
+    SSL_CTX_set_security_level(ctx_, static_cast<int>(level));
+}
+
 } // namespace snet::tls

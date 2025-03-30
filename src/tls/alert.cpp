@@ -114,6 +114,18 @@ Alert::Alert(Description description, bool fatal)
 {
 }
 
+Alert::Alert(const int code) {
+    ThrowIfTrue(code < 0 || code > 0xFFFF, "Bad value (" + std::to_string(code) + ") for TLS alert message");
+
+    std::uint8_t level = (code >> 8) & 0xFF;
+    std::uint8_t description = code & 0xFF;
+
+    ThrowIfTrue(level < 1 || level > 2, "Bad code for TLS alert level");
+
+    fatal_ = (level == 2);
+    description_ = static_cast<Description>(description);
+}
+
 Alert::Alert(std::span<const uint8_t> buf)
 {
     ThrowIfTrue(buf.size() != 2,

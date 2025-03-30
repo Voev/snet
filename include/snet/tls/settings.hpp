@@ -3,6 +3,7 @@
 
 #pragma once
 #include <snet/tls/version.hpp>
+#include <snet/tls/types.hpp>
 #include <casket/utils/noncopyable.hpp>
 
 namespace snet::tls
@@ -77,6 +78,15 @@ public:
     /// @brief Sets the cipher suites.
     /// @param cipherSuites The cipher suites.
     void setCipherSuites(std::string_view cipherSuites);
+
+    /// @brief Sets the security level.
+    /// @param cipherSuites The security level.
+    void setSecurityLevel(SecurityLevel level) noexcept;
+
+    SSL_CTX* getHandle() const
+    {
+        return ctx_.get();
+    }
 
 private:
     SslCtxPtr ctx_;
