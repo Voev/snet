@@ -8,9 +8,8 @@ class NfQueue final : public io::Driver
 {
 public:
     NfQueue(const io::DriverConfig& config);
-    ~NfQueue() noexcept;
 
-    //Status getMsgPoolInfo(PacketPoolInfo* info) override;
+    ~NfQueue() noexcept;
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 

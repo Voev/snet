@@ -28,15 +28,6 @@ namespace snet::driver
 #define NFQ_DEFAULT_POOL_SIZE 16
 #define DEFAULT_QUEUE_MAXLEN 1024 // Based on NFQNL_QMAX_DEFAULT from nfnetlnk_queue_core.c
 
-struct NfqRawPacket;
-
-struct PacketPoolInfo
-{
-    uint32_t size;
-    uint32_t available;
-    size_t mem_size;
-};
-
 /* Netlink message building routines vaguely lifted from libmnl's netfilter queue example
     (nf-queue.c) to avoid having to link the seemingly deprecated libnetfilter_queue (which uses
     libmnl anyway). */
@@ -54,48 +45,47 @@ static inline struct nlmsghdr* nfq_hdr_put(char* buf, int type, uint32_t queue_n
     return nlh;
 }
 
-static struct nlmsghdr* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t command,
+static NlMessageHeader* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t command,
                                               int queue_num)
 {
-    struct nlmsghdr* nlh = nfq_hdr_put(buf, NFQNL_MSG_CONFIG, queue_num);
+    NlMessageHeader* nlh = nfq_hdr_put(buf, NFQNL_MSG_CONFIG, queue_num);
     struct nfqnl_msg_config_cmd cmd;
-    cmd.command = command,
-    cmd.pf = htons(pf),
+    cmd.command = command;
+    cmd.pf = htons(pf);
+
     mnl_attr_put(nlh, NFQA_CFG_CMD, sizeof(cmd), &cmd);
-
     return nlh;
 }
 
-static struct nlmsghdr* nfq_build_cfg_params(char* buf, uint8_t mode, int range, int queue_num)
+static NlMessageHeader* nfq_build_cfg_params(char* buf, uint8_t mode, int range, int queue_num)
 {
-    struct nlmsghdr* nlh = nfq_hdr_put(buf, NFQNL_MSG_CONFIG, queue_num);
-    struct nfqnl_msg_config_params params = {
-        .copy_range = htonl(range),
-        .copy_mode = mode,
-    };
-    mnl_attr_put(nlh, NFQA_CFG_PARAMS, sizeof(params), &params);
+    NlMessageHeader* nlh = nfq_hdr_put(buf, NFQNL_MSG_CONFIG, queue_num);
+    struct nfqnl_msg_config_params params;
+    params.copy_range = htonl(range);
+    params.copy_mode = mode;
 
+    mnl_attr_put(nlh, NFQA_CFG_PARAMS, sizeof(params), &params);
     return nlh;
 }
 
-static struct nlmsghdr* nfq_build_verdict(char* buf, int id, int queue_num, int verd, uint32_t plen,
+static NlMessageHeader* nfq_build_verdict(char* buf, int id, int queue_num, int verd, uint32_t plen,
                                           uint8_t* pkt)
 {
-    struct nlmsghdr* nlh = nfq_hdr_put(buf, NFQNL_MSG_VERDICT, queue_num);
-    struct nfqnl_msg_verdict_hdr vh = {
-        .verdict = htonl(verd),
-        .id = htonl(id),
-    };
-    mnl_attr_put(nlh, NFQA_VERDICT_HDR, sizeof(vh), &vh);
+    NlMessageHeader* nlh = nfq_hdr_put(buf, NFQNL_MSG_VERDICT, queue_num);
+    struct nfqnl_msg_verdict_hdr verdictHeader;
+    verdictHeader.verdict = htonl(verd);
+    verdictHeader.id = htonl(id);
+
+    mnl_attr_put(nlh, NFQA_VERDICT_HDR, sizeof(verdictHeader), &verdictHeader);
     if (plen)
         mnl_attr_put(nlh, NFQA_PAYLOAD, plen, pkt);
 
     return nlh;
 }
 
-static int parse_attr_cb(const struct nlattr* attr, void* data)
+static int parse_attr_cb(const NlAttribute* attr, void* data)
 {
-    const struct nlattr** tb = (const struct nlattr**)data;
+    const NlAttribute** tb = (const NlAttribute**)data;
     int type = mnl_attr_get_type(attr);
 
     /* skip unsupported attribute in user-space */
@@ -146,10 +136,10 @@ static int parse_attr_cb(const struct nlattr* attr, void* data)
     return MNL_CB_OK;
 }
 
-static int process_message_cb(const struct nlmsghdr* nlh, void* data)
+static int process_message_cb(const NlMessageHeader* nlh, void* data)
 {
     auto rawPacket = static_cast<NfqRawPacket*>(data);
-    struct nlattr* attr[NFQA_MAX + 1] = {};
+    NlAttribute* attr[NFQA_MAX + 1] = {};
     int ret;
 
     /* FIXIT-L In the event that there is actually more than one packet per message, handle it
@@ -220,7 +210,6 @@ struct NfQueue::Impl
     int timeout;
     unsigned queue_maxlen;
     bool fail_open;
-    bool debug;
     /* State */
     io::PacketPool<NfqRawPacket> pool;
     char* nlmsg_buf;
@@ -259,17 +248,13 @@ NfQueue::NfQueue(const io::DriverConfig& config)
 
     for (const auto& [name, value] : config.getParameters())
     {
-        if (iequals(name, "debug"))
-            impl_->debug = true;
-        else if (iequals(name, "fail_open"))
+        if (iequals(name, "fail_open"))
             impl_->fail_open = false;
         else if (iequals(name, "queue_maxlen"))
             casket::utils::to_number(value, impl_->queue_maxlen);
     }
 
     impl_->nlmsg_bufsize = impl_->snaplen + MNL_SOCKET_BUFFER_SIZE;
-    if (impl_->debug)
-        printf("Netlink message buffer size is %zu\n", impl_->nlmsg_bufsize);
 
     /* Allocate a scratch buffer for general usage by the context (basically for anything that's not
         receiving a packet) */
@@ -299,10 +284,8 @@ NfQueue::NfQueue(const io::DriverConfig& config)
                    sizeof(socket_rcvbuf_size)) == -1)
     {
         setsockopt(impl_->nlsock_fd, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size,
-                       sizeof(socket_rcvbuf_size));
+                   sizeof(socket_rcvbuf_size));
     }
-    if (impl_->debug)
-        printf("Set socket receive buffer size to %u\n", socket_rcvbuf_size);
 
     mnl_socket_bind(impl_->nlsock, 0, MNL_SOCKET_AUTOPID);
     impl_->portid = mnl_socket_get_portid(impl_->nlsock);
@@ -313,7 +296,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
         They used to handle binding the netfilter socket to a particular address family. */
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
     mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
-    
+
     nlh = nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
     mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
 
@@ -344,7 +327,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
         mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_FAIL_OPEN));
         mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_FAIL_OPEN));
     }
-    
+
     mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len);
 }
 
@@ -371,7 +354,7 @@ Status NfQueue::interrupt()
 
 Status NfQueue::stop()
 {
-    struct nlmsghdr* nlh =
+    NlMessageHeader* nlh =
         nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queue_num);
     if (mnl_socket_sendto(impl_->nlsock, nlh, nlh->nlmsg_len) == -1)
     {
@@ -488,12 +471,6 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 
     return Status::Success;
 }
-
-/*Status NfQueue::getMsgPoolInfo(PacketPoolInfo* info)
-{
-    (void)info;
-    return Status::Success;
-}*/
 
 } // namespace snet::driver
 
