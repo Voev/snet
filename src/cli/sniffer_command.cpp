@@ -128,9 +128,9 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     config.setTimeout(0);
     config.setSnaplen(2048);
 
-    auto& drv = config.addDriver("pcap");
+    auto& drv = config.addDriver("nfq");
 
-    drv.setMode(Mode::ReadFile);
+    drv.setMode(Mode::Passive);
     drv.setPath(ioDriver);
 
     controller.init(config);

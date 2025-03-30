@@ -11,6 +11,7 @@
 #include <libmnl/libmnl.h>
 
 #include <snet/io/packet_pool.hpp>
+#include <snet/utils/endianness.hpp>
 
 #include <casket/utils/string.hpp>
 #include <casket/utils/to_number.hpp>
@@ -158,9 +159,15 @@ static int process_message_cb(const NlMessageHeader* nlh, void* data)
     timeval tv{};
     gettimeofday(&tv, NULL);
 
-    rawPacket->setRawData((uint8_t*)mnl_attr_get_payload(attr[NFQA_PAYLOAD]),
-                          (int)ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN])), tv, io::LINKTYPE_RAW,
-                          mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]));
+    size_t pktlen;
+    size_t framelen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
+    if (attr[NFQA_CAP_LEN])
+        pktlen = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
+    else
+        pktlen = framelen;
+
+    rawPacket->setRawData((uint8_t*)mnl_attr_get_payload(attr[NFQA_PAYLOAD]), pktlen, tv,
+                          io::LINKTYPE_RAW, framelen);
 
     return MNL_CB_OK;
 }
@@ -409,6 +416,8 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
         return RecvStatus::Error;
     }
 
+    rawPacket->nlmsg_buf = new uint8_t[impl_->nlmsg_bufsize];
+
     ssize_t ret;
     do
     {
@@ -436,7 +445,7 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
         }
     } while (false);
     errno = 0;
-    ret = mnl_cb_run(impl_->nlmsg_buf, ret, 0, impl_->portid, process_message_cb, rawPacket);
+    ret = mnl_cb_run(rawPacket->nlmsg_buf, ret, 0, impl_->portid, process_message_cb, rawPacket);
     if (ret < 0)
     {
         rstat = RecvStatus::Error;
@@ -466,6 +475,9 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
     {
         return Status::Error;
     }
+
+    nlPacket->mh = nullptr;
+    nlPacket->ph = nullptr;
 
     impl_->pool.releasePacket(nlPacket);
 
