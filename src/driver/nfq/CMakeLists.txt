@@ -10,4 +10,4 @@ pkg_check_modules(LIBNETFILTER_QUEUE REQUIRED libnetfilter_queue)
 pkg_check_modules(LIBMNL REQUIRED libmnl)
 
 target_link_libraries(snet_nfq PRIVATE ${LIBNETFILTER_QUEUE_INCLUDE_DIRS} ${LIBMNL_INCLUDE_DIRS} )
-target_link_libraries(snet_nfq snet_io ${LIBMNL_LIBRARIES} ${LIBNETFILTER_QUEUE_LIBRARIES})
+target_link_libraries(snet_nfq snet_io snet_socket ${LIBMNL_LIBRARIES} ${LIBNETFILTER_QUEUE_LIBRARIES})
