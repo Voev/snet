@@ -1,33 +1,29 @@
 
 #include <arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
 
 #include <system_error>
 
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink_queue.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/time.h>
 
 #include <libmnl/libmnl.h>
 
 #include <snet/io/packet_pool.hpp>
-#include <snet/utils/endianness.hpp>
-
 #include <snet/socket.hpp>
 
+#include <snet/utils/endianness.hpp>
 #include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/to_number.hpp>
-
-#include <forward_list>
 
 #include "nfq_driver.hpp"
 #include "nfq_packet.hpp"
 
 using namespace casket::utils;
 using namespace snet::socket;
-using namespace snet::netlink;
 
 namespace snet::driver
 {
@@ -40,22 +36,22 @@ constexpr size_t align_length(size_t len, size_t alignment = 4) noexcept
     return (len + alignment - 1) & ~(alignment - 1);
 }
 
-static inline MessageHeader* CreateNetfilterHeader(void* buf, int type, uint32_t queue_num)
+static inline nlmsghdr* CreateNetfilterHeader(void* buf, int type, uint32_t queue_num)
 {
-    auto len = align_length(sizeof(MessageHeader));
-    MessageHeader* nlh = static_cast<MessageHeader*>(buf);
+    auto len = align_length(sizeof(nlmsghdr));
+    nlmsghdr* nlh = static_cast<nlmsghdr*>(buf);
     std::memset(buf, 0, len);
 
     nlh->nlmsg_len = len;
     nlh->nlmsg_type = (NFNL_SUBSYS_QUEUE << 8) | type;
     nlh->nlmsg_flags = NLM_F_REQUEST;
 
-    len = align_length(sizeof(NfMessageHeader));
+    len = align_length(sizeof(nfgenmsg));
     char* ptr = (char*)nlh + nlh->nlmsg_len;
     nlh->nlmsg_len += len;
     std::memset(ptr, 0, len);
 
-    NfMessageHeader* nfg = reinterpret_cast<NfMessageHeader*>(ptr);
+    nfgenmsg* nfg = reinterpret_cast<nfgenmsg*>(ptr);
     nfg->nfgen_family = AF_UNSPEC;
     nfg->version = NFNETLINK_V0;
     nfg->res_id = htons(queue_num);
@@ -63,67 +59,10 @@ static inline MessageHeader* CreateNetfilterHeader(void* buf, int type, uint32_t
     return nlh;
 }
 
-enum class NetfilterQueueCommandEnumType : uint8_t
+static nlmsghdr* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t command, int queue_num)
 {
-    /** Padding */
-    Nop = 1,
-    /** End of options */
-    Eol = 0,
-    /** Segment size negotiating */
-    Mss = 2,
-    /** Window scaling */
-    Window = 3,
-    /** SACK Permitted */
-    SackPerm = 4,
-    /** SACK Block */
-    Sack = 5,
-    /** Echo (obsoleted by option TcpOptionEnumType::Timestamp) */
-    Echo = 6,
-    /** Echo Reply (obsoleted by option TcpOptionEnumType::Timestamp) */
-    EchoReply = 7,
-    /** TCP Timestamps */
-    Timestamp = 8,
-    /** CC (obsolete) */
-    Cc = 11,
-    /** CC.NEW (obsolete) */
-    CcNew = 12,
-    /** CC.ECHO(obsolete) */
-    CcEcho = 13,
-    /** MD5 Signature Option */
-    Md5 = 19,
-    /** Multipath TCP */
-    MpTcp = 0x1e,
-    /** SCPS Capabilities */
-    Scps = 20,
-    /** SCPS SNACK */
-    Snack = 21,
-    /** SCPS Record Boundary */
-    RecBound = 22,
-    /** SCPS Corruption Experienced */
-    CorrExp = 23,
-    /** Quick-Start Response */
-    Qs = 27,
-    /** User Timeout Option (also, other known unauthorized use) */
-    UserTo = 28,
-    /** RFC3692-style Experiment 1 (also improperly used for shipping products)
-     */
-    ExpFd = 0xfd,
-    /** RFC3692-style Experiment 2 (also improperly used for shipping products)
-     */
-    ExpFe = 0xfe,
-    /** Riverbed probe option, non IANA registered option number */
-    RvbdProbe = 76,
-    /** Riverbed transparency option, non IANA registered option number */
-    RvbdTrpy = 78,
-    /** Unknown option */
-    Unknown = 255
-};
-
-
-static MessageHeader* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t command, int queue_num)
-{
-    MessageHeader* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
-    struct nfqnl_msg_config_cmd cmd;
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
+    nfqnl_msg_config_cmd cmd;
     cmd.command = command;
     cmd.pf = htons(pf);
 
@@ -131,10 +70,10 @@ static MessageHeader* nfq_build_cfg_command(char* buf, uint16_t pf, uint8_t comm
     return nlh;
 }
 
-static MessageHeader* nfq_build_cfg_params(char* buf, uint8_t mode, int range, int queue_num)
+static nlmsghdr* nfq_build_cfg_params(char* buf, uint8_t mode, int range, int queue_num)
 {
-    MessageHeader* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
-    struct nfqnl_msg_config_params params;
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
+    nfqnl_msg_config_params params;
     params.copy_range = htonl(range);
     params.copy_mode = mode;
 
@@ -142,11 +81,11 @@ static MessageHeader* nfq_build_cfg_params(char* buf, uint8_t mode, int range, i
     return nlh;
 }
 
-static MessageHeader* nfq_build_verdict(char* buf, int id, int queue_num, int verd, uint32_t plen,
+static nlmsghdr* nfq_build_verdict(char* buf, int id, int queue_num, int verd, uint32_t plen,
                                         uint8_t* pkt)
 {
-    MessageHeader* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queue_num);
-    struct nfqnl_msg_verdict_hdr verdictHeader;
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queue_num);
+    nfqnl_msg_verdict_hdr verdictHeader;
     verdictHeader.verdict = htonl(verd);
     verdictHeader.id = htonl(id);
 
@@ -157,9 +96,9 @@ static MessageHeader* nfq_build_verdict(char* buf, int id, int queue_num, int ve
     return nlh;
 }
 
-static int parse_attr_cb(const NlAttribute* attr, void* data)
+static int parse_attr_cb(const nlattr* attr, void* data)
 {
-    const NlAttribute** tb = (const NlAttribute**)data;
+    const nlattr** tb = (const nlattr**)data;
     int type = mnl_attr_get_type(attr);
 
     /* skip unsupported attribute in user-space */
@@ -183,20 +122,20 @@ static int parse_attr_cb(const NlAttribute* attr, void* data)
             return MNL_CB_ERROR;
         break;
     case NFQA_TIMESTAMP:
-        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_timestamp)) <
+        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(nfqnl_msg_packet_timestamp)) <
             0)
         {
             return MNL_CB_ERROR;
         }
         break;
     case NFQA_HWADDR:
-        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_hw)) < 0)
+        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(nfqnl_msg_packet_hw)) < 0)
         {
             return MNL_CB_ERROR;
         }
         break;
     case NFQA_PACKET_HDR:
-        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(struct nfqnl_msg_packet_hdr)) < 0)
+        if (mnl_attr_validate2(attr, MNL_TYPE_UNSPEC, sizeof(nfqnl_msg_packet_hdr)) < 0)
         {
             return MNL_CB_ERROR;
         }
@@ -210,10 +149,10 @@ static int parse_attr_cb(const NlAttribute* attr, void* data)
     return MNL_CB_OK;
 }
 
-static int process_message_cb(const MessageHeader* nlh, void* data)
+static int process_message_cb(const nlmsghdr* nlh, void* data)
 {
     auto rawPacket = static_cast<NfqRawPacket*>(data);
-    NlAttribute* attr[NFQA_MAX + 1] = {};
+    nlattr* attr[NFQA_MAX + 1] = {};
     int ret;
 
     /* FIXIT-L In the event that there is actually more than one packet per message, handle it
@@ -222,12 +161,12 @@ static int process_message_cb(const MessageHeader* nlh, void* data)
         return MNL_CB_ERROR;
 
     /* Parse the message attributes */
-    if ((ret = mnl_attr_parse(nlh, sizeof(struct nfgenmsg), parse_attr_cb, attr)) != MNL_CB_OK)
+    if ((ret = mnl_attr_parse(nlh, sizeof(nfgenmsg), parse_attr_cb, attr)) != MNL_CB_OK)
         return ret;
 
     /* Populate the packet descriptor */
     rawPacket->mh = nlh;
-    rawPacket->ph = (MessagePacketHeader*)mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
+    rawPacket->ph = (nfqnl_msg_packet_hdr*)mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
 
     timeval tv{};
     gettimeofday(&tv, NULL);
@@ -252,23 +191,23 @@ struct NfQueue::Impl
 
     ssize_t socket_sendto(const void* buf, size_t len)
     {
-        netlink::SocketAddress snl{};
+        sockaddr_nl snl{};
         snl.nl_family = AF_NETLINK;
-        return ::sendto(socket, buf, len, 0, (struct sockaddr*)&snl, sizeof(snl));
+        return ::sendto(socket, buf, len, 0, (sockaddr*)&snl, sizeof(snl));
     }
 
     ssize_t socket_recv(void* buf, size_t bufsiz, bool blocking, std::error_code& ec)
     {
         ec.clear();
 
-        netlink::SocketAddress address;
+        sockaddr_nl address;
         ssize_t ret;
 
-        struct iovec iov = {
+        iovec iov = {
             .iov_base = buf,
             .iov_len = bufsiz,
         };
-        struct msghdr msg = {
+        msghdr msg = {
             .msg_name = &address,
             .msg_namelen = sizeof(address),
             .msg_iov = &iov,
@@ -290,7 +229,7 @@ struct NfQueue::Impl
             ec = std::make_error_code(std::errc::no_space_on_device);
             return -1;
         }
-        if (msg.msg_namelen != sizeof(netlink::SocketAddress))
+        if (msg.msg_namelen != sizeof(sockaddr_nl))
         {
             ec = std::make_error_code(std::errc::invalid_argument);
             return -1;
@@ -305,7 +244,7 @@ struct NfQueue::Impl
         address.nl_groups = groups;
         address.nl_pid = pid;
 
-        int ret = ::bind(socket, reinterpret_cast<struct sockaddr*>(&address), sizeof(address));
+        int ret = ::bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address));
         if (ret < 0)
         {
             ec = GetLastSystemError();
@@ -313,7 +252,7 @@ struct NfQueue::Impl
         }
 
         socklen_t addressLength = sizeof(address);
-        ret = getsockname(socket, reinterpret_cast<struct sockaddr*>(&address), &addressLength);
+        ret = getsockname(socket, reinterpret_cast<sockaddr*>(&address), &addressLength);
         if (ret < 0)
         {
             ec = GetLastSystemError();
@@ -346,7 +285,7 @@ struct NfQueue::Impl
     char* nlmsg_buf;
     size_t nlmsg_bufsize;
     socket::SocketType socket;
-    netlink::SocketAddress address;
+    sockaddr_nl address;
     unsigned portid;
     volatile bool interrupted;
 };
@@ -400,7 +339,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     impl_->timeout = base.getTimeout();
     if (impl_->timeout)
     {
-        struct timeval tv;
+        timeval tv;
         tv.tv_sec = impl_->timeout / 1000;
         tv.tv_usec = (impl_->timeout % 1000) * 1000;
         setsockopt(impl_->socket, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
@@ -421,7 +360,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
 
     impl_->bindAddress(0, 0, ec);
 
-    struct nlmsghdr* nlh;
+    nlmsghdr* nlh;
 
     /* The following four packet family unbind/bind commands do nothing on modern (3.8+) kernels.
         They used to handle binding the netfilter socket to a particular address family. */
@@ -485,7 +424,7 @@ Status NfQueue::interrupt()
 
 Status NfQueue::stop()
 {
-    MessageHeader* nlh =
+    nlmsghdr* nlh =
         nfq_build_cfg_command(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queue_num);
     if (impl_->socket_sendto(nlh, nlh->nlmsg_len) == -1)
     {
@@ -603,7 +542,7 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 
     auto nlPacket = dynamic_cast<NfqRawPacket*>(rawPacket);
 
-    struct nlmsghdr* nlh =
+    nlmsghdr* nlh =
         nfq_build_verdict(impl_->nlmsg_buf, ntohl(nlPacket->ph->packet_id), impl_->queue_num,
                           nfq_verdict, plen, (uint8_t*)rawPacket->getRawData());
     if (impl_->socket_sendto(nlh, nlh->nlmsg_len) == -1)

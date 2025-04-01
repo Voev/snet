@@ -13,8 +13,8 @@ public:
     {}
 
     uint8_t* nlmsg_buf;
-    const netlink::MessageHeader* mh;
-    netlink::MessagePacketHeader* ph;
+    const nlmsghdr* mh;
+    nfqnl_msg_packet_hdr* ph;
 };
 
 } // namespace snet::driver
