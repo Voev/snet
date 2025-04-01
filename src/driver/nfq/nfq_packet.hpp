@@ -1,6 +1,6 @@
 #pragma once
+#include <linux/netfilter.h>
 #include <snet/io/raw_packet.hpp>
-#include "forward_types.hpp"
 
 namespace snet::driver
 {
