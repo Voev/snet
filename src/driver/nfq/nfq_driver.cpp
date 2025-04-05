@@ -1,19 +1,16 @@
 
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/time.h>
 
 #include <system_error>
 
+#include <arpa/inet.h>
 #include <linux/netlink.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink_queue.h>
 
 #include <snet/io/packet_pool.hpp>
 #include <snet/socket.hpp>
-
 #include <snet/utils/endianness.hpp>
+
 #include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/to_number.hpp>
@@ -24,71 +21,71 @@
 using namespace casket::utils;
 using namespace snet::socket;
 
+static constexpr std::size_t kDefaultPoolSize{16};
+static constexpr std::size_t kDefaultQueueMaxLength{16};
+
 namespace snet::driver
 {
 
-#define NFQ_DEFAULT_POOL_SIZE 16
-#define DEFAULT_QUEUE_MAXLEN 1024
-
-constexpr size_t align_length(size_t len, size_t alignment = 4) noexcept
+inline constexpr size_t align_length(size_t len, size_t alignment = 4) noexcept
 {
     return (len + alignment - 1) & ~(alignment - 1);
 }
 
-bool MessageIsOk(const nlmsghdr* nlh, int len)
+inline bool MessageIsOk(const nlmsghdr* nlh, int len)
 {
     return len >= (int)sizeof(nlmsghdr) && nlh->nlmsg_len >= sizeof(nlmsghdr) &&
            (int)nlh->nlmsg_len <= len;
 }
 
-nlmsghdr* MessageNext(const nlmsghdr* nlh, int* len)
+inline nlmsghdr* MessageNext(const nlmsghdr* nlh, int* len)
 {
     *len -= align_length(nlh->nlmsg_len);
     return (nlmsghdr*)((uint8_t*)nlh + align_length(nlh->nlmsg_len));
 }
 
-void* MessageGetPayload(const nlmsghdr* nlh)
+inline void* MessageGetPayload(const nlmsghdr* nlh)
 {
     return (uint8_t*)nlh + align_length(sizeof(nlmsghdr));
 }
 
-void* MessageGetPayloadOffset(const nlmsghdr* nlh, size_t offset)
+inline void* MessageGetPayloadOffset(const nlmsghdr* nlh, size_t offset)
 {
     return (uint8_t*)nlh + align_length(sizeof(nlmsghdr)) + align_length(offset);
 }
 
-void* MessageGetPayloadTail(const nlmsghdr* nlh)
+inline void* MessageGetPayloadTail(const nlmsghdr* nlh)
 {
     return (uint8_t*)nlh + align_length(nlh->nlmsg_len);
 }
 
-uint16_t AttrGetPayloadLen(const nlattr* attr)
+inline uint16_t AttrGetPayloadLen(const nlattr* attr)
 {
     return attr->nla_len - align_length(sizeof(nlattr));
 }
 
-void* AttrGetPayload(const nlattr* attr)
+inline void* AttrGetPayload(const nlattr* attr)
 {
     return (uint8_t*)attr + align_length(sizeof(nlattr));
 }
 
-uint32_t AttrGetUint32(const nlattr* attr)
+inline uint32_t AttrGetUint32(const nlattr* attr)
 {
     return *((uint32_t*)AttrGetPayload(attr));
 }
 
-bool AttrIsOk(const nlattr* attr, int len)
+inline bool AttrIsOk(const nlattr* attr, int len)
 {
     return len >= (int)sizeof(nlattr) && attr->nla_len >= sizeof(nlattr) &&
            (int)attr->nla_len <= len;
 }
 
-nlattr* AttrNext(const nlattr* attr)
+inline nlattr* AttrNext(const nlattr* attr)
 {
     return (nlattr*)((uint8_t*)attr + align_length(attr->nla_len));
 }
 
-static inline nlmsghdr* CreateNetfilterHeader(void* buf, int type, uint32_t queue_num)
+static inline nlmsghdr* CreateNetfilterHeader(void* buf, int type, uint32_t queueNumber)
 {
     auto len = align_length(sizeof(nlmsghdr));
     nlmsghdr* nlh = static_cast<nlmsghdr*>(buf);
@@ -106,12 +103,12 @@ static inline nlmsghdr* CreateNetfilterHeader(void* buf, int type, uint32_t queu
     nfgenmsg* nfg = reinterpret_cast<nfgenmsg*>(ptr);
     nfg->nfgen_family = AF_UNSPEC;
     nfg->version = NFNETLINK_V0;
-    nfg->res_id = htons(queue_num);
+    nfg->res_id = htons(queueNumber);
 
     return nlh;
 }
 
-void SetAttribute(nlmsghdr* nlh, uint16_t type, size_t len, const void* data)
+static inline void SetAttribute(nlmsghdr* nlh, uint16_t type, size_t len, const void* data)
 {
     nlattr* attr = (nlattr*)MessageGetPayloadTail(nlh);
     uint16_t payload_len = align_length(sizeof(nlattr)) + len;
@@ -128,9 +125,9 @@ void SetAttribute(nlmsghdr* nlh, uint16_t type, size_t len, const void* data)
     nlh->nlmsg_len += align_length(payload_len);
 }
 
-static nlmsghdr* SetCfgCommand(char* buf, uint16_t pf, uint8_t command, int queue_num)
+static inline nlmsghdr* SetCfgCommand(char* buf, uint16_t pf, uint8_t command, int queueNumber)
 {
-    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queueNumber);
     nfqnl_msg_config_cmd cmd;
     cmd.command = command;
     cmd.pf = htons(pf);
@@ -139,9 +136,9 @@ static nlmsghdr* SetCfgCommand(char* buf, uint16_t pf, uint8_t command, int queu
     return nlh;
 }
 
-static nlmsghdr* SetCfgParams(char* buf, uint8_t mode, int range, int queue_num)
+static inline nlmsghdr* SetCfgParams(char* buf, uint8_t mode, int range, int queueNumber)
 {
-    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queue_num);
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queueNumber);
     nfqnl_msg_config_params params;
     params.copy_range = htonl(range);
     params.copy_mode = mode;
@@ -150,9 +147,10 @@ static nlmsghdr* SetCfgParams(char* buf, uint8_t mode, int range, int queue_num)
     return nlh;
 }
 
-static nlmsghdr* SetVerdict(char* buf, int id, int queue_num, int verd, uint32_t plen, uint8_t* pkt)
+static inline nlmsghdr* SetVerdict(char* buf, int id, int queueNumber, int verd, uint32_t plen,
+                                   uint8_t* pkt)
 {
-    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queue_num);
+    nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queueNumber);
     nfqnl_msg_verdict_hdr verdictHeader;
     verdictHeader.verdict = htonl(verd);
     verdictHeader.id = htonl(id);
@@ -164,13 +162,13 @@ static nlmsghdr* SetVerdict(char* buf, int id, int queue_num, int verd, uint32_t
     return nlh;
 }
 
-static int ParseAttr(const nlattr* attr, void* data)
+static bool ParseAttr(const nlattr* attr, void* data)
 {
     const nlattr** tb = (const nlattr**)data;
     int type = attr->nla_type & NLA_TYPE_MASK;
 
     if (type > NFQA_MAX)
-        return 1;
+        return true;
 
     switch (type)
     {
@@ -187,25 +185,25 @@ static int ParseAttr(const nlattr* attr, void* data)
     case NFQA_CT_INFO:
         if (AttrGetPayloadLen(attr) != sizeof(uint32_t))
         {
-            return -1;
+            return false;
         }
         break;
     case NFQA_TIMESTAMP:
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_timestamp))
         {
-            return -1;
+            return false;
         }
         break;
     case NFQA_HWADDR:
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_hw))
         {
-            return -1;
+            return false;
         }
         break;
     case NFQA_PACKET_HDR:
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_hdr))
         {
-            return -1;
+            return false;
         }
         break;
     case NFQA_PAYLOAD:
@@ -214,10 +212,10 @@ static int ParseAttr(const nlattr* attr, void* data)
         break;
     }
     tb[type] = attr;
-    return 1;
+    return true;
 }
 
-int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* data)
+static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* data)
 {
     int ret = 1;
     const nlattr* attr;
@@ -231,55 +229,57 @@ int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* data)
     return ret;
 }
 
-static int process_message_cb(const nlmsghdr* nlh, void* data)
+static bool ProcessMessage(const nlmsghdr* nlh, NfqRawPacket* rawPacket)
 {
-    auto rawPacket = static_cast<NfqRawPacket*>(data);
     nlattr* attr[NFQA_MAX + 1] = {};
-    int ret;
 
     if (rawPacket->mh)
-        return -1;
+    {
+        return false;
+    }
 
-    if ((ret = ParseAttrs(nlh, sizeof(nfgenmsg), attr)) != 1)
-        return ret;
+    if (!ParseAttrs(nlh, sizeof(nfgenmsg), attr))
+    {
+        return false;
+    }
 
     rawPacket->mh = nlh;
     rawPacket->ph = (nfqnl_msg_packet_hdr*)AttrGetPayload(attr[NFQA_PACKET_HDR]);
 
     timeval tv{};
-    gettimeofday(&tv, NULL);
+    gettimeofday(&tv, nullptr);
 
     size_t pktlen;
     size_t framelen = AttrGetPayloadLen(attr[NFQA_PAYLOAD]);
     if (attr[NFQA_CAP_LEN])
+    {
         pktlen = ntohl(AttrGetUint32(attr[NFQA_CAP_LEN]));
+    }
     else
+    {
         pktlen = framelen;
+    }
 
     rawPacket->setRawData((uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen, tv,
                           io::LINKTYPE_RAW, framelen);
 
-    return 1;
+    return true;
 }
 
-int cb_run_my(const void* buf, size_t numbytes, unsigned int seq, unsigned int portid, void* data)
+int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid,
+                    NfqRawPacket* rawPacket, std::error_code& ec)
 {
-    int ret = 1, len = numbytes;
-    const nlmsghdr* nlh = (nlmsghdr*)buf;
+    const nlmsghdr* nlh = static_cast<const nlmsghdr*>(buffer);
+    int len = numbytes;
+    (void )ec;
 
     while (MessageIsOk(nlh, len))
     {
         auto v = nlh->nlmsg_pid && portid ? nlh->nlmsg_pid == portid : true;
         if (!v)
         {
-            errno = ESRCH;
-            return -1;
-        }
 
-        v = nlh->nlmsg_seq && seq ? nlh->nlmsg_seq == seq : true;
-        if (!v)
-        {
-            errno = EPROTO;
+            errno = ESRCH;
             return -1;
         }
 
@@ -291,9 +291,10 @@ int cb_run_my(const void* buf, size_t numbytes, unsigned int seq, unsigned int p
 
         if (nlh->nlmsg_type >= NLMSG_MIN_TYPE)
         {
-            ret = process_message_cb(nlh, data);
-            if (ret <= 0)
-                goto out;
+            if (!ProcessMessage(nlh, rawPacket))
+            {
+                return -1;
+            }
         }
         else if (nlh->nlmsg_type == NLMSG_ERROR)
         {
@@ -314,13 +315,12 @@ int cb_run_my(const void* buf, size_t numbytes, unsigned int seq, unsigned int p
         }
         else
         {
-            ret = 0;
-            goto out;
+            break;
         }
         nlh = MessageNext(nlh, &len);
     }
-out:
-    return ret;
+
+    return 0;
 }
 
 struct NfQueue::Impl
@@ -342,7 +342,7 @@ struct NfQueue::Impl
         return ret;
     }
 
-    ssize_t recvSocket(void* buf, size_t bufsiz, bool blocking, std::error_code& ec) noexcept
+    ssize_t recvSocket(void* buffer, size_t bufferSize, bool blocking, std::error_code& ec) noexcept
     {
         ec.clear();
 
@@ -350,15 +350,15 @@ struct NfQueue::Impl
         ssize_t ret;
 
         iovec iov = {
-            .iov_base = buf,
-            .iov_len = bufsiz,
+            .iov_base = buffer,
+            .iov_len = bufferSize,
         };
         msghdr msg = {
             .msg_name = &address,
             .msg_namelen = sizeof(address),
             .msg_iov = &iov,
             .msg_iovlen = 1,
-            .msg_control = NULL,
+            .msg_control = nullptr,
             .msg_controllen = 0,
             .msg_flags = 0,
         };
@@ -420,19 +420,17 @@ struct NfQueue::Impl
         }
     }
 
-    /* Configuration */
-    unsigned queue_num;
-    int snaplen;
-    int timeout;
-    unsigned queue_maxlen;
-    bool fail_open;
-    /* State */
     io::PacketPool<NfqRawPacket> pool;
     char* nlmsg_buf;
     size_t nlmsg_bufsize;
     socket::SocketType socket;
     sockaddr_nl address;
-    unsigned portid;
+    unsigned int queueNumber;
+    unsigned int queueMaxLength;
+    unsigned int portid;
+    int snaplen;
+    int timeout;
+    bool failOpen;
     volatile bool interrupted;
 };
 
@@ -445,10 +443,11 @@ NfQueue::Impl::~Impl()
 }
 
 NfQueue::Impl::Impl()
-    : queue_num(0)
+    : queueNumber(0)
+    , queueMaxLength(0)
+    , portid(0)
     , snaplen(0)
     , timeout(0)
-    , queue_maxlen(0)
 {
 }
 
@@ -460,22 +459,22 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     const auto& base = config.getConfig();
     impl_->snaplen = base.getSnaplen();
     impl_->timeout = base.getTimeout();
-    impl_->queue_maxlen = DEFAULT_QUEUE_MAXLEN;
+    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
 
-    casket::utils::to_number(base.getInput(), impl_->queue_num, ec);
+    to_number(base.getInput(), impl_->queueNumber, ec);
 
     for (const auto& [name, value] : config.getParameters())
     {
-        if (iequals(name, "fail_open"))
-            impl_->fail_open = false;
-        else if (iequals(name, "queue_maxlen"))
-            casket::utils::to_number(value, impl_->queue_maxlen, ec);
+        if (iequals(name, "failOpen"))
+            impl_->failOpen = false;
+        else if (iequals(name, "queueMaxLength"))
+            to_number(value, impl_->queueMaxLength, ec);
     }
 
     impl_->nlmsg_bufsize = impl_->snaplen + 4096;
     impl_->nlmsg_buf = (char*)malloc(impl_->nlmsg_bufsize);
 
-    impl_->pool.allocatePool(NFQ_DEFAULT_POOL_SIZE);
+    impl_->pool.allocatePool(::kDefaultPoolSize);
     impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
     impl_->timeout = base.getTimeout();
@@ -487,7 +486,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
         setsockopt(impl_->socket, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
     }
 
-    unsigned int socket_rcvbuf_size = impl_->queue_maxlen * impl_->snaplen;
+    unsigned int socket_rcvbuf_size = impl_->queueMaxLength * impl_->snaplen;
     if (setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size,
                    sizeof(socket_rcvbuf_size)) == -1)
     {
@@ -511,19 +510,19 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queue_num);
+    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queueNumber);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgParams(impl_->nlmsg_buf, NFQNL_COPY_PACKET, impl_->snaplen, impl_->queue_num);
+    nlh = SetCfgParams(impl_->nlmsg_buf, NFQNL_COPY_PACKET, impl_->snaplen, impl_->queueNumber);
 
-    uint32_t value = htonl(impl_->queue_maxlen);
+    uint32_t value = htonl(impl_->queueMaxLength);
     SetAttribute(nlh, NFQA_CFG_QUEUE_MAXLEN, sizeof(value), &value);
 
     value = htonl(NFQA_CFG_F_GSO);
     SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
     SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
 
-    if (impl_->fail_open)
+    if (impl_->failOpen)
     {
         value = htonl(NFQA_CFG_F_FAIL_OPEN);
         SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
@@ -559,7 +558,7 @@ Status NfQueue::stop()
     nlmsghdr* nlh;
     std::error_code ec;
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queue_num);
+    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queueNumber);
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
         return Status::Error;
@@ -567,22 +566,6 @@ Status NfQueue::stop()
 
     impl_->closeSocket();
     return Status::Success;
-}
-
-int NfQueue::getSnaplen() const
-{
-    return impl_->snaplen;
-}
-
-uint32_t NfQueue::getType() const
-{
-    return 0;
-}
-
-uint32_t NfQueue::getCapabilities() const
-{
-    uint32_t capabilities{0};
-    return capabilities;
 }
 
 io::LinkLayerType NfQueue::getDataLinkType() const
@@ -646,7 +629,7 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
             break;
         }
 
-        ret = cb_run_my(rawPacket->nlmsg_buf, ret, 0, impl_->portid, rawPacket);
+        ret = ProcessMessages(rawPacket->nlmsg_buf, ret, impl_->portid, rawPacket, ec);
         if (ret < 0)
         {
             rstat = RecvStatus::Error;
@@ -671,8 +654,8 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 
     auto nlPacket = dynamic_cast<NfqRawPacket*>(rawPacket);
 
-    nlmsghdr* nlh = SetVerdict(impl_->nlmsg_buf, ntohl(nlPacket->ph->packet_id), impl_->queue_num,
-                               nfq_verdict, plen, (uint8_t*)rawPacket->getRawData());
+    nlmsghdr* nlh = SetVerdict(impl_->nlmsg_buf, ntohl(nlPacket->ph->packet_id), impl_->queueNumber,
+                               nfq_verdict, plen, const_cast<uint8_t*>(rawPacket->getRawData()));
 
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {

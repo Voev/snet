@@ -22,9 +22,7 @@ public:
     RecvStatus receivePacket(io::RawPacket** packet) override;
 
     Status finalizePacket(io::RawPacket* rawPacket, Verdict verdict) override;
-    int getSnaplen() const override;
-    uint32_t getType() const override;
-    uint32_t getCapabilities() const override;
+
     io::LinkLayerType getDataLinkType() const override;
 
 private:
