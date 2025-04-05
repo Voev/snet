@@ -7,6 +7,8 @@
 
 #include <casket/utils/string.hpp>
 
+#include <snet/io/packet_pool.hpp>
+
 #include "pcap_driver.hpp"
 #include "pcap_handle.hpp"
 
@@ -93,6 +95,7 @@ struct Pcap::Impl
     }
 
     /* Configuration */
+    io::PacketPool<io::RawPacket> pool;
     std::string device;
     std::string filter_string;
     unsigned snaplen;
@@ -183,6 +186,7 @@ Pcap::Pcap(const io::DriverConfig& config)
             impl_->readback_timeout = true;
     }
 
+    impl_->pool.allocatePool(16);
     impl_->mode = config.getMode();
     if (impl_->mode == Mode::ReadFile)
     {
@@ -401,12 +405,11 @@ io::LinkLayerType Pcap::getDataLinkType() const
     return io::LINKTYPE_NULL;
 }
 
-RecvStatus Pcap::receivePacket(io::RawPacket& rawPacket)
+RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
 {
     RecvStatus rstat{RecvStatus::Ok};
     struct pcap_pkthdr* pcaphdr;
     const u_char* data;
-    rawPacket.clear();
 
     if (impl_->interrupted)
     {
@@ -480,13 +483,15 @@ RecvStatus Pcap::receivePacket(io::RawPacket& rawPacket)
     if (++impl_->hwupdate_count == PCAP_ROLLOVER_LIM)
         impl_->updateHwStats();
 
+    auto rawPacket = impl_->pool.acquirePacket();
+
     struct timeval ts{};
     ts.tv_sec = pcaphdr->ts.tv_sec;
     ts.tv_usec = pcaphdr->ts.tv_usec;
 
     int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
 
-    if (!rawPacket.setRawData(data, caplen, ts, getDataLinkType()))
+    if (!rawPacket->setRawData(data, caplen, ts, getDataLinkType()))
     {
         rstat = RecvStatus::Error;
     }
@@ -494,16 +499,17 @@ RecvStatus Pcap::receivePacket(io::RawPacket& rawPacket)
     {
         impl_->stats.packets_received++;
     }
+
+    *pRawPacket = rawPacket;
+
     return rstat;
 }
 
-Status Pcap::finalizePacket(const io::RawPacket& rawPacket, Verdict verdict)
+Status Pcap::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 {
-    (void)rawPacket;
-
-    if (verdict >= MAX_Verdict)
-        verdict = Verdict_PASS;
     impl_->stats.verdicts[verdict]++;
+    rawPacket->clear();
+    impl_->pool.releasePacket(rawPacket);
 
     return Status::Success;
 }

@@ -128,9 +128,9 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     config.setTimeout(0);
     config.setSnaplen(2048);
 
-    auto& drv = config.addDriver("pcap");
+    auto& drv = config.addDriver("nfq");
 
-    drv.setMode(Mode::ReadFile);
+    drv.setMode(Mode::Passive);
     drv.setPath(ioDriver);
 
     controller.init(config);
@@ -139,11 +139,15 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     std::cout << "Starting reading '" << fileName << "'..." << std::endl;
 
     RecvStatus status{RecvStatus::Ok};
-    io::RawPacket rawPacket(nullptr, 0, timeval{}, false);
+    io::RawPacket* rawPacket{nullptr};
     do
     {
-        status = controller.receivePacket(rawPacket);
-        tcpReassembly.reassemblePacket(&rawPacket);
+        status = controller.receivePacket(&rawPacket);
+        if (rawPacket)
+        {
+            tcpReassembly.reassemblePacket(rawPacket);
+            controller.finalizePacket(rawPacket, Verdict::Pass);
+        }
     } while (status == RecvStatus::Ok);
 
     size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();

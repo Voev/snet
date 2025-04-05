@@ -63,7 +63,7 @@ Status Trace::getStats(Stats* stats)
         status = next_->getStats(stats);
         if (status == Status::Success)
         {
-            for (int i = 0; i < MAX_Verdict; i++)
+            for (int i = 0; i < MaxVerdicts; i++)
                 stats->verdicts[i] = impl_->stats.verdicts[i];
             stats->packets_injected = impl_->stats.packets_injected;
         }
@@ -95,16 +95,9 @@ uint32_t Trace::getCapabilities() const
     return caps;
 }
 
-const char* Verdict_strings[MAX_Verdict] = {
-    "Pass",      // Verdict_PASS
-    "Block",     // Verdict_BLOCK
-    "Replace",   // Verdict_REPLACE
-    "Whitelist", // Verdict_WHITELIST
-    "Blacklist", // Verdict_BLACKLIST
-    "Ignore"     // Verdict_IGNORE
-};
+const char* Verdict_strings[MaxVerdicts] = {"Pass", "Block", "Replace", "Ignore"};
 
-Status Trace::finalizePacket(const io::RawPacket& rawPacket, Verdict verdict)
+Status Trace::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 {
     impl_->stats.verdicts[verdict]++;
 

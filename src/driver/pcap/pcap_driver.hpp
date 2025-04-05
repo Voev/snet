@@ -22,9 +22,9 @@ public:
 
     Status inject(const uint8_t* data, uint32_t data_len) override;
 
-    RecvStatus receivePacket(io::RawPacket& packet) override;
+    RecvStatus receivePacket(io::RawPacket** packet) override;
 
-    Status finalizePacket(const io::RawPacket& rawPacket, Verdict verdict) override;
+    Status finalizePacket(io::RawPacket* rawPacket, Verdict verdict) override;
     int getSnaplen() const override;
     uint32_t getType() const override;
     uint32_t getCapabilities() const override;

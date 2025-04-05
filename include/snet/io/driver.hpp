@@ -93,14 +93,14 @@ public:
         return io::LINKTYPE_NULL;
     }
 
-    virtual RecvStatus receivePacket(RawPacket& rawPacket)
+    virtual RecvStatus receivePacket(RawPacket** rawPacket)
     {
         if (next_)
             return next_->receivePacket(rawPacket);
         return RecvStatus::Error;
     }
 
-    virtual Status finalizePacket(const RawPacket& rawPacket, Verdict verdict)
+    virtual Status finalizePacket(RawPacket* rawPacket, Verdict verdict)
     {
         if (next_)
             return next_->finalizePacket(rawPacket, verdict);
