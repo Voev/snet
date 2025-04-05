@@ -125,7 +125,7 @@ static inline void SetAttribute(nlmsghdr* nlh, uint16_t type, size_t len, const 
     nlh->nlmsg_len += align_length(payload_len);
 }
 
-static inline nlmsghdr* SetCfgCommand(char* buf, uint16_t pf, uint8_t command, int queueNumber)
+static inline nlmsghdr* SetCfgCommand(uint8_t* buf, uint16_t pf, uint8_t command, int queueNumber)
 {
     nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queueNumber);
     nfqnl_msg_config_cmd cmd;
@@ -136,7 +136,7 @@ static inline nlmsghdr* SetCfgCommand(char* buf, uint16_t pf, uint8_t command, i
     return nlh;
 }
 
-static inline nlmsghdr* SetCfgParams(char* buf, uint8_t mode, int range, int queueNumber)
+static inline nlmsghdr* SetCfgParams(uint8_t* buf, uint8_t mode, int range, int queueNumber)
 {
     nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_CONFIG, queueNumber);
     nfqnl_msg_config_params params;
@@ -147,17 +147,17 @@ static inline nlmsghdr* SetCfgParams(char* buf, uint8_t mode, int range, int que
     return nlh;
 }
 
-static inline nlmsghdr* SetVerdict(char* buf, int id, int queueNumber, int verd, uint32_t plen,
-                                   uint8_t* pkt)
+static inline nlmsghdr* SetVerdict(uint8_t* buf, unsigned int id, unsigned int queueNumber,
+                                   int verdict, uint32_t packetLength, uint8_t* packet)
 {
     nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queueNumber);
     nfqnl_msg_verdict_hdr verdictHeader;
-    verdictHeader.verdict = htonl(verd);
+    verdictHeader.verdict = htonl(verdict);
     verdictHeader.id = htonl(id);
 
     SetAttribute(nlh, NFQA_VERDICT_HDR, sizeof(verdictHeader), &verdictHeader);
-    if (plen)
-        SetAttribute(nlh, NFQA_PAYLOAD, plen, pkt);
+    if (packetLength)
+        SetAttribute(nlh, NFQA_PAYLOAD, packetLength, packet);
 
     return nlh;
 }
@@ -271,21 +271,19 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid,
 {
     const nlmsghdr* nlh = static_cast<const nlmsghdr*>(buffer);
     int len = numbytes;
-    (void )ec;
 
     while (MessageIsOk(nlh, len))
     {
         auto v = nlh->nlmsg_pid && portid ? nlh->nlmsg_pid == portid : true;
         if (!v)
         {
-
-            errno = ESRCH;
+            ec = std::make_error_code(std::errc::no_such_process);
             return -1;
         }
 
         if (nlh->nlmsg_flags & NLM_F_DUMP_INTR)
         {
-            errno = EINTR;
+            ec = std::make_error_code(std::errc::interrupted);
             return -1;
         }
 
@@ -302,16 +300,12 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid,
 
             if (nlh->nlmsg_len < sizeof(nlmsgerr) + align_length(sizeof(nlmsghdr)))
             {
-                errno = EBADMSG;
+                ec = std::make_error_code(std::errc::bad_message);
                 return -1;
             }
 
-            if (err->error < 0)
-                errno = -err->error;
-            else
-                errno = err->error;
-
-            return err->error == 0 ? 0 : -1;
+            ec = std::make_error_code(static_cast<std::errc>(abs(err->error)));
+            return ec ? 0 : -1;
         }
         else
         {
@@ -421,8 +415,8 @@ struct NfQueue::Impl
     }
 
     io::PacketPool<NfqRawPacket> pool;
-    char* nlmsg_buf;
-    size_t nlmsg_bufsize;
+    uint8_t* buffer;
+    size_t buffersize;
     socket::SocketType socket;
     sockaddr_nl address;
     unsigned int queueNumber;
@@ -437,9 +431,7 @@ struct NfQueue::Impl
 NfQueue::Impl::~Impl()
 {
     closeSocket();
-
-    if (nlmsg_buf)
-        free(nlmsg_buf);
+    delete[] buffer;
 }
 
 NfQueue::Impl::Impl()
@@ -471,8 +463,8 @@ NfQueue::NfQueue(const io::DriverConfig& config)
             to_number(value, impl_->queueMaxLength, ec);
     }
 
-    impl_->nlmsg_bufsize = impl_->snaplen + 4096;
-    impl_->nlmsg_buf = (char*)malloc(impl_->nlmsg_bufsize);
+    impl_->buffersize = impl_->snaplen + 4096;
+    impl_->buffer = new uint8_t[impl_->buffersize];
 
     impl_->pool.allocatePool(::kDefaultPoolSize);
     impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
@@ -498,22 +490,22 @@ NfQueue::NfQueue(const io::DriverConfig& config)
 
     nlmsghdr* nlh;
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
+    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
+    nlh = SetCfgCommand(impl_->buffer, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
+    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
+    nlh = SetCfgCommand(impl_->buffer, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queueNumber);
+    nlh = SetCfgCommand(impl_->buffer, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queueNumber);
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgParams(impl_->nlmsg_buf, NFQNL_COPY_PACKET, impl_->snaplen, impl_->queueNumber);
+    nlh = SetCfgParams(impl_->buffer, NFQNL_COPY_PACKET, impl_->snaplen, impl_->queueNumber);
 
     uint32_t value = htonl(impl_->queueMaxLength);
     SetAttribute(nlh, NFQA_CFG_QUEUE_MAXLEN, sizeof(value), &value);
@@ -558,7 +550,7 @@ Status NfQueue::stop()
     nlmsghdr* nlh;
     std::error_code ec;
 
-    nlh = SetCfgCommand(impl_->nlmsg_buf, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queueNumber);
+    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queueNumber);
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
         return Status::Error;
@@ -589,19 +581,19 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
         return RecvStatus::Interrupted;
     }
 
-    /* Make sure that we have a packet descriptor available to populate. */
     NfqRawPacket* rawPacket = impl_->pool.acquirePacket();
     if (!rawPacket)
     {
         return RecvStatus::Error;
     }
 
-    rawPacket->nlmsg_buf = new uint8_t[impl_->nlmsg_bufsize];
+    if (!rawPacket->buffer)
+        rawPacket->buffer = new uint8_t[impl_->buffersize];
 
     ssize_t ret;
     do
     {
-        ret = impl_->recvSocket(rawPacket->nlmsg_buf, impl_->nlmsg_bufsize, true, ec);
+        ret = impl_->recvSocket(rawPacket->buffer, impl_->buffersize, true, ec);
         if (ret < 0)
         {
             if (ec == std::errc::no_buffer_space)
@@ -629,7 +621,7 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
             break;
         }
 
-        ret = ProcessMessages(rawPacket->nlmsg_buf, ret, impl_->portid, rawPacket, ec);
+        ret = ProcessMessages(rawPacket->buffer, ret, impl_->portid, rawPacket, ec);
         if (ret < 0)
         {
             rstat = RecvStatus::Error;
@@ -647,14 +639,13 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
 Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 {
     std::error_code ec;
-    uint32_t plen = (verdict == Verdict::Verdict_REPLACE) ? rawPacket->getRawDataLen() : 0;
-    int nfq_verdict = (verdict == Verdict::Verdict_PASS || verdict == Verdict::Verdict_REPLACE)
-                          ? NF_ACCEPT
-                          : NF_DROP;
+    uint32_t plen = (verdict == Verdict::Replace) ? rawPacket->getRawDataLen() : 0;
+    int nfq_verdict =
+        (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
 
     auto nlPacket = dynamic_cast<NfqRawPacket*>(rawPacket);
 
-    nlmsghdr* nlh = SetVerdict(impl_->nlmsg_buf, ntohl(nlPacket->ph->packet_id), impl_->queueNumber,
+    nlmsghdr* nlh = SetVerdict(impl_->buffer, ntohl(nlPacket->ph->packet_id), impl_->queueNumber,
                                nfq_verdict, plen, const_cast<uint8_t*>(rawPacket->getRawData()));
 
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)

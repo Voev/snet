@@ -10,9 +10,15 @@ class NfqRawPacket final : public io::RawPacket
 public:
     NfqRawPacket()
         : RawPacket(nullptr, 0, timeval{}, false)
-    {}
+    {
+    }
 
-    uint8_t* nlmsg_buf;
+    ~NfqRawPacket() noexcept
+    {
+        delete[] buffer;
+    }
+
+    uint8_t* buffer;
     const nlmsghdr* mh;
     nfqnl_msg_packet_hdr* ph;
 };

@@ -146,7 +146,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
         if (rawPacket)
         {
             tcpReassembly.reassemblePacket(rawPacket);
-            controller.finalizePacket(rawPacket, Verdict::Verdict_PASS);
+            controller.finalizePacket(rawPacket, Verdict::Pass);
         }
     } while (status == RecvStatus::Ok);
 

@@ -507,8 +507,6 @@ RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
 
 Status Pcap::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
 {
-    if (verdict >= MAX_Verdict)
-        verdict = Verdict_PASS;
     impl_->stats.verdicts[verdict]++;
     rawPacket->clear();
     impl_->pool.releasePacket(rawPacket);
