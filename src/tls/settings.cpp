@@ -102,4 +102,9 @@ void Settings::setSecurityLevel(SecurityLevel level) noexcept
     SSL_CTX_set_security_level(ctx_, static_cast<int>(level));
 }
 
+Connection Settings::createConnection() const
+{
+    return Connection(SSL_new(ctx_));
+}
+
 } // namespace snet::tls

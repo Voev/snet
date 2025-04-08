@@ -14,6 +14,6 @@
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/record_printer.hpp>
 
+#include <snet/tls/settings.hpp>
 #include <snet/tls/connection.hpp>
-#include <snet/tls/connection2.hpp>
-
+#include <snet/tls/state_machine.hpp>

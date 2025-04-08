@@ -15,7 +15,7 @@ TEST(HandshakeClientTest, NotEnoughOutputSize)
     std::size_t bufferSize{0U};
 
     std::error_code ec;
-    Connection2 client(std::move(ClientSettings()));
+    StateMachine client(std::move(ClientSettings()));
 
     // trying to read with small buffer
     ASSERT_EQ(Want::Output, client.handshake(nullptr, 0, buffer.data(), &bufferSize, ec));
@@ -33,7 +33,7 @@ TEST(HandshakeClientTest, FullReading)
     std::vector<uint8_t> buffer(bufferSize);
 
     std::error_code ec;
-    Connection2 client(std::move(ClientSettings()));
+    StateMachine client(std::move(ClientSettings()));
 
     // reading ClientHello record
     ASSERT_EQ(Want::Nothing, client.handshake(nullptr, 0, buffer.data(), &bufferSize, ec));
@@ -79,7 +79,7 @@ TEST_F(HandshakeServerTest, IncompleteInputBuffer)
     std::size_t bufferSize{buffer.size()};
 
     std::error_code ec;
-    Connection2 server(serverSettings_);
+    StateMachine server(serverSettings_);
 
     ASSERT_EQ(Want::Input, server.handshake(buffer.data(), bufferSize, nullptr, nullptr, ec));
     ASSERT_FALSE(ec);
@@ -91,7 +91,7 @@ TEST_F(HandshakeServerTest, UnexpectedMessageForClientHello)
     std::size_t bufferSize{buffer.size()};
 
     std::error_code ec;
-    Connection2 server(serverSettings_);
+    StateMachine server(serverSettings_);
 
     ASSERT_EQ(Want::Nothing, server.handshake(buffer.data(), bufferSize, nullptr, nullptr, ec));
     ASSERT_TRUE(ec);
@@ -139,12 +139,12 @@ TEST_F(HandshakeTest, ReplyServerHelloForClientHello)
     std::vector<uint8_t> clientBuffer(clientBufferSize);
     std::vector<uint8_t> serverBuffer(serverBufferSize);
 
-    Connection2 client(clientCtx_);
+    StateMachine client(clientCtx_);
     ASSERT_EQ(Want::Nothing,
               client.handshake(nullptr, 0, clientBuffer.data(), &clientBufferSize, ec));
     ASSERT_FALSE(ec);
 
-    Connection2 server(serverSettings_);
+    StateMachine server(serverSettings_);
     ASSERT_EQ(Want::Nothing, server.handshake(clientBuffer.data(), clientBufferSize,
                                               serverBuffer.data(), &serverBufferSize, ec));
     ASSERT_FALSE(ec);
@@ -163,12 +163,12 @@ TEST_F(HandshakeTest, ReplyAlertForClientHello)
     ASSERT_NO_THROW(clientCtx_.setMinVersion(ProtocolVersion::TLSv1_3));
     ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
 
-    Connection2 client(clientCtx_);
+    StateMachine client(clientCtx_);
     ASSERT_EQ(Want::Nothing,
               client.handshake(nullptr, 0, clientBuffer.data(), &clientBufferSize, ec));
     ASSERT_FALSE(ec);
 
-    Connection2 server(serverSettings_);
+    StateMachine server(serverSettings_);
     ASSERT_EQ(Want::Nothing, server.handshake(clientBuffer.data(), clientBufferSize,
                                               serverBuffer.data(), &serverBufferSize, ec));
     ASSERT_TRUE(ec);
@@ -188,12 +188,12 @@ TEST_F(HandshakeTest, PartialWriting)
     std::vector<uint8_t> clientBuffer(clientBufferSize);
     std::vector<uint8_t> serverBuffer(serverBufferSize);
 
-    Connection2 client(clientCtx_);
+    StateMachine client(clientCtx_);
     ASSERT_EQ(Want::Nothing,
               client.handshake(nullptr, 0, clientBuffer.data(), &clientBufferSize, ec));
     ASSERT_FALSE(ec);
 
-    Connection2 server(serverSettings_);
+    StateMachine server(serverSettings_);
 
     for (std::size_t i{0}; i < clientBufferSize; ++i)
     {
@@ -264,8 +264,8 @@ TEST_P(HandshakeProcessTest, IterativeHandshake)
     std::vector<uint8_t> clientBuffer(clientBufferSize);
     std::vector<uint8_t> serverBuffer(serverBufferSize);
 
-    Connection2 client(clientSettings_);
-    Connection2 server(serverSettings_);
+    StateMachine client(clientSettings_);
+    StateMachine server(serverSettings_);
 
     const auto& param = GetParam();
     ASSERT_NO_THROW(client.setVersion(param.version));
@@ -284,9 +284,9 @@ TEST_P(HandshakeProcessTest, IterativeHandshake)
                                                   serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec);
 
-    } while (!client.handshakeFinished());
+    } while (!client.afterHandshake());
 
-    ASSERT_TRUE(server.handshakeFinished());
+    ASSERT_TRUE(server.afterHandshake());
 }
 
 INSTANTIATE_TEST_SUITE_P(ParametrizedConnectionTests, HandshakeProcessTest,

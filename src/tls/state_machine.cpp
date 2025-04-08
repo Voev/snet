@@ -5,7 +5,7 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 
-#include <snet/tls/connection2.hpp>
+#include <snet/tls/state_machine.hpp>
 #include <snet/tls/settings.hpp>
 
 #include <snet/crypto/exception.hpp>
@@ -72,56 +72,46 @@ int serverCertCallback(SSL* ssl, void* arg)
 namespace snet::tls
 {
 
-Connection2::Connection2(const Settings& ctx)
-    : ssl_(nullptr)
+StateMachine::StateMachine(const Settings& settings)
+    : Connection(settings.createConnection())
     , lowerLayer_(nullptr)
     , alert_()
 {
 
-    /// @todo: fix it.
-    SslPtr ssl(SSL_new(ctx.getHandle()));
-    crypto::ThrowIfFalse(ssl);
+    setInfoCallback(::infoCallback);
+    setIndexData(::getInfoCallbackDataIndex(), &alert_);
 
-    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
-    SSL_set_mode(ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-    SSL_set_mode(ssl, SSL_MODE_RELEASE_BUFFERS);
-
-    if (ctx.side() == Side::Client)
+    if (settings.side() == Side::Server)
     {
-        SSL_set_connect_state(ssl);
+        setAcceptState();
+        setServerCallback(::serverCertCallback, nullptr);
     }
     else
     {
-        SSL_set_accept_state(ssl);
-        SSL_set_cert_cb(ssl, ::serverCertCallback, nullptr);
+        setConnectState();
     }
-
-    SSL_set_info_callback(ssl, ::infoCallback);
-    crypto::ThrowIfFalse(0 < SSL_set_ex_data(ssl, ::getInfoCallbackDataIndex(), &alert_));
 
     BIO* upperLayer{nullptr};
     BIO* lowerLayer{nullptr};
     crypto::ThrowIfFalse(0 < BIO_new_bio_pair(&upperLayer, 0, &lowerLayer, 0));
-    SSL_set_bio(ssl.get(), upperLayer, upperLayer);
+    setBio(upperLayer, upperLayer);
 
-    ssl_ = ssl.release();
     lowerLayer_ = lowerLayer;
 }
 
-Connection2::~Connection2() noexcept
+StateMachine::~StateMachine() noexcept
 {
     BIO_free(lowerLayer_);
-    SSL_free(ssl_);
 }
 
-Connection2::Connection2(Connection2&& other) noexcept
-    : ssl_(std::move(other.ssl_))
+StateMachine::StateMachine(StateMachine&& other) noexcept
+    : Connection(std::move(other.ssl_))
     , lowerLayer_(std::move(other.lowerLayer_))
     , alert_(std::move(other.alert_))
 {
 }
 
-Connection2& Connection2::operator=(Connection2&& other) noexcept
+StateMachine& StateMachine::operator=(StateMachine&& other) noexcept
 {
     if (this != &other)
     {
@@ -132,91 +122,20 @@ Connection2& Connection2::operator=(Connection2&& other) noexcept
     return *this;
 }
 
-void Connection2::shutdown()
-{
-    crypto::ThrowIfFalse(1 == SSL_shutdown(ssl_));
-}
-
-crypto::CertPtr Connection2::getPeerCert() const
-{
-    return crypto::CertPtr{SSL_get1_peer_certificate(ssl_)};
-}
-
-bool Connection2::beforeHandshake() const
-{
-    return SSL_in_before(ssl_);
-}
-
-bool Connection2::handshakeFinished() const
-{
-    return SSL_is_init_finished(ssl_);
-}
-
-void Connection2::checkPrivateKey() const
-{
-    crypto::ThrowIfFalse(SSL_check_private_key(ssl_));
-}
-
-void Connection2::useCertificate(Cert* certificate)
-{
-    crypto::ThrowIfFalse(SSL_use_certificate(ssl_, certificate));
-}
-
-void Connection2::usePrivateKey(Key* privateKey)
-{
-    crypto::ThrowIfFalse(SSL_use_PrivateKey(ssl_, privateKey));
-}
-
-void Connection2::useCertificateWithKey(Cert* certificate, Key* privateKey)
-{
-    crypto::ThrowIfFalse(SSL_use_cert_and_key(ssl_, certificate, privateKey, nullptr, 1));
-}
-
-bool Connection2::isServer() const noexcept
-{
-    return SSL_is_server(ssl_);
-}
-
-void Connection2::setMinVersion(ProtocolVersion version)
-{
-    crypto::ThrowIfFalse(SSL_set_min_proto_version(ssl_, static_cast<int>(version.code())));
-}
-
-void Connection2::setMaxVersion(ProtocolVersion version)
-{
-    crypto::ThrowIfFalse(SSL_set_max_proto_version(ssl_, static_cast<int>(version.code())));
-}
-
-void Connection2::setVersion(ProtocolVersion version)
-{
-    setMinVersion(version);
-    setMaxVersion(version);
-}
-
-ProtocolVersion Connection2::getProtoVersion() const noexcept
-{
-    return static_cast<ProtocolVersion>(SSL_version(ssl_));
-}
-
-const Alert& Connection2::getAlert() const noexcept
+const Alert& StateMachine::getAlert() const noexcept
 {
     return alert_;
 }
 
-void Connection2::clear() noexcept
+void StateMachine::clear() noexcept
 {
-    SSL_clear(ssl_);
+    cleanup();
     alert_ = Alert();
 }
 
-bool Connection2::isClosed() const noexcept
-{
-    return SSL_get_shutdown(ssl_) != 0;
-}
-
-Want Connection2::handshake(std::uint8_t* bufferIn, std::size_t bufferInSize,
-                            std::uint8_t* bufferOut, std::size_t* bufferOutSize,
-                            std::error_code& ec) noexcept
+Want StateMachine::handshake(const std::uint8_t* bufferIn, const std::size_t bufferInSize,
+                             std::uint8_t* bufferOut, std::size_t* bufferOutSize,
+                             std::error_code& ec) noexcept
 {
 
     std::size_t pendingOutputBefore;
@@ -232,7 +151,7 @@ Want Connection2::handshake(std::uint8_t* bufferIn, std::size_t bufferInSize,
     }
 
     pendingOutputBefore = BIO_ctrl_pending(lowerLayer_);
-    result = SSL_do_handshake(ssl_);
+    result = doHandshake();
     pendingOutputAfter = BIO_ctrl_pending(lowerLayer_);
 
     auto want = handleResult(result, pendingOutputBefore, pendingOutputAfter, ec);
@@ -267,8 +186,9 @@ Want Connection2::handshake(std::uint8_t* bufferIn, std::size_t bufferInSize,
     return want;
 }
 
-Want Connection2::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std::uint8_t* bufferOut,
-                          std::size_t* bufferOutSize, std::error_code& ec) noexcept
+Want StateMachine::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
+                           std::uint8_t* bufferOut, std::size_t* bufferOutSize,
+                           std::error_code& ec) noexcept
 {
 
     if (bufferIn && bufferInSize > 0)
@@ -279,21 +199,19 @@ Want Connection2::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std:
         }
     }
 
-    std::size_t bufferMaxSize = *bufferOutSize;
     auto pendingOutputBefore = BIO_ctrl_pending(lowerLayer_);
-    auto result = SSL_read_ex(ssl_, bufferOut, bufferMaxSize, bufferOutSize);
+    auto result = doRead(bufferOut, *bufferOutSize);
     auto pendingOutputAfter = BIO_ctrl_pending(lowerLayer_);
 
     return handleResult(result, pendingOutputBefore, pendingOutputAfter, ec);
 }
 
-Want Connection2::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std::uint8_t* bufferOut,
-                          std::size_t* bufferOutSize, std::error_code& ec) noexcept
+Want StateMachine::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
+                           std::uint8_t* bufferOut, std::size_t* bufferOutSize,
+                           std::error_code& ec) noexcept
 {
-
-    std::size_t writtenSize{0};
     auto pendingOutputBefore = BIO_ctrl_pending(lowerLayer_);
-    auto result = SSL_write_ex(ssl_, bufferIn, bufferInSize, &writtenSize);
+    auto result = doWrite(bufferIn, bufferInSize);
     auto pendingOutputAfter = BIO_ctrl_pending(lowerLayer_);
 
     auto want = handleResult(result, pendingOutputBefore, pendingOutputAfter, ec);
@@ -307,13 +225,14 @@ Want Connection2::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std:
     return Want::Nothing;
 }
 
-Want Connection2::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize, std::error_code& ec) noexcept
+Want StateMachine::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize,
+                               std::error_code& ec) noexcept
 {
 
     std::size_t pendingBufferSize = BIO_ctrl_pending(lowerLayer_);
     if (pendingBufferSize == 0)
     {
-        SSL_shutdown(ssl_);
+        doShutdown();
         pendingBufferSize = BIO_ctrl_pending(lowerLayer_);
     }
 
@@ -339,10 +258,10 @@ Want Connection2::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize, std
     return Want::Nothing;
 }
 
-Want Connection2::handleResult(int result, std::size_t before, std::size_t after,
-                               std::error_code& ec) noexcept
+Want StateMachine::handleResult(int result, std::size_t before, std::size_t after,
+                                std::error_code& ec) noexcept
 {
-    int sslError = SSL_get_error(ssl_, result);
+    int sslError = getError(result);
     if (sslError == SSL_ERROR_SSL || sslError == SSL_ERROR_SYSCALL)
     {
         ec = crypto::GetLastError();
@@ -367,32 +286,8 @@ Want Connection2::handleResult(int result, std::size_t before, std::size_t after
     return Want::Nothing;
 }
 
-std::size_t Connection2::upperLayerRead(std::uint8_t* buffer, std::size_t length, std::error_code& ec) noexcept
-{
-    auto ret = SSL_read(ssl_, buffer, static_cast<int>(std::min(length, kDataLimit)));
-    if (ret < 0)
-    {
-        ec = crypto::GetLastError();
-        return 0U;
-    }
-
-    return static_cast<std::size_t>(ret);
-}
-
-std::size_t Connection2::upperLayerWrite(const std::uint8_t* buffer, std::size_t length, std::error_code& ec) noexcept
-{
-    auto ret = SSL_write(ssl_, buffer, static_cast<int>(std::min(length, kDataLimit)));
-    if (ret < 0)
-    {
-        ec = crypto::GetLastError();
-        return 0U;
-    }
-
-    return length;
-}
-
-std::size_t Connection2::lowerLayerRead(std::uint8_t* buffer, std::size_t length,
-                                        std::error_code& ec) noexcept
+std::size_t StateMachine::lowerLayerRead(std::uint8_t* buffer, std::size_t length,
+                                         std::error_code& ec) noexcept
 {
     auto ret = BIO_read(lowerLayer_, buffer, static_cast<int>(std::min(length, kDataLimit)));
     if (ret < 0)
@@ -404,8 +299,8 @@ std::size_t Connection2::lowerLayerRead(std::uint8_t* buffer, std::size_t length
     return static_cast<std::size_t>(ret);
 }
 
-std::size_t Connection2::lowerLayerWrite(const std::uint8_t* buffer, std::size_t length,
-                                         std::error_code& ec) noexcept
+std::size_t StateMachine::lowerLayerWrite(const std::uint8_t* buffer, std::size_t length,
+                                          std::error_code& ec) noexcept
 {
     auto ret = BIO_write(lowerLayer_, buffer, static_cast<int>(std::min(length, kDataLimit)));
     if (ret < 0)
@@ -417,7 +312,7 @@ std::size_t Connection2::lowerLayerWrite(const std::uint8_t* buffer, std::size_t
     return static_cast<std::size_t>(ret);
 }
 
-std::size_t Connection2::lowerLayerPending() const noexcept
+std::size_t StateMachine::lowerLayerPending() const noexcept
 {
     return BIO_ctrl_pending(lowerLayer_);
 }

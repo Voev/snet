@@ -4,17 +4,16 @@
 #pragma once
 #include <snet/tls/version.hpp>
 #include <snet/tls/types.hpp>
-#include <casket/utils/noncopyable.hpp>
+#include <snet/tls/connection.hpp>
+#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
 /// @brief Class for managing TLS settings.
-class Settings : public casket::utils::NonCopyable
+class Settings : public utils::NonCopyable
 {
 public:
-    friend class Connection;
-
     /// @brief Constructor with side.
     /// @param side The side (client or server).
     explicit Settings(Side side);
@@ -83,10 +82,7 @@ public:
     /// @param cipherSuites The security level.
     void setSecurityLevel(SecurityLevel level) noexcept;
 
-    SSL_CTX* getHandle() const
-    {
-        return ctx_.get();
-    }
+    Connection createConnection() const;
 
 private:
     SslCtxPtr ctx_;

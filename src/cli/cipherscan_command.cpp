@@ -77,10 +77,11 @@ void CheckCipher(const Endpoint& endpoint, const std::string& cipherSuite, Queue
         Connect(socket, endpoint.data(), endpoint.size(), ec);
         ThrowIfError(ec);
 
-        Connection conn(settings);
+        Connection conn = settings.createConnection();
+        conn.setConnectState();
         conn.setSocket(socket);
 
-        snet::crypto::ThrowIfFalse(0 < conn.doHandshake(nullptr, 0));
+        snet::crypto::ThrowIfFalse(0 < conn.doHandshake());
         ret.push(cipherSuite);
     }
     catch (const std::exception& e)
