@@ -290,7 +290,7 @@ void IPv4Layer::computeCalculateFields()
 {
     iphdr* ipHdr = getIPv4Header();
     ipHdr->ipVersion = (4 & 0x0f);
-    ipHdr->totalLength = host_to_be(m_DataLen);
+    ipHdr->totalLength = host_to_be<uint16_t>(m_DataLen);
     ipHdr->headerChecksum = 0;
 
     if (m_NextLayer != nullptr)

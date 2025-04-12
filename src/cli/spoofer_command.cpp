@@ -6,11 +6,13 @@
 
 #include <snet/utils/print_hex.hpp>
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/layers/tcp_reassembly.hpp>
 #include <snet/crypto/asymm_key.hpp>
 
+#include <snet/layers.hpp>
 #include <snet/io.hpp>
 #include <snet/tls.hpp>
+
+#include <snet/utils/print_hex.hpp>
 
 using namespace casket;
 using namespace casket::log;
@@ -114,8 +116,49 @@ public:
             status = controller.receivePacket(&rawPacket);
             if (rawPacket)
             {
-                tcpReassembly.reassemblePacket(rawPacket);
-                controller.finalizePacket(rawPacket, Verdict::Pass);
+                layers::Packet parsedPacket(rawPacket, false);
+                auto status = tcpReassembly.reassemblePacket(parsedPacket);
+                if (status == tcp::TcpReassembly::TcpMessageHandled)
+                {
+                    std::cout << "--handled--" << std::endl;
+
+                    utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                                                         (size_t)rawPacket->getRawDataLen()});
+                    std::cout << "----" << std::endl;
+                    auto p = parsedPacket.getLayerOfType<layers::PayloadLayer>(true);
+                    if (p)
+                    {
+                        p->getData()[0] = 0xDE;
+
+                        auto ip = parsedPacket.getLayerOfType<layers::IPv4Layer>(true);
+                        ip->computeCalculateFields();
+
+                        auto tcp = parsedPacket.getLayerOfType<layers::TcpLayer>(true);
+                        tcp->computeCalculateFields();
+
+                        controller.finalizePacket(rawPacket, Verdict::Replace);
+
+                        std::cout << "--replaced--" << std::endl;
+
+                        utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                                                             (size_t)rawPacket->getRawDataLen()});
+                        std::cout << "----" << std::endl;
+                    }
+                    else
+                    {
+                        controller.finalizePacket(rawPacket, Verdict::Pass);
+                    }
+                }
+                /*
+                else if (replaced)
+                {
+                    controller.finalizePacket(rawPacket, Verdict::Replace);
+                }
+                */
+                else
+                {
+                    controller.finalizePacket(rawPacket, Verdict::Block);
+                }
             }
         } while (status == RecvStatus::Ok);
 

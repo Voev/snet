@@ -35,7 +35,7 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
             // We have read the latest byte manually but this byte should be
             // properly interpreted as a 0xFF on LE and a 0xFF00 on BE to have a
             // proper checksum computation
-            localSum += be_to_host(lastByte << 8);
+            localSum += be_to_host<uint16_t>(lastByte << 8);
         }
 
         // carry count is added to the sum
@@ -77,8 +77,8 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddres
         pseudoHeader[1] = srcIP & 0xFFFF;
         pseudoHeader[2] = dstIP >> 16;
         pseudoHeader[3] = dstIP & 0xFFFF;
-        pseudoHeader[4] = 0xffff & host_to_be(dataLen);
-        pseudoHeader[5] = host_to_be(0x00ff & protocolType);
+        pseudoHeader[4] = 0xffff & host_to_be<uint16_t>(dataLen);
+        pseudoHeader[5] = host_to_be<uint16_t>(0x00ff & protocolType);
         vec[1].buffer = pseudoHeader;
         vec[1].len = 12;
         checksumRes = computeChecksum(vec, 2);
@@ -92,8 +92,8 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddres
         std::copy(srcIP.begin(), srcIP.end(), pseudoHeader.begin());
         std::copy(dstIP.begin(), dstIP.end(), pseudoHeader.begin() + 8);
 
-        pseudoHeader[16] = 0xffff & host_to_be(dataLen);
-        pseudoHeader[17] = host_to_be(0x00ff & protocolType);
+        pseudoHeader[16] = 0xffff & host_to_be<uint16_t>(dataLen);
+        pseudoHeader[17] = host_to_be<uint16_t>(0x00ff & protocolType);
         vec[1].buffer = pseudoHeader.data();
         vec[1].len = 36;
         checksumRes = computeChecksum(vec, 2);
