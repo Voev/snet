@@ -3,38 +3,80 @@
 
 #pragma once
 #include <functional>
-#include <snet/tls/settings.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/crypto/pointers.hpp>
+#include <snet/tls/version.hpp>
+#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
 /// @brief Class representing a TLS connection.
-class Connection final
+class Connection
 {
 public:
-    using Operation = std::function<int(void*, std::size_t)>;
-
-    /// @brief Enum representing the state of the connection.
-    enum class Want
-    {
-        AlreadyCreated = -3,
-        InputAndRetry = -2,
-        OutputAndRetry = -1,
-        Nothing = 0,
-        Output = 1
-    };
-
-    /// @brief Constructor with settings.
-    /// @param settings The TLS settings.
-    explicit Connection(Settings& settings);
+    friend class Settings;
 
     /// @brief Destructor.
-    ~Connection() noexcept;
+    virtual ~Connection() noexcept;
 
     Connection(Connection&& other) noexcept;
     Connection& operator=(Connection&& other) noexcept;
+
+    void setIndexData(int index, void* data);
+
+    int getError(int ret) const noexcept;
+
+    void setBio(BIO* rbio, BIO* wbio) noexcept
+    {
+        SSL_set_bio(ssl_, rbio, wbio);
+    }
+
+    void setServerCallback(int (*cb)(SSL* ssl, void* arg), void* arg)
+    {
+        SSL_set_cert_cb(ssl_, cb, arg);
+    }
+
+    void setInfoCallback(void (*cb)(const SSL*, int, int))
+    {
+        SSL_set_info_callback(ssl_, cb);
+    }
+
+    void setConnectState() noexcept
+    {
+        SSL_set_connect_state(ssl_);
+    }
+
+    void setAcceptState() noexcept
+    {
+        SSL_set_accept_state(ssl_);
+    }
+
+    bool beforeHandshake() const noexcept
+    {
+        return SSL_in_before(ssl_);
+    }
+
+    bool afterHandshake() const noexcept
+    {
+        return SSL_is_init_finished(ssl_);
+    }
+
+    void cleanup() noexcept
+    {
+        SSL_clear(ssl_);
+    }
+
+    bool isClosed() const noexcept
+    {
+        return SSL_get_shutdown(ssl_) != 0;
+    }
+
+    void setMinVersion(ProtocolVersion version);
+
+    void setMaxVersion(ProtocolVersion version);
+
+    void setVersion(ProtocolVersion version);
 
     /// @brief Sets the socket file descriptor.
     /// @param fd The socket file descriptor.
@@ -56,67 +98,31 @@ public:
     /// @return True if the handshake is done, false otherwise.
     bool handshakeDone() const noexcept;
 
-    /// @brief Performs the handshake.
-    /// @return The state of the connection after the handshake.
-    Want handshake();
-
-    /// @brief Shuts down the connection.
-    /// @return The state of the connection after the shutdown.
-    Want shutdown();
-
-    /// @brief Reads data from the connection.
-    /// @param data The buffer to read data into.
-    /// @param dataLength The length of the data to read.
-    /// @param bytesTransferred The number of bytes transferred.
-    /// @return The state of the connection after the read.
-    Want read(std::uint8_t* data, const std::size_t dataLength,
-              std::size_t& bytesTransferred);
-
-    /// @brief Writes data to the connection.
-    /// @param data The buffer to write data from.
-    /// @param dataLength The length of the data to write.
-    /// @param bytesTransferred The number of bytes transferred.
-    /// @return The state of the connection after the write.
-    Want write(std::uint8_t* data, const std::size_t dataLength,
-               std::size_t& bytesTransferred);
-
     /// @brief Performs the handshake operation.
-    /// @param data The buffer to operate on.
-    /// @param length The length of the data.
     /// @return The result of the handshake operation.
-    int doHandshake(void*, std::size_t);
-
-private:
-    /// @brief Performs an operation on the connection.
-    /// @param op The operation to perform.
-    /// @param data The buffer to operate on.
-    /// @param length The length of the data.
-    /// @param bytesTransferred The number of bytes transferred.
-    /// @return The state of the connection after the operation.
-    Want perform(const Operation& op, void* data, std::size_t length,
-                 std::size_t* bytesTransferred);
+    int doHandshake() noexcept;
 
     /// @brief Performs the shutdown operation.
-    /// @param data The buffer to operate on.
-    /// @param length The length of the data.
     /// @return The result of the shutdown operation.
-    int doShutdown(void*, std::size_t);
+    int doShutdown() noexcept;
 
     /// @brief Performs the read operation.
     /// @param data The buffer to read data into.
     /// @param length The length of the data.
     /// @return The result of the read operation.
-    int doRead(void* data, std::size_t length);
+    int doRead(std::uint8_t* data, std::size_t length) noexcept;
 
     /// @brief Performs the write operation.
     /// @param data The buffer to write data from.
     /// @param length The length of the data.
     /// @return The result of the write operation.
-    int doWrite(void* data, std::size_t length);
+    int doWrite(const std::uint8_t* data, std::size_t length) noexcept;
 
-private:
+protected:
+    explicit Connection(SSL* ssl);
+
+protected:
     SslPtr ssl_;
-    crypto::BioPtr extBio_;
 };
 
 } // namespace snet::tls

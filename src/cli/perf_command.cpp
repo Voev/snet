@@ -280,7 +280,7 @@ public:
 
     std::unique_ptr<tls::Connection> makeConnection()
     {
-        return std::make_unique<tls::Connection>(settings_);
+        return std::make_unique<tls::Connection>(settings_.createConnection());
     }
 
     void handleEvents()
@@ -413,7 +413,7 @@ bool Session::doTlsHandshake()
     if (!tls_)
     {
         tls_ = manager_.makeConnection();
-
+        tls_->setConnectState();
         tls_->setSocket(socket_);
 
         BIO_set_tcp_ndelay(socket_, true);
@@ -432,8 +432,8 @@ bool Session::doTlsHandshake()
         start_ = Clock::now();
     }
 
-    auto want = tls_->handshake();
-    if (want == tls::Connection::Want::Nothing)
+    int ret = tls_->doHandshake();
+    if (ret == 1)
     {
         const duration<double, std::milli> latency = Clock::now() - start_;
         gLocalLatencyStats.update(latency.count());
@@ -449,12 +449,13 @@ bool Session::doTlsHandshake()
         return true;
     }
 
+    int want = tls_->getError(ret);
     switch (want)
     {
-    case tls::Connection::Want::InputAndRetry:
+    case SSL_ERROR_WANT_READ:
         manager_.add(this, Read);
         break;
-    case tls::Connection::Want::OutputAndRetry:
+    case SSL_ERROR_WANT_WRITE:
         manager_.add(this, Write);
         break;
     default:
@@ -475,7 +476,7 @@ void Session::disconnect() noexcept
     {
         if (reuseSession_)
         {
-            tls_->shutdown();
+            tls_->doShutdown();
             session_ = tls_->getSession();
         }
         tls_.reset();

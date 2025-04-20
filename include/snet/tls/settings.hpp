@@ -3,17 +3,17 @@
 
 #pragma once
 #include <snet/tls/version.hpp>
-#include <casket/utils/noncopyable.hpp>
+#include <snet/tls/types.hpp>
+#include <snet/tls/connection.hpp>
+#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
 /// @brief Class for managing TLS settings.
-class Settings : public casket::utils::NonCopyable
+class Settings : public utils::NonCopyable
 {
 public:
-    friend class Connection;
-
     /// @brief Constructor with side.
     /// @param side The side (client or server).
     explicit Settings(Side side);
@@ -77,6 +77,12 @@ public:
     /// @brief Sets the cipher suites.
     /// @param cipherSuites The cipher suites.
     void setCipherSuites(std::string_view cipherSuites);
+
+    /// @brief Sets the security level.
+    /// @param cipherSuites The security level.
+    void setSecurityLevel(SecurityLevel level) noexcept;
+
+    Connection createConnection() const;
 
 private:
     SslCtxPtr ctx_;

@@ -334,6 +334,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         // send data to the callback
         if (tcpPayloadSize != 0 && m_OnMessageReadyCallback != nullptr)
         {
+
             TcpStreamData streamData(tcpLayer->getLayerPayload(), tcpPayloadSize, 0,
                                      tcpReassemblyData->connData, currTime);
             m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);

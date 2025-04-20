@@ -82,6 +82,8 @@ public:
     /// @param fatal Alert message fatal flag.
     Alert(Description description, bool fatal = false);
 
+    Alert(const int code);
+
     /// @brief Constructor that deserializes a byte array into an alert message.
     /// @param buf Byte array.
     explicit Alert(std::span<const uint8_t> buf);
