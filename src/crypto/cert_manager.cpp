@@ -20,6 +20,12 @@ CertManager::~CertManager() noexcept
 {
 }
 
+CertManager& CertManager::useDefaultPaths()
+{
+    crypto::ThrowIfFalse(0 < X509_STORE_set_default_paths(store_));
+    return *this;
+}
+
 CertManager& CertManager::addCA(Cert* cert)
 {
     ::utils::ThrowIfTrue(cert == nullptr, "invalid argument");

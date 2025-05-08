@@ -22,6 +22,8 @@ enum class Encoding
 
 enum class VerifyFlag
 {
+    CrlCheck = X509_V_FLAG_CRL_CHECK,
+    CrlCheckAll = X509_V_FLAG_CRL_CHECK_ALL,
     StrictCheck = X509_V_FLAG_X509_STRICT,
     CheckSelfSigned = X509_V_FLAG_CHECK_SS_SIGNATURE,
     SearchTrustedFirst = X509_V_FLAG_TRUSTED_FIRST,
