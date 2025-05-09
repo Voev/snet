@@ -19,7 +19,8 @@
 #include <openssl/err.h>
 #include <openssl/tls1.h>
 
-#include <casket/opt/option_parser.hpp>
+#include <casket/opt/option_builder.hpp>
+#include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/log/log_manager.hpp>
 #include <casket/utils/error_code.hpp>
 
@@ -38,6 +39,7 @@ using namespace std::chrono;
 using namespace std::chrono_literals;
 
 using namespace casket;
+using namespace casket::opt;
 using namespace casket::log;
 using namespace snet;
 using namespace snet::event;
@@ -173,7 +175,8 @@ public:
 
     void handleWriteEvent();
 
-    void connect() {
+    void connect()
+    {
         state_ = State::Preconnect;
         handleWriteEvent();
     }
@@ -501,7 +504,9 @@ void PrintOptions(const Endpoint& ep, const Options& options)
               << "TLS version: " << options.versions << "\n"
               << "Cipher:      " << (!options.cipher.empty() ? options.cipher : "default") << "\n"
               << "TLS tickets: "
-              << (options.useTickets ? "on\n" : !options.advTickets ? "off\n" : "advertise\n")
+              << (options.useTickets    ? "on\n"
+                  : !options.advTickets ? "off\n"
+                                        : "advertise\n")
               << "Duration:    " << options.timeout << "\n"
               << std::endl;
 }
@@ -638,16 +643,48 @@ class PerfCommand final : public cmd::Command
 public:
     PerfCommand()
     {
-        parser_.add("help, h", "Print help message");
-        parser_.add("debug, d", "Run in debug mode");
-        parser_.add("to, T", opt::Value(&options_.timeout), "Duration of the test (in seconds)");
-        parser_.add("limit, l", opt::Value(&options_.sessionLimit),
-                    "Limit parallel connections for each thread");
-        parser_.add("conn, n", opt::Value(&options_.handshakeLimit),
-                    "Total number of handshakes to establish");
-        parser_.add("threads, t", opt::Value(&options_.threadLimit), "Number of threads");
-        parser_.add("tls", opt::Value(&options_.versions), "Set TLS version for handshake");
-        parser_.add("input, i", opt::Value(&options_.input), "Target remote host");
+        // clang-format off
+        parser_.add(
+            OptionBuilder("help")
+                .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("debug")
+                .setDescription("Run in debug mode")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("to", Value(&options_.timeout))
+                .setDescription("Duration of the test (in seconds)")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("limit", Value(&options_.sessionLimit))
+                .setDescription("Limit parallel connections for each thread")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("conn", Value(&options_.handshakeLimit))
+                .setDescription("Total number of handshakes to establish")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("threads", Value(&options_.threadLimit))
+                .setDescription("Number of threads")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("tls", Value(&options_.versions))
+                .setDescription("Set TLS version for handshake")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("input", Value(&options_.input))
+                .setDescription("Target remote host")
+                .build()
+        );
+        // clang-format on
     }
 
     ~PerfCommand() = default;
@@ -657,9 +694,10 @@ public:
         parser_.parse(args);
         if (parser_.isUsed("help"))
         {
-            parser_.help(std::cout);
+            parser_.help(std::cout, "snet perf");
             return;
         }
+        parser_.validate();
 
         LogManager::Instance().enable(Type::Console);
         if (parser_.isUsed("debug"))
@@ -692,20 +730,22 @@ public:
         for (size_t i = 0; i < options_.threadLimit; ++i)
         {
             log::debug("thread {}: created", i + 1);
-            threads[i] = std::thread([&]() {
-                bool success{true};
-                try
+            threads[i] = std::thread(
+                [&]()
                 {
-                    ProcessLoop(options_, ep);
-                }
-                catch (std::exception& e)
-                {
-                    std::cerr << "ERROR: " << e.what() << std::endl;
-                }
+                    bool success{true};
+                    try
+                    {
+                        ProcessLoop(options_, ep);
+                    }
+                    catch (std::exception& e)
+                    {
+                        std::cerr << "ERROR: " << e.what() << std::endl;
+                    }
 
-                if (success)
-                    gLocalLatencyStats.dump();
-            });
+                    if (success)
+                        gLocalLatencyStats.dump();
+                });
         }
 
         auto startProgram(Clock::now());
@@ -736,7 +776,7 @@ public:
     }
 
 private:
-    opt::OptionParser parser_;
+    CmdLineOptionsParser parser_;
     Options options_;
 };
 

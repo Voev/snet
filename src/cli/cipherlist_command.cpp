@@ -1,7 +1,8 @@
 #include <iostream>
 #include <iomanip>
 
-#include <casket/opt/option_parser.hpp>
+#include <casket/opt/option_builder.hpp>
+#include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/utils/exception.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
@@ -14,6 +15,7 @@ static constexpr int columnKeyBitsWidth = 10;
 static constexpr int columnNameWidth = 40;
 
 using namespace casket;
+using namespace casket::opt;
 
 namespace snet
 {
@@ -34,7 +36,7 @@ public:
     std::string convert(const std::uint16_t number);
 
 private:
-    opt::OptionParser parser_;
+    CmdLineOptionsParser parser_;
     std::string suite_;
     int securityLevel_;
 };
@@ -44,10 +46,23 @@ REGISTER_COMMAND("cipherlist", "List supported TLS cipher suites", CipherListCom
 CipherListCommand::CipherListCommand()
     : securityLevel_(-1)
 {
-    parser_.add("help, h", "Print help message");
-    parser_.add("level, l", opt::Value(&securityLevel_), "Security level [0..5]");
-    parser_.add("suite, s", opt::Value(&suite_),
-                "Show selected cipher suite, format 'XX,XX', where X - hex digit");
+    // clang-format off
+    parser_.add(
+        OptionBuilder("help")
+            .setDescription("Print help message")
+            .build()
+    );
+    parser_.add(
+        OptionBuilder("level", Value(&securityLevel_))
+            .setDescription("Security level [0..5]")
+            .build()
+    );
+    parser_.add(
+        OptionBuilder("suite", Value(&suite_))
+            .setDescription("Show selected cipher suite, format 'XX,XX', where X - hex digit")
+            .build()
+    );
+    // clang-format on
 }
 
 void CipherListCommand::execute(const std::vector<std::string_view>& args)
@@ -55,9 +70,10 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
     parser_.parse(args);
     if (parser_.isUsed("help"))
     {
-        parser_.help(std::cout);
+        parser_.help(std::cout, "snet cipherlist");
         return;
     }
+    parser_.validate();
 
     if (securityLevel_ > 0)
     {

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <casket/log/log_manager.hpp>
-#include <casket/opt/option_parser.hpp>
+#include <casket/opt/option_builder.hpp>
+#include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/utils/hexlify.hpp>
 #include <casket/utils/error_code.hpp>
 
@@ -15,6 +16,7 @@
 #include <snet/utils/print_hex.hpp>
 
 using namespace casket;
+using namespace casket::opt;
 using namespace casket::log;
 
 namespace snet::spoofer
@@ -71,9 +73,23 @@ class Command final : public cmd::Command
 public:
     Command()
     {
-        parser_.add("help, h", "Print help message");
-        parser_.add("input, i", opt::Value(&options_.input), "Input PCAP file");
-        parser_.add("driver, d", opt::Value(&options_.driverPath), "Driver path");
+        // clang-format off
+        parser_.add(
+            OptionBuilder("help")
+                .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("input", Value(&options_.input))
+                .setDescription("Input PCAP file")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("driver", Value(&options_.driverPath))
+                .setDescription("Driver path")
+                .build()
+        );
+        // clang-format on
     }
 
     ~Command() = default;
@@ -83,9 +99,10 @@ public:
         parser_.parse(args);
         if (parser_.isUsed("help"))
         {
-            parser_.help(std::cout);
+            parser_.help(std::cout, "snet spoofer");
             return;
         }
+        parser_.validate();
 
         LogManager::Instance().enable(Type::Console);
 
@@ -171,7 +188,7 @@ public:
     }
 
 private:
-    opt::OptionParser parser_;
+    CmdLineOptionsParser parser_;
     Options options_;
 };
 
