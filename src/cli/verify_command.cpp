@@ -1,9 +1,9 @@
 #include <openssl/x509v3.h>
 #include <openssl/x509_vfy.h>
 #include <openssl/safestack.h>
-#include <openssl/ocsp.h>
 
-#include <casket/opt/option_parser.hpp>
+#include <casket/opt/option_builder.hpp>
+#include <casket/opt/cmd_line_options_parser.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
 
@@ -11,80 +11,58 @@
 #include <snet/crypto/cert_verifier.hpp>
 
 using namespace casket;
+using namespace casket::opt;
+using namespace snet::crypto;
 
-static const char* get_dp_url(DIST_POINT* dp)
+namespace snet
 {
-    GENERAL_NAMES* gens;
-    GENERAL_NAME* gen;
-    int i, gtype;
-    ASN1_STRING* uri;
-    if (!dp->distpoint || dp->distpoint->type != 0)
-        return NULL;
-    gens = dp->distpoint->name.fullname;
-    for (i = 0; i < sk_GENERAL_NAME_num(gens); i++)
-    {
-        gen = sk_GENERAL_NAME_value(gens, i);
-        uri = (ASN1_STRING*)GENERAL_NAME_get0_value(gen, &gtype);
-        if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6)
-        {
-            const char* uptr = (const char*)ASN1_STRING_get0_data(uri);
-            return uptr;
-        }
-    }
-    return NULL;
+
+CrlPtr DownloadCRL(std::string_view uri)
+{
+    return CrlPtr(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
 }
 
-/*
- * Look through a CRLDP structure and attempt to find an http URL to
- * downloads a CRL from.
- */
-X509_CRL* load_crl(const char* uri)
+void LoadCrlsByDistPoint(CrlStack* crls, STACK_OF(DIST_POINT) * crldp)
 {
-    return X509_CRL_load_http(uri, NULL, NULL, 0 /* timeout */);
-}
-
-static X509_CRL* load_crl_crldp(STACK_OF(DIST_POINT) * crldp)
-{
-    int i;
-    const char* urlptr = NULL;
-    for (i = 0; i < sk_DIST_POINT_num(crldp); i++)
+    for (int i = 0; i < sk_DIST_POINT_num(crldp); ++i)
     {
         DIST_POINT* dp = sk_DIST_POINT_value(crldp, i);
-        urlptr = get_dp_url(dp);
-        if (urlptr != NULL)
-            return load_crl(urlptr);
+        if (!dp->distpoint || dp->distpoint->type != 0)
+        {
+            continue;
+        }
+
+        GENERAL_NAMES* gens = dp->distpoint->name.fullname;
+        int gtype = 0;
+
+        for (int j = 0; j < sk_GENERAL_NAME_num(gens); ++j)
+        {
+            GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens, i);
+            ASN1_STRING* uri = (ASN1_STRING*)GENERAL_NAME_get0_value(gen, &gtype);
+            if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6)
+            {
+                auto crl = DownloadCRL((const char*)ASN1_STRING_get0_data(uri));
+                if (crl)
+                {
+                    sk_X509_CRL_push(crls, crl.release());
+                }
+            }
+        }
     }
-    return NULL;
 }
 
-static STACK_OF(X509_CRL) * crls_http_cb(const X509_STORE_CTX* ctx, const X509_NAME* nm)
+static STACK_OF(X509_CRL) * LookupCRLs(const X509_STORE_CTX* ctx, const X509_NAME* nm)
 {
-    (void)nm;
-    X509* x;
-    STACK_OF(X509_CRL)* crls = NULL;
-    X509_CRL* crl;
-    STACK_OF(DIST_POINT) * crldp;
-
-    crls = sk_X509_CRL_new_null();
-    if (!crls)
-        return NULL;
-    x = X509_STORE_CTX_get_current_cert(ctx);
-    crldp = (STACK_OF(DIST_POINT)*)X509_get_ext_d2i(x, NID_crl_distribution_points, NULL, NULL);
-    crl = load_crl_crldp(crldp);
-    sk_DIST_POINT_pop_free(crldp, DIST_POINT_free);
-    if (!crl)
+    CrlOwningStackPtr crls(X509_STORE_CTX_get1_crls(ctx, nm));
+    if (!crls || sk_X509_CRL_num(crls) == 0)
     {
-        sk_X509_CRL_free(crls);
-        return X509_STORE_CTX_get1_crls(ctx, nm);
+        Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
+        STACK_OF(DIST_POINT)* crldp = (STACK_OF(DIST_POINT)*)X509_get_ext_d2i(
+            cert, NID_crl_distribution_points, nullptr, nullptr);
+
+        LoadCrlsByDistPoint(crls, crldp);
     }
-    sk_X509_CRL_push(crls, crl);
-    /* Try to download delta CRL */
-    crldp = (STACK_OF(DIST_POINT)*)X509_get_ext_d2i(x, NID_freshest_crl, NULL, NULL);
-    crl = load_crl_crldp(crldp);
-    sk_DIST_POINT_pop_free(crldp, DIST_POINT_free);
-    if (crl)
-        sk_X509_CRL_push(crls, crl);
-    return crls;
+    return crls.release();
 }
 
 static int append_ia5(STACK_OF(OPENSSL_STRING) * *sk, const ASN1_IA5STRING* email)
@@ -146,10 +124,10 @@ STACK_OF(OPENSSL_STRING) * X509_get1_issuers(X509* x)
     return ret;
 }
 
-static int download_cert_http(X509 **issuer, X509 *x)
+int DownloadCert(X509** issuer, X509* x)
 {
     auto aia = X509_get1_issuers(x);
-    for(int i = 0; i < sk_OPENSSL_STRING_num(aia); ++i)
+    for (int i = 0; i < sk_OPENSSL_STRING_num(aia); ++i)
     {
         auto a = sk_OPENSSL_STRING_value(aia, i);
         X509* cert = X509_load_http(a, NULL, NULL, 0);
@@ -163,21 +141,17 @@ static int download_cert_http(X509 **issuer, X509 *x)
     return 0;
 }
 
-static int get_issuer(X509 **issuer, X509_STORE_CTX *ctx, X509 *x)
+static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* x)
 {
     int ret = X509_STORE_CTX_get1_issuer(issuer, ctx, x);
     if (!ret)
     {
-        return download_cert_http(issuer, x);
+        return DownloadCert(issuer, x);
     }
     return ret;
 }
 
-
-namespace snet
-{
-
-int verify_cb(int ret, X509_STORE_CTX* ctx)
+int VerifyCallback(int ret, X509_STORE_CTX* ctx)
 {
     BIO* std = BIO_new_fp(stdout, BIO_NOCLOSE);
     auto cert = X509_STORE_CTX_get_current_cert(ctx);
@@ -185,10 +159,10 @@ int verify_cb(int ret, X509_STORE_CTX* ctx)
     if (cert)
     {
         BIO_printf(std, "-----------------------------\n");
-        X509_NAME_print_ex(std, crypto::cert::subjectName(cert), 1,
+        X509_NAME_print_ex(std, cert::subjectName(cert), 1,
                            ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_COMMA_PLUS);
         BIO_printf(std, "\n");
-        X509_NAME_print_ex(std, crypto::cert::issuerName(cert), 1,
+        X509_NAME_print_ex(std, cert::issuerName(cert), 1,
                            ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_COMMA_PLUS);
         BIO_printf(std, "\n-----------------------------\n");
     }
@@ -206,7 +180,8 @@ int verify_cb(int ret, X509_STORE_CTX* ctx)
 
 struct Options
 {
-    std::string cert;
+    std::string certPath;
+    std::string caStorePath;
 };
 
 class Command final : public cmd::Command
@@ -214,8 +189,24 @@ class Command final : public cmd::Command
 public:
     Command()
     {
-        parser_.add("help", "Print help message");
-        parser_.add("cert", opt::Value(&options_.cert), "Certificate file");
+        // clang-format off
+        parser_.add(
+            OptionBuilder("help")
+                .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("cert", Value(&options_.certPath))
+                .setDescription("Path to certificate")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("ca_store", Value(&options_.caStorePath))
+                .setDescription("Path to certificate authority store")
+                .setDefaultValue("/usr/lib/ssl/certs/ca-certificates.crt")
+                .build()
+        );
+        // clang-format on
     }
 
     ~Command() = default;
@@ -228,27 +219,26 @@ public:
             parser_.help(std::cout);
             return;
         }
+        parser_.validate();
 
-        crypto::CertManager manager;
-        manager.loadStore("/usr/lib/ssl/certs/ca-certificates.crt");
-        manager.lookupCRL(::crls_http_cb);
-        manager.lookupIssuer(::get_issuer);
-        manager.setVerifyCallback(verify_cb);
+        CertManager manager;
+        manager.loadStore(options_.caStorePath);
+        manager.setLookupCRLs(LookupCRLs);
+        manager.setGetIssuer(GetIssuer);
+        manager.setVerifyCallback(VerifyCallback);
 
-        crypto::CertVerifier verifier(manager);
-        //verifier.setFlag(VerifyFlag::CrlCheck);
-        //verifier.setFlag(VerifyFlag::CrlCheckAll);
+        CertVerifier verifier(manager);
         verifier.setFlag(VerifyFlag::StrictCheck);
         verifier.setFlag(VerifyFlag::CheckSelfSigned);
 
-        auto cert = crypto::cert::fromStorage(options_.cert);
+        auto cert = cert::fromStorage(options_.certPath);
         auto ec = verifier.verify(cert);
 
         std::cout << ec.message() << std::endl;
     }
 
 private:
-    opt::OptionParser parser_;
+    CmdLineOptionsParser parser_;
     Options options_;
 };
 

@@ -63,3 +63,4 @@ using LibContext = struct ossl_lib_ctx_st;
 
 using CertStack = STACK_OF(X509);
 using CertExtStack = STACK_OF(X509_EXTENSION);
+using CrlStack = STACK_OF(X509_CRL);
