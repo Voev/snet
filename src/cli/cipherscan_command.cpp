@@ -1,5 +1,6 @@
 #include <chrono>
-#include <casket/opt/option_parser.hpp>
+#include <casket/opt/option_builder.hpp>
+#include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/thread/pool.hpp>
 #include <casket/lock_free/queue.hpp>
 
@@ -98,9 +99,23 @@ class CipherScanCommand final : public cmd::Command
 public:
     CipherScanCommand()
     {
-        parser_.add("help, h", "Print help message");
-        parser_.add("threads, t", Value(&options_.threads), "Number of threads");
-        parser_.add("input, i", Value(&options_.input), "Target remote host");
+        // clang-format off
+        parser_.add(
+            OptionBuilder("help")
+                .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("threads", Value(&options_.threads))
+                .setDescription("Number of threads")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("input", Value(&options_.input))
+                .setDescription("Target remote host")
+                .build()
+        );
+        // clang-format on
     }
 
     ~CipherScanCommand() = default;
@@ -110,9 +125,10 @@ public:
         parser_.parse(args);
         if (parser_.isUsed("help"))
         {
-            parser_.help(std::cout);
+            parser_.help(std::cout, "snet cipherscan");
             return;
         }
+        parser_.validate();
 
         auto cipherSuites = tls::CipherSuiteManager::getInstance().getCipherSuites();
         std::vector<std::future<void>> results;
@@ -142,7 +158,8 @@ public:
         results.reserve(cipherSuites.size());
         for (const auto& cipherSuite : cipherSuites)
         {
-            results.emplace_back(pool.add(&CheckCipher, ep, cipherSuite.getSuiteName(), std::ref(ret)));
+            results.emplace_back(
+                pool.add(&CheckCipher, ep, cipherSuite.getSuiteName(), std::ref(ret)));
         }
 
         for (auto& result : results)
@@ -151,10 +168,10 @@ public:
         }
         results.clear();
 
-        while(true)
+        while (true)
         {
             auto cs = ret.pop();
-            if(cs.has_value())
+            if (cs.has_value())
             {
                 std::cout << cs.value().c_str() << std::endl;
             }
@@ -162,12 +179,11 @@ public:
             {
                 break;
             }
-
         }
     }
 
 private:
-    OptionParser parser_;
+    CmdLineOptionsParser parser_;
     Options options_;
 };
 
