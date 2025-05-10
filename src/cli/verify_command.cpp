@@ -1,7 +1,9 @@
+
 #include <openssl/x509v3.h>
 #include <openssl/x509_vfy.h>
 #include <openssl/safestack.h>
 
+#include <casket/log/log_manager.hpp>
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
 
@@ -9,6 +11,7 @@
 
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_verifier.hpp>
+#include <snet/crypto/exception.hpp>
 
 using namespace casket;
 using namespace casket::opt;
@@ -17,164 +20,167 @@ using namespace snet::crypto;
 namespace snet
 {
 
+static bool bPrint{false};
+
 CrlPtr DownloadCRL(std::string_view uri)
 {
     return CrlPtr(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
 }
 
-void LoadCrlsByDistPoint(CrlStack* crls, STACK_OF(DIST_POINT) * crldp)
+CertPtr DownloadCert(std::string_view uri)
 {
-    for (int i = 0; i < sk_DIST_POINT_num(crldp); ++i)
+    return CertPtr(X509_load_http(uri.data(), nullptr, nullptr, 0));
+}
+
+template <typename T>
+T* GetExtension(Cert* cert, int extensionNid)
+{
+    return static_cast<T*>(X509_get_ext_d2i(cert, extensionNid, nullptr, nullptr));
+}
+
+static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const CertName* name)
+{
+    CrlOwningStackPtr crls;
+    try
     {
-        DIST_POINT* dp = sk_DIST_POINT_value(crldp, i);
-        if (!dp->distpoint || dp->distpoint->type != 0)
+        crls.reset(X509_STORE_CTX_get1_crls(ctx, name));
+        if (!crls)
         {
-            continue;
-        }
-
-        GENERAL_NAMES* gens = dp->distpoint->name.fullname;
-        int gtype = 0;
-
-        for (int j = 0; j < sk_GENERAL_NAME_num(gens); ++j)
-        {
-            GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens, i);
-            ASN1_STRING* uri = (ASN1_STRING*)GENERAL_NAME_get0_value(gen, &gtype);
-            if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6)
+            Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
+            CrlDistPointsPtr crldp(GetExtension<CrlDistPoints>(cert, NID_crl_distribution_points));
+            if (!crldp)
             {
-                auto crl = DownloadCRL((const char*)ASN1_STRING_get0_data(uri));
-                if (crl)
+                return nullptr;
+            }
+
+            crls.reset(sk_X509_CRL_new_null());
+            ThrowIfFalse(crls);
+
+            for (int i = 0; i < sk_DIST_POINT_num(crldp); ++i)
+            {
+                DIST_POINT* dp = sk_DIST_POINT_value(crldp, i);
+                if (!dp->distpoint || dp->distpoint->type != 0)
                 {
-                    sk_X509_CRL_push(crls, crl.release());
+                    continue;
+                }
+
+                GENERAL_NAMES* gens = dp->distpoint->name.fullname;
+                int gtype = 0;
+
+                for (int j = 0; j < sk_GENERAL_NAME_num(gens); ++j)
+                {
+                    GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens, i);
+                    ASN1_STRING* uri = static_cast<ASN1_STRING*>(GENERAL_NAME_get0_value(gen, &gtype));
+
+                    if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6)
+                    {
+                        auto crl = DownloadCRL((const char*)ASN1_STRING_get0_data(uri));
+                        if (crl)
+                        {
+                            sk_X509_CRL_push(crls, crl.release());
+                        }
+                    }
                 }
             }
         }
     }
-}
-
-static STACK_OF(X509_CRL) * LookupCRLs(const X509_STORE_CTX* ctx, const X509_NAME* nm)
-{
-    CrlOwningStackPtr crls(X509_STORE_CTX_get1_crls(ctx, nm));
-    if (!crls || sk_X509_CRL_num(crls) == 0)
+    catch (const std::exception& e)
     {
-        Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
-        STACK_OF(DIST_POINT)* crldp = (STACK_OF(DIST_POINT)*)X509_get_ext_d2i(
-            cert, NID_crl_distribution_points, nullptr, nullptr);
-
-        LoadCrlsByDistPoint(crls, crldp);
+        log::error("{}", e.what());
     }
     return crls.release();
 }
 
-static int append_ia5(STACK_OF(OPENSSL_STRING) * *sk, const ASN1_IA5STRING* email)
+std::vector<std::string> GetURIFromAuthInfoAccess(const AuthInfoAccess* aia)
 {
-    char* emtmp;
-
-    /* First some sanity checks */
-    if (email->type != V_ASN1_IA5STRING)
-        return 1;
-    if (email->data == NULL || email->length == 0)
-        return 1;
-    if (memchr(email->data, 0, email->length) != NULL)
-        return 1;
-    if (*sk == NULL)
-        *sk = (STACK_OF(OPENSSL_STRING)*)sk_OPENSSL_STRING_new_null();
-    if (*sk == NULL)
-        return 0;
-
-    emtmp = OPENSSL_strndup((char*)email->data, email->length);
-    if (emtmp == NULL)
+    std::vector<std::string> uris;
+    for (int i = 0; i < sk_ACCESS_DESCRIPTION_num(aia); i++)
     {
-        X509_email_free(*sk);
-        *sk = NULL;
-        return 0;
-    }
-
-    if (!sk_OPENSSL_STRING_push(*sk, emtmp))
-    {
-        OPENSSL_free(emtmp); /* free on push failure */
-        X509_email_free(*sk);
-        *sk = NULL;
-        return 0;
-    }
-    return 1;
-}
-
-STACK_OF(OPENSSL_STRING) * X509_get1_issuers(X509* x)
-{
-    AUTHORITY_INFO_ACCESS* info;
-    STACK_OF(OPENSSL_STRING)* ret = NULL;
-    int i;
-
-    info = (AUTHORITY_INFO_ACCESS*)X509_get_ext_d2i(x, NID_info_access, NULL, NULL);
-    if (!info)
-        return NULL;
-    for (i = 0; i < sk_ACCESS_DESCRIPTION_num(info); i++)
-    {
-        ACCESS_DESCRIPTION* ad = sk_ACCESS_DESCRIPTION_value(info, i);
+        ACCESS_DESCRIPTION* ad = sk_ACCESS_DESCRIPTION_value(aia, i);
         if (OBJ_obj2nid(ad->method) == NID_ad_ca_issuers)
         {
             if (ad->location->type == GEN_URI)
             {
-                if (!append_ia5(&ret, ad->location->d.uniformResourceIdentifier))
-                    break;
+                ASN1_IA5STRING* uri = ad->location->d.uniformResourceIdentifier;
+                if (uri->type != V_ASN1_IA5STRING || !uri->data || uri->length == 0)
+                    continue;
+                uris.emplace_back(reinterpret_cast<char*>(uri->data), uri->length);
             }
         }
     }
-    AUTHORITY_INFO_ACCESS_free(info);
-    return ret;
+    return uris;
 }
 
-int DownloadCert(X509** issuer, X509* x)
+static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
 {
-    auto aia = X509_get1_issuers(x);
-    for (int i = 0; i < sk_OPENSSL_STRING_num(aia); ++i)
+    if (!X509_STORE_CTX_get1_issuer(issuer, ctx, subject))
     {
-        auto a = sk_OPENSSL_STRING_value(aia, i);
-        X509* cert = X509_load_http(a, NULL, NULL, 0);
-        if (cert)
+        AuthInfoAccessPtr aia(GetExtension<AuthInfoAccess>(subject, NID_info_access));
+        if (!aia)
         {
-            *issuer = X509_dup(cert);
-            return 1;
+            return 0;
+        }
+
+        auto uris = GetURIFromAuthInfoAccess(aia);
+        for (const auto& uri : uris)
+        {
+            auto cert = DownloadCert(uri);
+            if (cert)
+            {
+                *issuer = cert.release();
+                return 1;
+            }
         }
     }
 
-    return 0;
-}
-
-static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* x)
-{
-    int ret = X509_STORE_CTX_get1_issuer(issuer, ctx, x);
-    if (!ret)
-    {
-        return DownloadCert(issuer, x);
-    }
-    return ret;
+    return 1;
 }
 
 int VerifyCallback(int ret, X509_STORE_CTX* ctx)
 {
-    BIO* std = BIO_new_fp(stdout, BIO_NOCLOSE);
     auto cert = X509_STORE_CTX_get_current_cert(ctx);
+    auto depth = X509_STORE_CTX_get_error_depth(ctx); 
 
+    BIO* out = BIO_new_fp(stdout, BIO_NOCLOSE);
+
+    std::string spaces(40, '-');
+    BIO_printf(out, "%s\nCertificate #%d\n%s\n", spaces.c_str(), depth, spaces.c_str());
     if (cert)
     {
-        BIO_printf(std, "-----------------------------\n");
-        X509_NAME_print_ex(std, cert::subjectName(cert), 1,
-                           ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_COMMA_PLUS);
-        BIO_printf(std, "\n");
-        X509_NAME_print_ex(std, cert::issuerName(cert), 1,
-                           ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_COMMA_PLUS);
-        BIO_printf(std, "\n-----------------------------\n");
+        BIO_printf(out, "Serial Number: ");
+        BN_print(out, cert::serialNumber(cert));
+        BIO_printf(out, "\nSubject: ");
+        X509_NAME_print_ex(out, cert::subjectName(cert), 1,
+                           ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_SPLUS_SPC);
+        BIO_printf(out, "\nIssuer: ");
+        X509_NAME_print_ex(out, cert::issuerName(cert), 1,
+                           ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_SPLUS_SPC);
+
+        std::tm* localTime;
+        char buffer[80];
+
+        auto notBefore = cert::notBefore(cert);
+        localTime = std::localtime(&notBefore);
+        std::strftime(buffer, sizeof(buffer), "%d-%m-%Y %H:%M:%S", localTime);
+        BIO_printf(out, "\nNot Before: %s", buffer);
+
+        auto notAfter = cert::notAfter(cert);
+        localTime = std::localtime(&notAfter);
+        std::strftime(buffer, sizeof(buffer), "%d-%m-%Y %H:%M:%S", localTime);
+        BIO_printf(out, "\nNot After: %s\n", buffer);
+
+        EVP_PKEY_print_public(out, cert::publicKey(cert), 0, nullptr);
+
+        auto error = verify::MakeErrorCode(static_cast<verify::Error>(X509_STORE_CTX_get_error(ctx)));
+        BIO_printf(out, "Status: %s\n", error.message().c_str());
+
+        if (bPrint)
+        {
+            PEM_write_bio_X509(out, cert);
+        }
     }
-    auto crl = X509_STORE_CTX_get0_current_crl(ctx);
-    if (crl)
-    {
-        BIO_printf(std, "-----------------------------\n");
-        X509_NAME_print_ex(std, X509_CRL_get_issuer(crl), 0,
-                           ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_COMMA_PLUS);
-        BIO_printf(std, "\n-----------------------------\n");
-    }
-    BIO_free(std);
+
+    BIO_free(out);
     return ret;
 }
 
@@ -182,6 +188,7 @@ struct Options
 {
     std::string certPath;
     std::string caStorePath;
+    bool noCheckCrl{false};
 };
 
 class Command final : public cmd::Command
@@ -198,6 +205,17 @@ public:
         parser_.add(
             OptionBuilder("cert", Value(&options_.certPath))
                 .setDescription("Path to certificate")
+                .setRequired()
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("no_check_crl")
+                .setDescription("Disable check by CRLs")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("print")
+                .setDescription("Print certificate chain")
                 .build()
         );
         parser_.add(
@@ -221,6 +239,9 @@ public:
         }
         parser_.validate();
 
+        options_.noCheckCrl = parser_.isUsed("no_check_crl");
+        bPrint = parser_.isUsed("print");
+
         CertManager manager;
         manager.loadStore(options_.caStorePath);
         manager.setLookupCRLs(LookupCRLs);
@@ -231,10 +252,13 @@ public:
         verifier.setFlag(VerifyFlag::StrictCheck);
         verifier.setFlag(VerifyFlag::CheckSelfSigned);
 
-        auto cert = cert::fromStorage(options_.certPath);
-        auto ec = verifier.verify(cert);
+        if (!options_.noCheckCrl)
+        {
+            verifier.setFlag(VerifyFlag::CrlCheck);
+        }
 
-        std::cout << ec.message() << std::endl;
+        auto cert = cert::fromStorage(options_.certPath);
+        verifier.verify(cert);
     }
 
 private:
