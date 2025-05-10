@@ -49,6 +49,22 @@ struct CertExtOwningStackDeleter
     }
 };
 
+struct CrlStackDeleter
+{
+    void operator()(CrlStack* stack) const noexcept
+    {
+        sk_X509_CRL_free(stack);
+    }
+};
+
+struct CrlOwningStackDeleter
+{
+    void operator()(CrlStack* stack) const noexcept
+    {
+        sk_X509_CRL_pop_free(stack, X509_CRL_free);
+    }
+};
+
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1IntegerPtr, Asn1Integer, ASN1_INTEGER_free);
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1TimePtr, Asn1Time, ASN1_TIME_free);
 DEFINE_CUSTOM_UNIQUE_PTR(Asn1OctetStringPtr, Asn1OctetString, ASN1_OCTET_STRING_free);
@@ -76,11 +92,15 @@ DEFINE_CUSTOM_UNIQUE_PTR(KdfCtxPtr, KdfCtx, EVP_KDF_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(MacPtr, Mac, EVP_MAC_free);
 DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, EVP_MAC_CTX_free);
 
+DEFINE_CUSTOM_UNIQUE_PTR(CrlDistPointsPtr, CrlDistPoints, CRL_DIST_POINTS_free);
+DEFINE_CUSTOM_UNIQUE_PTR(AuthInfoAccessPtr, AuthInfoAccess, AUTHORITY_INFO_ACCESS_free);
+
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertStackPtr, CertStack, CertStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtStackPtr, CertExtStack, CertExtStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtOwningStackPtr, CertExtStack,
                                       CertExtOwningStackDeleter);
+DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CrlStackPtr, CrlStack, CrlStackDeleter);
+DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CrlOwningStackPtr, CrlStack, CrlOwningStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(StoreCtxPtr, StoreCtx, StoreCtxDeleter);
-
 
 } // namespace snet::crypto

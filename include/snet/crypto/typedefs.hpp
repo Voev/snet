@@ -22,6 +22,8 @@ enum class Encoding
 
 enum class VerifyFlag
 {
+    CrlCheck = X509_V_FLAG_CRL_CHECK,
+    CrlCheckAll = X509_V_FLAG_CRL_CHECK_ALL,
     StrictCheck = X509_V_FLAG_X509_STRICT,
     CheckSelfSigned = X509_V_FLAG_CHECK_SS_SIGNATURE,
     SearchTrustedFirst = X509_V_FLAG_TRUSTED_FIRST,
@@ -59,5 +61,9 @@ using StoreInfo = struct ossl_store_info_st;
 using UiMethod = struct ui_method_st;
 using LibContext = struct ossl_lib_ctx_st;
 
+using CrlDistPoints = STACK_OF(DIST_POINT);
+using AuthInfoAccess = STACK_OF(ACCESS_DESCRIPTION);
+
 using CertStack = STACK_OF(X509);
 using CertExtStack = STACK_OF(X509_EXTENSION);
+using CrlStack = STACK_OF(X509_CRL);
