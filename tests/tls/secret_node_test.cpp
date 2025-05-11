@@ -34,7 +34,7 @@ TEST_F(SecretNodeTest, SetAndGetSecret)
 
 TEST_F(SecretNodeTest, GetNonExistentSecret)
 {
-    const Secret& retrievedSecret = secretNode.getSecret(SecretNode::ServerTrafficSecret);
+    const Secret& retrievedSecret = secretNode.getSecret(SecretNode::ServerApplicationTrafficSecret);
     EXPECT_TRUE(retrievedSecret.empty());
 }
 

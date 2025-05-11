@@ -1,24 +1,60 @@
 #include <snet/tls/record_processor.hpp>
+
 #include <casket/utils/exception.hpp>
+#include <casket/log/log_manager.hpp>
+
+#include <iostream>
 
 using namespace casket::utils;
+using namespace casket::log;
 
 namespace snet::tls
 {
 
-void RecordProcessor::process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes)
+size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_t* inputBytes, size_t inputLength)
 {
-    std::size_t consumedBytes{0U};
-    ThrowIfTrue(reader_ == nullptr, "Record reader is not setted");
-    while (inputBytes.size_bytes() > 0)
+    ThrowIfTrue(!inputBytes || !inputLength, "invalid input parameters");
+    ThrowIfTrue(!session, "invalid session");
+
+    size_t processedLength{0};
+    Record* readingRecord = session->readingRecord;
+
+    while (processedLength < inputLength)
     {
-        auto record = reader_->readRecord(sideIndex, inputBytes, consumedBytes);
-        for (const auto& handler : handlers_)
+        if (!readingRecord)
         {
-            handler->handleRecord(sideIndex, record);
+            if (inputLength < processedLength + TLS_HEADER_SIZE)
+            {
+                break;
+            }
+
+            readingRecord = session->readingRecord = recordPool_.acquire();
+            if (!readingRecord)
+            {
+                return processedLength;
+            }
+
+            readingRecord->deserializeHeader({inputBytes + processedLength, TLS_HEADER_SIZE});
         }
-        inputBytes = inputBytes.subspan(consumedBytes);
+
+        processedLength += readingRecord->initPayload({inputBytes + processedLength, inputLength - processedLength});
+
+        if (readingRecord->isFullyAssembled())
+        {
+            for (const auto& handler : handlers_)
+            {
+                handler->handleRecord(sideIndex, session, readingRecord);
+            }
+            readingRecord = nullptr;
+        }
     }
+
+    if (readingRecord != nullptr)
+    {
+        return 0;
+    }
+
+    return processedLength;
 }
 
 } // namespace snet::tls

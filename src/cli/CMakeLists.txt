@@ -11,7 +11,6 @@ add_executable(${EXECUTABLE_TARGET} ${SOURCES})
 target_link_libraries(${EXECUTABLE_TARGET}
     casket
     snet_io
-    snet_ip
     snet_crypto
     snet_tls
     snet_event

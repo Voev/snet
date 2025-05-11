@@ -1,0 +1,45 @@
+#include <snet/tls/record.hpp>
+#include <snet/tls/record/tls1_stream_cipher.hpp>
+#include <snet/tls/record/tls1_mac.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
+
+#include <snet/crypto/typedefs.hpp>
+#include <snet/crypto/exception.hpp>
+
+#include <casket/utils/exception.hpp>
+
+namespace snet::tls::v1
+{
+
+void StreamCipher::initDecrypt(CipherCtx* ctx, const CipherTraits& traits,
+                               std::span<const uint8_t> encKey, std::span<const uint8_t> encIV)
+{
+    auto cipher = CipherSuiteManager::getInstance().fetchCipher(traits.cipherName);
+    crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, encKey.data(), encIV.data(), 0));
+}
+
+void StreamCipher::decrypt(CipherCtx* cipherCtx, const CipherTraits& traits,
+                           Record& record, std::span<const uint8_t> macKey)
+{
+    auto md = CipherSuiteManager::getInstance().fetchDigest(traits.digestName);
+    size_t outSize{in.size()};
+
+    out.resize(outSize);
+    crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), record.data, record.length));
+
+    auto content = std::span(out.begin(), out.end() - EVP_MD_get_size(md));
+    auto mac = std::span(out.end() - EVP_MD_get_size(md), out.end());
+    if (traits.version == ProtocolVersion::SSLv3_0)
+    {
+        checkSsl3Mac(traits, seq, rt, macKey, content, mac);
+    }
+    else
+    {
+        checkTls1Mac(traits, seq, rt, macKey, content, mac, {});
+    }
+
+    outSize -= mac.size();
+    out.resize(outSize);
+}
+
+} // namespace snet::tls::v1

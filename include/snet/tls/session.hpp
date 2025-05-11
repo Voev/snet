@@ -4,12 +4,12 @@
 #pragma once
 #include <vector>
 #include <array>
-#include <span>
 #include <memory>
 #include <string>
 #include <functional>
 #include <unordered_map>
 
+#include <snet/tls/record/sequence_numbers.hpp>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -19,30 +19,45 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/tls/record_queue.hpp>
+
+#include <snet/crypto/secure_vector.hpp>
+#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
+
+struct SessionKeys
+{
+    SecureVector<uint8_t> earlySecret;
+    SecureVector<uint8_t> derivedSecret;
+    SecureVector<uint8_t> clientTrafficKey;
+    SecureVector<uint8_t> serverTrafficKey;
+    SecureVector<uint8_t> clientEncKey;
+    SecureVector<uint8_t> serverEncKey;
+    SecureVector<uint8_t> clientIV;
+    SecureVector<uint8_t> serverIV;
+    HandshakeHash hash;
+};
 
 /// @brief Class representing a TLS session.
 class Session
 {
 public:
     /// @brief Default constructor.
-    Session();
+    Session(RecordPool& recordPool);
+
+    ~Session() noexcept;
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
-    /// @param recordType The type of the record.
-    /// @param recordVersion The version of the record.
-    /// @param inputBytes The input bytes to decrypt.
-    /// @param outputBytes The output buffer for the decrypted data.
-    void decrypt(const std::int8_t sideIndex, RecordType recordType, ProtocolVersion recordVersion,
-                 std::span<const uint8_t> inputBytes, std::vector<std::uint8_t>& outputBytes);
+    /// @param record The record.
+    void decrypt(const int8_t sideIndex, Record* record);
 
     /// @brief Checks if the session can decrypt data.
-    /// @param client2server Indicates if the direction is client to server.
+    /// @param sideIndex Indicates if the direction is client to server.
     /// @return True if the session can decrypt data, false otherwise.
-    bool canDecrypt(bool client2server) const noexcept;
+    bool canDecrypt(const int8_t sideIndex) const noexcept;
 
     /// @brief Generates key material using the PRF.
     /// @param secret The secret to use.
@@ -50,8 +65,8 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
-             std::span<const uint8_t> rnd2, std::span<uint8_t> out);
+    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2,
+             std::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
@@ -68,20 +83,9 @@ public:
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const std::int8_t sideIndex);
 
-    /// @brief Deserializes extensions from a data reader.
-    /// @param reader The data reader.
-    /// @param side The side (client or server).
-    /// @param ht The handshake type.
-    void deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht);
-
-    /// @brief Gets the extensions for a specific side.
-    /// @param side The side (client or server).
-    /// @return The extensions for the specified side.
-    const Extensions& getExtensions(const Side side) const noexcept;
-
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
-    void updateHash(std::span<const uint8_t> message);
+    void updateHash(const int8_t sideIndex, std::span<const uint8_t> message);
 
     /// @brief Sets the client random value.
     /// @param random The client random value to set.
@@ -137,28 +141,65 @@ public:
     const ServerInfo& getServerInfo() const noexcept;
 
     /// @brief Sets the cipher state.
-    /// @param state The cipher state to set.
-    void cipherState(bool state) noexcept;
+    /// @param side The side (client or server).
+    ///
+    void setCipherState(const int8_t sideIndex) noexcept;
 
     /// @brief Gets the cipher state.
+    ///
+    /// @param side The side (client or server).
+    ///
     /// @return The cipher state.
-    bool cipherState() const noexcept;
+    bool getCipherState(const int8_t sideIndex) const noexcept;
+
+    void generateHandshakeSecrets(const int8_t sideIndex, std::span<const uint8_t> dheSecret);
+
+    void generateApplicationSecrets(const int8_t sideIndex);
+
+    void setCipherTraits(crypto::CipherPtr cipherTraits) noexcept;
+
+    RecordList readRecords(std::span<uint8_t> input);
+
+    size_t writeRecords(std::span<uint8_t> buffer);
+
+public:
+    uint8_t sendingBuffer[MAX_CIPHERTEXT_SIZE];
+    size_t sendingLength{0};
+
+    crypto::KeyPtr ephemeralKey;
+
+    SecureVector<uint8_t> earlySecret;
+    SessionKeys client;
+    SessionKeys server;
+
+    HandshakeMessage handshake;
+
+    Record* readingRecord{nullptr};
+    std::queue<Record*> writingRecords_;
 
 private:
+    RecordPool& recordPool_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;
-    std::vector<uint8_t> PMS_;
+    crypto::CipherCtxPtr cipherContext_;
+    crypto::MacCtxPtr macContext_;
+    crypto::CipherPtr cipherTraits_;
+    crypto::MacPtr macTraits_;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
     SecretNode secrets_;
-    std::vector<uint8_t> sessionId_;
-    RecordDecoder clientToServer_;
-    RecordDecoder serverToClient_;
-    Extensions clientExtensions_;
-    Extensions serverExtensions_;
-    HandshakeHash handshakeHash_;
-    bool cipherState_;
+
+    SecureVector<uint8_t> clientEncKey_;
+    SecureVector<uint8_t> serverEncKey_;
+    SecureVector<uint8_t> clientIV_;
+    SecureVector<uint8_t> serverIV_;
+    SecureVector<uint8_t> clientMacKey_;
+    SecureVector<uint8_t> serverMacKey_;
+
+    SequenceNumbers seqnum_;
+    uint8_t cipherState_;
+    uint8_t canDecrypt_;
 };
 
 } // namespace snet::tls

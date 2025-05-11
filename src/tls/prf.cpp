@@ -21,8 +21,11 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
-             std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
+/* ASCII: "tls13 ", in hex for EBCDIC compatibility */
+static const unsigned char gLabelPrefix[] = "\x74\x6C\x73\x31\x33\x20";
+
+void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
+             std::span<uint8_t> out)
 {
     static const unsigned char* salt[3] = {
         (const unsigned char*)"A",
@@ -57,8 +60,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
-             std::span<uint8_t> out)
+             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -67,23 +69,21 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     crypto::ThrowIfTrue(kctx == nullptr);
 
     OSSL_PARAM params[6], *p = params;
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
-                                            const_cast<char*>(algorithm.data()), algorithm.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET,
-                                             const_cast<uint8_t*>(secret.data()), secret.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()),
-                                             label.size());
-    *p++ = OSSL_PARAM_construct_octet_string(
-        OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()), clientRandom.size());
-    *p++ = OSSL_PARAM_construct_octet_string(
-        OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()), serverRandom.size());
+    *p++ =
+        OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), algorithm.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET, const_cast<uint8_t*>(secret.data()), secret.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()), label.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()),
+                                             clientRandom.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()),
+                                             serverRandom.size());
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
-std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     std::span<const uint8_t> context, const size_t length)
+std::vector<uint8_t> DeriveSecret(std::string_view algorithm, const Secret& secret, std::string_view label,
+                                  std::span<const uint8_t> context, const size_t length)
 {
     // assemble (serialized) HkdfLabel
     std::vector<uint8_t> hkdfLabel;
@@ -115,10 +115,8 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
     OSSL_PARAM params[6], *p = params;
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
-                                            const_cast<char*>(algorithm.data()), 0);
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()),
-                                             secret.size());
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()), secret.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_INFO, const_cast<uint8_t*>(hkdfLabel.data()),
                                              hkdfLabel.size());
     *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
@@ -128,6 +126,40 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
     std::vector<uint8_t> out(outlen);
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
     out.resize(outlen);
+
+    return out;
+}
+
+std::vector<uint8_t> HkdfExtract(std::string_view algorithm, std::span<const uint8_t> prevSecret,
+                                 std::span<const uint8_t> inSecret, size_t length)
+{
+    static int mode{EVP_PKEY_HKDEF_MODE_EXTRACT_ONLY};
+    static const char derived_secret_label[] = "derived";
+
+    auto kdf = CipherSuiteManager::getInstance().fetchKdf(OSSL_KDF_NAME_TLS1_3_KDF);
+
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    crypto::ThrowIfTrue(kctx == nullptr);
+
+    OSSL_PARAM params[7], *p = params;
+
+    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+
+    if (!inSecret.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, (uint8_t*)inSecret.data(), inSecret.size());
+    if (!prevSecret.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT, (uint8_t*)prevSecret.data(), prevSecret.size());
+
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PREFIX, (unsigned char*)gLabelPrefix,
+                                             sizeof(gLabelPrefix) - 1);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_LABEL, (unsigned char*)derived_secret_label,
+                                             sizeof(derived_secret_label) - 1);
+    *p++ = OSSL_PARAM_construct_end();
+
+    std::vector<uint8_t> out(length);
+    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+    out.resize(length);
 
     return out;
 }

@@ -17,8 +17,8 @@ namespace snet::tls
 /// @param clientRandom The client's random value.
 /// @param serverRandom The server's random value.
 /// @param out The output buffer for the generated pseudo-random data.
-void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
-             std::span<const uint8_t> serverRandom, std::span<uint8_t> out);
+void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
+             std::span<uint8_t> out);
 
 /// @brief TLS 1.0/1.1/1.2 Pseudo-Random Function (PRF).
 ///
@@ -29,8 +29,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
 /// @param serverRandom The server's random value.
 /// @param out The output buffer for the generated pseudo-random data.
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
-             std::span<uint8_t> out);
+             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom, std::span<uint8_t> out);
 
 /// @brief HKDF-Expand-Label function used in TLS 1.3.
 ///
@@ -40,7 +39,10 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
 /// @param context The context for the HKDF expansion.
 /// @param length The length of the output keying material.
 /// @return The expanded keying material.
-std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     std::span<const uint8_t> context, const size_t length);
+std::vector<uint8_t> DeriveSecret(std::string_view algorithm, const Secret& secret, std::string_view label,
+                                  std::span<const uint8_t> context, const size_t length);
+
+std::vector<uint8_t> HkdfExtract(std::string_view algorithm, std::span<const uint8_t> prevSecret,
+                                 std::span<const uint8_t> inSecret, size_t length);
 
 } // namespace snet::tls

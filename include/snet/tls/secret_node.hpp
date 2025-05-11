@@ -23,8 +23,8 @@ public:
         ClientEarlyTrafficSecret,
         ClientHandshakeTrafficSecret,
         ServerHandshakeTrafficSecret,
-        ClientTrafficSecret,
-        ServerTrafficSecret,
+        ClientApplicationTrafficSecret,
+        ServerApplicationTrafficSecret,
         SecretTypesCount
     };
 

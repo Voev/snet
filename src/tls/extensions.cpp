@@ -1,18 +1,25 @@
 #include <iterator>
 #include <snet/tls/extensions.hpp>
+#include <snet/tls/key_share.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/utils/data_writer.hpp>
+
+#include <casket/utils/exception.hpp>
 
 using namespace casket::utils;
 
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCode code,
-                                          const Side from, const HandshakeType messageType)
+template <typename T>
+static inline bool contains(std::vector<T> const& v, T const& x)
 {
+    return std::find(v.begin(), v.end(), x) != v.end();
+}
 
-    (void)messageType;
-
+std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCode code, const Side from,
+                                         const HandshakeType messageType)
+{
     // This cast is safe because we read exactly a 16 bit length field for
     // the extension in Extensions::deserialize
     const uint16_t size = static_cast<uint16_t>(reader.remaining_bytes());
@@ -20,6 +27,12 @@ std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCod
     {
     case ExtensionCode::ServerNameIndication:
         return std::make_unique<ServerNameIndicator>(reader, size);
+
+    case ExtensionCode::SupportedGroups:
+        return std::make_unique<SupportedGroups>(reader, size);
+
+    case ExtensionCode::ECPointFormats:
+        return std::make_unique<SupportedPointFormats>(reader, size);
 
     case ExtensionCode::ApplicationLayerProtocolNegotiation:
         return std::make_unique<ALPN>(reader, size, from);
@@ -42,6 +55,9 @@ std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCod
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(reader, size, from);
 
+    case ExtensionCode::KeyShare:
+        return std::make_unique<KeyShare>(reader, size, messageType);
+
     default:
         break;
     }
@@ -60,8 +76,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
     extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(utils::DataReader& reader, const Side from,
-                             const HandshakeType messageType)
+void Extensions::deserialize(utils::DataReader& reader, const Side from, const HandshakeType messageType)
 {
     if (reader.has_remaining())
     {
@@ -86,7 +101,7 @@ void Extensions::deserialize(utils::DataReader& reader, const Side from,
 
             // TODO offer a function on reader that returns a byte range as a reference
             // to avoid this copy of the extension data
-            const std::vector<uint8_t> extn_data = reader.get_fixed<uint8_t>(extensionSize);
+            auto extn_data = reader.get_fixed<uint8_t>(extensionSize);
             utils::DataReader extn_reader("Extension", extn_data);
             this->add(makeExtension(extn_reader, type, from, messageType));
             extn_reader.assert_done();
@@ -95,22 +110,24 @@ void Extensions::deserialize(utils::DataReader& reader, const Side from,
 }
 
 bool Extensions::containsOtherThan(const std::set<ExtensionCode>& allowedExtensions,
-                                     const bool allowUnknownExtensions) const
+                                   const bool allowUnknownExtensions) const
 {
     const auto found = extensionTypes();
 
     std::vector<ExtensionCode> diff;
-    std::set_difference(found.cbegin(), found.end(), allowedExtensions.cbegin(),
-                        allowedExtensions.cend(), std::back_inserter(diff));
+    std::set_difference(found.cbegin(), found.end(), allowedExtensions.cbegin(), allowedExtensions.cend(),
+                        std::back_inserter(diff));
 
     if (allowUnknownExtensions)
     {
         // Go through the found unexpected extensions whether any of those
         // is known to this TLS implementation.
-        const auto itr = std::find_if(diff.cbegin(), diff.cend(), [this](const auto ext_type) {
-            const auto ext = get(ext_type);
-            return ext;
-        });
+        const auto itr = std::find_if(diff.cbegin(), diff.cend(),
+                                      [this](const auto ext_type)
+                                      {
+                                          const auto ext = get(ext_type);
+                                          return ext;
+                                      });
 
         // ... if yes, `contains_other_than` is true
         return itr != diff.cend();
@@ -121,8 +138,8 @@ bool Extensions::containsOtherThan(const std::set<ExtensionCode>& allowedExtensi
 
 std::unique_ptr<Extension> Extensions::take(ExtensionCode type)
 {
-    const auto i = std::find_if(extensions_.begin(), extensions_.end(),
-                                [type](const auto& ext) { return ext->type() == type; });
+    const auto i =
+        std::find_if(extensions_.begin(), extensions_.end(), [type](const auto& ext) { return ext->type() == type; });
 
     std::unique_ptr<Extension> result;
     if (i != extensions_.end())
@@ -142,11 +159,19 @@ std::set<ExtensionCode> Extensions::extensionTypes() const
     return offers;
 }
 
-UnknownExtension::UnknownExtension(ExtensionCode type, utils::DataReader& reader,
-                                   uint16_t extensionSize)
+UnknownExtension::UnknownExtension(ExtensionCode type, utils::DataReader& reader, uint16_t extensionSize)
     : type_(type)
     , value_(reader.get_fixed<uint8_t>(extensionSize))
 {
+}
+
+size_t UnknownExtension::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    ThrowIfTrue(buffer.size_bytes() < value_.size(), "buffer is too small");
+
+    std::copy(value_.begin(), value_.end(), buffer.data());
+    return value_.size();
 }
 
 ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t extensionSize)
@@ -184,6 +209,133 @@ ServerNameIndicator::ServerNameIndicator(utils::DataReader& reader, uint16_t ext
             name_bytes = 0;
         }
     }
+}
+
+size_t ServerNameIndicator::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    // RFC 6066
+    //    [...] the server SHALL include an extension of type "server_name" in
+    //    the (extended) server hello. The "extension_data" field of this
+    //    extension SHALL be empty.
+    if (whoami == Side::Server)
+    {
+        return 0;
+    }
+
+    size_t nameLength = hostname_.size();
+    ThrowIfTrue(buffer.size_bytes() < 5 + nameLength, "buffer is too small");
+
+    buffer[0] = utils::get_byte<0>(static_cast<uint16_t>(nameLength + 3));
+    buffer[1] = utils::get_byte<1>(static_cast<uint16_t>(nameLength + 3));
+    buffer[2] = 0; // DNS
+
+    buffer[3] = utils::get_byte<0>(static_cast<uint16_t>(nameLength));
+    buffer[4] = utils::get_byte<1>(static_cast<uint16_t>(nameLength));
+    buffer = buffer.subspan(5);
+
+    std::copy(hostname_.begin(), hostname_.end(), buffer.begin());
+    return 5 + nameLength;
+}
+
+SupportedPointFormats::SupportedPointFormats(utils::DataReader& reader, uint16_t extensionSize)
+{
+    uint8_t len = reader.get_byte();
+
+    if (len + 1 != extensionSize)
+    {
+        throw std::runtime_error("Inconsistent length field in supported point formats list");
+    }
+
+    for (size_t i = 0; i != len; ++i)
+    {
+        /// @todo: check correctness for byte
+        formats_.push_back(static_cast<ECPointFormat>(reader.get_byte()));
+    }
+}
+
+SupportedGroups::SupportedGroups(const std::vector<GroupParams>& groups)
+    : m_groups(groups)
+{
+}
+
+const std::vector<GroupParams>& SupportedGroups::groups() const
+{
+    return m_groups;
+}
+
+std::vector<GroupParams> SupportedGroups::ec_groups() const
+{
+    std::vector<GroupParams> ec;
+    for (auto g : m_groups)
+    {
+        if (g.is_pure_ecc_group())
+        {
+            ec.push_back(g);
+        }
+    }
+    return ec;
+}
+
+std::vector<GroupParams> SupportedGroups::dh_groups() const
+{
+    std::vector<GroupParams> dh;
+    for (auto g : m_groups)
+    {
+        if (g.is_in_ffdhe_range())
+        {
+            dh.push_back(g);
+        }
+    }
+    return dh;
+}
+
+size_t SupportedGroups::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+
+    const size_t bytesNeeded = 2 + 2 * m_groups.size();
+    ThrowIfTrue(buffer.size_bytes() < bytesNeeded, "buffer is too small");
+
+    size_t i = 2;
+    for (const auto& group : m_groups)
+    {
+        const uint16_t id = group.wire_code();
+        buffer[i++] = utils::get_byte<0>(id);
+        buffer[i++] = utils::get_byte<1>(id);
+    }
+
+    const uint16_t length = static_cast<uint16_t>(2 * m_groups.size());
+    buffer[0] = utils::get_byte<0>(length);
+    buffer[1] = utils::get_byte<1>(length);
+
+    return bytesNeeded;
+}
+
+SupportedGroups::SupportedGroups(utils::DataReader& reader, uint16_t extensionSize)
+{
+    const uint16_t len = reader.get_uint16_t();
+
+    ThrowIfTrue(len + 2 != extensionSize, "Inconsistent length field in supported groups list");
+    ThrowIfTrue(len % 2 == 1, "Supported groups list of strange size");
+
+    const size_t elems = len / 2;
+
+    for (size_t i = 0; i != elems; ++i)
+    {
+        const auto group = static_cast<GroupParams>(reader.get_uint16_t());
+
+        // Note: RFC 8446 does not explicitly enforce that groups must be unique.
+        if (!contains(m_groups, group))
+        {
+            m_groups.push_back(group);
+        }
+    }
+}
+
+size_t SupportedPointFormats::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    return utils::append_tls_length_value(buffer, formats_.data(), formats_.size(), 1);
 }
 
 ALPN::ALPN(utils::DataReader& reader, uint16_t extensionSize, Side from)
@@ -237,6 +389,29 @@ std::string ALPN::singleProtocol() const
     return protocols_.front();
 }
 
+size_t ALPN::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+
+    ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small");
+    buffer = buffer.subspan(2);
+
+    uint16_t size{0};
+    for (auto&& p : protocols_)
+    {
+        ThrowIfTrue(p.length() >= 256, "ALPN name too long");
+        if (!p.empty())
+        {
+            size += utils::append_tls_length_value(buffer, p.data(), p.size(), 1);
+        }
+    }
+
+    buffer[0] = utils::get_byte<0>(size);
+    buffer[1] = utils::get_byte<1>(size);
+    size += 2;
+    return size;
+}
+
 std::string CertificateTypeToString(CertificateType type)
 {
     switch (type)
@@ -273,6 +448,23 @@ CertificateTypeBase::CertificateTypeBase(std::vector<CertificateType> supportedC
     ThrowIfFalse(certTypes_.empty(), "at least one certificate type must be supported");
 }
 
+size_t CertificateTypeBase::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    if (whoami == Side::Client)
+    {
+        std::vector<uint8_t> type_bytes(certTypes_.size());
+        std::transform(certTypes_.begin(), certTypes_.end(), std::back_inserter(type_bytes),
+                       [](const auto type) { return static_cast<uint8_t>(type); });
+        return utils::append_tls_length_value(buffer, type_bytes.data(), type_bytes.size(), 1);
+    }
+    else
+    {
+        ThrowIfTrue(buffer.size_bytes() < 1, "buffer is too small");
+        buffer[0] = static_cast<uint8_t>(certTypes_.front());
+        return 1;
+    }
+}
+
 ClientCertificateType::ClientCertificateType(const ClientCertificateType& cct)
     : CertificateTypeBase(cct)
 {
@@ -281,12 +473,6 @@ ClientCertificateType::ClientCertificateType(const ClientCertificateType& cct)
 ServerCertificateType::ServerCertificateType(const ServerCertificateType& sct)
     : CertificateTypeBase(sct)
 {
-}
-
-template <typename T>
-bool contains(std::vector<T> const& v, T const& x)
-{
-    return std::find(v.begin(), v.end(), x) != v.end();
 }
 
 CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& certificateTypeFromClient,
@@ -316,8 +502,7 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& certificateT
     throw std::runtime_error("Failed to agree on CertificateType");
 }
 
-CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extensionSize,
-                                         Side from)
+CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extensionSize, Side from)
     : from_(from)
 {
     if (extensionSize == 0)
@@ -332,9 +517,8 @@ CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t ext
         {
             throw std::runtime_error("Certificate type extension had inconsistent length");
         }
-        std::transform(
-            typeBytes.begin(), typeBytes.end(), std::back_inserter(certTypes_),
-            [](const auto typeByte) { return static_cast<CertificateType>(typeByte); });
+        std::transform(typeBytes.begin(), typeBytes.end(), std::back_inserter(certTypes_),
+                       [](const auto typeByte) { return static_cast<CertificateType>(typeByte); });
     }
     else
     {
@@ -361,9 +545,8 @@ void CertificateTypeBase::validateSelection(const CertificateTypeBase& fromServe
     //    extension sent in the client hello.
     if (!contains(certTypes_, fromServer.selectedCertificateType()))
     {
-        throw std::runtime_error(
-            format("Selected certificate type was not offered: {}",
-                   CertificateTypeToString(fromServer.selectedCertificateType())));
+        throw RuntimeError("Selected certificate type was not offered: {}",
+                           CertificateTypeToString(fromServer.selectedCertificateType()));
     }
 }
 
@@ -376,18 +559,26 @@ CertificateType CertificateTypeBase::selectedCertificateType() const
 
 ExtendedMasterSecret::ExtendedMasterSecret(utils::DataReader& /*unused*/, uint16_t extensionSize)
 {
-    if (extensionSize != 0)
-    {
-        throw std::runtime_error("Invalid extended_master_secret extension");
-    }
+    ThrowIfTrue(extensionSize != 0, "Invalid extended_master_secret extension");
+}
+
+size_t ExtendedMasterSecret::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    (void)buffer;
+    return 0;
 }
 
 EncryptThenMAC::EncryptThenMAC(utils::DataReader& /*unused*/, uint16_t extensionSize)
 {
-    if (extensionSize != 0)
-    {
-        throw std::runtime_error("Invalid encrypt_then_mac extension");
-    }
+    ThrowIfTrue(extensionSize != 0, "Invalid encrypt_then_mac extension");
+}
+
+size_t EncryptThenMAC::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    (void)buffer;
+    return 0;
 }
 
 SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extensionSize, Side from)
@@ -428,6 +619,34 @@ bool SupportedVersions::supports(ProtocolVersion version) const
     return false;
 }
 
+size_t SupportedVersions::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    if (whoami == Side::Server)
+    {
+        ThrowIfTrue(buffer.size_bytes() < 2, "buffer is too small");
+        ThrowIfTrue(versions_.size() != 1, "one version for server must be selected");
+        buffer[0] = versions_[0].majorVersion();
+        buffer[1] = versions_[0].minorVersion();
+        return 2;
+    }
+    else
+    {
+        size_t bytesVersions = 2 * versions_.size();
+        size_t i = 0;
+
+        ThrowIfTrue(buffer.size_bytes() < bytesVersions + 1, "buffer is too small");
+        buffer[i++] = static_cast<uint8_t>(bytesVersions);
+
+        for (const auto& version : versions_)
+        {
+            buffer[i++] = version.majorVersion();
+            buffer[i++] = version.minorVersion();
+        }
+
+        return i;
+    }
+}
+
 RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
     : limit_(limit)
 {
@@ -460,8 +679,7 @@ RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extensionSi
     //       the "content type byte" and hence be one byte less!
     if (limit_ > MAX_PLAINTEXT_SIZE + 1 /* encrypted content type byte */ && from == Side::Server)
     {
-        throw std::runtime_error(
-            "Server requested a record size limit larger than the protocol's maximum");
+        throw std::runtime_error("Server requested a record size limit larger than the protocol's maximum");
     }
 
     // RFC 8449 4.
@@ -474,13 +692,63 @@ RecordSizeLimit::RecordSizeLimit(utils::DataReader& reader, uint16_t extensionSi
     }
 }
 
+size_t RecordSizeLimit::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+
+    ThrowIfTrue(buffer.size_bytes() < 2, "buffer is too small");
+    buffer[0] = utils::get_byte<0>(limit_);
+    buffer[1] = utils::get_byte<1>(limit_);
+    return 2;
+}
+
 RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader, uint16_t extensionSize)
     : renegData_(reader.get_range<uint8_t>(1, 0, 255))
 {
-    if (renegData_.size() + 1 != extensionSize)
+    ThrowIfFalse(renegData_.size() + 1 == extensionSize, "Bad encoding for secure renegotiation extn");
+}
+
+size_t RenegotiationExtension::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    return utils::append_tls_length_value(buffer, renegData_.data(), renegData_.size(), 1);
+}
+
+size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
+
+    uint16_t totalWritten = 0;
+    auto data = buffer.subspan(2);
+
+    for (const auto& extension : extensions_)
     {
-        throw std::runtime_error("Bad encoding for secure renegotiation extn");
+        if (extension->empty())
+        {
+            continue;
+        }
+
+        ThrowIfTrue(data.size_bytes() < 4, "buffer too small for extension header and body");
+        auto extensionBody = data.subspan(4);
+
+        uint16_t extensionType = static_cast<uint16_t>(extension->type());
+        uint16_t extensionLength= extension->serialize(whoami, extensionBody);
+
+        data[0] = utils::get_byte<0>(extensionType);
+        data[1] = utils::get_byte<1>(extensionType);
+
+        data[2] = utils::get_byte<0>(extensionLength);
+        data[3] = utils::get_byte<1>(extensionLength);
+
+        data = data.subspan(extensionLength + 4);
+        totalWritten += extensionLength + 4;
     }
+
+    buffer[0] = utils::get_byte<0>(totalWritten);
+    buffer[1] = utils::get_byte<1>(totalWritten);
+    totalWritten += 2;
+
+    return totalWritten;
 }
 
 } // namespace snet::tls

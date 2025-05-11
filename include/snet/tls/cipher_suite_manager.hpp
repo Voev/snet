@@ -76,6 +76,10 @@ public:
     /// @return A pointer to the Cipher object.
     crypto::CipherPtr fetchCipher(std::string_view algorithm);
 
+    crypto::KeyCtxPtr createKeyContext(std::string_view algorithm);
+
+    crypto::KeyCtxPtr createKeyContext(Key* key);
+
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.
     void setSecurityLevel(const int securityLevel);

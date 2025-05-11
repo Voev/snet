@@ -1,29 +1,28 @@
 #pragma once
 #include <vector>
 #include <memory>
-#include <snet/tls/i_record_reader.hpp>
 #include <snet/tls/i_record_handler.hpp>
+#include <snet/tls/record_queue.hpp>
+#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
+
 /// @brief Class for processing TLS records.
-class RecordProcessor final
+class RecordProcessor final : public utils::NonCopyable
 {
 public:
     /// @brief Default constructor.
-    RecordProcessor() = default;
+    ///
+    /// @param[in] recordPoolSize The size of record pool.
+    RecordProcessor(const size_t recordPoolSize = 1024)
+        : recordPool_(recordPoolSize)
+    {
+    }
 
     /// @brief Destructor.
     ~RecordProcessor() = default;
-
-    /// @brief Copy constructor.
-    /// @param other constant reference to the record processor.
-    RecordProcessor(const RecordProcessor& other) = delete;
-
-    /// @brief Move constructor and move assignment operator.
-    /// @param other rvalue reference to the record processor.
-    RecordProcessor& operator=(const RecordProcessor& other) = delete;
 
     /// @brief Move constructor.
     /// @param other rvalue reference to the record processor.
@@ -35,45 +34,23 @@ public:
 
     /// @brief Processes input bytes as TLS records.
     /// @param sideIndex The index indicating the side (client or server).
-    /// @param inputBytes The input bytes to process.
-    void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
-
-    /// @brief Adds a record reader.
-    /// @tparam Reader The type of the reader.
-    template <typename Reader>
-    void addReader()
-    {
-        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
-                      "Reader type must derive from IRecordReader");
-
-        reader_ = std::make_shared<Reader>();
-    }
-
-    /// @brief Gets the record reader.
-    /// @tparam Reader The type of the reader.
-    /// @return A shared pointer to the reader if found, otherwise nullptr.
-    template <typename Reader>
-    std::shared_ptr<Reader> getReader() const
-    {
-        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
-                      "Reader type must derive from IRecordReader");
-
-        if (auto castedReader = std::dynamic_pointer_cast<Reader>(reader_))
-        {
-            return castedReader;
-        }
-        return nullptr;
-    }
+    /// @param session The TLS session to process records.
+    /// @param inputBytes The input bytes pointer.
+    /// @param inputLength The input bytes length.
+    size_t process(const int8_t sideIndex, Session* session, uint8_t* inputBytes, size_t inputLength);
 
     /// @brief Adds a record handler.
     /// @tparam Handler The type of the handler.
-    template <typename Handler>
-    void addHandler()
-    {
-        static_assert(std::is_base_of<tls::IRecordHandler, Handler>::value,
-                      "Handler type must derive from IRecordHandler");
-
-        handlers_.emplace_back(std::make_shared<Handler>());
+    /// @tparam Args
+    /// @param[in] args
+    template <typename Handler, typename... Args>
+    void addHandler(Args&&... args) {
+        static_assert(std::is_base_of_v<IRecordHandler, Handler>,
+                     "Handler must inherit from IRecordHandler");
+        
+        handlers_.emplace_back(
+            std::make_shared<Handler>(std::forward<Args>(args)...)
+        );
     }
 
     /// @brief Gets a record handler.
@@ -95,9 +72,14 @@ public:
         return nullptr;
     }
 
+    RecordPool& getRecordPool()
+    {
+        return recordPool_;
+    }
+
 private:
-    std::shared_ptr<IRecordReader> reader_;
     std::vector<std::shared_ptr<IRecordHandler>> handlers_;
+    RecordPool recordPool_;
 };
 
 } // namespace snet::tls

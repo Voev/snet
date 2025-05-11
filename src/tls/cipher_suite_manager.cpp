@@ -20,9 +20,9 @@ snet::tls::CipherSuite CreateCipherSuite(const SSL_CIPHER* cs)
     auto auth = OBJ_nid2sn(SSL_CIPHER_get_auth_nid(cs));
     auto hdigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cs));
 
-    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr),
-                                  kexch, auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
-                                  SSL_CIPHER_get_version(cs), SSL_CIPHER_is_aead(cs));
+    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr), kexch, auth, cipher,
+                                  digest, hdigest, SSL_CIPHER_get_name(cs), SSL_CIPHER_get_version(cs),
+                                  SSL_CIPHER_is_aead(cs));
 }
 
 } // namespace
@@ -139,10 +139,24 @@ CipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
     return cipher;
 }
 
+KeyCtxPtr CipherSuiteManager::createKeyContext(std::string_view algorithm)
+{
+    auto ctx = KeyCtxPtr(EVP_PKEY_CTX_new_from_name(nullptr, algorithm.data(), nullptr));
+    crypto::ThrowIfTrue(ctx == nullptr);
+    return ctx;
+}
+
+KeyCtxPtr CipherSuiteManager::createKeyContext(Key* key)
+{
+    auto ctx = KeyCtxPtr(EVP_PKEY_CTX_new_from_pkey(nullptr, key, nullptr));
+    crypto::ThrowIfTrue(ctx == nullptr);
+    return ctx;
+}
+
+
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)
 {
-    crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5,
-                         "Security level must be in range [0..5]");
+    crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5, "Security level must be in range [0..5]");
     SSL_set_security_level(impl_->ssl, securityLevel);
 }
 
