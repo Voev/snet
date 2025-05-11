@@ -50,13 +50,11 @@ void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
 
     if (sideIndex == 0 && clientToServer_.isInited())
     {
-        clientToServer_.decrypt(recordType, version, inputBytes, outputBytes,
-                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        clientToServer_.decrypt(cipherTraits_, seqnum_, recordType, inputBytes, outputBytes);
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
     {
-        serverToClient_.decrypt(recordType, version, inputBytes, outputBytes,
-                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        serverToClient_.decrypt(cipherTraits_, seqnum_, recordType, inputBytes, outputBytes);
     }
 }
 
@@ -103,11 +101,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
+            clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
         }
         else
         {
-            serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
+            serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
         }
     }
     else
@@ -139,11 +137,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherSuite_, clientWriteKey, clientIV, clientMacKey);
+            clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
+            clientToServer_.setMacKey(clientMacKey);
         }
         else
         {
-            serverToClient_.init(cipherSuite_, serverWriteKey, serverIV, serverMacKey);
+            serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
+            serverToClient_.setMacKey(serverMacKey);
         }
     }
     cipherState_ = true;
@@ -175,8 +175,8 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
 
-    clientToServer_.init(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
-    serverToClient_.init(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
+    clientToServer_.initDecrypt(cipherTraits_, clientHandshakeWriteKey, clientHandshakeIV);
+    serverToClient_.initDecrypt(cipherTraits_, serverHandshakeWriteKey, serverHandshakeIV);
 
     cipherState_ = true;
 }
@@ -195,7 +195,7 @@ void Session::processFinished(const std::int8_t sideIndex)
             auto clientWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             auto clientIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
-            clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
+            clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
 
             utils::printHex(std::cout, "Client Write key", clientWriteKey);
             utils::printHex(std::cout, "Client IV", clientIV);
@@ -208,7 +208,7 @@ void Session::processFinished(const std::int8_t sideIndex)
             auto serverWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             auto serverIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
-            serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
+            serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
 
             utils::printHex(std::cout, "Server Write key", serverWriteKey);
             utils::printHex(std::cout, "Server IV", serverIV);
@@ -233,7 +233,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex)
         newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
         newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
 
-        clientToServer_.tls13UpdateKeys(newkey, newiv);
+        //clientToServer_.tls13UpdateKeys(newkey, newiv);
     }
     else
     {
@@ -242,7 +242,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex)
         newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
         newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
 
-        serverToClient_.tls13UpdateKeys(newkey, newiv);
+        //serverToClient_.tls13UpdateKeys(newkey, newiv);
     }
 }
 

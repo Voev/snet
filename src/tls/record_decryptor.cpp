@@ -168,7 +168,7 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex,
     session_->deserializeExtensions(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
 
     auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(ciphersuite);
-    ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not found");
+    ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not supported");
 
     session_->setCipherSuite(foundCipher.value());
 
@@ -179,6 +179,17 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex,
     }
 
     reader.assert_done();
+
+    // fill cipher traits
+    auto& cipherSuite = session_->getCipherSuite();
+    auto& traits = session_->getCipherTraits();
+    traits.aead = cipherSuite.isAEAD();
+    traits.encryptThenMac = session_->getExtensions(Side::Server).has<EncryptThenMAC>();
+    traits.cipherName = cipherSuite.getCipherName();
+    traits.digestName = cipherSuite.getDigestName();
+
+    auto cipher = CipherSuiteManager::getInstance().fetchCipher(traits.cipherName);
+    traits.blockSize = EVP_CIPHER_get_block_size(cipher);
 
     session_->updateHash(message);
 

@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include <snet/tls/record/cipher_traits.hpp>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -19,6 +20,8 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
+
+#include <snet/tls/record/cipher_context.hpp>
 
 namespace snet::tls
 {
@@ -144,20 +147,27 @@ public:
     /// @return The cipher state.
     bool cipherState() const noexcept;
 
+    CipherTraits& getCipherTraits()
+    {
+        return cipherTraits_;
+    }
+
 private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;
+    CipherTraits cipherTraits_;
     std::vector<uint8_t> PMS_;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> sessionId_;
-    RecordDecoder clientToServer_;
-    RecordDecoder serverToClient_;
+    CipherContext clientToServer_;
+    CipherContext serverToClient_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
+    uint64_t seqnum_;
     bool cipherState_;
 };
 
