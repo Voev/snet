@@ -130,9 +130,9 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
     config.setTimeout(0);
     config.setSnaplen(2048);
 
-    auto& drv = config.addDriver("nfq");
+    auto& drv = config.addDriver("my_driver");
 
-    drv.setMode(Mode::Passive);
+    drv.setMode(Mode::ReadFile);
     drv.setPath(ioDriver);
 
     controller.init(config);
@@ -172,11 +172,6 @@ public:
                 .build()
         );
         parser_.add(
-            OptionBuilder("input", Value(&options_.input))
-                .setDescription("Input PCAP file")
-                .build()
-        );
-        parser_.add(
             OptionBuilder("keylog", Value(&options_.keylog))
                 .setDescription("Input key log file")
                 .build()
@@ -189,6 +184,12 @@ public:
         parser_.add(
             OptionBuilder("driver", Value(&options_.driverPath))
                 .setDescription("Driver path")
+                .setRequired()
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("input", Value(&options_.input))
+                .setDescription("Input PCAP file")
                 .setRequired()
                 .build()
         );

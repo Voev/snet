@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <casket/utils/string.hpp>
+#include <casket/utils/exception.hpp>
 
 #include <snet/io/packet_pool.hpp>
 
@@ -198,9 +199,7 @@ Pcap::Pcap(const io::DriverConfig& config)
             impl_->fp = fopen(fname.c_str(), "rb");
             if (!impl_->fp)
             {
-                // SET_ERROR(impl_->modinst, "%s: Couldn't open file '%s' for reading: %s",
-                // __func__,
-                //           fname.c_str(), strerror(errno));
+                throw RuntimeError("invalid input option for driver: '{}'", fname);
             }
         }
     }
@@ -209,8 +208,7 @@ Pcap::Pcap(const io::DriverConfig& config)
         impl_->device = base.getInput();
         if (impl_->device.empty())
         {
-            // SET_ERROR(impl_->modinst, "%s: Couldn't allocate memory for the device string!",
-            //           __func__);
+            throw RuntimeError("invalid input option for driver");
         }
     }
 

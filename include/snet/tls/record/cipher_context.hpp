@@ -43,7 +43,7 @@ public:
 
     bool isInited() const
     {
-        return std::holds_alternative<NotInitedCipher>(cipherType_);
+        return !std::holds_alternative<NotInitedCipher>(cipherType_);
     }
 
     void setMacKey(std::span<const std::uint8_t> macKey)
@@ -92,6 +92,8 @@ public:
     void initDecrypt(const CipherTraits& cipherTraits, std::span<const uint8_t> encKey,
                      std::span<const uint8_t> encIV)
     {
+        setCipherType(cipherTraits);
+
         std::visit(
             [&](auto&& cipher)
             {
