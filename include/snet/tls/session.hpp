@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include <snet/tls/record/cipher_traits.hpp>
+#include <snet/tls/record/cipher_context.hpp>
+#include <snet/tls/record/sequence_numbers.hpp>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -21,8 +23,6 @@
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
 
-#include <snet/tls/record/cipher_context.hpp>
-
 namespace snet::tls
 {
 
@@ -32,6 +32,8 @@ class Session
 public:
     /// @brief Default constructor.
     Session();
+
+    ~Session() noexcept;
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
@@ -139,18 +141,17 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    /// @brief Sets the cipher state.
-    /// @param state The cipher state to set.
-    void cipherState(bool state) noexcept;
-
-    /// @brief Gets the cipher state.
-    /// @return The cipher state.
-    bool cipherState() const noexcept;
-
     CipherTraits& getCipherTraits()
     {
         return cipherTraits_;
     }
+
+    /// @brief Sets the cipher state flag.
+    void setCipherState() noexcept;
+
+    /// @brief Gets the cipher state flag.
+    /// @return The cipher state flag.
+    bool getCipherState() const noexcept;
 
 private:
     ServerInfo serverInfo_;
@@ -167,7 +168,7 @@ private:
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
-    uint64_t seqnum_;
+    SequenceNumbers seqnum_;
     bool cipherState_;
 };
 

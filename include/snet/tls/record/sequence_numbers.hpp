@@ -4,59 +4,42 @@
 class SequenceNumbers final
 {
 public:
-    SequenceNumbers()
+    SequenceNumbers() noexcept
     {
         reset();
     }
 
-    void reset()
+    ~SequenceNumbers() noexcept
     {
-        writeSeqNumber_ = 0;
-        readSeqNumber_ = 0;
-        writeEpoch_ = 0;
-        readEpoch_ = 0;
     }
 
-    void newReadCipherState()
+    inline void reset() noexcept
     {
-        readSeqNumber_ = 0;
-        readEpoch_++;
+        clientSeqNumber_ = 0;
+        serverSeqNumber_ = 0;
     }
 
-    void newWriteCipherState()
+    inline uint64_t getClientSequence() const noexcept
     {
-        writeSeqNumber_ = 0;
-        writeEpoch_++;
+        return clientSeqNumber_;
     }
 
-    uint16_t currentReadEpoch() const
+    inline uint64_t getServerSequence() const noexcept
     {
-        return readEpoch_;
+        return serverSeqNumber_;
     }
 
-    uint16_t currentWriteEpoch() const
+    inline void clientAccept() noexcept
     {
-        return writeEpoch_;
+        clientSeqNumber_++;
     }
 
-    uint64_t nextWriteSequence()
+    inline void serverAccept() noexcept
     {
-        return writeSeqNumber_++;
-    }
-
-    uint64_t nextReadSequence() const
-    {
-        return readSeqNumber_;
-    }
-
-    void readAccept()
-    {
-        readSeqNumber_++;
+        serverSeqNumber_++;
     }
 
 private:
-    uint64_t writeSeqNumber_;
-    uint64_t readSeqNumber_;
-    uint16_t writeEpoch_;
-    uint16_t readEpoch_;
+    uint64_t clientSeqNumber_;
+    uint64_t serverSeqNumber_;
 };

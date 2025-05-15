@@ -36,6 +36,10 @@ Session::Session()
 {
 }
 
+Session::~Session() noexcept
+{
+}
+
 bool Session::canDecrypt(bool client2server) const noexcept
 {
     return (client2server && clientToServer_.isInited()) ||
@@ -47,14 +51,17 @@ void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
                       std::vector<std::uint8_t>& outputBytes)
 {
     auto version = (version_ != ProtocolVersion()) ? version_ : recordVersion;
-
-    if (sideIndex == 0 && clientToServer_.isInited())
+    if (sideIndex == 0)
     {
-        clientToServer_.decrypt(cipherTraits_, seqnum_, recordType, inputBytes, outputBytes);
+        clientToServer_.decrypt(cipherTraits_, seqnum_.getClientSequence(), recordType, inputBytes,
+                                outputBytes);
+        seqnum_.clientAccept();
     }
-    else if (sideIndex == 1 && serverToClient_.isInited())
+    else if (sideIndex == 1)
     {
-        serverToClient_.decrypt(cipherTraits_, seqnum_, recordType, inputBytes, outputBytes);
+        serverToClient_.decrypt(cipherTraits_, seqnum_.getServerSequence(), recordType, inputBytes,
+                                outputBytes);
+        seqnum_.serverAccept();
     }
 }
 
@@ -98,6 +105,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto serverWriteKey = viewer.view(keySize);
         auto clientIV = viewer.view(ivSize);
         auto serverIV = viewer.view(ivSize);
+
+        utils::printHex(std::cout, "Client Write key", clientWriteKey);
+        utils::printHex(std::cout, "Client IV", clientIV);
+        utils::printHex(std::cout, "Server Write key", serverWriteKey);
+        utils::printHex(std::cout, "Server IV", serverIV);
 
         if (sideIndex == 0)
         {
@@ -146,7 +158,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
             serverToClient_.setMacKey(serverMacKey);
         }
     }
-    cipherState_ = true;
 }
 
 void Session::generateTLS13KeyMaterial()
@@ -177,8 +188,6 @@ void Session::generateTLS13KeyMaterial()
 
     clientToServer_.initDecrypt(cipherTraits_, clientHandshakeWriteKey, clientHandshakeIV);
     serverToClient_.initDecrypt(cipherTraits_, serverHandshakeWriteKey, serverHandshakeIV);
-
-    cipherState_ = true;
 }
 
 void Session::processFinished(const std::int8_t sideIndex)
@@ -233,7 +242,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex)
         newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
         newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
 
-        //clientToServer_.tls13UpdateKeys(newkey, newiv);
+        // clientToServer_.tls13UpdateKeys(newkey, newiv);
     }
     else
     {
@@ -242,7 +251,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex)
         newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
         newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
 
-        //serverToClient_.tls13UpdateKeys(newkey, newiv);
+        // serverToClient_.tls13UpdateKeys(newkey, newiv);
     }
 }
 
@@ -368,12 +377,12 @@ const ServerInfo& Session::getServerInfo() const noexcept
     return serverInfo_;
 }
 
-void Session::cipherState(bool state) noexcept
+void Session::setCipherState() noexcept
 {
-    cipherState_ = state;
+    cipherState_ = true;
 }
 
-bool Session::cipherState() const noexcept
+bool Session::getCipherState() const noexcept
 {
     return cipherState_;
 }

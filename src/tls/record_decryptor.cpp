@@ -37,12 +37,12 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
         if (session_->getVersion() < ProtocolVersion::TLSv1_3)
         {
             session_->generateKeyMaterial(sideIndex);
-            session_->cipherState(true);
+            session_->setCipherState();
         }
     }
     else if (type == RecordType::Alert)
     {
-        if (session_->cipherState() && !session_->canDecrypt(sideIndex == 0))
+        if (session_->getCipherState() && !session_->canDecrypt(sideIndex == 0))
         {
             return;
         }
@@ -52,7 +52,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, const Record& re
     }
     else if (type == RecordType::Handshake)
     {
-        if (session_->cipherState() && !session_->canDecrypt(sideIndex == 0))
+        if (session_->getCipherState() && !session_->canDecrypt(sideIndex == 0))
         {
             return;
         }
@@ -183,6 +183,7 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex,
     // fill cipher traits
     auto& cipherSuite = session_->getCipherSuite();
     auto& traits = session_->getCipherTraits();
+    traits.version = session_->getVersion();
     traits.aead = cipherSuite.isAEAD();
     traits.encryptThenMac = session_->getExtensions(Side::Server).has<EncryptThenMAC>();
     traits.cipherName = cipherSuite.getCipherName();
@@ -196,7 +197,7 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex,
     if (session_->getVersion() == tls::ProtocolVersion::TLSv1_3)
     {
         session_->generateTLS13KeyMaterial();
-        session_->cipherState(true);
+        session_->setCipherState();
     }
 }
 

@@ -2,7 +2,6 @@
 #include <snet/tls/types.hpp>
 #include <casket/utils/exception.hpp>
 
-
 using namespace casket::utils;
 
 namespace snet::tls
@@ -10,10 +9,12 @@ namespace snet::tls
 
 RecordReader::RecordReader()
     : decryptedData_(MAX_PLAINTEXT_SIZE)
-{}
+{
+}
 
 RecordReader::~RecordReader() noexcept
-{}
+{
+}
 
 Record RecordReader::readRecord(const std::int8_t sideIndex,
                                 std::span<const std::uint8_t> inputBytes,
@@ -35,7 +36,8 @@ Record RecordReader::readRecord(const std::int8_t sideIndex,
 
     consumedBytes = TLS_HEADER_SIZE + recordSize;
 
-    if (session_ && session_->canDecrypt((sideIndex == 0)) && recordType != RecordType::ChangeCipherSpec)
+    if (session_ && session_->canDecrypt((sideIndex == 0)) &&
+        recordType != RecordType::ChangeCipherSpec)
     {
         decryptedData_.clear();
         session_->decrypt(sideIndex, recordType, recordVersion,
