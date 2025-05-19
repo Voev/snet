@@ -25,6 +25,10 @@ public:
         ServerHandshakeTrafficSecret,
         ClientTrafficSecret,
         ServerTrafficSecret,
+        ClientWriteKey,
+        ServerWriteKey,
+        ClientMacKey,
+        ServerMacKey,
         SecretTypesCount
     };
 

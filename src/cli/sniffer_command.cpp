@@ -37,11 +37,11 @@ class SnifferHandler final : public tls::IRecordHandler
 public:
     SnifferHandler() = default;
 
-    void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override
+    void handleRecord(const std::int8_t sideIndex, tls::Record& record) override
     {
-        if (sideIndex == 0 && record.type() == tls::RecordType::Handshake)
+        if (sideIndex == 0 && record.type == tls::RecordType::Handshake)
         {
-            auto ht = static_cast<tls::HandshakeType>(record.data()[0]);
+            auto ht = static_cast<tls::HandshakeType>(record.data[tls::TLS_HEADER_SIZE]);
             if (ht == tls::HandshakeType::ClientHello)
             {
                 auto secrets = secretManager.getSecretNode(session->getClientRandom());
@@ -60,8 +60,8 @@ public:
 struct SnifferManager
 {
     SnifferManager()
+        : proc()
     {
-        proc.addReader<tls::RecordReader>();
         proc.addHandler<tls::RecordDecryptor>();
         proc.addHandler<SnifferHandler>();
         proc.addHandler<tls::RecordPrinter>();
@@ -72,8 +72,7 @@ struct SnifferManager
     SessionManager sessions;
 };
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData,
-                                   void* userCookie)
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
 {
     auto mgr = static_cast<SnifferManager*>(userCookie);
 
@@ -82,8 +81,8 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
         auto session = mgr->sessions.find(tcpData.getConnectionData().flowKey);
         if (session == mgr->sessions.end())
         {
-            auto result = mgr->sessions.emplace(std::make_pair(tcpData.getConnectionData().flowKey,
-                                                               std::make_shared<tls::Session>()));
+            auto result = mgr->sessions.emplace(
+                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>()));
             if (result.second)
             {
                 session = result.first;
@@ -93,10 +92,6 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
 
         if (session->second)
         {
-            auto rr = mgr->proc.getReader<tls::RecordReader>();
-            if (rr)
-                rr->setSession(session->second);
-
             auto rd = mgr->proc.getHandler<tls::RecordDecryptor>();
             if (rd)
                 rd->setSession(session->second);
@@ -105,22 +100,20 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
             if (sh)
                 sh->session = session->second;
 
-            auto payload = std::span(tcpData.getData(), tcpData.getDataLength());
             try
             {
-                mgr->proc.process(sideIndex, payload);
+                mgr->proc.process(sideIndex, const_cast<uint8_t*>(tcpData.getData()), tcpData.getDataLength());
             }
             catch (const std::exception& e)
             {
-                std::cerr << "Error processing payload with length " << payload.size_bytes() << ": "
-                          << e.what() << '\n';
+                std::cerr << "Error processing payload with length " << tcpData.getDataLength() << ": " << e.what()
+                          << '\n';
             }
         }
     }
 }
 
-void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
-                          tcp::TcpReassembly& tcpReassembly)
+void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName, tcp::TcpReassembly& tcpReassembly)
 {
     io::Controller controller;
 

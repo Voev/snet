@@ -16,6 +16,11 @@
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
+#include <snet/tls/record/cipher_traits.hpp>
+#include <snet/tls/record/tls1_aead_cipher.hpp>
+
+#include <snet/crypto/cipher_context.hpp>
+
 using namespace casket::utils;
 
 static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
@@ -32,7 +37,8 @@ namespace snet::tls
 {
 
 Session::Session()
-    : cipherState_(false)
+    : cipherContext_(crypto::AllocateCipherCtx())
+    , cipherState_(false)
 {
 }
 
@@ -42,26 +48,90 @@ Session::~Session() noexcept
 
 bool Session::canDecrypt(bool client2server) const noexcept
 {
-    return (client2server && clientToServer_.isInited()) ||
-           (!client2server && serverToClient_.isInited());
+    if (!cipherTraits_)
+    {
+        return false;
+    }
+    return (client2server && !secrets_.getSecret(SecretNode::Type::ClientWriteKey).empty()) ||
+           (!client2server && !secrets_.getSecret(SecretNode::Type::ServerWriteKey).empty());
 }
 
-void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
-                      ProtocolVersion recordVersion, std::span<const uint8_t> inputBytes,
-                      std::vector<std::uint8_t>& outputBytes)
+void Session::decrypt(const int8_t sideIndex, Record& record)
 {
-    auto version = (version_ != ProtocolVersion()) ? version_ : recordVersion;
-    if (sideIndex == 0)
+    auto version = (version_ != ProtocolVersion()) ? version_ : record.version;
+
+    if (crypto::CipherIsAEAD(cipherTraits_))
     {
-        clientToServer_.decrypt(cipherTraits_, seqnum_.getClientSequence(), recordType, inputBytes,
-                                outputBytes);
-        seqnum_.clientAccept();
-    }
-    else if (sideIndex == 1)
-    {
-        serverToClient_.decrypt(cipherTraits_, seqnum_.getServerSequence(), recordType, inputBytes,
-                                outputBytes);
-        seqnum_.serverAccept();
+        CipherOperation op;
+        std::span<uint8_t> implicitIV;
+
+        if (sideIndex == 0)
+        {
+            record.seqnum = seqnum_.getClientSequence();
+            implicitIV = clientIV_;
+            op.key = (uint8_t*)secrets_.getSecret(SecretNode::Type::ClientWriteKey).data();
+            op.keyLength = secrets_.getSecret(SecretNode::Type::ClientWriteKey).size();
+        }
+        else
+        {
+            record.seqnum = seqnum_.getServerSequence();
+            implicitIV = serverIV_;
+            op.key = (uint8_t*)secrets_.getSecret(SecretNode::Type::ServerWriteKey).data();
+            op.keyLength = secrets_.getSecret(SecretNode::Type::ServerWriteKey).size();
+        }
+
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            //
+        }
+        else
+        {
+            uint8_t aad[TLS12_AEAD_AAD_SIZE];
+            std::vector<uint8_t> nonce;
+
+            v1::AeadCipher::decryptInit(cipherContext_, cipherTraits_);
+            auto tagLength = crypto::GetTagLength(cipherContext_);
+            auto nonceSize = crypto::GetIVLength(cipherContext_);
+            auto nonceExplicitLength = nonceSize - clientIV_.size();
+            auto nonceExplicit = std::span{record.data + TLS_HEADER_SIZE, nonceExplicitLength};
+
+            nonce.reserve(nonceSize);
+            nonce.insert(nonce.end(), clientIV_.begin(), clientIV_.end());
+            nonce.insert(nonce.end(), nonceExplicit.begin(), nonceExplicit.end());
+
+            uint16_t length = record.length - TLS_HEADER_SIZE - nonceExplicitLength - tagLength;
+            utils::store_be(record.seqnum, &aad[0]);
+            aad[8] = static_cast<uint8_t>(record.type);
+            aad[9] = record.version.majorVersion();
+            aad[10] = record.version.minorVersion();
+            aad[11] = utils::get_byte<0>(length);
+            aad[12] = utils::get_byte<1>(length);
+
+            op.ciphertext = record.data + TLS_HEADER_SIZE + nonceExplicitLength;
+            op.ciphertextLength = length;
+            op.plaintext = record.decrypted;
+            op.plaintextLength = length;
+            op.iv = nonce.data();
+            op.ivLength = nonceSize;
+            op.aad = aad;
+            op.aadLength = sizeof(aad);
+            op.tag = op.ciphertext + op.ciphertextLength;
+            op.tagLength = tagLength;
+
+            v1::AeadCipher::decrypt(cipherContext_, op);
+
+            record.decryptedLength = length;
+            record.is_decrypted = 1;
+        }
+
+        if (sideIndex == 0)
+        {
+            seqnum_.clientAccept();
+        }
+        else
+        {
+            seqnum_.serverAccept();
+        }
     }
 }
 
@@ -97,28 +167,21 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (cipherSuite_.isAEAD())
     {
         keyBlock.resize(keySize * 2 + ivSize * 2);
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        utils::DataReader keyBlockReader("TLS AEAD KeyBlock", keyBlock);
+        secrets_.setSecret(SecretNode::Type::ClientWriteKey, keyBlockReader.get_fixed<uint8_t>(keySize));
+        secrets_.setSecret(SecretNode::Type::ServerWriteKey, keyBlockReader.get_fixed<uint8_t>(keySize));
+        clientIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
+        keyBlockReader.assert_done();
 
-        utils::printHex(std::cout, "Client Write key", clientWriteKey);
-        utils::printHex(std::cout, "Client IV", clientIV);
-        utils::printHex(std::cout, "Server Write key", serverWriteKey);
-        utils::printHex(std::cout, "Server IV", serverIV);
+        utils::printHex(std::cout, "Client Write key", secrets_.getSecret(SecretNode::Type::ClientWriteKey));
+        utils::printHex(std::cout, "Client IV", clientIV_);
+        utils::printHex(std::cout, "Server Write key", secrets_.getSecret(SecretNode::Type::ServerWriteKey));
+        utils::printHex(std::cout, "Server IV", serverIV_);
 
-        if (sideIndex == 0)
-        {
-            clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
-        }
-        else
-        {
-            serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
-        }
+        cipherTraits_ = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
     }
     else
     {
@@ -129,25 +192,29 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientMacKey = viewer.view(macSize);
-        auto serverMacKey = viewer.view(macSize);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        utils::DataReader keyBlockReader("TLS KeyBlock", keyBlock);
+        secrets_.setSecret(SecretNode::Type::ClientMacKey, keyBlockReader.get_fixed<uint8_t>(macSize));
+        secrets_.setSecret(SecretNode::Type::ServerMacKey, keyBlockReader.get_fixed<uint8_t>(macSize));
+        secrets_.setSecret(SecretNode::Type::ClientWriteKey, keyBlockReader.get_fixed<uint8_t>(keySize));
+        secrets_.setSecret(SecretNode::Type::ServerWriteKey, keyBlockReader.get_fixed<uint8_t>(keySize));
+        clientIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
+        keyBlockReader.assert_done();
 
-        utils::printHex(std::cout, "Client MAC key", clientMacKey);
-        utils::printHex(std::cout, "Client Write key", clientWriteKey);
-        utils::printHex(std::cout, "Client IV", clientIV);
-        utils::printHex(std::cout, "Server MAC key", serverMacKey);
-        utils::printHex(std::cout, "Server Write key", serverWriteKey);
-        utils::printHex(std::cout, "Server IV", serverIV);
+        utils::printHex(std::cout, "Client MAC key", secrets_.getSecret(SecretNode::Type::ClientMacKey));
+        utils::printHex(std::cout, "Client Write key", secrets_.getSecret(SecretNode::Type::ClientWriteKey));
+        utils::printHex(std::cout, "Client IV", clientIV_);
+        utils::printHex(std::cout, "Server MAC key", secrets_.getSecret(SecretNode::Type::ServerMacKey));
+        utils::printHex(std::cout, "Server Write key", secrets_.getSecret(SecretNode::Type::ServerWriteKey));
+        utils::printHex(std::cout, "Server IV", serverIV_);
 
-        if (sideIndex == 0)
+        cipherTraits_ = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
+
+        (void)sideIndex;
+
+        /*if (sideIndex == 0)
         {
             clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
             clientToServer_.setMacKey(clientMacKey);
@@ -156,7 +223,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         {
             serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
             serverToClient_.setMacKey(serverMacKey);
-        }
+        }*/
     }
 }
 
@@ -186,8 +253,8 @@ void Session::generateTLS13KeyMaterial()
     utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
     utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
 
-    clientToServer_.initDecrypt(cipherTraits_, clientHandshakeWriteKey, clientHandshakeIV);
-    serverToClient_.initDecrypt(cipherTraits_, serverHandshakeWriteKey, serverHandshakeIV);
+    // clientToServer_.initDecrypt(cipherTraits_, clientHandshakeWriteKey, clientHandshakeIV);
+    // serverToClient_.initDecrypt(cipherTraits_, serverHandshakeWriteKey, serverHandshakeIV);
 }
 
 void Session::processFinished(const std::int8_t sideIndex)
@@ -204,7 +271,7 @@ void Session::processFinished(const std::int8_t sideIndex)
             auto clientWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             auto clientIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
-            clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
+            // clientToServer_.initDecrypt(cipherTraits_, clientWriteKey, clientIV);
 
             utils::printHex(std::cout, "Client Write key", clientWriteKey);
             utils::printHex(std::cout, "Client IV", clientIV);
@@ -217,7 +284,7 @@ void Session::processFinished(const std::int8_t sideIndex)
             auto serverWriteKey = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             auto serverIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
-            serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
+            // serverToClient_.initDecrypt(cipherTraits_, serverWriteKey, serverIV);
 
             utils::printHex(std::cout, "Server Write key", serverWriteKey);
             utils::printHex(std::cout, "Server IV", serverIV);
@@ -280,8 +347,7 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     }
 }
 
-void Session::deserializeExtensions(utils::DataReader& reader, const Side side,
-                                    const HandshakeType ht)
+void Session::deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht)
 {
     if (side == Side::Client)
     {

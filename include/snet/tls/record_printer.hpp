@@ -20,7 +20,7 @@ public:
     /// @brief Handles a TLS record by printing its details.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param record The TLS record to handle.
-    void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override;
+    void handleRecord(const std::int8_t sideIndex, tls::Record& record) override;
 };
 
 } // namespace snet::tls

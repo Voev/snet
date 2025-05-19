@@ -1,9 +1,6 @@
 #pragma once
-#include <span>
-#include <vector>
-
+#include <snet/tls/record/cipher_operation.hpp>
 #include <snet/crypto/typedefs.hpp>
-#include <snet/tls/record/cipher_traits.hpp>
 
 namespace snet::tls::v1
 {
@@ -11,11 +8,13 @@ namespace snet::tls::v1
 class AeadCipher
 {
 public:
-    static void initDecrypt(CipherCtx* ctx, const CipherTraits& traits, std::span<const uint8_t> encKey);
+    static void encryptInit(CipherCtx* ctx, const Cipher* cipher);
+ 
+    static void encrypt(CipherCtx* ctx, const Cipher* cipher, CipherOperation& op);
 
-    static void decrypt(CipherCtx* cipherCtx, const CipherTraits& traits,
-                        uint64_t seq, RecordType rt, std::span<const uint8_t> in,
-                        std::vector<uint8_t>& out, std::span<const uint8_t> implicitIV);
+    static void decryptInit(CipherCtx* ctx, const Cipher* cipher);
+
+    static void decrypt(CipherCtx* ctx, CipherOperation& op);
 };
 
 } // namespace snet::tls::v1

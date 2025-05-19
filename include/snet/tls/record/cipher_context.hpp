@@ -52,8 +52,7 @@ public:
             [&](auto&& arg)
             {
                 using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, v1::BlockCipher> ||
-                              std::is_same_v<T, v1::StreamCipher>)
+                if constexpr (std::is_same_v<T, v1::BlockCipher> || std::is_same_v<T, v1::StreamCipher>)
                 {
                     macKey_.resize(macKey.size());
                     memcpy(macKey_.data(), macKey.data(), macKey.size());
@@ -89,8 +88,7 @@ public:
         }
     }
 
-    void initDecrypt(const CipherTraits& cipherTraits, std::span<const uint8_t> encKey,
-                     std::span<const uint8_t> encIV)
+    void initDecrypt(const CipherTraits& cipherTraits, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV)
     {
         setCipherType(cipherTraits);
 
@@ -98,49 +96,42 @@ public:
             [&](auto&& cipher)
             {
                 using T = std::decay_t<decltype(cipher)>;
-                if constexpr (std::is_same_v<T, v1::BlockCipher> ||
-                              std::is_same_v<T, v1::StreamCipher>)
+                if constexpr (std::is_same_v<T, v1::BlockCipher> || std::is_same_v<T, v1::StreamCipher>)
                 {
-                    return cipher.initDecrypt(cipherContext_, cipherTraits, encKey, encIV);
+                    //return cipher.initDecrypt(cipherContext_, cipherTraits, encKey, encIV);
                 }
-                else if constexpr (std::is_same_v<T, v1::AeadCipher> ||
-                                   std::is_same_v<T, v13::AeadCipher>)
+                else if constexpr (std::is_same_v<T, v1::AeadCipher> || std::is_same_v<T, v13::AeadCipher>)
                 {
                     implicitIV_.resize(encIV.size());
                     memcpy(implicitIV_.data(), encIV.data(), encIV.size());
 
-                    return cipher.initDecrypt(cipherContext_, cipherTraits, encKey);
+                    //return cipher.initDecrypt(cipherContext_, cipherTraits, encKey);
                 }
             },
             cipherType_);
     }
 
-    void decrypt(const CipherTraits& cipherTraits, uint64_t seq, RecordType rt,
-                 std::span<const uint8_t> in, std::vector<uint8_t>& out)
+    void decrypt(const CipherTraits& cipherTraits, uint64_t seq, RecordType rt, const uint8_t* inputBytes,
+                 const size_t inputLength, uint8_t* outputBytes, size_t* outputLength)
     {
         std::visit(
             [&](auto&& cipher)
             {
                 using T = std::decay_t<decltype(cipher)>;
-                if constexpr (std::is_same_v<T, v1::BlockCipher> ||
-                              std::is_same_v<T, v1::StreamCipher>)
+                if constexpr (std::is_same_v<T, v1::BlockCipher> || std::is_same_v<T, v1::StreamCipher>)
                 {
-                    return cipher.decrypt(cipherContext_, cipherTraits, seq, rt, in, out, macKey_);
+                    //return cipher.decrypt(cipherContext_, cipherTraits, seq, rt, in, out, macKey_);
                 }
-                if constexpr (std::is_same_v<T, v1::AeadCipher> ||
-                              std::is_same_v<T, v13::AeadCipher>)
+                if constexpr (std::is_same_v<T, v1::AeadCipher> || std::is_same_v<T, v13::AeadCipher>)
                 {
-                    return cipher.decrypt(cipherContext_, cipherTraits, seq, rt, in, out,
-                                          implicitIV_);
+                    //return cipher.decrypt(cipherContext_, cipherTraits, seq, rt, in, out, implicitIV_);
                 }
             },
             cipherType_);
     }
 
 private:
-    std::variant<NotInitedCipher, v13::AeadCipher, v1::AeadCipher, v1::BlockCipher,
-                 v1::StreamCipher>
-        cipherType_;
+    std::variant<NotInitedCipher, v13::AeadCipher, v1::AeadCipher, v1::BlockCipher, v1::StreamCipher> cipherType_;
     crypto::CipherCtxPtr cipherContext_;
     std::vector<uint8_t> macKey_;
     std::vector<uint8_t> implicitIV_;

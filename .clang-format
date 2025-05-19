@@ -6,7 +6,7 @@ AllowShortBlocksOnASingleLine: 'true'
 AlwaysBreakTemplateDeclarations: Yes
 BreakBeforeBraces: Allman
 BreakConstructorInitializers: BeforeComma
-ColumnLimit: '100'
+ColumnLimit: '120'
 IndentWidth: '4'
 PointerAlignment: Left
 SortIncludes: 'false'

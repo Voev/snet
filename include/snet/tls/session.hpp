@@ -4,14 +4,11 @@
 #pragma once
 #include <vector>
 #include <array>
-#include <span>
 #include <memory>
 #include <string>
 #include <functional>
 #include <unordered_map>
 
-#include <snet/tls/record/cipher_traits.hpp>
-#include <snet/tls/record/cipher_context.hpp>
 #include <snet/tls/record/sequence_numbers.hpp>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/record_decoder.hpp>
@@ -22,6 +19,8 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
+
+#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
@@ -37,12 +36,8 @@ public:
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
-    /// @param recordType The type of the record.
-    /// @param recordVersion The version of the record.
-    /// @param inputBytes The input bytes to decrypt.
-    /// @param outputBytes The output buffer for the decrypted data.
-    void decrypt(const std::int8_t sideIndex, RecordType recordType, ProtocolVersion recordVersion,
-                 std::span<const uint8_t> inputBytes, std::vector<std::uint8_t>& outputBytes);
+    /// @param record The record.
+    void decrypt(const int8_t sideIndex, Record& record);
 
     /// @brief Checks if the session can decrypt data.
     /// @param client2server Indicates if the direction is client to server.
@@ -55,8 +50,8 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
-             std::span<const uint8_t> rnd2, std::span<uint8_t> out);
+    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2,
+             std::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
@@ -141,11 +136,6 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    CipherTraits& getCipherTraits()
-    {
-        return cipherTraits_;
-    }
-
     /// @brief Sets the cipher state flag.
     void setCipherState() noexcept;
 
@@ -157,14 +147,17 @@ private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;
-    CipherTraits cipherTraits_;
+    crypto::CipherCtxPtr cipherContext_;
+    crypto::MacCtxPtr macContext_;
+    crypto::CipherPtr cipherTraits_;
+    crypto::MacPtr macTraits_;
     std::vector<uint8_t> PMS_;
+    std::vector<uint8_t> clientIV_;
+    std::vector<uint8_t> serverIV_;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> sessionId_;
-    CipherContext clientToServer_;
-    CipherContext serverToClient_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;

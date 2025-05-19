@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
-#include <snet/tls/i_record_reader.hpp>
+#include <snet/tls/record.hpp>
 #include <snet/tls/i_record_handler.hpp>
 
 namespace snet::tls
@@ -12,7 +12,9 @@ class RecordProcessor final
 {
 public:
     /// @brief Default constructor.
-    RecordProcessor() = default;
+    RecordProcessor()
+        : recordPool_(1024)
+    {}
 
     /// @brief Destructor.
     ~RecordProcessor() = default;
@@ -35,35 +37,9 @@ public:
 
     /// @brief Processes input bytes as TLS records.
     /// @param sideIndex The index indicating the side (client or server).
-    /// @param inputBytes The input bytes to process.
-    void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
-
-    /// @brief Adds a record reader.
-    /// @tparam Reader The type of the reader.
-    template <typename Reader>
-    void addReader()
-    {
-        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
-                      "Reader type must derive from IRecordReader");
-
-        reader_ = std::make_shared<Reader>();
-    }
-
-    /// @brief Gets the record reader.
-    /// @tparam Reader The type of the reader.
-    /// @return A shared pointer to the reader if found, otherwise nullptr.
-    template <typename Reader>
-    std::shared_ptr<Reader> getReader() const
-    {
-        static_assert(std::is_base_of<tls::IRecordReader, Reader>::value,
-                      "Reader type must derive from IRecordReader");
-
-        if (auto castedReader = std::dynamic_pointer_cast<Reader>(reader_))
-        {
-            return castedReader;
-        }
-        return nullptr;
-    }
+    /// @param inputBytes The input bytes pointer.
+    /// @param inputLength The input bytes length.
+    size_t process(const int8_t sideIndex, uint8_t* inputBytes, size_t inputLength);
 
     /// @brief Adds a record handler.
     /// @tparam Handler The type of the handler.
@@ -96,8 +72,8 @@ public:
     }
 
 private:
-    std::shared_ptr<IRecordReader> reader_;
     std::vector<std::shared_ptr<IRecordHandler>> handlers_;
+    RecordPool recordPool_;
 };
 
 } // namespace snet::tls

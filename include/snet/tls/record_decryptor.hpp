@@ -25,7 +25,7 @@ public:
     /// @brief Handles a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param record The TLS record to handle.
-    void handleRecord(const std::int8_t sideIndex, const Record& record) override;
+    void handleRecord(const int8_t sideIndex, Record& record) override;
 
 private:
     /// @brief Processes a ClientHello handshake message.

@@ -1,3 +1,4 @@
+#include <snet/tls/record.hpp>
 #include <snet/tls/record/tls1_stream_cipher.hpp>
 #include <snet/tls/record/tls1_mac.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
@@ -18,14 +19,13 @@ void StreamCipher::initDecrypt(CipherCtx* ctx, const CipherTraits& traits,
 }
 
 void StreamCipher::decrypt(CipherCtx* cipherCtx, const CipherTraits& traits,
-                           uint64_t seq, RecordType rt, std::span<const uint8_t> in,
-                           std::vector<uint8_t>& out, std::span<const uint8_t> macKey)
+                           Record& record, std::span<const uint8_t> macKey)
 {
     auto md = CipherSuiteManager::getInstance().fetchDigest(traits.digestName);
     size_t outSize{in.size()};
 
     out.resize(outSize);
-    crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), in.data(), in.size()));
+    crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), record.data, record.length));
 
     auto content = std::span(out.begin(), out.end() - EVP_MD_get_size(md));
     auto mac = std::span(out.end() - EVP_MD_get_size(md), out.end());
