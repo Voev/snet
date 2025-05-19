@@ -35,8 +35,8 @@ bool SecretNode::isValid(const ProtocolVersion version) const
     {
         return !secrets_[SecretNode::ClientHandshakeTrafficSecret].empty() &&
                !secrets_[SecretNode::ServerHandshakeTrafficSecret].empty() &&
-               !secrets_[SecretNode::ClientTrafficSecret].empty() &&
-               !secrets_[SecretNode::ServerTrafficSecret].empty();
+               !secrets_[SecretNode::ClientApplicationTrafficSecret].empty() &&
+               !secrets_[SecretNode::ServerApplicationTrafficSecret].empty();
     }
     else if (version <= ProtocolVersion::TLSv1_2)
     {

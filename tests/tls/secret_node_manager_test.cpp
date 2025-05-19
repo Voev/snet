@@ -36,7 +36,7 @@ protected:
     {
         SecretNode secretNode;
         Secret testSecret = {10, 20, 30, 40};
-        secretNode.setSecret(SecretNode::ClientTrafficSecret, testSecret);
+        secretNode.setSecret(SecretNode::ClientApplicationTrafficSecret, testSecret);
         return secretNode;
     }
 };
@@ -46,14 +46,14 @@ TEST_F(SecretNodeManagerTest, AddAndFindSecret)
     SecretNode secretNode = createTestSecretNode();
     manager.addSecrets(clientRandom1, std::move(secretNode));
 
-    auto foundSecret = manager.findSecret(clientRandom1, SecretNode::ClientTrafficSecret);
+    auto foundSecret = manager.findSecret(clientRandom1, SecretNode::ClientApplicationTrafficSecret);
     ASSERT_TRUE(foundSecret.has_value());
     EXPECT_EQ(foundSecret.value(), Secret({10, 20, 30, 40}));
 }
 
 TEST_F(SecretNodeManagerTest, FindSecretNotAdded)
 {
-    auto foundSecret = manager.findSecret(clientRandom2, SecretNode::ClientTrafficSecret);
+    auto foundSecret = manager.findSecret(clientRandom2, SecretNode::ClientApplicationTrafficSecret);
     EXPECT_FALSE(foundSecret.has_value());
 }
 
@@ -66,7 +66,7 @@ TEST_F(SecretNodeManagerTest, GetSecretNode)
     ASSERT_TRUE(optSecretNode.has_value());
 
     const SecretNode& retrievedNode = optSecretNode.value();
-    const Secret& secret = retrievedNode.getSecret(SecretNode::ClientTrafficSecret);
+    const Secret& secret = retrievedNode.getSecret(SecretNode::ClientApplicationTrafficSecret);
     EXPECT_EQ(secret, Secret({10, 20, 30, 40}));
 }
 

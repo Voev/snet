@@ -30,7 +30,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
 
     std::span<uint8_t> data;
 
-    if (session_->canDecrypt((sideIndex == 0)) && record.type != RecordType::ChangeCipherSpec)
+    if (session_->canDecrypt(sideIndex) && record.type != RecordType::ChangeCipherSpec)
     {
         session_->decrypt(sideIndex, record);
         data = std::span(record.decrypted, record.decryptedLength);
@@ -47,12 +47,12 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
         if (session_->getVersion() < ProtocolVersion::TLSv1_3)
         {
             session_->generateKeyMaterial(sideIndex);
-            session_->setCipherState();
+            session_->setCipherState(sideIndex);
         }
     }
     else if (record.type == RecordType::Alert)
     {
-        if (session_->getCipherState() && !session_->canDecrypt(sideIndex == 0))
+        if (session_->getCipherState(sideIndex) && !session_->canDecrypt(sideIndex))
         {
             return;
         }
@@ -61,7 +61,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
     }
     else if (record.type == RecordType::Handshake)
     {
-        if (session_->getCipherState() && !session_->canDecrypt(sideIndex == 0))
+        if (session_->getCipherState(sideIndex) && !session_->canDecrypt(sideIndex))
         {
             return;
         }
@@ -191,7 +191,7 @@ void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex, std::span<co
     if (session_->getVersion() == tls::ProtocolVersion::TLSv1_3)
     {
         session_->generateTLS13KeyMaterial();
-        session_->setCipherState();
+        session_->setCipherState(sideIndex);
     }
 }
 

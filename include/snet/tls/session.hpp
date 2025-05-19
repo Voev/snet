@@ -25,6 +25,9 @@
 namespace snet::tls
 {
 
+template<typename T>
+using SecureVector = std::vector<T>;
+
 /// @brief Class representing a TLS session.
 class Session
 {
@@ -40,9 +43,9 @@ public:
     void decrypt(const int8_t sideIndex, Record& record);
 
     /// @brief Checks if the session can decrypt data.
-    /// @param client2server Indicates if the direction is client to server.
+    /// @param sideIndex Indicates if the direction is client to server.
     /// @return True if the session can decrypt data, false otherwise.
-    bool canDecrypt(bool client2server) const noexcept;
+    bool canDecrypt(const int8_t sideIndex) const noexcept;
 
     /// @brief Generates key material using the PRF.
     /// @param secret The secret to use.
@@ -136,12 +139,17 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    /// @brief Sets the cipher state flag.
-    void setCipherState() noexcept;
+    /// @brief Sets the cipher state.
+    /// @param side The side (client or server).
+    ///
+    void setCipherState(const int8_t sideIndex) noexcept;
 
-    /// @brief Gets the cipher state flag.
-    /// @return The cipher state flag.
-    bool getCipherState() const noexcept;
+    /// @brief Gets the cipher state.
+    ///
+    /// @param side The side (client or server).
+    ///
+    /// @return The cipher state.
+    bool getCipherState(const int8_t sideIndex) const noexcept;
 
 private:
     ServerInfo serverInfo_;
@@ -151,18 +159,25 @@ private:
     crypto::MacCtxPtr macContext_;
     crypto::CipherPtr cipherTraits_;
     crypto::MacPtr macTraits_;
-    std::vector<uint8_t> PMS_;
-    std::vector<uint8_t> clientIV_;
-    std::vector<uint8_t> serverIV_;
     ClientRandom clientRandom_;
     ServerRandom serverRandom_;
     SecretNode secrets_;
+
+    SecureVector<uint8_t> PMS_;
+    SecureVector<uint8_t> clientEncKey_;
+    SecureVector<uint8_t> serverEncKey_;
+    SecureVector<uint8_t> clientIV_;
+    SecureVector<uint8_t> serverIV_;
+    SecureVector<uint8_t> clientMacKey_;
+    SecureVector<uint8_t> serverMacKey_;
+
     std::vector<uint8_t> sessionId_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
     SequenceNumbers seqnum_;
-    bool cipherState_;
+    uint8_t cipherState_;
+    uint8_t canDecrypt_;
 };
 
 } // namespace snet::tls

@@ -107,11 +107,11 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
         }
         else if (iequals(params[0], "CLIENT_TRAFFIC_SECRET_0"))
         {
-            type = SecretNode::ClientTrafficSecret;
+            type = SecretNode::ClientApplicationTrafficSecret;
         }
         else if (iequals(params[0], "SERVER_TRAFFIC_SECRET_0"))
         {
-            type = SecretNode::ServerTrafficSecret;
+            type = SecretNode::ServerApplicationTrafficSecret;
         }
         else
         {
