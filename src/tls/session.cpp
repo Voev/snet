@@ -68,8 +68,6 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             v1::AeadCipher::decryptInit(cipherContext_, cipherTraits_);
             auto tagLength = crypto::GetTagLength(cipherContext_);
             auto nonceSize = crypto::GetIVLength(cipherContext_);
-            auto nonceExplicitLength = nonceSize - clientIV_.size();
-            auto nonceExplicit = std::span{record.data + TLS_HEADER_SIZE, nonceExplicitLength};
 
             memcpy(nonce, nonceImplicit.data(), sizeof(nonce));
             for (int i = 0; i < 8; i++)
@@ -77,24 +75,17 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
                 nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((record.seqnum >> (i * 8)) & 0xFF);
             }
 
-            uint16_t length = record.length - TLS_HEADER_SIZE - tagLength;
+            uint16_t length = record.length - TLS_HEADER_SIZE;
             aad[0] = static_cast<uint8_t>(record.type);
             aad[1] = 0x03;
             aad[2] = 0x03;
             aad[3] = utils::get_byte<0>(length);
             aad[4] = utils::get_byte<1>(length);
 
-            utils::store_be(record.seqnum, &aad[0]);
-            aad[8] = static_cast<uint8_t>(record.type);
-            aad[9] = record.version.majorVersion();
-            aad[10] = record.version.minorVersion();
-            aad[11] = utils::get_byte<0>(length);
-            aad[12] = utils::get_byte<1>(length);
-
             op.ciphertext = record.data + TLS_HEADER_SIZE;
-            op.ciphertextLength = length;
+            op.ciphertextLength = length - tagLength;
             op.plaintext = record.decrypted;
-            op.plaintextLength = length;
+            op.plaintextLength = length - tagLength;
             op.iv = nonce;
             op.ivLength = nonceSize;
             op.aad = aad;
@@ -102,9 +93,20 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             op.tag = op.ciphertext + op.ciphertextLength;
             op.tagLength = tagLength;
 
+            std::cout << "================================================" << std::endl;
+            utils::printHex(std::cout, "Key", {op.key, op.keyLength});
+            utils::printHex(std::cout, "AAD", {op.aad, op.aadLength});
+            utils::printHex(std::cout, "Nonce", {op.iv, op.ivLength});
+            utils::printHex(std::cout, "Tag", {op.tag, op.tagLength});
+            std::cout << "================================================" << std::endl;
+
             v1::AeadCipher::decrypt(cipherContext_, op);
 
-            record.decryptedLength = length;
+            uint8_t lastByte = op.plaintext[op.plaintextLength - 1];
+            ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
+
+            record.type = static_cast<RecordType>(lastByte);
+            record.decryptedLength = op.plaintextLength - 1;
             record.is_decrypted = 1;
         }
         else
@@ -140,6 +142,13 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             op.aadLength = sizeof(aad);
             op.tag = op.ciphertext + op.ciphertextLength;
             op.tagLength = tagLength;
+
+            std::cout << "================================================" << std::endl;
+            utils::printHex(std::cout, "Key", {op.key, op.keyLength});
+            utils::printHex(std::cout, "AAD", {op.aad, op.aadLength});
+            utils::printHex(std::cout, "Nonce", {op.iv, op.ivLength});
+            utils::printHex(std::cout, "Tag", {op.tag, op.tagLength});
+            std::cout << "================================================" << std::endl;
 
             v1::AeadCipher::decrypt(cipherContext_, op);
 
@@ -199,10 +208,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         serverIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
         keyBlockReader.assert_done();
 
+        std::cout << "================================================" << std::endl;
+        utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
         utils::printHex(std::cout, "Client Write key", clientEncKey_);
         utils::printHex(std::cout, "Server Write key", serverEncKey_);
         utils::printHex(std::cout, "Client IV", clientIV_);
         utils::printHex(std::cout, "Server IV", serverIV_);
+        std::cout << "================================================" << std::endl;
 
         if (sideIndex == 0)
         {
@@ -220,8 +232,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
 
-        utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
-
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::DataReader keyBlockReader("TLS KeyBlock", keyBlock);
@@ -233,12 +243,15 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         serverIV_ = keyBlockReader.get_fixed<uint8_t>(ivSize);
         keyBlockReader.assert_done();
 
+        std::cout << "================================================" << std::endl;
+        utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
         utils::printHex(std::cout, "Client MAC key", clientMacKey_);
         utils::printHex(std::cout, "Server MAC key", serverMacKey_);
         utils::printHex(std::cout, "Client Write key", clientEncKey_);
         utils::printHex(std::cout, "Server Write key", serverEncKey_);
         utils::printHex(std::cout, "Client IV", clientIV_);
         utils::printHex(std::cout, "Server IV", serverIV_);
+        std::cout << "================================================" << std::endl;
 
         if (sideIndex == 0)
         {
@@ -272,10 +285,12 @@ void Session::generateTLS13KeyMaterial()
     serverEncKey_ = hkdfExpandLabel(digest, shts, "key", {}, keySize);
     serverIV_ = hkdfExpandLabel(digest, shts, "iv", {}, 12);
 
+    std::cout << "================================================" << std::endl;
     utils::printHex(std::cout, "Client Handshake Write key", clientEncKey_);
     utils::printHex(std::cout, "Client Handshake IV", clientIV_);
     utils::printHex(std::cout, "Server Handshake Write key", serverEncKey_);
     utils::printHex(std::cout, "Server Handshake IV", serverIV_);
+    std::cout << "================================================" << std::endl;
 
     canDecrypt_ |= 0x1 | 0x2;
 }
@@ -294,8 +309,12 @@ void Session::processFinished(const std::int8_t sideIndex)
             clientEncKey_ = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             clientIV_ = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
+            seqnum_.resetClientSequence();
+
+            std::cout << "================================================" << std::endl;
             utils::printHex(std::cout, "Client Write key", clientEncKey_);
             utils::printHex(std::cout, "Client IV", clientIV_);
+            std::cout << "================================================" << std::endl;
         }
         else
         {
@@ -304,18 +323,18 @@ void Session::processFinished(const std::int8_t sideIndex)
             serverEncKey_ = hkdfExpandLabel(digest, secret, "key", {}, keySize);
             serverIV_ = hkdfExpandLabel(digest, secret, "iv", {}, 12);
 
+            seqnum_.resetServerSequence();
+
+            std::cout << "================================================" << std::endl;
             utils::printHex(std::cout, "Server Write key", serverEncKey_);
             utils::printHex(std::cout, "Server IV", serverIV_);
+            std::cout << "================================================" << std::endl;
         }
     }
 }
 
 void Session::processKeyUpdate(const std::int8_t sideIndex)
 {
-    std::vector<uint8_t> newsecret;
-    std::vector<uint8_t> newkey;
-    std::vector<uint8_t> newiv;
-
     const auto& digest = cipherSuite_.getHnshDigestName();
     auto md = CipherSuiteManager::getInstance().fetchDigest(digest);
     auto keySize = cipherSuite_.getKeyBits() / 8;
@@ -324,22 +343,20 @@ void Session::processKeyUpdate(const std::int8_t sideIndex)
     {
         const auto& secret = secrets_.getSecret(SecretNode::ClientApplicationTrafficSecret);
         auto newsecret = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
-        newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
 
+        clientEncKey_ = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
+        clientIV_ = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
         secrets_.setSecret(SecretNode::ClientApplicationTrafficSecret, newsecret);
-        // clientToServer_.tls13UpdateKeys(newkey, newiv);
+        seqnum_.resetClientSequence();
     }
     else
     {
         const auto& secret = getSecret(SecretNode::ServerApplicationTrafficSecret);
         auto newsecret = hkdfExpandLabel(digest, secret, "traffic upd", {}, EVP_MD_get_size(md));
-        newkey = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
-        newiv = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
-
-        // serverToClient_.tls13UpdateKeys(newkey, newiv);
-
+        serverEncKey_ = hkdfExpandLabel(digest, newsecret, "key", {}, keySize);
+        serverIV_ = hkdfExpandLabel(digest, newsecret, "iv", {}, 12);
         secrets_.setSecret(SecretNode::ServerApplicationTrafficSecret, newsecret);
+        seqnum_.resetServerSequence();
     }
 }
 

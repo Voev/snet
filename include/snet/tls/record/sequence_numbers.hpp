@@ -6,16 +6,22 @@ class SequenceNumbers final
 public:
     SequenceNumbers() noexcept
     {
-        reset();
+        resetClientSequence();
+        resetServerSequence();
     }
 
     ~SequenceNumbers() noexcept
     {
     }
 
-    inline void reset() noexcept
+    inline void resetClientSequence() noexcept
     {
         clientSeqNumber_ = 0;
+    }
+
+    
+    inline void resetServerSequence() noexcept
+    {
         serverSeqNumber_ = 0;
     }
 
