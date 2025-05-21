@@ -1,7 +1,7 @@
-#include <snet/tls/record/tls1_aead_cipher.hpp>
+#include <snet/tls/record/aead_cipher.hpp>
 #include <snet/crypto/exception.hpp>
 
-namespace snet::tls::v1
+namespace snet::tls
 {
 
 void AeadCipher::encryptInit(CipherCtx* ctx, const Cipher* cipher)
@@ -50,4 +50,4 @@ void AeadCipher::decrypt(CipherCtx* ctx, CipherOperation& op)
     crypto::ThrowIfFalse(0 < EVP_DecryptFinal_ex(ctx, op.plaintext + length, &length), "Bad record MAC!");
 }
 
-} // namespace snet::tls::v1
+} // namespace snet::tls

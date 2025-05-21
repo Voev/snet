@@ -17,7 +17,7 @@
 #include <snet/tls/cipher_suite_manager.hpp>
 
 #include <snet/tls/record/cipher_traits.hpp>
-#include <snet/tls/record/tls1_aead_cipher.hpp>
+#include <snet/tls/record/aead_cipher.hpp>
 
 #include <snet/crypto/cipher_context.hpp>
 
@@ -65,7 +65,7 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             uint8_t aad[TLS13_AEAD_AAD_SIZE];
             uint8_t nonce[TLS13_AEAD_NONCE_SIZE];
 
-            v1::AeadCipher::decryptInit(cipherContext_, cipherTraits_);
+            AeadCipher::decryptInit(cipherContext_, cipherTraits_);
             auto tagLength = crypto::GetTagLength(cipherContext_);
             auto nonceSize = crypto::GetIVLength(cipherContext_);
 
@@ -100,7 +100,7 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             utils::printHex(std::cout, "Tag", {op.tag, op.tagLength});
             std::cout << "================================================" << std::endl;
 
-            v1::AeadCipher::decrypt(cipherContext_, op);
+            AeadCipher::decrypt(cipherContext_, op);
 
             uint8_t lastByte = op.plaintext[op.plaintextLength - 1];
             ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
@@ -114,7 +114,7 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             uint8_t aad[TLS12_AEAD_AAD_SIZE];
             std::vector<uint8_t> nonce;
 
-            v1::AeadCipher::decryptInit(cipherContext_, cipherTraits_);
+            AeadCipher::decryptInit(cipherContext_, cipherTraits_);
             auto tagLength = crypto::GetTagLength(cipherContext_);
             auto nonceSize = crypto::GetIVLength(cipherContext_);
             auto nonceExplicitLength = nonceSize - clientIV_.size();
@@ -150,7 +150,7 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             utils::printHex(std::cout, "Tag", {op.tag, op.tagLength});
             std::cout << "================================================" << std::endl;
 
-            v1::AeadCipher::decrypt(cipherContext_, op);
+            AeadCipher::decrypt(cipherContext_, op);
 
             record.decryptedLength = length;
             record.is_decrypted = 1;

@@ -25,8 +25,32 @@
 namespace snet::tls
 {
 
-template<typename T>
+template <typename T>
 using SecureVector = std::vector<T>;
+
+struct SessionKeys
+{
+    SecureVector<uint8_t> premasterSecret;
+    SecureVector<uint8_t> masterSecret;
+    SecureVector<uint8_t> clientEncKey;
+    SecureVector<uint8_t> serverEncKey;
+    SecureVector<uint8_t> clientIV;
+    SecureVector<uint8_t> serverIV;
+    SecureVector<uint8_t> clientMacKey;
+    SecureVector<uint8_t> serverMacKey;
+};
+
+
+struct SessionKeys2
+{
+    SecureVector<uint8_t> earlySecret;
+    SecureVector<uint8_t> handshakeSecret;
+    SecureVector<uint8_t> masterSecret;
+    SecureVector<uint8_t> clientEncKey;
+    SecureVector<uint8_t> serverEncKey;
+    SecureVector<uint8_t> clientNonce;
+    SecureVector<uint8_t> serverNonce;
+};
 
 /// @brief Class representing a TLS session.
 class Session
