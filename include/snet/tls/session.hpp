@@ -95,17 +95,6 @@ public:
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const std::int8_t sideIndex);
 
-    /// @brief Deserializes extensions from a data reader.
-    /// @param reader The data reader.
-    /// @param side The side (client or server).
-    /// @param ht The handshake type.
-    void deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht);
-
-    /// @brief Gets the extensions for a specific side.
-    /// @param side The side (client or server).
-    /// @return The extensions for the specified side.
-    const Extensions& getExtensions(const Side side) const noexcept;
-
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
     void updateHash(std::span<const uint8_t> message);
@@ -195,9 +184,6 @@ private:
     SecureVector<uint8_t> clientMacKey_;
     SecureVector<uint8_t> serverMacKey_;
 
-    std::vector<uint8_t> sessionId_;
-    Extensions clientExtensions_;
-    Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;

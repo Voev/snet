@@ -12,25 +12,32 @@
 #include <vector>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
+#include <snet/tls/group_params.hpp>
 #include <snet/utils/data_reader.hpp>
 
-namespace snet::tls {
+namespace snet::tls
+{
 
 /// @brief Enumeration of the TLS extension codes.
-enum class ExtensionCode : std::uint16_t {
-    ServerNameIndication = 0,                  ///< Server Name Indication (SNI) extension.
-    ApplicationLayerProtocolNegotiation = 16,  ///< Application Layer Protocol Negotiation (ALPN) extension.
-    ClientCertificateType = 19,                ///< Client Certificate Type extension.
-    ServerCertificateType = 20,                ///< Server Certificate Type extension.
-    EncryptThenMac = 22,                       ///< Encrypt-then-MAC extension.
-    ExtendedMasterSecret = 23,                 ///< Extended Master Secret extension.
-    RecordSizeLimit = 28,                      ///< Record Size Limit extension.
-    SupportedVersions = 43,                    ///< Supported Versions extension.
-    SafeRenegotiation = 65281,                 ///< Safe Renegotiation extension.
+enum class ExtensionCode : std::uint16_t
+{
+    ServerNameIndication = 0,                 ///< Server Name Indication (SNI) extension.
+    SupportedGroups = 10,                     ///< Supported Groups Extension (RFC 7919).
+    ECPointFormats = 11,                      ///< Supported EC Point Formats.
+    ApplicationLayerProtocolNegotiation = 16, ///< Application Layer Protocol Negotiation (ALPN) extension.
+    ClientCertificateType = 19,               ///< Client Certificate Type extension.
+    ServerCertificateType = 20,               ///< Server Certificate Type extension.
+    EncryptThenMac = 22,                      ///< Encrypt-then-MAC extension.
+    ExtendedMasterSecret = 23,                ///< Extended Master Secret extension.
+    RecordSizeLimit = 28,                     ///< Record Size Limit extension.
+    SupportedVersions = 43,                   ///< Supported Versions extension.
+    KeyShare = 51,
+    SafeRenegotiation = 65281, ///< Safe Renegotiation extension.
 };
 
 /// @brief Base class for TLS extensions.
-class Extension {
+class Extension
+{
 public:
     /// @brief Virtual destructor.
     virtual ~Extension() = default;
@@ -42,27 +49,33 @@ public:
     /// @brief Checks if the extension should be encoded.
     /// @return True if the extension should be encoded, false otherwise.
     virtual bool empty() const = 0;
+
+    virtual size_t serialize(Side whoami, std::span<uint8_t> buffer) const = 0;
 };
 
 /// @brief Server Name Indicator extension (RFC 3546).
-class ServerNameIndicator final : public Extension {
+class ServerNameIndicator final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for server name indication.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::ServerNameIndication;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for server name indication.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
     /// @brief Constructor with hostname.
     /// @param hostname The server hostname.
     explicit ServerNameIndicator(std::string_view hostname)
-        : hostname_(hostname) {
+        : hostname_(hostname)
+    {
     }
 
     /// @brief Constructor with data reader and extension size.
@@ -70,15 +83,19 @@ public:
     /// @param extensionSize The size of the extension.
     ServerNameIndicator(utils::DataReader& reader, uint16_t extensionSize);
 
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
+
     /// @brief Gets the server hostname.
     /// @return The server hostname.
-    std::string host_name() const {
+    std::string host_name() const
+    {
         return hostname_;
     }
 
     /// @brief Checks if the extension is empty.
     /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override {
+    bool empty() const override
+    {
         return false;
     }
 
@@ -86,24 +103,102 @@ private:
     std::string hostname_;
 };
 
+/**
+ *
+ */
+class SupportedGroups final : public Extension
+{
+public:
+    static ExtensionCode staticType()
+    {
+        return ExtensionCode::SupportedGroups;
+    }
+
+    ExtensionCode type() const override
+    {
+        return staticType();
+    }
+
+    const std::vector<GroupParams>& groups() const;
+
+    // Returns the list of groups we recognize as ECDH curves
+    std::vector<GroupParams> ec_groups() const;
+
+    // Returns the list of any groups in the FFDHE range
+    std::vector<GroupParams> dh_groups() const;
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
+
+    explicit SupportedGroups(const std::vector<GroupParams>& groups);
+
+    SupportedGroups(utils::DataReader& reader, uint16_t extension_size);
+
+    bool empty() const override
+    {
+        return m_groups.empty();
+    }
+
+private:
+    std::vector<GroupParams> m_groups;
+};
+
+class SupportedPointFormats final : public Extension
+{
+public:
+    enum ECPointFormat : uint8_t
+    {
+        UNCOMPRESSED = 0,
+        ANSIX962_COMPRESSED_PRIME = 1,
+        ANSIX962_COMPRESSED_CHAR2 = 2,
+    };
+
+    static ExtensionCode staticType()
+    {
+        return ExtensionCode::ECPointFormats;
+    }
+
+    ExtensionCode type() const override
+    {
+        return staticType();
+    }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
+
+    SupportedPointFormats() = default;
+
+    SupportedPointFormats(utils::DataReader& reader, uint16_t extensionSize);
+
+    bool empty() const override
+    {
+        return false;
+    }
+
+private:
+    std::vector<ECPointFormat> formats_;
+};
+
 /// @brief ALPN (Application-Layer Protocol Negotiation) extension (RFC 7301).
-class ALPN final : public Extension {
+class ALPN final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for ALPN.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::ApplicationLayerProtocolNegotiation;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for ALPN.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
     /// @brief Gets the list of protocols.
     /// @return The list of protocols.
-    const std::vector<std::string>& protocols() const {
+    const std::vector<std::string>& protocols() const
+    {
         return protocols_;
     }
 
@@ -114,13 +209,15 @@ public:
     /// @brief Constructor with a single protocol, used by server.
     /// @param protocol The protocol.
     explicit ALPN(std::string_view protocol)
-        : protocols_(1, std::string(protocol)) {
+        : protocols_(1, std::string(protocol))
+    {
     }
 
     /// @brief Constructor with a list of protocols, used by client.
     /// @param protocols The list of protocols.
     explicit ALPN(const std::vector<std::string>& protocols)
-        : protocols_(protocols) {
+        : protocols_(protocols)
+    {
     }
 
     /// @brief Constructor with data reader and extension size.
@@ -132,18 +229,22 @@ public:
     /// @brief Checks if the extension is empty.
     /// @retval true If there are no protocols.
     /// @retval false Otherwise.
-    bool empty() const override {
+    bool empty() const override
+    {
         return protocols_.empty();
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     std::vector<std::string> protocols_;
 };
 
 /// @brief Certificate types as defined in RFC 8446 4.4.2.
-enum class CertificateType : uint8_t {
-    X509 = 0,         ///< X.509 certificate.
-    RawPublicKey = 2  ///< Raw public key.
+enum class CertificateType : uint8_t
+{
+    X509 = 0,        ///< X.509 certificate.
+    RawPublicKey = 2 ///< Raw public key.
 };
 
 /// @brief Converts a CertificateType to a string representation.
@@ -157,7 +258,8 @@ std::string CertificateTypeToString(CertificateType type);
 CertificateType CertificateTypeFromString(const std::string& typeStr);
 
 /// @brief Base class for 'ClientCertificateType' and 'ServerCertificateType' extensions (RFC 7250).
-class CertificateTypeBase : public Extension {
+class CertificateTypeBase : public Extension
+{
 public:
     /// @brief Constructor called by the client to advertise support for a number of certificate types.
     /// @param supportedCertTypes The supported certificate types.
@@ -167,9 +269,8 @@ protected:
     /// @brief Constructor called by the server to select a certificate type to be used in the handshake.
     /// @param certificateTypeFromClient The certificate type from the client.
     /// @param serverPreference The server's preferred certificate types.
-    CertificateTypeBase(
-        const CertificateTypeBase& certificateTypeFromClient,
-        const std::vector<CertificateType>& serverPreference);
+    CertificateTypeBase(const CertificateTypeBase& certificateTypeFromClient,
+                        const std::vector<CertificateType>& serverPreference);
 
 public:
     /// @brief Constructor with data reader and extension size.
@@ -189,14 +290,16 @@ public:
     /// @brief Checks if the extension should be encoded.
     /// @retval true If the client has no remaining certificate types to send other than the default X.509 type.
     /// @retval false Otherwise.
-    bool empty() const override {
+    bool empty() const override
+    {
         // RFC 7250 4.1
         //    If the client has no remaining certificate types to send in the
         //    client hello, other than the default X.509 type, it MUST omit the
         //    entire client[/server]_CertificateType extension [...].
-        return from_ == Side::Client && certTypes_.size() == 1 &&
-               certTypes_.front() == CertificateType::X509;
+        return from_ == Side::Client && certTypes_.size() == 1 && certTypes_.front() == CertificateType::X509;
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     std::vector<CertificateType> certTypes_;
@@ -204,7 +307,8 @@ private:
 };
 
 /// @brief Client Certificate Type extension (RFC 7250).
-class ClientCertificateType final : public CertificateTypeBase {
+class ClientCertificateType final : public CertificateTypeBase
+{
 public:
     using CertificateTypeBase::CertificateTypeBase;
 
@@ -214,19 +318,22 @@ public:
 
     /// @brief Gets the static type of the extension.
     /// @return The extension code for client certificate type.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::ClientCertificateType;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for client certificate type.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 };
 
 /// @brief Server Certificate Type extension (RFC 7250).
-class ServerCertificateType final : public CertificateTypeBase {
+class ServerCertificateType final : public CertificateTypeBase
+{
 public:
     using CertificateTypeBase::CertificateTypeBase;
 
@@ -236,35 +343,41 @@ public:
 
     /// @brief Gets the static type of the extension.
     /// @return The extension code for server certificate type.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::ServerCertificateType;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for server certificate type.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 };
 
 /// @brief Extended Master Secret Extension (RFC 7627).
-class ExtendedMasterSecret final : public Extension {
+class ExtendedMasterSecret final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Extended Master Secret.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::ExtendedMasterSecret;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Extended Master Secret.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override {
+    bool empty() const override
+    {
         return false;
     }
 
@@ -275,26 +388,32 @@ public:
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.
     ExtendedMasterSecret(utils::DataReader& reader, uint16_t extensionSize);
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 };
 
 /// @brief Encrypt-then-MAC Extension (RFC 7366).
-class EncryptThenMAC final : public Extension {
+class EncryptThenMAC final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Encrypt-then-MAC.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::EncryptThenMac;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Encrypt-then-MAC.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override {
+    bool empty() const override
+    {
         return false;
     }
 
@@ -305,33 +424,40 @@ public:
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.
     EncryptThenMAC(utils::DataReader& reader, uint16_t extensionSize);
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 };
 
 /// @brief Supported Versions extension (RFC 8446).
-class SupportedVersions final : public Extension {
+class SupportedVersions final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Supported Versions.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::SupportedVersions;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Supported Versions.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval true If there are no supported versions.
     /// @retval false Otherwise.
-    bool empty() const override {
+    bool empty() const override
+    {
         return versions_.empty();
     }
 
     /// @brief Constructor with a single protocol version.
     /// @param version The protocol version.
-    SupportedVersions(ProtocolVersion version) {
+    SupportedVersions(ProtocolVersion version)
+    {
         versions_.push_back(version);
     }
 
@@ -349,26 +475,32 @@ public:
 
     /// @brief Gets the list of supported protocol versions.
     /// @return The list of supported protocol versions.
-    const std::vector<ProtocolVersion>& versions() const {
+    const std::vector<ProtocolVersion>& versions() const
+    {
         return versions_;
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     std::vector<ProtocolVersion> versions_;
 };
 
 /// @brief Record Size Limit (RFC 8449).
-class RecordSizeLimit final : public Extension {
+class RecordSizeLimit final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Record Size Limit.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::RecordSizeLimit;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Record Size Limit.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
@@ -384,33 +516,40 @@ public:
 
     /// @brief Gets the record size limit.
     /// @return The record size limit.
-    uint16_t limit() const {
+    uint16_t limit() const
+    {
         return limit_;
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval true If the limit is 0.
     /// @retval false Otherwise.
-    bool empty() const override {
+    bool empty() const override
+    {
         return limit_ == 0;
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     uint16_t limit_;
 };
 
 /// @brief Renegotiation Indication Extension (RFC 5746).
-class RenegotiationExtension final : public Extension {
+class RenegotiationExtension final : public Extension
+{
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Safe Renegotiation.
-    static ExtensionCode staticType() {
+    static ExtensionCode staticType()
+    {
         return ExtensionCode::SafeRenegotiation;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Safe Renegotiation.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return staticType();
     }
 
@@ -420,7 +559,8 @@ public:
     /// @brief Constructor with renegotiation data.
     /// @param bits The renegotiation data.
     explicit RenegotiationExtension(const std::vector<uint8_t>& bits)
-        : renegData_(bits) {
+        : renegData_(bits)
+    {
     }
 
     /// @brief Constructor with data reader and extension size.
@@ -430,22 +570,27 @@ public:
 
     /// @brief Gets the renegotiation information.
     /// @return The renegotiation information.
-    const std::vector<uint8_t>& renegotiation_info() const {
+    const std::vector<uint8_t>& renegotiation_info() const
+    {
         return renegData_;
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override {
+    bool empty() const override
+    {
         return false;
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     std::vector<uint8_t> renegData_;
 };
 
 /// @brief Unknown extensions are deserialized as this type.
-class UnknownExtension final : public Extension {
+class UnknownExtension final : public Extension
+{
 public:
     /// @brief Constructor with extension code, data reader, and extension size.
     /// @param type The extension code.
@@ -455,21 +600,26 @@ public:
 
     /// @brief Gets the value of the unknown extension.
     /// @return The value of the unknown extension.
-    const std::vector<uint8_t>& value() {
+    const std::vector<uint8_t>& value()
+    {
         return value_;
     }
 
     /// @brief Checks if the extension should be encoded.
     /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override {
+    bool empty() const override
+    {
         return false;
     }
 
     /// @brief Gets the type of the extension.
     /// @return The extension code.
-    ExtensionCode type() const override {
+    ExtensionCode type() const override
+    {
         return type_;
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
 
 private:
     ExtensionCode type_;
@@ -477,7 +627,8 @@ private:
 };
 
 /// @brief Represents a block of extensions in a hello message.
-class Extensions final {
+class Extensions final
+{
 public:
     /// @brief Gets the types of extensions.
     /// @return A set of extension codes.
@@ -485,7 +636,8 @@ public:
 
     /// @brief Gets all extensions.
     /// @return A vector of unique pointers to extensions.
-    const std::vector<std::unique_ptr<Extension>>& all() const {
+    const std::vector<std::unique_ptr<Extension>>& all() const
+    {
         return extensions_;
     }
 
@@ -493,7 +645,8 @@ public:
     /// @tparam T The type of the extension.
     /// @return A pointer to the extension if found, otherwise nullptr.
     template <typename T>
-    T* get() const {
+    T* get() const
+    {
         return dynamic_cast<T*>(get(T::staticType()));
     }
 
@@ -501,26 +654,30 @@ public:
     /// @tparam T The type of the extension.
     /// @return True if the extension exists, false otherwise.
     template <typename T>
-    bool has() const {
+    bool has() const
+    {
         return get<T>() != nullptr;
     }
 
     /// @brief Checks if an extension of a specific type exists.
     /// @param type The extension code.
     /// @return True if the extension exists, false otherwise.
-    bool has(ExtensionCode type) const {
+    bool has(ExtensionCode type) const
+    {
         return get(type) != nullptr;
     }
 
     /// @brief Gets the number of extensions.
     /// @return The number of extensions.
-    size_t size() const {
+    size_t size() const
+    {
         return extensions_.size();
     }
 
     /// @brief Checks if there are no extensions.
     /// @return True if there are no extensions, false otherwise.
-    bool empty() const {
+    bool empty() const
+    {
         return extensions_.empty();
     }
 
@@ -530,16 +687,18 @@ public:
 
     /// @brief Adds an extension.
     /// @param extn The pointer to the extension.
-    void add(Extension* extn) {
+    void add(Extension* extn)
+    {
         add(std::unique_ptr<Extension>(extn));
     }
 
     /// @brief Gets an extension of a specific type.
     /// @param type The extension code.
     /// @return A pointer to the extension if found, otherwise nullptr.
-    Extension* get(ExtensionCode type) const {
-        const auto i = std::find_if(
-            extensions_.cbegin(), extensions_.cend(), [type](const auto& ext) { return ext->type() == type; });
+    Extension* get(ExtensionCode type) const
+    {
+        const auto i = std::find_if(extensions_.cbegin(), extensions_.cend(),
+                                    [type](const auto& ext) { return ext->type() == type; });
 
         return (i != extensions_.end()) ? i->get() : nullptr;
     }
@@ -554,13 +713,13 @@ public:
     /// @param allowedExtensions The allowed extension types.
     /// @param allowUnknownExtensions If true, ignores unrecognized extensions.
     /// @return True if there are any extensions not in the allowed set, false otherwise.
-    bool containsOtherThan(
-        const std::set<ExtensionCode>& allowedExtensions, bool allowUnknownExtensions = false) const;
+    bool containsOtherThan(const std::set<ExtensionCode>& allowedExtensions, bool allowUnknownExtensions = false) const;
 
     /// @brief Checks if the extensions contain any implemented types other than the allowed ones.
     /// @param allowedExtensions The allowed extension types.
     /// @return True if there are any implemented extensions not in the allowed set, false otherwise.
-    bool containsImplementedExtensionsOtherThan(const std::set<ExtensionCode>& allowedExtensions) const {
+    bool containsImplementedExtensionsOtherThan(const std::set<ExtensionCode>& allowedExtensions) const
+    {
         return containsOtherThan(allowedExtensions, true);
     }
 
@@ -568,11 +727,13 @@ public:
     /// @tparam T The type of the extension.
     /// @return A unique pointer to the extension if found, otherwise nullptr.
     template <typename T>
-    decltype(auto) take() {
+    decltype(auto) take()
+    {
         std::unique_ptr<T> out_ptr;
 
         auto ext = take(T::staticType());
-        if (ext != nullptr) {
+        if (ext != nullptr)
+        {
             out_ptr.reset(dynamic_cast<T*>(ext.get()));
             ext.release();
         }
@@ -588,7 +749,8 @@ public:
     /// @brief Removes an extension from the extensions list if it exists.
     /// @param type The extension code.
     /// @return True if the extension existed and was removed, false otherwise.
-    bool removeExtension(ExtensionCode type) {
+    bool removeExtension(ExtensionCode type)
+    {
         return take(type) != nullptr;
     }
 
@@ -599,18 +761,28 @@ public:
     Extensions& operator=(const Extensions&) = delete;
 
     /// @brief Move constructor.
-    Extensions(Extensions&&) = default;
+    Extensions(Extensions&& other) noexcept
+        : extensions_(std::move(other.extensions_))
+    {
+    }
 
     /// @brief Move assignment operator.
-    Extensions& operator=(Extensions&&) = default;
+    Extensions& operator=(Extensions&& other) noexcept
+    {
+        extensions_ = std::move(other.extensions_);
+        return *this;
+    }
 
     /// @brief Constructor with data reader, side, and handshake type.
     /// @param reader The data reader.
     /// @param side The side (client or server).
     /// @param messageType The handshake type.
-    Extensions(utils::DataReader& reader, Side side, HandshakeType messageType) {
+    Extensions(utils::DataReader& reader, Side side, HandshakeType messageType)
+    {
         deserialize(reader, side, messageType);
     }
+
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const;
 
 private:
     std::vector<std::unique_ptr<Extension>> extensions_;

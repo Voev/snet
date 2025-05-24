@@ -23,6 +23,7 @@ inline void printHex(std::ostream& os, std::string_view message, std::span<const
             os << std::endl;
         }
     }
+    os << std::dec;
 
     if (data.size() % 16 != 0)
     {

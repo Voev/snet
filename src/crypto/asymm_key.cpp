@@ -2,6 +2,7 @@
 #include <openssl/store.h>
 #include <openssl/ui.h>
 #include <openssl/err.h>
+#include <openssl/core_names.h>
 
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/store_loader.hpp>
@@ -173,6 +174,19 @@ void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
     {
         throw Exception(GetLastError(), "Failed to save key");
     }
+}
+
+std::vector<uint8_t> getEncodedPublicKey(const Key* key)
+{
+    size_t size{0};
+
+    ThrowIfFalse(0 < EVP_PKEY_get_octet_string_param(key, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, nullptr, 0, &size));
+    ThrowIfTrue(size == OSSL_PARAM_UNMODIFIED, "unable to get public key value");
+
+    std::vector<uint8_t> publicKey(size);
+    ThrowIfFalse(0 < EVP_PKEY_get_octet_string_param(key, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, publicKey.data(),
+                                                     publicKey.size(), nullptr));
+    return publicKey;
 }
 
 } // namespace snet::crypto::akey

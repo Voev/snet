@@ -78,10 +78,10 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
             /* Not implemented */
             break;
         case tls::HandshakeType::ClientHello:
-            processHandshakeClientHello(sideIndex, data);
+            processHandshakeClientHello(sideIndex, record.handshake, data);
             break;
         case tls::HandshakeType::ServerHello:
-            processHandshakeServerHello(sideIndex, data);
+            processHandshakeServerHello(sideIndex, record.handshake, data);
             break;
         case tls::HandshakeType::HelloVerifyRequest:
             /* Not implemented */
@@ -93,7 +93,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
             /* Not implemented */
             break;
         case tls::HandshakeType::EncryptedExtensions:
-            processHandshakeEncryptedExtensions(sideIndex, data);
+            processHandshakeEncryptedExtensions(sideIndex, record.handshake, data);
             break;
         case tls::HandshakeType::Certificate:
             processHandshakeCertificate(sideIndex, data);
@@ -128,63 +128,39 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Record& record)
     }
 }
 
-void RecordDecryptor::processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message)
+void RecordDecryptor::processHandshakeClientHello(int8_t sideIndex, HandshakeMessage& handshake,
+                                                  std::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
-    utils::DataReader reader("Client Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    reader.get_byte();
-    reader.get_byte();
+    handshake.type = HandshakeType::ClientHello;
+    //handshake.body.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    session_->setClientRandom(reader.get_fixed<uint8_t>(32));
-    session_->setSessionID(reader.get_range<uint8_t>(1, 0, 32));
-
-    /// Read cipher suites
-    reader.get_range_vector<uint16_t>(2, 1, 32767);
-
-    /// Read compression methods
-    reader.get_range_vector<uint8_t>(1, 1, 255);
-
-    /// Read client extensions
-    session_->deserializeExtensions(reader, tls::Side::Client, tls::HandshakeType::ClientHello);
-
-    reader.assert_done();
-
+    //session_->setVersion(handshake.body.clientHello.legacyVersion);
+    //session_->setClientRandom(handshake.body.clientHello.random);
     session_->updateHash(message);
 }
 
-void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex, std::span<const uint8_t> message)
+void RecordDecryptor::processHandshakeServerHello(int8_t sideIndex, HandshakeMessage& handshake,
+                                                  std::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-    utils::DataReader reader("Server Hello", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    session_->setVersion(ProtocolVersion(reader.get_uint16_t()));
-    session_->setServerRandom(reader.get_fixed<uint8_t>(32));
+    handshake.type = HandshakeType::ServerHello;
+    //handshake.body.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    // check for HRR
+    //const auto& serverHello = handshake.body.serverHello;
 
-    /// Session ID
-    reader.get_range<uint8_t>(1, 0, 32);
+    //auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    //::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not supported");
 
-    auto ciphersuite = reader.get_uint16_t();
+    //session_->setCipherSuite(foundCipher.value());
 
-    /// Compression Method
-    reader.get_byte();
-
-    session_->deserializeExtensions(reader, tls::Side::Server, tls::HandshakeType::ServerHello);
-
-    auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(ciphersuite);
-    ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not supported");
-
-    session_->setCipherSuite(foundCipher.value());
-
-    if (session_->getExtensions(Side::Server).has(tls::ExtensionCode::SupportedVersions))
+    /*if (serverHello.extensions.has(tls::ExtensionCode::SupportedVersions))
     {
-        auto ext = session_->getExtensions(Side::Server).get<tls::SupportedVersions>();
+        auto ext = serverHello.extensions.get<tls::SupportedVersions>();
         session_->setVersion(ext->versions()[0]);
-    }
-
-    reader.assert_done();
+    }*/
 
     session_->updateHash(message);
 
@@ -275,16 +251,13 @@ void RecordDecryptor::processHandshakeSessionTicket(int8_t sideIndex, std::span<
     }
 }
 
-void RecordDecryptor::processHandshakeEncryptedExtensions(int8_t sideIndex, std::span<const uint8_t> message)
+void RecordDecryptor::processHandshakeEncryptedExtensions(int8_t sideIndex, HandshakeMessage& handshake,
+                                                          std::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("Encrypted Extensions", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-    ::utils::ThrowIfTrue(reader.remaining_bytes() < 2, "Server sent an empty Encrypted Extensions message");
-    session_->deserializeExtensions(reader, tls::Side::Server, tls::HandshakeType::EncryptedExtensions);
-
-    reader.assert_done();
+    (void)message;
+    handshake.type = HandshakeType::EncryptedExtensions;
+    //handshake.body.encryptedExtensions.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 }
 
 void RecordDecryptor::processHandshakeServerKeyExchange(int8_t sideIndex, std::span<const uint8_t> message)

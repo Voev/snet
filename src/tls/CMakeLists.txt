@@ -8,4 +8,9 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 add_library(snet_tls STATIC ${SOURCES})
 
 # Link extra libraries
-target_link_libraries(snet_tls PRIVATE casket)
+target_link_libraries(snet_tls
+    PRIVATE
+        casket
+    PUBLIC
+        snet_ip
+)

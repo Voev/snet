@@ -28,7 +28,8 @@ namespace snet::tls
 
 Session::Session()
     : cipherContext_(crypto::AllocateCipherCtx())
-    , cipherState_(false)
+    , cipherState_(0)
+    , canDecrypt_(0)
 {
 }
 
@@ -178,12 +179,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
-        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        /// @todo
+        //if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             auto sessionHash = handshakeHash_.final(cipherSuite_.getHnshDigestName());
             PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
         }
-        else
+        //else
         {
             PRF(PMS_, "master secret", clientRandom_, serverRandom_, masterSecret);
         }
@@ -385,30 +387,6 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     }
 }
 
-void Session::deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht)
-{
-    if (side == Side::Client)
-    {
-        clientExtensions_.deserialize(reader, side, ht);
-    }
-    else if (side == Side::Server)
-    {
-        serverExtensions_.deserialize(reader, side, ht);
-    }
-}
-
-const Extensions& Session::getExtensions(const Side side) const noexcept
-{
-    if (side == Side::Client)
-    {
-        return clientExtensions_;
-    }
-    else
-    {
-        return serverExtensions_;
-    }
-}
-
 void Session::updateHash(std::span<const uint8_t> message)
 {
     handshakeHash_.update(message);
@@ -427,11 +405,6 @@ const ClientRandom& Session::getClientRandom() const noexcept
 void Session::setServerRandom(ServerRandom random)
 {
     serverRandom_ = std::move(random);
-}
-
-void Session::setSessionID(std::vector<std::uint8_t> sessionID)
-{
-    sessionId_ = std::move(sessionID);
 }
 
 void Session::setVersion(ProtocolVersion version)

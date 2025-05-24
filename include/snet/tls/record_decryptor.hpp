@@ -3,6 +3,7 @@
 
 #pragma once
 #include <snet/tls/i_record_handler.hpp>
+#include <snet/tls/record.hpp>
 #include <snet/tls/session.hpp>
 
 namespace snet::tls
@@ -31,12 +32,12 @@ private:
     /// @brief Processes a ClientHello handshake message.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param message The handshake message.
-    void processHandshakeClientHello(int8_t sideIndex, std::span<const uint8_t> message);
+    void processHandshakeClientHello(int8_t sideIndex, HandshakeMessage& handshake, std::span<const uint8_t> message);
 
     /// @brief Processes a ServerHello handshake message.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param message The handshake message.
-    void processHandshakeServerHello(int8_t sideIndex, std::span<const uint8_t> message);
+    void processHandshakeServerHello(int8_t sideIndex, HandshakeMessage& handshake, std::span<const uint8_t> message);
 
     /// @brief Processes a SessionTicket handshake message.
     /// @param sideIndex The index indicating the side (client or server).
@@ -46,7 +47,8 @@ private:
     /// @brief Processes an EncryptedExtensions handshake message.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param message The handshake message.
-    void processHandshakeEncryptedExtensions(int8_t sideIndex, std::span<const uint8_t> message);
+    void processHandshakeEncryptedExtensions(int8_t sideIndex, HandshakeMessage& handshake,
+                                             std::span<const uint8_t> message);
 
     /// @brief Processes a Certificate handshake message.
     /// @param sideIndex The index indicating the side (client or server).

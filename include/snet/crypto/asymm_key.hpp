@@ -26,4 +26,6 @@ KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding);
 
 void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding = Encoding::PEM);
 
+std::vector<uint8_t> getEncodedPublicKey(const Key* key);
+
 } // namespace snet::crypto::akey

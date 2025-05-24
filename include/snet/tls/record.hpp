@@ -3,9 +3,16 @@
 
 #pragma once
 #include <span>
+#include <variant>
+#include <snet/tls/alert.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/utils/load_store.hpp>
+
+#include <snet/tls/msg/client_hello.hpp>
+#include <snet/tls/msg/server_hello.hpp>
+#include <snet/tls/msg/encrypted_extensions.hpp>
+
 #include <casket/utils/exception.hpp>
 
 namespace snet::tls
@@ -70,6 +77,28 @@ typedef enum
     NULL_STATE
 } ssl_record_state_t;
 
+
+/*class HandshakeMessage
+{
+public:
+    using HandshakeMessageType = std::variant<msg::ClientHello, msg::ServerHello, msg::EncryptedExtensions>;
+
+    HandshakeMessage() = default;
+
+    HandshakeMessage(HandshakeMessageType hs)
+        : msg(std::move(hs))
+    {
+    }
+
+    HandshakeMessageType msg;
+};*/
+
+struct HandshakeMessage
+{
+    HandshakeType type;
+    uint8_t* body;
+};
+
 struct Record
 {
     int id;
@@ -89,6 +118,8 @@ struct Record
     uint8_t is_decrypted;
 
     uint64_t seqnum;
+
+    HandshakeMessage handshake;
 
     void unpackHeader()
     {
