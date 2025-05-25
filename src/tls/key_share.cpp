@@ -32,7 +32,7 @@ public:
 
     void setPublicKey(const Key* key)
     {
-        if (groupParams_.is_ecdh_named_curve())
+        if (groupParams_.is_pure_ecc_group())
         {
             keyExchange_ = crypto::akey::getEncodedPublicKey(key);
         }
@@ -227,18 +227,23 @@ public:
 
     size_t serialize(std::span<uint8_t> buffer) const
     {
+        ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small");
+
+        buffer.subspan(2);
+        uint16_t totalBytes = 0;
+
         for (const auto& share : clientKeyShares_)
         {
             auto shareBytes = share.serialize(buffer);
             buffer = buffer.subspan(shareBytes);
+            totalBytes += shareBytes;
         }
 
-        uint16_t count = clientKeyShares_.size();
-        buffer[0] = utils::get_byte<0>(count);
-        buffer[1] = utils::get_byte<1>(count);
-        count += 2;
+        buffer[0] = utils::get_byte<0>(totalBytes);
+        buffer[1] = utils::get_byte<1>(totalBytes);
+        totalBytes += 2;
 
-        return count;
+        return totalBytes;
     }
 
     bool empty() const
@@ -288,10 +293,12 @@ public:
     KeyShareHelloRetryRequest(KeyShareHelloRetryRequest&&) = default;
     KeyShareHelloRetryRequest& operator=(KeyShareHelloRetryRequest&&) = default;
 
-    std::vector<uint8_t> serialize() const
+    size_t serialize(std::span<uint8_t> buffer) const
     {
         auto code = selectedGroupParams_.wire_code();
-        return {utils::get_byte<0>(code), utils::get_byte<1>(code)};
+        buffer[0] = utils::get_byte<0>(code);
+        buffer[1] = utils::get_byte<1>(code);
+        return 2;
     }
 
     GroupParams selected_group() const
@@ -344,6 +351,12 @@ KeyShare::KeyShare(utils::DataReader& reader, uint16_t extensionSize, HandshakeT
     {
         throw RuntimeError("cannot create a KeyShare extension for message of type: {}", toString(messageType));
     }
+}
+
+size_t KeyShare::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    (void)whoami;
+    return std::visit([buffer](const auto& keyshare) { return keyshare.serialize(buffer); }, impl_->keyShare);
 }
 
 // ClientHello

@@ -128,6 +128,7 @@ void RecordDecryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
+    handshake.type = HandshakeType::ClientHello;
     handshake.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     session->setVersion(handshake.clientHello.legacyVersion);
@@ -140,6 +141,7 @@ void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
+    handshake.type = HandshakeType::ServerHello;
     handshake.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(handshake.serverHello.cipherSuite);
@@ -250,6 +252,8 @@ void RecordDecryptor::processHandshakeEncryptedExtensions(const int8_t sideIndex
     (void)session;
 
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+    handshake.type = HandshakeType::EncryptedExtensions;
     handshake.encryptedExtensions.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 }
 

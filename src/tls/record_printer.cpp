@@ -17,7 +17,6 @@ RecordPrinter::~RecordPrinter() noexcept
 
 void RecordPrinter::handleRecord(const int8_t sideIndex, Session* session, Record* record)
 {
-    (void)sideIndex;
     (void)session;
 
     std::string label = toString(record->type);
@@ -26,6 +25,10 @@ void RecordPrinter::handleRecord(const int8_t sideIndex, Session* session, Recor
         auto ht = static_cast<tls::HandshakeType>(record->data[TLS_HEADER_SIZE]);
         label = toString(ht);
     }
+
+    const auto direction = (sideIndex == 0 ? "C->S" : "C<-S");
+    std::cout << format("{}: {} {} [{}]", direction, record->version.toString(), toString(record->type), record->length)
+              << std::endl;
 
     if (record->is_decrypted)
     {

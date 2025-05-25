@@ -139,7 +139,7 @@ CipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
     return cipher;
 }
 
-KeyCtxPtr createKeyContext(std::string_view algorithm)
+KeyCtxPtr CipherSuiteManager::createKeyContext(std::string_view algorithm)
 {
     auto ctx = KeyCtxPtr(EVP_PKEY_CTX_new_from_name(nullptr, algorithm.data(), nullptr));
     crypto::ThrowIfTrue(ctx == nullptr);

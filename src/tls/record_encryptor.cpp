@@ -45,9 +45,14 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
-    if (session->getVersion() == ProtocolVersion::TLSv1_3)
+    handshake.clientHello.print(std::cout);
+
+    auto supportedVersions = handshake.clientHello.extensions.get<SupportedVersions>();
+    if (supportedVersions && supportedVersions->supports(ProtocolVersion::TLSv1_3))
     {
         auto keyShare = handshake.clientHello.extensions.get<KeyShare>();
+        ::utils::ThrowIfFalse(keyShare != nullptr, "key_share extension not specified for TLSv1.3");
+
         auto groupNames = keyShare->offered_groups();
 
         for(size_t i = 0; i < groupNames.size(); ++i)
@@ -57,6 +62,7 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
         }
     }
 
+    handshake.clientHello.print(std::cout);
     session->sendingLength = handshake.clientHello.serialize(session->sendingBuffer);
 }
 

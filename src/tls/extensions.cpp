@@ -1,5 +1,6 @@
 #include <iterator>
 #include <snet/tls/extensions.hpp>
+#include <snet/tls/key_share.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/utils/data_writer.hpp>
 
@@ -19,9 +20,6 @@ static inline bool contains(std::vector<T> const& v, T const& x)
 std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCode code, const Side from,
                                          const HandshakeType messageType)
 {
-
-    (void)messageType;
-
     // This cast is safe because we read exactly a 16 bit length field for
     // the extension in Extensions::deserialize
     const uint16_t size = static_cast<uint16_t>(reader.remaining_bytes());
@@ -56,6 +54,9 @@ std::unique_ptr<Extension> makeExtension(utils::DataReader& reader, ExtensionCod
 
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(reader, size, from);
+
+    case ExtensionCode::KeyShare:
+        return std::make_unique<KeyShare>(reader, size, messageType);
 
     default:
         break;

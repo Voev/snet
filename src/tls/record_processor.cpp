@@ -59,10 +59,6 @@ size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_
             ThrowIfTrue(recordLength == 0, "Received a empty record");
 
             currentRecord->length = recordLength + TLS_HEADER_SIZE;
-
-            const auto direction = (sideIndex == 0 ? "C->S" : "C<-S");
-            std::cout << format("{}: {} {} [{}]", direction, currentRecord->version.toString(), toString(currentRecord->type),
-                  currentRecord->length) << std::endl;
         }
 
         if (currentRecord->current_len > 0 || currentRecord->length + processedLength > inputLength)

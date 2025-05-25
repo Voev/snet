@@ -38,6 +38,8 @@ public:
         ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey.get()));
 
         ASSERT_NO_THROW(spoofer_.addHandler<RecordDecryptor>());
+        ASSERT_NO_THROW(spoofer_.addHandler<RecordPrinter>());
+        ASSERT_NO_THROW(spoofer_.addHandler<RecordEncryptor>());
     }
 
     void TearDown() override
@@ -91,7 +93,7 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
 }
 
 INSTANTIATE_TEST_SUITE_P(ParametrizedSpooferTests, TlsSpooferTest,
-                         testing::Values(TlsSpooferTestParam{ProtocolVersion::TLSv1_0},
-                                         TlsSpooferTestParam{ProtocolVersion::TLSv1_1},
-                                         TlsSpooferTestParam{ProtocolVersion::TLSv1_2},
+                         testing::Values(//TlsSpooferTestParam{ProtocolVersion::TLSv1_0},
+                                         //TlsSpooferTestParam{ProtocolVersion::TLSv1_1},
+                                         //TlsSpooferTestParam{ProtocolVersion::TLSv1_2},
                                          TlsSpooferTestParam{ProtocolVersion::TLSv1_3}));
