@@ -3,29 +3,24 @@
 #include <memory>
 #include <snet/tls/record.hpp>
 #include <snet/tls/i_record_handler.hpp>
+#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
 /// @brief Class for processing TLS records.
-class RecordProcessor final
+class RecordProcessor final : public utils::NonCopyable
 {
 public:
     /// @brief Default constructor.
-    RecordProcessor()
-        : recordPool_(1024)
+    ///
+    /// @param[in] recordPoolSize The size of record pool.
+    RecordProcessor(const size_t recordPoolSize = 1024)
+        : recordPool_(recordPoolSize)
     {}
 
     /// @brief Destructor.
     ~RecordProcessor() = default;
-
-    /// @brief Copy constructor.
-    /// @param other constant reference to the record processor.
-    RecordProcessor(const RecordProcessor& other) = delete;
-
-    /// @brief Move constructor and move assignment operator.
-    /// @param other rvalue reference to the record processor.
-    RecordProcessor& operator=(const RecordProcessor& other) = delete;
 
     /// @brief Move constructor.
     /// @param other rvalue reference to the record processor.
@@ -37,9 +32,10 @@ public:
 
     /// @brief Processes input bytes as TLS records.
     /// @param sideIndex The index indicating the side (client or server).
+    /// @param session The TLS session to process records.
     /// @param inputBytes The input bytes pointer.
     /// @param inputLength The input bytes length.
-    size_t process(const int8_t sideIndex, uint8_t* inputBytes, size_t inputLength);
+    size_t process(const int8_t sideIndex, Session* session, uint8_t* inputBytes, size_t inputLength);
 
     /// @brief Adds a record handler.
     /// @tparam Handler The type of the handler.

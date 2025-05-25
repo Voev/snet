@@ -64,7 +64,7 @@ public:
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param record The record.
-    void decrypt(const int8_t sideIndex, Record& record);
+    void decrypt(const int8_t sideIndex, Record* record);
 
     /// @brief Checks if the session can decrypt data.
     /// @param sideIndex Indicates if the direction is client to server.
@@ -163,6 +163,11 @@ public:
     ///
     /// @return The cipher state.
     bool getCipherState(const int8_t sideIndex) const noexcept;
+
+
+public:
+    uint8_t sendingBuffer[MAX_CIPHERTEXT_SIZE];
+    size_t sendingLength{0};
 
 private:
     ServerInfo serverInfo_;

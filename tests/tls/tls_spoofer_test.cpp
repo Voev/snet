@@ -68,8 +68,9 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
     ASSERT_NO_THROW(client.setVersion(param.version));
     ASSERT_NO_THROW(server.setVersion(param.version));
 
+    auto session = std::make_unique<Session>();
+
     serverBufferSize = 0;
-    spoofer_.getHandler<RecordDecryptor>()->setSession(std::make_shared<Session>());
     do
     {
         clientBufferSize = clientBuffer.size();
@@ -77,7 +78,7 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
                                                   clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec);
 
-        spoofer_.process(0, clientBuffer.data(), clientBufferSize);
+        spoofer_.process(0, session.get(), clientBuffer.data(), clientBufferSize);
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing, server.handshake(clientBuffer.data(), clientBufferSize,

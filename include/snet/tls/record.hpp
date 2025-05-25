@@ -96,7 +96,9 @@ public:
 struct HandshakeMessage
 {
     HandshakeType type;
-    uint8_t* body;
+    msg::ClientHello clientHello;
+    msg::ServerHello serverHello;
+    msg::EncryptedExtensions encryptedExtensions;
 };
 
 struct Record

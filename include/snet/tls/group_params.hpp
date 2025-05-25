@@ -51,7 +51,7 @@ public:
     /**
      * @returns std::nullopt if an unknown name
      */
-//    static std::optional<GroupParams> fromString(const char* group_name);
+    //    static std::optional<GroupParams> fromString(const char* group_name);
 
     constexpr bool operator==(GroupParamsCode code) const
     {
@@ -117,6 +117,6 @@ private:
     GroupParamsCode m_code;
 };
 
-crypto::KeyPtr generateKeyByGroupParams(const GroupParams groupParams);
+crypto::KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams);
 
-}
+} // namespace snet::tls

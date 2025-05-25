@@ -37,24 +37,19 @@ class SnifferHandler final : public tls::IRecordHandler
 public:
     SnifferHandler() = default;
 
-    void handleRecord(const std::int8_t sideIndex, tls::Record& record) override
+    void handleRecord(const int8_t sideIndex, tls::Session* session, tls::Record* record) override
     {
-        if (sideIndex == 0 && record.type == tls::RecordType::Handshake)
+        if (sideIndex == 0 && record->handshake.type == tls::HandshakeType::ClientHello)
         {
-            auto ht = static_cast<tls::HandshakeType>(record.data[tls::TLS_HEADER_SIZE]);
-            if (ht == tls::HandshakeType::ClientHello)
+            auto secrets = secretManager.getSecretNode(record->handshake.clientHello.random);
+            if (secrets.has_value())
             {
-                auto secrets = secretManager.getSecretNode(session->getClientRandom());
-                if (secrets.has_value())
-                {
-                    session->setSecrets(secrets.value());
-                }
+                session->setSecrets(secrets.value());
             }
         }
     }
 
     tls::SecretNodeManager secretManager;
-    std::shared_ptr<tls::Session> session;
 };
 
 struct SnifferManager
@@ -92,17 +87,10 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
 
         if (session->second)
         {
-            auto rd = mgr->proc.getHandler<tls::RecordDecryptor>();
-            if (rd)
-                rd->setSession(session->second);
-
-            auto sh = mgr->proc.getHandler<SnifferHandler>();
-            if (sh)
-                sh->session = session->second;
-
             try
             {
-                mgr->proc.process(sideIndex, const_cast<uint8_t*>(tcpData.getData()), tcpData.getDataLength());
+                mgr->proc.process(sideIndex, session->second.get(), const_cast<uint8_t*>(tcpData.getData()),
+                                  tcpData.getDataLength());
             }
             catch (const std::exception& e)
             {

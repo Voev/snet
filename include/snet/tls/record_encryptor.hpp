@@ -1,0 +1,40 @@
+/// @file
+/// @brief Declaration of the RecordEncryptor class.
+
+#pragma once
+#include <snet/tls/i_record_handler.hpp>
+
+namespace snet::tls
+{
+
+/// @brief Class for encrypting TLS records.
+class RecordEncryptor final : public IRecordHandler
+{
+public:
+    /// @brief Default constructor.
+    ///
+    RecordEncryptor() = default;
+
+    /// @brief Default destructor.
+    ///
+    ~RecordEncryptor() = default;
+
+    /// @brief Handles a TLS record.
+    ///
+    /// @param[in] sideIndex Index indicating the side (client or server).
+    /// @param[in] session Processed TLS session.
+    /// @param[in] record Processed TLS record.
+    ///
+    void handleRecord(const int8_t sideIndex, Session* session, Record* record) override;
+
+private:
+    /// @brief Processes a ClientHello handshake message.
+    ///
+    /// @param[in] sideIndex Index indicating the side (client or server).
+    /// @param[in] session Processed TLS session.
+    /// @param[in] message Handshake message.
+    ///
+    void processHandshakeClientHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake);
+};
+
+} // namespace snet::tls

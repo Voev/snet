@@ -111,7 +111,7 @@ const char* GroupParams::toString() const
     }
 }
 
-crypto::KeyPtr generateKeyByGroupParams(const GroupParams groupParams)
+crypto::KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams)
 {
     auto param = gGroupParams.find(groupParams.code());
     if (param == gGroupParams.end())

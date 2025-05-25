@@ -26,7 +26,7 @@ static inline void init_record(Record* record, const uint64_t seq, const int is_
 }
 
 // process_new_record
-size_t RecordProcessor::process(const int8_t sideIndex, uint8_t* inputBytes, size_t inputLength)
+size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_t* inputBytes, size_t inputLength)
 {
     size_t processedLength{0};
     Record* currentRecord{nullptr};
@@ -83,7 +83,7 @@ size_t RecordProcessor::process(const int8_t sideIndex, uint8_t* inputBytes, siz
         {
             for (const auto& handler : handlers_)
             {
-                handler->handleRecord(sideIndex, *currentRecord);
+                handler->handleRecord(sideIndex, session, currentRecord);
             }
             currentRecord = nullptr;
         }

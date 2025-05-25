@@ -37,9 +37,9 @@ Session::~Session() noexcept
 {
 }
 
-void Session::decrypt(const int8_t sideIndex, Record& record)
+void Session::decrypt(const int8_t sideIndex, Record* record)
 {
-    auto version = (version_ != ProtocolVersion()) ? version_ : record.version;
+    auto version = (version_ != ProtocolVersion()) ? version_ : record->version;
 
     if (crypto::CipherIsAEAD(cipherTraits_))
     {
@@ -48,14 +48,14 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
 
         if (sideIndex == 0)
         {
-            record.seqnum = seqnum_.getClientSequence();
+            record->seqnum = seqnum_.getClientSequence();
             nonceImplicit = clientIV_;
             op.key = clientEncKey_.data();
             op.keyLength = clientEncKey_.size();
         }
         else
         {
-            record.seqnum = seqnum_.getServerSequence();
+            record->seqnum = seqnum_.getServerSequence();
             nonceImplicit = serverIV_;
             op.key = serverEncKey_.data();
             op.keyLength = serverEncKey_.size();
@@ -73,19 +73,19 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             memcpy(nonce, nonceImplicit.data(), sizeof(nonce));
             for (int i = 0; i < 8; i++)
             {
-                nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((record.seqnum >> (i * 8)) & 0xFF);
+                nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((record->seqnum >> (i * 8)) & 0xFF);
             }
 
-            uint16_t length = record.length - TLS_HEADER_SIZE;
-            aad[0] = static_cast<uint8_t>(record.type);
+            uint16_t length = record->length - TLS_HEADER_SIZE;
+            aad[0] = static_cast<uint8_t>(record->type);
             aad[1] = 0x03;
             aad[2] = 0x03;
             aad[3] = utils::get_byte<0>(length);
             aad[4] = utils::get_byte<1>(length);
 
-            op.ciphertext = record.data + TLS_HEADER_SIZE;
+            op.ciphertext = record->data + TLS_HEADER_SIZE;
             op.ciphertextLength = length - tagLength;
-            op.plaintext = record.decrypted;
+            op.plaintext = record->decrypted;
             op.plaintextLength = length - tagLength;
             op.iv = nonce;
             op.ivLength = nonceSize;
@@ -106,9 +106,9 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             uint8_t lastByte = op.plaintext[op.plaintextLength - 1];
             ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLS record type had unexpected value");
 
-            record.type = static_cast<RecordType>(lastByte);
-            record.decryptedLength = op.plaintextLength - 1;
-            record.is_decrypted = 1;
+            record->type = static_cast<RecordType>(lastByte);
+            record->decryptedLength = op.plaintextLength - 1;
+            record->is_decrypted = 1;
         }
         else
         {
@@ -119,23 +119,23 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
             auto tagLength = crypto::GetTagLength(cipherContext_);
             auto nonceSize = crypto::GetIVLength(cipherContext_);
             auto nonceExplicitLength = nonceSize - clientIV_.size();
-            auto nonceExplicit = std::span{record.data + TLS_HEADER_SIZE, nonceExplicitLength};
+            auto nonceExplicit = std::span{record->data + TLS_HEADER_SIZE, nonceExplicitLength};
 
             nonce.reserve(nonceSize);
             nonce.insert(nonce.end(), nonceImplicit.begin(), nonceImplicit.end());
             nonce.insert(nonce.end(), nonceExplicit.begin(), nonceExplicit.end());
 
-            uint16_t length = record.length - TLS_HEADER_SIZE - nonceExplicitLength - tagLength;
-            utils::store_be(record.seqnum, &aad[0]);
-            aad[8] = static_cast<uint8_t>(record.type);
-            aad[9] = record.version.majorVersion();
-            aad[10] = record.version.minorVersion();
+            uint16_t length = record->length - TLS_HEADER_SIZE - nonceExplicitLength - tagLength;
+            utils::store_be(record->seqnum, &aad[0]);
+            aad[8] = static_cast<uint8_t>(record->type);
+            aad[9] = record->version.majorVersion();
+            aad[10] = record->version.minorVersion();
             aad[11] = utils::get_byte<0>(length);
             aad[12] = utils::get_byte<1>(length);
 
-            op.ciphertext = record.data + TLS_HEADER_SIZE + nonceExplicitLength;
+            op.ciphertext = record->data + TLS_HEADER_SIZE + nonceExplicitLength;
             op.ciphertextLength = length;
-            op.plaintext = record.decrypted;
+            op.plaintext = record->decrypted;
             op.plaintextLength = length;
             op.iv = nonce.data();
             op.ivLength = nonceSize;
@@ -153,8 +153,8 @@ void Session::decrypt(const int8_t sideIndex, Record& record)
 
             AeadCipher::decrypt(cipherContext_, op);
 
-            record.decryptedLength = length;
-            record.is_decrypted = 1;
+            record->decryptedLength = length;
+            record->is_decrypted = 1;
         }
 
         if (sideIndex == 0)
