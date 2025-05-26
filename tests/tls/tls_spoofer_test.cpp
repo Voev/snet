@@ -78,14 +78,14 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
         clientBufferSize = clientBuffer.size();
         ASSERT_EQ(Want::Nothing, client.handshake(serverBuffer.data(), serverBufferSize,
                                                   clientBuffer.data(), &clientBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
         spoofer_.process(0, session.get(), clientBuffer.data(), clientBufferSize);
 
         serverBufferSize = serverBuffer.size();
-        ASSERT_EQ(Want::Nothing, server.handshake(clientBuffer.data(), clientBufferSize,
+        ASSERT_EQ(Want::Nothing, server.handshake(session->sendingBuffer, session->sendingLength,
                                                   serverBuffer.data(), &serverBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
     } while (!client.afterHandshake());
 

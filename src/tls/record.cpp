@@ -22,9 +22,9 @@ size_t Record::packHandshake(std::span<uint8_t> buffer)
     }
 
     buffer[0] = static_cast<uint8_t>(handshake.type);
-    buffer[1] = utils::get_byte<0>(length);
-    buffer[2] = utils::get_byte<1>(length);
-    buffer[3] = utils::get_byte<2>(length);
+    buffer[1] = utils::get_byte<1>(length);
+    buffer[2] = utils::get_byte<2>(length);
+    buffer[3] = utils::get_byte<3>(length);
 
     return length + TLS_HANDSHAKE_HEADER_SIZE;
 }

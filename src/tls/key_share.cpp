@@ -49,13 +49,13 @@ public:
 
     size_t serialize(std::span<uint8_t> buffer) const
     {
-        ThrowIfTrue(buffer.size_bytes() < keyExchange_.size() + 4, "buffer too small");
+        ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small");
 
-        const uint16_t named_curve_id = groupParams_.wire_code();
-        buffer[0] = utils::get_byte<0>(named_curve_id);
-        buffer[1] = utils::get_byte<1>(named_curve_id);
+        const uint16_t namedCurveID = groupParams_.wire_code();
+        buffer[0] = utils::get_byte<0>(namedCurveID);
+        buffer[1] = utils::get_byte<1>(namedCurveID);
 
-        auto size = utils::append_tls_length_value(buffer, keyExchange_.data(), keyExchange_.size(), 2);
+        auto size = utils::append_tls_length_value(buffer.subspan(2), keyExchange_.data(), keyExchange_.size(), 2);
         size += 2;
 
         return size;
@@ -229,13 +229,13 @@ public:
     {
         ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small");
 
-        buffer.subspan(2);
+        auto data = buffer.subspan(2);
         uint16_t totalBytes = 0;
 
         for (const auto& share : clientKeyShares_)
         {
-            auto shareBytes = share.serialize(buffer);
-            buffer = buffer.subspan(shareBytes);
+            auto shareBytes = share.serialize(data);
+            data = data.subspan(shareBytes);
             totalBytes += shareBytes;
         }
 
@@ -431,7 +431,6 @@ void KeyShare::setPublicKey(const size_t idx, const Key* key)
         },
         impl_->keyShare);
 }
-
 
 void KeyShare::retry_offer(const KeyShare& retry_request_keyshare, const std::vector<GroupParams>& supported_groups)
 {
