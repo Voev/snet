@@ -33,7 +33,7 @@ void RecordEncryptor::handleRecord(const int8_t sideIndex, Session* session, Rec
         switch (record->handshake.type)
         {
         case HandshakeType::ClientHello:
-            processHandshakeClientHello(sideIndex, session, record->handshake);
+            processHandshakeClientHello(sideIndex, session, record);
             break;
         default:
             break;
@@ -41,16 +41,16 @@ void RecordEncryptor::handleRecord(const int8_t sideIndex, Session* session, Rec
     }
 }
 
-void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake)
+void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session, Record* record)
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
-    handshake.clientHello.print(std::cout);
+    record->handshake.clientHello.print(std::cout);
 
-    auto supportedVersions = handshake.clientHello.extensions.get<SupportedVersions>();
+    auto supportedVersions = record->handshake.clientHello.extensions.get<SupportedVersions>();
     if (supportedVersions && supportedVersions->supports(ProtocolVersion::TLSv1_3))
     {
-        auto keyShare = handshake.clientHello.extensions.get<KeyShare>();
+        auto keyShare = record->handshake.clientHello.extensions.get<KeyShare>();
         ::utils::ThrowIfFalse(keyShare != nullptr, "key_share extension not specified for TLSv1.3");
 
         auto groupNames = keyShare->offered_groups();
@@ -62,8 +62,10 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
         }
     }
 
-    handshake.clientHello.print(std::cout);
-    session->sendingLength = handshake.clientHello.serialize(session->sendingBuffer);
+    record->handshake.clientHello.print(std::cout);
+    session->sendingLength = record->pack(session->sendingBuffer);
+
+    utils::printHex(std::cout, "ClientHello", {session->sendingBuffer, session->sendingLength});
 }
 
 } // namespace snet::tls

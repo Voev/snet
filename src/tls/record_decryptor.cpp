@@ -50,8 +50,8 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
         if (session->getCipherState(sideIndex) && !session->canDecrypt(sideIndex))
         {
             return;
+            
         }
-
         ::utils::ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
     }
     else if (record->type == RecordType::Handshake)
@@ -63,11 +63,11 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
 
         utils::DataReader reader("Handshake Message", data);
 
-        const auto messageType = static_cast<HandshakeType>(reader.get_byte());
+        record->handshake.type = static_cast<HandshakeType>(reader.get_byte());
         const auto messageLength = reader.get_uint24_t();
         ::utils::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
 
-        switch (messageType)
+        switch (record->handshake.type)
         {
         case HandshakeType::HelloRequest:
             /* Not implemented */
@@ -128,7 +128,6 @@ void RecordDecryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
-    handshake.type = HandshakeType::ClientHello;
     handshake.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     session->setVersion(handshake.clientHello.legacyVersion);
@@ -141,7 +140,6 @@ void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
-    handshake.type = HandshakeType::ServerHello;
     handshake.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(handshake.serverHello.cipherSuite);
@@ -253,7 +251,6 @@ void RecordDecryptor::processHandshakeEncryptedExtensions(const int8_t sideIndex
 
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    handshake.type = HandshakeType::EncryptedExtensions;
     handshake.encryptedExtensions.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 }
 

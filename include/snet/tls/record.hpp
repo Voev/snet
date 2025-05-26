@@ -134,6 +134,11 @@ struct Record
         version = ProtocolVersion(data[1], data[2]);
     }
 
+    size_t packHandshake(std::span<uint8_t> buffer);
+
+    size_t pack(std::span<uint8_t> buffer);
+
+
     void reset()
     {
         state = ssl_record_state_t::NULL_STATE;

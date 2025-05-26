@@ -32,9 +32,9 @@ private:
     ///
     /// @param[in] sideIndex Index indicating the side (client or server).
     /// @param[in] session Processed TLS session.
-    /// @param[in] message Handshake message.
+    /// @param[in] record Processed TLS record.
     ///
-    void processHandshakeClientHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake);
+    void processHandshakeClientHello(const int8_t sideIndex, Session* session, Record* record);
 };
 
 } // namespace snet::tls
