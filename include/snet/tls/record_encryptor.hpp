@@ -35,6 +35,8 @@ private:
     /// @param[in] record Processed TLS record.
     ///
     void processHandshakeClientHello(const int8_t sideIndex, Session* session, Record* record);
+
+    void processHandshakeServerHello(const int8_t sideIndex, Session* session, Record* record);
 };
 
 } // namespace snet::tls

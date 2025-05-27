@@ -119,4 +119,6 @@ private:
 
 crypto::KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams);
 
+crypto::KeyPtr GenerateGroupParams(const GroupParams groupParams);
+
 } // namespace snet::tls

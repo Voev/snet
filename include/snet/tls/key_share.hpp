@@ -3,6 +3,7 @@
 #include <snet/tls/extensions.hpp>
 #include <snet/utils/data_reader.hpp>
 
+
 namespace snet::tls
 {
 
@@ -40,6 +41,8 @@ public:
     void setPublicKey(const size_t idx, const Key* key);
 
     void setPublicKey(const Key* key);
+
+    crypto::KeyPtr getPublicKey(size_t i = 0);
     /**
      * Update a ClientHello's Key_Share to comply with a HelloRetryRequest.
      *

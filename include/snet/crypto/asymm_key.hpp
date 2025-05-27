@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <vector>
 #include <string>
+#include <span>
 #include <snet/crypto/pointers.hpp>
 
 namespace snet::crypto::akey
@@ -28,4 +29,5 @@ void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding = Encoding::PE
 
 std::vector<uint8_t> getEncodedPublicKey(const Key* key);
 
+void setEncodedPublicKey(Key* key, std::span<const uint8_t> value);
 } // namespace snet::crypto::akey

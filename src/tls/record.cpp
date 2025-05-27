@@ -15,6 +15,11 @@ size_t Record::packHandshake(std::span<uint8_t> buffer)
             length = handshake.clientHello.serialize(buffer.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             break;
         }
+        case HandshakeType::ServerHello:
+        {
+            length = handshake.serverHello.serialize(buffer.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            break;
+        }
         default:
         {
             break;

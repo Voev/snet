@@ -121,19 +121,36 @@ crypto::KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams)
 
     auto ctx = CipherSuiteManager::getInstance().createKeyContext(param->second.algorithm);
     crypto::ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
-    OSSL_PARAM params[] = {OSSL_PARAM_END, OSSL_PARAM_END};
 
     if (groupParams.is_ecdh_named_curve())
     {
-        params[0] =
-            OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char*>(param->second.groupName), 0);
+        crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
     }
-
-    crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_params(ctx, params));
 
     Key* pkey{nullptr};
     crypto::ThrowIfFalse(0 < EVP_PKEY_generate(ctx, &pkey));
     return crypto::KeyPtr{pkey};
+}
+
+crypto::KeyPtr GenerateGroupParams(const GroupParams groupParams)
+{
+    auto param = gGroupParams.find(groupParams.code());
+    if (param == gGroupParams.end())
+    {
+        return nullptr;
+    }
+
+    auto ctx = CipherSuiteManager::getInstance().createKeyContext(param->second.algorithm);
+    crypto::ThrowIfFalse(0 < EVP_PKEY_paramgen_init(ctx));
+
+    if (groupParams.is_ecdh_named_curve())
+    {
+        crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+    }
+
+    Key* params{nullptr};
+    crypto::ThrowIfFalse(0 < EVP_PKEY_paramgen(ctx, &params));
+    return crypto::KeyPtr{params};
 }
 
 } // namespace snet::tls

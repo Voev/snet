@@ -28,7 +28,9 @@ public:
     void SetUp() override
     {
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
+
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
+        serverSettings_.setKeyLog();
 
         auto serverKey = akey::rsa::generate(2048);
         auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
@@ -86,6 +88,8 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
         ASSERT_EQ(Want::Nothing, server.handshake(session->sendingBuffer, session->sendingLength,
                                                   serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
+
+        spoofer_.process(1, session.get(), serverBuffer.data(), serverBufferSize);
 
     } while (!client.afterHandshake());
 

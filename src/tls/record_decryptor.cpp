@@ -132,7 +132,7 @@ void RecordDecryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 
     session->setVersion(handshake.clientHello.legacyVersion);
     session->setClientRandom(handshake.clientHello.random);
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake,
@@ -146,6 +146,10 @@ void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
     ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not supported");
 
     session->setCipherSuite(foundCipher.value());
+    
+    auto cipherTraits = CipherSuiteManager::getInstance().fetchCipher(foundCipher.value().getCipherName());
+    ::utils::ThrowIfFalse(cipherTraits, "failed to fetch cipher '{}'", foundCipher.value().getCipherName());
+    session->setCipherTraits(std::move(cipherTraits));
 
     if (handshake.serverHello.extensions.has(ExtensionCode::SupportedVersions))
     {
@@ -153,7 +157,7 @@ void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
         session->setVersion(ext->versions()[0]);
     }
 
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 
     if (session->getVersion() == ProtocolVersion::TLSv1_3)
     {

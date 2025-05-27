@@ -146,6 +146,14 @@ KeyCtxPtr CipherSuiteManager::createKeyContext(std::string_view algorithm)
     return ctx;
 }
 
+KeyCtxPtr CipherSuiteManager::createKeyContext(Key* key)
+{
+    auto ctx = KeyCtxPtr(EVP_PKEY_CTX_new_from_pkey(nullptr, key, nullptr));
+    crypto::ThrowIfTrue(ctx == nullptr);
+    return ctx;
+}
+
+
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)
 {
     crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5, "Security level must be in range [0..5]");

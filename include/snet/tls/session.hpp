@@ -20,36 +20,23 @@
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
 
+#include <snet/crypto/secure_vector.hpp>
 #include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
 
-template <typename T>
-using SecureVector = std::vector<T>;
-
 struct SessionKeys
 {
-    SecureVector<uint8_t> premasterSecret;
-    SecureVector<uint8_t> masterSecret;
+    SecureVector<uint8_t> earlySecret;
+    SecureVector<uint8_t> derivedSecret;
+    SecureVector<uint8_t> clientTrafficKey;
+    SecureVector<uint8_t> serverTrafficKey;
     SecureVector<uint8_t> clientEncKey;
     SecureVector<uint8_t> serverEncKey;
     SecureVector<uint8_t> clientIV;
     SecureVector<uint8_t> serverIV;
-    SecureVector<uint8_t> clientMacKey;
-    SecureVector<uint8_t> serverMacKey;
-};
-
-
-struct SessionKeys2
-{
-    SecureVector<uint8_t> earlySecret;
-    SecureVector<uint8_t> handshakeSecret;
-    SecureVector<uint8_t> masterSecret;
-    SecureVector<uint8_t> clientEncKey;
-    SecureVector<uint8_t> serverEncKey;
-    SecureVector<uint8_t> clientNonce;
-    SecureVector<uint8_t> serverNonce;
+    HandshakeHash hash;
 };
 
 /// @brief Class representing a TLS session.
@@ -98,6 +85,8 @@ public:
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
     void updateHash(std::span<const uint8_t> message);
+
+    void updateHash(const int8_t sideIndex, std::span<const uint8_t> message);
 
     /// @brief Sets the client random value.
     /// @param random The client random value to set.
@@ -164,10 +153,21 @@ public:
     /// @return The cipher state.
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
+    void generateHandshakeSecrets(const int8_t sideIndex, std::span<const uint8_t> dheSecret);
+
+    void generateApplicationSecrets(const int8_t sideIndex);
+
+    void setCipherTraits(crypto::CipherPtr cipherTraits) noexcept;
 
 public:
     uint8_t sendingBuffer[MAX_CIPHERTEXT_SIZE];
     size_t sendingLength{0};
+
+    crypto::KeyPtr ephemeralKey;
+
+    SecureVector<uint8_t> earlySecret;
+    SessionKeys client;
+    SessionKeys server;
 
 private:
     ServerInfo serverInfo_;
@@ -181,7 +181,6 @@ private:
     ServerRandom serverRandom_;
     SecretNode secrets_;
 
-    SecureVector<uint8_t> PMS_;
     SecureVector<uint8_t> clientEncKey_;
     SecureVector<uint8_t> serverEncKey_;
     SecureVector<uint8_t> clientIV_;

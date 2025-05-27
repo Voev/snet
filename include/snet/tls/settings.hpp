@@ -82,6 +82,8 @@ public:
     /// @param cipherSuites The security level.
     void setSecurityLevel(SecurityLevel level) noexcept;
 
+    void setKeyLog();
+
     Connection createConnection() const;
 
 private:

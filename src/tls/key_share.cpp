@@ -42,6 +42,13 @@ public:
         }
     }
 
+    crypto::KeyPtr getPublicKey() const
+    {
+        crypto::KeyPtr publicKey(GenerateGroupParams(groupParams_));
+        crypto::akey::setEncodedPublicKey(publicKey, keyExchange_);
+        return publicKey;
+    }
+
     bool empty() const
     {
         return (groupParams_ == GroupParams::NONE) && keyExchange_.empty();
@@ -81,7 +88,11 @@ public:
     {
     }
 
-    KeyShareServerHello(GroupParams group, const Key* serverKey);
+    KeyShareServerHello(GroupParams group, const Key* serverKey)
+        : serverKeyShare_(group)
+    {
+        serverKeyShare_.setPublicKey(serverKey);
+    }
 
     ~KeyShareServerHello() = default;
 
@@ -99,6 +110,11 @@ public:
     void setPublicKey(const Key* key)
     {
         serverKeyShare_.setPublicKey(key);
+    }
+
+    crypto::KeyPtr getPublicKey(size_t)
+    {
+        return serverKeyShare_.getPublicKey();
     }
 
     bool empty() const
@@ -224,6 +240,11 @@ public:
     {
         clientKeyShares_[idx].setPublicKey(key);
     }
+    
+    crypto::KeyPtr getPublicKey(const size_t idx)
+    {
+        return clientKeyShares_[idx].getPublicKey();
+    }
 
     size_t serialize(std::span<uint8_t> buffer) const
     {
@@ -258,12 +279,6 @@ public:
 private:
     std::vector<KeyShareEntry> clientKeyShares_;
 };
-
-KeyShareServerHello::KeyShareServerHello(GroupParams group, const Key* serverKey)
-    : serverKeyShare_(group)
-{
-    serverKeyShare_.setPublicKey(serverKey);
-}
 
 class KeyShareHelloRetryRequest
 {
@@ -428,6 +443,29 @@ void KeyShare::setPublicKey(const size_t idx, const Key* key)
             {
                 throw std::logic_error("unsupported operation");
             }
+        },
+        impl_->keyShare);
+}
+
+crypto::KeyPtr KeyShare::getPublicKey(size_t i)
+{
+    return std::visit(
+        [&](auto&& arg) -> crypto::KeyPtr
+        {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, KeyShareClientHello>)
+            {
+                return arg.getPublicKey(i);
+            }
+            else if constexpr (std::is_same_v<T, KeyShareServerHello>)
+            {
+                return arg.getPublicKey(i);
+            }
+            else
+            {
+                throw std::logic_error("unsupported operation");
+            }
+            return nullptr;
         },
         impl_->keyShare);
 }

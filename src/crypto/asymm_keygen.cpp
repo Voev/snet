@@ -56,4 +56,5 @@ KeyPtr generate(std::string_view groupName, OSSL_LIB_CTX* libctx, const char* pr
 
 } // namespace ec
 
+
 } // namespace snet::crypto::akey

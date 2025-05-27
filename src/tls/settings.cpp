@@ -2,6 +2,7 @@
 #include <snet/tls/settings.hpp>
 #include <snet/crypto/exception.hpp>
 #include <casket/utils/exception.hpp>
+#include <iostream>
 
 using namespace casket::utils;
 
@@ -100,6 +101,16 @@ void Settings::setCipherSuites(std::string_view cipherSuites)
 void Settings::setSecurityLevel(SecurityLevel level) noexcept
 {
     SSL_CTX_set_security_level(ctx_, static_cast<int>(level));
+}
+
+static void keylogCallback(const SSL*, const char *line)
+{
+    std::cout << line << std::endl;
+}
+
+void Settings::setKeyLog()
+{
+    SSL_CTX_set_keylog_callback(ctx_, keylogCallback);
 }
 
 Connection Settings::createConnection() const

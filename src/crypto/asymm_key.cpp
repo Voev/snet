@@ -189,4 +189,10 @@ std::vector<uint8_t> getEncodedPublicKey(const Key* key)
     return publicKey;
 }
 
+void setEncodedPublicKey(Key* key, std::span<const uint8_t> value)
+{
+    ThrowIfFalse(0 < EVP_PKEY_set1_encoded_public_key(key, value.data(), value.size_bytes()));
+}
+
+
 } // namespace snet::crypto::akey
