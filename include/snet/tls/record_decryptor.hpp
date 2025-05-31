@@ -30,16 +30,15 @@ private:
     ///
     /// @param sideIndex The index indicating the side (client or server).
     /// @param session The TLS session to handle.
-    /// @param handshake The handshake message struct.
     /// @param message The handshake message bytes.
-    void processHandshakeClientHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake, std::span<const uint8_t> message);
+    void processHandshakeClientHello(const int8_t sideIndex, Session* session, std::span<const uint8_t> message);
 
     /// @brief Processes a ServerHello handshake message.
     ///
     /// @param sideIndex The index indicating the side (client or server).
     /// @param session The TLS session to handle.
     /// @param message The handshake message.
-    void processHandshakeServerHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake, std::span<const uint8_t> message);
+    void processHandshakeServerHello(const int8_t sideIndex, Session* session, std::span<const uint8_t> message);
 
     /// @brief Processes a SessionTicket handshake message.
     ///
@@ -53,8 +52,7 @@ private:
     /// @param sideIndex The index indicating the side (client or server).
     /// @param session The TLS session to handle.
     /// @param message The handshake message.
-    void processHandshakeEncryptedExtensions(const int8_t sideIndex, Session* session, HandshakeMessage& handshake,
-                                             std::span<const uint8_t> message);
+    void processHandshakeEncryptedExtensions(const int8_t sideIndex, Session* session, std::span<const uint8_t> message);
 
     /// @brief Processes a Certificate handshake message.
     /// @param sideIndex The index indicating the side (client or server).

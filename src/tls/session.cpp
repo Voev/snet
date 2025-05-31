@@ -304,38 +304,19 @@ void Session::generateTLS13KeyMaterial()
 
 void Session::processFinished(const std::int8_t sideIndex)
 {
+
+
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
-        const auto keySize = cipherSuite_.getKeyBits() / 8;
-        const auto& digest = cipherSuite_.getHnshDigestName();
+        generateApplicationSecrets(sideIndex);
 
         if (sideIndex == 0)
         {
-            const auto& secret = getSecret(SecretNode::ClientApplicationTrafficSecret);
-
-            clientEncKey_ = DeriveSecret(digest, secret, "key", {}, keySize);
-            clientIV_ = DeriveSecret(digest, secret, "iv", {}, 12);
-
             seqnum_.resetClientSequence();
-
-            std::cout << "================================================" << std::endl;
-            utils::printHex(std::cout, "Client Write key", clientEncKey_);
-            utils::printHex(std::cout, "Client IV", clientIV_);
-            std::cout << "================================================" << std::endl;
         }
         else
         {
-            const auto& secret = getSecret(SecretNode::ServerApplicationTrafficSecret);
-
-            serverEncKey_ = DeriveSecret(digest, secret, "key", {}, keySize);
-            serverIV_ = DeriveSecret(digest, secret, "iv", {}, 12);
-
             seqnum_.resetServerSequence();
-
-            std::cout << "================================================" << std::endl;
-            utils::printHex(std::cout, "Server Write key", serverEncKey_);
-            utils::printHex(std::cout, "Server IV", serverIV_);
-            std::cout << "================================================" << std::endl;
         }
     }
 }
@@ -504,7 +485,7 @@ void Session::generateHandshakeSecrets(const int8_t sideIndex, std::span<const u
 
     if (sideIndex == 0)
     {
-        client.earlySecret = HkdfExtract(digest, {}, {}, keySize);
+        client.earlySecret = HkdfExtract(digest, {}, {}, derivedKeySize);
 
         auto derivedEarlySecret = DeriveSecret(digest, client.earlySecret, "derived", {}, derivedKeySize);
         auto transcriptHash = client.hash.final(digest);
@@ -560,18 +541,20 @@ void Session::generateApplicationSecrets(const int8_t sideIndex)
     const auto keySize = cipherSuite_.getKeyBits() / 8;
     const auto& digest = cipherSuite_.getHnshDigestName();
 
+    auto md = CipherSuiteManager::getInstance().fetchDigest(digest);
+    const size_t derivedKeySize = EVP_MD_get_size(md);
+
     if (sideIndex == 0)
     {
-        auto derivedHandshakeSecret = DeriveSecret(digest, client.derivedSecret, "derived", {}, keySize);
         auto transcriptHash = client.hash.final(digest);
 
-        client.derivedSecret = HkdfExtract(digest, derivedHandshakeSecret, {}, keySize);
+        client.derivedSecret = HkdfExtract(digest, client.derivedSecret, {}, derivedKeySize);
 
-        client.clientTrafficKey = DeriveSecret(digest, client.derivedSecret, "c ap traffic", transcriptHash, keySize);
+        client.clientTrafficKey = DeriveSecret(digest, client.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
         client.clientEncKey = DeriveSecret(digest, client.clientTrafficKey, "key", {}, keySize);
         client.clientIV = DeriveSecret(digest, client.clientTrafficKey, "iv", {}, 12);
 
-        client.serverTrafficKey = DeriveSecret(digest, client.derivedSecret, "s ap traffic", transcriptHash, keySize);
+        client.serverTrafficKey = DeriveSecret(digest, client.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
         client.serverEncKey = DeriveSecret(digest, client.serverTrafficKey, "key", {}, keySize);
         client.serverIV = DeriveSecret(digest, client.serverTrafficKey, "iv", {}, 12);
     
@@ -584,16 +567,15 @@ void Session::generateApplicationSecrets(const int8_t sideIndex)
     }
     else
     {
-        auto derivedHandshakeSecret = DeriveSecret(digest, server.derivedSecret, "derived", {}, keySize);
         auto transcriptHash = server.hash.final(digest);
 
-        server.derivedSecret = HkdfExtract(digest, derivedHandshakeSecret, {}, keySize);
+        server.derivedSecret = HkdfExtract(digest, server.derivedSecret, {}, derivedKeySize);
 
-        server.clientTrafficKey = DeriveSecret(digest, server.derivedSecret, "c ap traffic", transcriptHash, keySize);
+        server.clientTrafficKey = DeriveSecret(digest, server.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
         server.clientEncKey = DeriveSecret(digest, server.clientTrafficKey, "key", {}, keySize);
         server.clientIV = DeriveSecret(digest, server.clientTrafficKey, "iv", {}, 12);
 
-        server.serverTrafficKey = DeriveSecret(digest, server.derivedSecret, "s ap traffic", transcriptHash, keySize);
+        server.serverTrafficKey = DeriveSecret(digest, server.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
         server.serverEncKey = DeriveSecret(digest, server.serverTrafficKey, "key", {}, keySize);
         server.serverIV = DeriveSecret(digest, server.serverTrafficKey, "iv", {}, 12);
 

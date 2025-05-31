@@ -101,7 +101,7 @@ void Extensions::deserialize(utils::DataReader& reader, const Side from, const H
 
             // TODO offer a function on reader that returns a byte range as a reference
             // to avoid this copy of the extension data
-            const std::vector<uint8_t> extn_data = reader.get_fixed<uint8_t>(extensionSize);
+            auto extn_data = reader.get_fixed<uint8_t>(extensionSize);
             utils::DataReader extn_reader("Extension", extn_data);
             this->add(makeExtension(extn_reader, type, from, messageType));
             extn_reader.assert_done();
@@ -717,11 +717,6 @@ size_t RenegotiationExtension::serialize(Side whoami, std::span<uint8_t> buffer)
 size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
 {
     ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
-
-    if (extensions_.empty())
-    {
-        return 0;
-    }
 
     uint16_t totalWritten = 0;
     auto data = buffer.subspan(2);

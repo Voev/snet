@@ -75,10 +75,11 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
     auto session = std::make_unique<Session>();
 
     serverBufferSize = 0;
+    session->sendingLength = 0;
     do
     {
         clientBufferSize = clientBuffer.size();
-        ASSERT_EQ(Want::Nothing, client.handshake(serverBuffer.data(), serverBufferSize,
+        ASSERT_EQ(Want::Nothing, client.handshake(session->sendingBuffer, session->sendingLength,
                                                   clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 

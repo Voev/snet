@@ -50,7 +50,6 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
         if (session->getCipherState(sideIndex) && !session->canDecrypt(sideIndex))
         {
             return;
-            
         }
         ::utils::ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
     }
@@ -63,20 +62,20 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
 
         utils::DataReader reader("Handshake Message", data);
 
-        record->handshake.type = static_cast<HandshakeType>(reader.get_byte());
+        session->handshake.type = static_cast<HandshakeType>(reader.get_byte());
         const auto messageLength = reader.get_uint24_t();
         ::utils::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
 
-        switch (record->handshake.type)
+        switch (session->handshake.type)
         {
         case HandshakeType::HelloRequest:
             /* Not implemented */
             break;
         case HandshakeType::ClientHello:
-            processHandshakeClientHello(sideIndex, session, record->handshake, data);
+            processHandshakeClientHello(sideIndex, session, data);
             break;
         case HandshakeType::ServerHello:
-            processHandshakeServerHello(sideIndex, session, record->handshake, data);
+            processHandshakeServerHello(sideIndex, session, data);
             break;
         case HandshakeType::HelloVerifyRequest:
             /* Not implemented */
@@ -88,7 +87,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
             /* Not implemented */
             break;
         case HandshakeType::EncryptedExtensions:
-            processHandshakeEncryptedExtensions(sideIndex, session, record->handshake, data);
+            processHandshakeEncryptedExtensions(sideIndex, session, data);
             break;
         case HandshakeType::Certificate:
             processHandshakeCertificate(sideIndex, session, data);
@@ -123,37 +122,37 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
     }
 }
 
-void RecordDecryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake,
+void RecordDecryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session,
                                                   std::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
-    handshake.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    session->handshake.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    session->setVersion(handshake.clientHello.legacyVersion);
-    session->setClientRandom(handshake.clientHello.random);
+    session->setVersion(session->handshake.clientHello.legacyVersion);
+    session->setClientRandom(session->handshake.clientHello.random);
     session->updateHash(sideIndex, message);
 }
 
-void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session, HandshakeMessage& handshake,
+void RecordDecryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session,
                                                   std::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
-    handshake.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    session->handshake.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(handshake.serverHello.cipherSuite);
+    auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(session->handshake.serverHello.cipherSuite);
     ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not supported");
 
     session->setCipherSuite(foundCipher.value());
-    
+
     auto cipherTraits = CipherSuiteManager::getInstance().fetchCipher(foundCipher.value().getCipherName());
     ::utils::ThrowIfFalse(cipherTraits, "failed to fetch cipher '{}'", foundCipher.value().getCipherName());
     session->setCipherTraits(std::move(cipherTraits));
 
-    if (handshake.serverHello.extensions.has(ExtensionCode::SupportedVersions))
+    if (session->handshake.serverHello.extensions.has(ExtensionCode::SupportedVersions))
     {
-        auto ext = handshake.serverHello.extensions.get<SupportedVersions>();
+        auto ext = session->handshake.serverHello.extensions.get<SupportedVersions>();
         session->setVersion(ext->versions()[0]);
     }
 
@@ -170,32 +169,19 @@ void RecordDecryptor::processHandshakeCertificate(const int8_t sideIndex, Sessio
                                                   std::span<const uint8_t> message)
 {
     static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
-    utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
     if (session->getVersion() == ProtocolVersion::TLSv1_3)
     {
-        auto requestContext = reader.get_range<uint8_t>(1, 0, 255);
-
-        // RFC 8446 4.4.2
-        //    [...] in the case of server authentication, this field SHALL be
-        //    zero length.
-        ::utils::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
-                             "Server Certificate message must not contain a request context");
-
-        const size_t certEntriesLength = reader.get_uint24_t();
-        ::utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "Certificate: Message malformed");
-
-        while (reader.has_remaining())
+        if (sideIndex == 1)
         {
-            /// Cert Entry
-            reader.get_tls_length_value(3);
-            /// Extensions
-            const auto extensionsLength = reader.peek_uint16_t();
-            reader.get_fixed<uint8_t>(extensionsLength + 2);
+            session->handshake.serverCertificate.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            ::utils::ThrowIfFalse(session->handshake.serverCertificate.requestContext.empty(),
+                                  "Server Certificate message must not contain a request context");
         }
     }
     else
     {
+        utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         const size_t certsLength = reader.get_uint24_t();
         ::utils::ThrowIfTrue(reader.remaining_bytes() != certsLength, "Certificate: Message malformed");
 
@@ -204,9 +190,8 @@ void RecordDecryptor::processHandshakeCertificate(const int8_t sideIndex, Sessio
             /// Certificate
             reader.get_tls_length_value(3);
         }
+        reader.assert_done();
     }
-
-    reader.assert_done();
 
     session->updateHash(message);
 }
@@ -249,13 +234,13 @@ void RecordDecryptor::processHandshakeSessionTicket(const int8_t sideIndex, Sess
 }
 
 void RecordDecryptor::processHandshakeEncryptedExtensions(const int8_t sideIndex, Session* session,
-                                                          HandshakeMessage& handshake, std::span<const uint8_t> message)
+                                                          std::span<const uint8_t> message)
 {
     (void)session;
 
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
-    handshake.encryptedExtensions.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    session->handshake.encryptedExtensions.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 }
 
 void RecordDecryptor::processHandshakeServerKeyExchange(const int8_t sideIndex, Session* session,
@@ -404,7 +389,7 @@ void RecordDecryptor::processHandshakeClientKeyExchange(const int8_t sideIndex, 
 void RecordDecryptor::processHandshakeFinished(const int8_t sideIndex, Session* session,
                                                std::span<const uint8_t> message)
 {
-    (void)message;
+    session->updateHash(message);
     session->processFinished(sideIndex);
 }
 

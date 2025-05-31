@@ -27,7 +27,7 @@ void RecordEncryptor::handleRecord(const int8_t sideIndex, Session* session, Rec
 
     if (record->type == RecordType::Handshake)
     {
-        switch (record->handshake.type)
+        switch (session->handshake.type)
         {
         case HandshakeType::ClientHello:
             processHandshakeClientHello(sideIndex, session, record);
@@ -45,12 +45,12 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
-    record->handshake.clientHello.print(std::cout);
+    session->handshake.clientHello.print(std::cout);
 
-    auto supportedVersions = record->handshake.clientHello.extensions.get<SupportedVersions>();
+    auto supportedVersions = session->handshake.clientHello.extensions.get<SupportedVersions>();
     if (supportedVersions && supportedVersions->supports(ProtocolVersion::TLSv1_3))
     {
-        auto keyShare = record->handshake.clientHello.extensions.get<KeyShare>();
+        auto keyShare = session->handshake.clientHello.extensions.get<KeyShare>();
         ::utils::ThrowIfFalse(keyShare != nullptr, "key_share extension not specified for TLSv1.3");
 
         auto groupNames = keyShare->offered_groups();
@@ -59,17 +59,14 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
         {
             session->ephemeralKey = GenerateKeyByGroupParams(groupNames[i]);
             keyShare->setPublicKey(i, session->ephemeralKey);
-            /// @todo: fit it
+            /// @todo: fix for all keys
             break;
         }
     }
 
-    record->handshake.clientHello.print(std::cout);
-    session->sendingLength = record->pack(session->sendingBuffer);
+    session->sendingLength = record->pack(session->handshake, session->sendingBuffer);
 
     session->updateHash(1, {session->sendingBuffer + TLS_HEADER_SIZE, session->sendingLength - TLS_HEADER_SIZE});
-
-    utils::printHex(std::cout, "ClientHello", {session->sendingBuffer, session->sendingLength});
 }
 
 void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session, Record* record)
@@ -78,23 +75,20 @@ void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
 
     if (session->getVersion() == ProtocolVersion::TLSv1_3)
     {
-        auto serverKeyShare = record->handshake.serverHello.extensions.get<KeyShare>();
+        auto serverKeyShare = session->handshake.serverHello.extensions.get<KeyShare>();
         ::utils::ThrowIfTrue(serverKeyShare == nullptr, "'key_share' extension from server not found");
 
-        /// @todo: check selected group
-
-        //auto serverGroupParams = serverKeyShare->selected_group();
         auto serverExchangedSecret = ExchangeSecret(session->ephemeralKey, serverKeyShare->getPublicKey(), true);
-
+        
         session->generateHandshakeSecrets(1, serverExchangedSecret);
-
-        /*
-        auto clientKeyShare = session->.get<KeyShare>();
+        
+        auto clientKeyShare = session->handshake.clientHello.extensions.get<KeyShare>();
         ::utils::ThrowIfTrue(clientKeyShare == nullptr, "'key_share' extension from client not found");
-
+    
         auto groups = clientKeyShare->offered_groups();
+        auto serverGroupParams = serverKeyShare->selected_group();
+        size_t i = 0;
 
-        size_t i = 0; 
         for (i = 0; i < groups.size(); ++i)
         {
             if (groups[i] == serverGroupParams)
@@ -105,10 +99,10 @@ void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
         ::utils::ThrowIfTrue(i == groups.size(), "common group params not found");
 
         auto clientExchangedSecret = ExchangeSecret(session->ephemeralKey, clientKeyShare->getPublicKey(i), true);
-        session->generateHandshakeSecrets(0, clientExchangedSecret);*/
+        session->generateHandshakeSecrets(0, clientExchangedSecret);
     }
 
-    session->sendingLength = record->pack(session->sendingBuffer);
+    session->sendingLength = record->pack(session->handshake, session->sendingBuffer);
 }
 
 } // namespace snet::tls

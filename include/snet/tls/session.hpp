@@ -169,6 +169,8 @@ public:
     SessionKeys client;
     SessionKeys server;
 
+    HandshakeMessage handshake;
+
 private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;

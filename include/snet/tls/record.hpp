@@ -12,6 +12,7 @@
 #include <snet/tls/msg/client_hello.hpp>
 #include <snet/tls/msg/server_hello.hpp>
 #include <snet/tls/msg/encrypted_extensions.hpp>
+#include <snet/tls/msg/tls13_certificate.hpp>
 
 #include <casket/utils/exception.hpp>
 
@@ -99,6 +100,7 @@ struct HandshakeMessage
     msg::ClientHello clientHello;
     msg::ServerHello serverHello;
     msg::EncryptedExtensions encryptedExtensions;
+    msg::TLSv13Certificate serverCertificate;
 };
 
 struct Record
@@ -121,7 +123,7 @@ struct Record
 
     uint64_t seqnum;
 
-    HandshakeMessage handshake;
+    //HandshakeMessage handshake;
 
     void unpackHeader()
     {
@@ -134,9 +136,9 @@ struct Record
         version = ProtocolVersion(data[1], data[2]);
     }
 
-    size_t packHandshake(std::span<uint8_t> buffer);
+    size_t packHandshake(const HandshakeMessage& handshake, std::span<uint8_t> buffer);
 
-    size_t pack(std::span<uint8_t> buffer);
+    size_t pack(const HandshakeMessage& handshake, std::span<uint8_t> buffer);
 
 
     void reset()

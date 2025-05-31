@@ -67,6 +67,7 @@ public:
         return nullptr;
     }
 
+
 private:
     std::vector<std::shared_ptr<IRecordHandler>> handlers_;
     RecordPool recordPool_;

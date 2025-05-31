@@ -37,11 +37,11 @@ class SnifferHandler final : public tls::IRecordHandler
 public:
     SnifferHandler() = default;
 
-    void handleRecord(const int8_t sideIndex, tls::Session* session, tls::Record* record) override
+    void handleRecord(const int8_t sideIndex, tls::Session* session, tls::Record*) override
     {
-        if (sideIndex == 0 && record->handshake.type == tls::HandshakeType::ClientHello)
+        if (sideIndex == 0 && session->handshake.type == tls::HandshakeType::ClientHello)
         {
-            auto secrets = secretManager.getSecretNode(record->handshake.clientHello.random);
+            auto secrets = secretManager.getSecretNode(session->handshake.clientHello.random);
             if (secrets.has_value())
             {
                 session->setSecrets(secrets.value());

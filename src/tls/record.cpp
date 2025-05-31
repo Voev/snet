@@ -3,7 +3,7 @@
 namespace snet::tls
 {
 
-size_t Record::packHandshake(std::span<uint8_t> buffer)
+size_t Record::packHandshake(const HandshakeMessage& handshake, std::span<uint8_t> buffer)
 {
     casket::utils::ThrowIfTrue(buffer.size_bytes() < TLS_HANDSHAKE_HEADER_SIZE, "buffer too small");
     uint32_t length{0};
@@ -34,7 +34,7 @@ size_t Record::packHandshake(std::span<uint8_t> buffer)
     return length + TLS_HANDSHAKE_HEADER_SIZE;
 }
 
-size_t Record::pack(std::span<uint8_t> buffer)
+size_t Record::pack(const HandshakeMessage& handshake, std::span<uint8_t> buffer)
 {
     casket::utils::ThrowIfTrue(buffer.size_bytes() < TLS_HEADER_SIZE, "buffer too small");
     uint16_t length{0};
@@ -51,7 +51,7 @@ size_t Record::pack(std::span<uint8_t> buffer)
         }
         case RecordType::Handshake:
         {
-            length = packHandshake(buffer.subspan(TLS_HEADER_SIZE));
+            length = packHandshake(handshake, buffer.subspan(TLS_HEADER_SIZE));
             break;
         }
         case RecordType::ApplicationData:
