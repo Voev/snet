@@ -3,6 +3,8 @@
 
 #pragma once
 #include <snet/tls/i_record_handler.hpp>
+#include <snet/tls/record.hpp>
+#include <snet/tls/record_queue.hpp>
 
 namespace snet::tls
 {
@@ -13,7 +15,10 @@ class RecordEncryptor final : public IRecordHandler
 public:
     /// @brief Default constructor.
     ///
-    RecordEncryptor() = default;
+    RecordEncryptor(RecordPool& recordPool, RecordQueue& recordQueue)
+        : recordPool_(recordPool)
+        , recordQueue_(recordQueue)
+    {}
 
     /// @brief Default destructor.
     ///
@@ -37,6 +42,10 @@ private:
     void processHandshakeClientHello(const int8_t sideIndex, Session* session, Record* record);
 
     void processHandshakeServerHello(const int8_t sideIndex, Session* session, Record* record);
+
+private:
+    RecordPool& recordPool_;
+    RecordQueue& recordQueue_;
 };
 
 } // namespace snet::tls

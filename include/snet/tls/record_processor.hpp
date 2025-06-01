@@ -1,12 +1,13 @@
 #pragma once
 #include <vector>
 #include <memory>
-#include <snet/tls/record.hpp>
 #include <snet/tls/i_record_handler.hpp>
+#include <snet/tls/record_queue.hpp>
 #include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
+
 
 /// @brief Class for processing TLS records.
 class RecordProcessor final : public utils::NonCopyable
@@ -17,7 +18,8 @@ public:
     /// @param[in] recordPoolSize The size of record pool.
     RecordProcessor(const size_t recordPoolSize = 1024)
         : recordPool_(recordPoolSize)
-    {}
+    {
+    }
 
     /// @brief Destructor.
     ~RecordProcessor() = default;
@@ -39,13 +41,16 @@ public:
 
     /// @brief Adds a record handler.
     /// @tparam Handler The type of the handler.
-    template <typename Handler>
-    void addHandler()
-    {
-        static_assert(std::is_base_of<tls::IRecordHandler, Handler>::value,
-                      "Handler type must derive from IRecordHandler");
-
-        handlers_.emplace_back(std::make_shared<Handler>());
+    /// @tparam Args
+    /// @param[in] args
+    template <typename Handler, typename... Args>
+    void addHandler(Args&&... args) {
+        static_assert(std::is_base_of_v<IRecordHandler, Handler>,
+                     "Handler must inherit from IRecordHandler");
+        
+        handlers_.emplace_back(
+            std::make_shared<Handler>(std::forward<Args>(args)...)
+        );
     }
 
     /// @brief Gets a record handler.
@@ -67,10 +72,20 @@ public:
         return nullptr;
     }
 
+    RecordPool& getRecordPool()
+    {
+        return recordPool_;
+    }
+
+    RecordQueue& getRecordQueue()
+    {
+        return recordQueue_;
+    }
 
 private:
     std::vector<std::shared_ptr<IRecordHandler>> handlers_;
     RecordPool recordPool_;
+    RecordQueue recordQueue_;
 };
 
 } // namespace snet::tls

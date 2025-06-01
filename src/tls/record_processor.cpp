@@ -11,71 +11,35 @@ using namespace casket::log;
 namespace snet::tls
 {
 
-static inline void init_record(Record* record, const uint64_t seq, const int is_received_)
-{
-    (void)(is_received_);
-    record->data = record->ciphertextBuffer;
-    record->decrypted = record->plaintextBuffer;
-    record->next_iv = NULL;
-    record->current_len = 0;
-    record->length = 0;
-    record->seqnum = seq;
-    record->is_decrypted = 0;
-
-    record->is_reset = false;
-}
-
-// process_new_record
 size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_t* inputBytes, size_t inputLength)
 {
+    ThrowIfTrue(!inputBytes || !inputLength, "invalid input parameters");
+    ThrowIfTrue(!session, "invalid session");
+
     size_t processedLength{0};
-    Record* currentRecord{nullptr};
+    Record* currentRecord = session->currentRecord;
 
     while (processedLength < inputLength)
     {
         if (!currentRecord)
         {
-            uint8_t* offset{nullptr};
-
             if (inputLength < processedLength + TLS_HEADER_SIZE)
+            {
                 break;
+            }
 
-            currentRecord = recordPool_.acquire();
-            init_record(currentRecord, 0, true);
-
+            currentRecord = session->currentRecord = recordPool_.acquire();
             if (!currentRecord)
+            {
                 return processedLength;
+            }
 
-            offset = inputBytes + processedLength;
-
-            ThrowIfTrue(offset[0] < 20 || offset[0] > 23, "TLS record type had unexpected value");
-            ThrowIfTrue(offset[1] != 3 || offset[2] >= 4, "TLS record version had unexpected value");
-
-            currentRecord->type = static_cast<RecordType>(offset[0]);
-            currentRecord->version = ProtocolVersion(offset[1], offset[2]);
-
-            const size_t recordLength = utils::make_uint16(offset[TLS_HEADER_SIZE - 2], offset[TLS_HEADER_SIZE - 1]);
-            ThrowIfTrue(recordLength > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
-            ThrowIfTrue(recordLength == 0, "Received a empty record");
-
-            currentRecord->length = recordLength + TLS_HEADER_SIZE;
+            currentRecord->deserializeHeader({inputBytes + processedLength, TLS_HEADER_SIZE});
         }
 
-        if (currentRecord->current_len > 0 || currentRecord->length + processedLength > inputLength)
-        {
-            auto copy_len = std::min(currentRecord->length - currentRecord->current_len, inputLength - processedLength);
-            std::memcpy(currentRecord->data + currentRecord->current_len, inputBytes + processedLength, copy_len);
-            currentRecord->current_len += copy_len;
-            processedLength += copy_len;
-        }
-        else
-        {
-            currentRecord->data = inputBytes + processedLength;
-            currentRecord->current_len += currentRecord->length;
-            processedLength += currentRecord->length;
-        }
+        processedLength += currentRecord->initPayload({inputBytes + processedLength, inputLength - processedLength});
 
-        if (currentRecord->current_len == currentRecord->length)
+        if (currentRecord->isFullyAssembled())
         {
             for (const auto& handler : handlers_)
             {
@@ -85,7 +49,7 @@ size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_
         }
     }
 
-    if (currentRecord != NULL)
+    if (currentRecord != nullptr)
     {
         return 0;
     }

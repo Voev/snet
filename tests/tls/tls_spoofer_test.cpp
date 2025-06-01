@@ -41,7 +41,7 @@ public:
 
         ASSERT_NO_THROW(spoofer_.addHandler<RecordDecryptor>());
         ASSERT_NO_THROW(spoofer_.addHandler<RecordPrinter>());
-        ASSERT_NO_THROW(spoofer_.addHandler<RecordEncryptor>());
+        ASSERT_NO_THROW(spoofer_.addHandler<RecordEncryptor>(spoofer_.getRecordPool(), spoofer_.getRecordQueue()));
     }
 
     void TearDown() override

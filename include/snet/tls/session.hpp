@@ -84,8 +84,6 @@ public:
 
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
-    void updateHash(std::span<const uint8_t> message);
-
     void updateHash(const int8_t sideIndex, std::span<const uint8_t> message);
 
     /// @brief Sets the client random value.
@@ -171,6 +169,8 @@ public:
 
     HandshakeMessage handshake;
 
+    Record* currentRecord{nullptr};
+
 private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
@@ -190,7 +190,6 @@ private:
     SecureVector<uint8_t> clientMacKey_;
     SecureVector<uint8_t> serverMacKey_;
 
-    HandshakeHash handshakeHash_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;

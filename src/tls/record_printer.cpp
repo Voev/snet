@@ -20,26 +20,29 @@ void RecordPrinter::handleRecord(const int8_t sideIndex, Session* session, Recor
     (void)session;
 
     const auto direction = (sideIndex == 0 ? "C->S" : "C<-S");
-    std::cout << format("{}: {} {} [{}]", direction, record->version.toString(), toString(record->type), record->length)
+    std::cout << format("{}: {} {} [{}]", direction, record->version.toString(), toString(record->getType()),
+                        record->getLength())
               << std::endl;
 
-    if (record->is_decrypted)
+    if (record->isDecrypted())
     {
-        if (record->type == RecordType::Handshake)
+        auto data = record->getData();
+        if (record->getType() == RecordType::Handshake)
         {
-            auto ht = static_cast<tls::HandshakeType>(record->decrypted[0]);
-            std::cout << format("{} [{}] (decrypted)", toString(ht), record->decryptedLength) << std::endl;
+            auto ht = static_cast<tls::HandshakeType>(data[0]);
+            std::cout << format("{} [{}] (decrypted)", toString(ht), data.size()) << std::endl;
         }
-        utils::printHex(std::cout, {record->decrypted, record->decryptedLength});
+        utils::printHex(std::cout, data);
     }
     else
     {
-        if (record->type == RecordType::Handshake)
+        auto data = record->getData();
+        if (record->getType() == RecordType::Handshake)
         {
-            auto ht = static_cast<tls::HandshakeType>(record->data[TLS_HEADER_SIZE]);
-            std::cout << format("{} [{}]", toString(ht), record->length - TLS_HEADER_SIZE) << std::endl;
+            auto ht = static_cast<tls::HandshakeType>(data[TLS_HEADER_SIZE]);
+            std::cout << format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
         }
-        utils::printHex(std::cout, {record->data + TLS_HEADER_SIZE, record->length - TLS_HEADER_SIZE});
+        utils::printHex(std::cout, data.subspan(TLS_HEADER_SIZE));
     }
 }
 

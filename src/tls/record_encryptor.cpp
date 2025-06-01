@@ -41,7 +41,7 @@ void RecordEncryptor::handleRecord(const int8_t sideIndex, Session* session, Rec
     }
 }
 
-void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session, Record* record)
+void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Session* session, Record*)
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
@@ -64,9 +64,13 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
         }
     }
 
-    session->sendingLength = record->pack(session->handshake, session->sendingBuffer);
+    auto outputRecord = recordPool_.acquire();
 
-    session->updateHash(1, {session->sendingBuffer + TLS_HEADER_SIZE, session->sendingLength - TLS_HEADER_SIZE});
+    auto msgSize = outputRecord->pack(session->handshake, outputRecord->payloadBuffer);
+
+    session->updateHash(1, {outputRecord->payloadBuffer.data() + TLS_HEADER_SIZE, msgSize - TLS_HEADER_SIZE});
+
+    recordQueue_.push(outputRecord);
 }
 
 void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session, Record* record)
@@ -103,6 +107,7 @@ void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Sessio
     }
 
     session->sendingLength = record->pack(session->handshake, session->sendingBuffer);
+
 }
 
 } // namespace snet::tls

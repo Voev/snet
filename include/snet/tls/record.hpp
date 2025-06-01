@@ -3,6 +3,7 @@
 
 #pragma once
 #include <span>
+#include <array>
 #include <variant>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/version.hpp>
@@ -19,81 +20,6 @@
 namespace snet::tls
 {
 
-struct plain_text_t
-{
-    RecordType type;
-    ProtocolVersion version;
-    uint16_t length;
-    uint8_t* fragment;
-};
-
-typedef struct generic_block_cipher
-{
-    uint8_t* IV;
-    uint8_t* content;
-    uint8_t* mac;
-    uint8_t* padding;
-    uint8_t padding_length;
-} generic_block_cipher_t;
-
-typedef struct generic_stream_cipher
-{
-    uint8_t* content;
-    uint8_t* mac;
-} generic_stream_cipher_t;
-
-typedef struct generic_aead_cipher
-{
-    uint8_t* nonce_explicit;
-    uint8_t* content;
-} generic_aead_cipher_t;
-
-typedef struct tls_ciphertext
-{
-    RecordType type;
-    ProtocolVersion version;
-    unsigned short length;
-    uint8_t* fragment;
-    union
-    {
-        generic_block_cipher_t block_cipher;
-        generic_stream_cipher_t stream_cipher;
-        generic_aead_cipher_t aead_cipher;
-    } fragment_;
-} cipher_text_t;
-
-typedef enum
-{
-    TO_PACK_HEADER,
-    TO_PACK_CONTENT,
-    TO_APPEND_MAC,
-    TO_ENCRYPT,
-    WRITE_READY,
-    TO_UNPACK_HEADER,
-    TO_DECRYPT,
-    TO_VERIFY_MAC,
-    TO_UNPACK_CONTENT,
-    READ_READY,
-
-    NULL_STATE
-} ssl_record_state_t;
-
-
-/*class HandshakeMessage
-{
-public:
-    using HandshakeMessageType = std::variant<msg::ClientHello, msg::ServerHello, msg::EncryptedExtensions>;
-
-    HandshakeMessage() = default;
-
-    HandshakeMessage(HandshakeMessageType hs)
-        : msg(std::move(hs))
-    {
-    }
-
-    HandshakeMessageType msg;
-};*/
-
 struct HandshakeMessage
 {
     HandshakeType type;
@@ -105,51 +31,71 @@ struct HandshakeMessage
 
 struct Record
 {
-    int id;
-
-    RecordType type;
-    ProtocolVersion version;
-    ssl_record_state_t state;
-    size_t length;      ///< Record length according to header (with header).
-    size_t current_len; ////< Record length according to header (with header).
-    size_t decryptedLength;
-    uint8_t ciphertextBuffer[MAX_CIPHERTEXT_SIZE];
-    uint8_t plaintextBuffer[MAX_PLAINTEXT_SIZE];
-    uint8_t* data;
-    uint8_t* decrypted;
-    uint8_t* next_iv;
-    uint8_t is_reset;
-    uint8_t is_decrypted;
-
-    uint64_t seqnum;
-
-    //HandshakeMessage handshake;
-
-    void unpackHeader()
+    Record()
+        : type(RecordType::Invalid)
+        , payload(nullptr)
+        , currentLength(0)
+        , expectedLength(0)
+        , decryptedLength(0)
+        , isDecrypted_(false)
     {
-        state = TO_DECRYPT;
-
-        casket::utils::ThrowIfTrue(data[0] < 20 || data[0] > 23, "TLS record type had unexpected value");
-        casket::utils::ThrowIfTrue(data[1] != 3 || data[2] >= 4, "TLS record version had unexpected value");
-
-        type = static_cast<RecordType>(data[0]);
-        version = ProtocolVersion(data[1], data[2]);
     }
+
+    void deserializeHeader(std::span<const uint8_t> data);
+
+    size_t initPayload(std::span<const uint8_t> data);
 
     size_t packHandshake(const HandshakeMessage& handshake, std::span<uint8_t> buffer);
 
     size_t pack(const HandshakeMessage& handshake, std::span<uint8_t> buffer);
 
+    void reset();
 
-    void reset()
+    inline bool isFullyAssembled() const noexcept
     {
-        state = ssl_record_state_t::NULL_STATE;
-        length = 0;
-        current_len = 0;
-        is_reset = 0;
-        is_decrypted = 0;
-        seqnum = 0;
+        return expectedLength == currentLength;
     }
+
+    inline RecordType getType() const noexcept
+    {
+        return type;
+    }
+
+    inline ProtocolVersion getVersion() const noexcept
+    {
+        return version;
+    }
+
+    inline uint16_t getLength() const noexcept
+    {
+        return currentLength;
+    }
+
+    inline bool isDecrypted() const noexcept
+    {
+        return isDecrypted_;
+    }
+
+    inline std::span<const uint8_t> getData() const noexcept
+    {
+        return {payload, currentLength};
+    }
+
+    
+    inline std::span<const uint8_t> getDecryptedData() const noexcept
+    {
+        return {decryptedBuffer.data(), decryptedLength};
+    }
+
+    RecordType type;
+    ProtocolVersion version;
+    std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
+    std::array<uint8_t, MAX_PLAINTEXT_SIZE> decryptedBuffer;
+    const uint8_t* payload;
+    size_t currentLength;
+    size_t expectedLength;
+    size_t decryptedLength;
+    bool isDecrypted_;
 };
 
 class RecordPool

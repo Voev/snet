@@ -21,18 +21,16 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
 {
     ::utils::ThrowIfTrue(session == nullptr, "Session is not setted");
 
-    record->unpackHeader();
-
-    std::span<uint8_t> data;
+    std::span<const uint8_t> data;
 
     if (session->canDecrypt(sideIndex) && record->type != RecordType::ChangeCipherSpec)
     {
         session->decrypt(sideIndex, record);
-        data = std::span(record->decrypted, record->decryptedLength);
+        data = std::span(record->decryptedBuffer.data(), record->decryptedLength);
     }
     else
     {
-        data = std::span(record->data + TLS_HEADER_SIZE, record->length - TLS_HEADER_SIZE);
+        data = std::span(record->payload + TLS_HEADER_SIZE, record->expectedLength - TLS_HEADER_SIZE);
     }
 
     if (record->type == RecordType::ChangeCipherSpec)
@@ -193,7 +191,7 @@ void RecordDecryptor::processHandshakeCertificate(const int8_t sideIndex, Sessio
         reader.assert_done();
     }
 
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeSessionTicket(const int8_t sideIndex, Session* session,
@@ -291,7 +289,7 @@ void RecordDecryptor::processHandshakeServerKeyExchange(const int8_t sideIndex, 
 
     reader.assert_done();
 
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeCertificateRequest(const int8_t sideIndex, Session* session,
@@ -319,7 +317,7 @@ void RecordDecryptor::processHandshakeCertificateRequest(const int8_t sideIndex,
 
     reader.assert_done();
 
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeServerHelloDone(const int8_t sideIndex, Session* session,
@@ -328,7 +326,7 @@ void RecordDecryptor::processHandshakeServerHelloDone(const int8_t sideIndex, Se
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.assert_done();
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeCertificateVerify(const int8_t sideIndex, Session* session,
@@ -341,14 +339,14 @@ void RecordDecryptor::processHandshakeCertificateVerify(const int8_t sideIndex, 
     reader.get_range<uint8_t>(2, 0, 65535);
     reader.assert_done();
 
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 }
 
 void RecordDecryptor::processHandshakeClientKeyExchange(const int8_t sideIndex, Session* session,
                                                         std::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
 
     if (!session->getServerInfo().getServerKey())
     {
@@ -389,7 +387,7 @@ void RecordDecryptor::processHandshakeClientKeyExchange(const int8_t sideIndex, 
 void RecordDecryptor::processHandshakeFinished(const int8_t sideIndex, Session* session,
                                                std::span<const uint8_t> message)
 {
-    session->updateHash(message);
+    session->updateHash(sideIndex, message);
     session->processFinished(sideIndex);
 }
 
