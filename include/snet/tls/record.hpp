@@ -5,6 +5,8 @@
 #include <span>
 #include <array>
 #include <variant>
+#include <cassert>
+#include <queue>
 #include <snet/tls/alert.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/tls/types.hpp>
@@ -81,7 +83,6 @@ struct Record
         return {payload, currentLength};
     }
 
-    
     inline std::span<const uint8_t> getDecryptedData() const noexcept
     {
         return {decryptedBuffer.data(), decryptedLength};
@@ -101,27 +102,77 @@ struct Record
 class RecordPool
 {
 public:
-    RecordPool(size_t initial_size)
+    class Handle
     {
-        for (size_t i = 0; i < initial_size; ++i)
+    public:
+        explicit Handle(RecordPool& pool)
+            : pool_(pool)
+            , record_(pool.acquire())
         {
-            records_.emplace_back(new Record());
-            free_records_.push_back(records_.back().get());
+        }
+
+        Handle(const Handle&) = delete;
+        Handle& operator=(const Handle&) = delete;
+
+        Handle(Handle&& other) noexcept
+            : pool_(other.pool_)
+            , record_(other.record_)
+        {
+            other.record_ = nullptr;
+        }
+
+        ~Handle()
+        {
+            if (record_)
+            {
+                pool_.release(record_);
+            }
+        }
+
+        Record* release()
+        {
+            Record* ptr = record_;
+            record_ = nullptr;
+            return ptr;
+        }
+
+        Record* get() const
+        {
+            return record_;
+        }
+
+        Record* operator->() const
+        {
+            return record_;
+        }
+
+        Record& operator*() const
+        {
+            return *record_;
+        }
+
+    private:
+        RecordPool& pool_;
+        Record* record_;
+    };
+
+    RecordPool(size_t fixed_size = 1024)
+        : records_(fixed_size)
+    {
+        for (auto& record : records_)
+        {
+            record = std::make_unique<Record>();
+            free_records_.push_back(record.get());
         }
     }
 
     ~RecordPool() = default;
 
-    Record* acquire()
+    Record* acquire() noexcept
     {
-
         if (free_records_.empty())
         {
-            // Если нет свободных записей, создаем новую
-            records_.emplace_back(new Record());
-            Record* record = records_.back().get();
-            record->reset();
-            return record;
+            return nullptr;
         }
 
         Record* record = free_records_.back();
@@ -130,8 +181,12 @@ public:
         return record;
     }
 
-    void release(Record* record)
+    void release(Record* record) noexcept
     {
+        if (!record)
+            return;
+
+        assert(is_from_pool(record));
         record->reset();
         free_records_.push_back(record);
     }
@@ -146,9 +201,24 @@ public:
         return free_records_.size();
     }
 
+    Handle createHandle()
+    {
+        return Handle(*this);
+    }
+
+private:
+    bool is_from_pool(Record* record) const
+    {
+        auto it =
+            std::find_if(records_.begin(), records_.end(), [record](const auto& ptr) { return ptr.get() == record; });
+        return it != records_.end();
+    }
+
 private:
     std::vector<std::unique_ptr<Record>> records_;
     std::vector<Record*> free_records_;
 };
+
+using RecordList = std::queue<RecordPool::Handle>;
 
 } // namespace snet::tls

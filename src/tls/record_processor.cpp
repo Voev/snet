@@ -17,39 +17,39 @@ size_t RecordProcessor::process(const int8_t sideIndex, Session* session, uint8_
     ThrowIfTrue(!session, "invalid session");
 
     size_t processedLength{0};
-    Record* currentRecord = session->currentRecord;
+    Record* readingRecord = session->readingRecord;
 
     while (processedLength < inputLength)
     {
-        if (!currentRecord)
+        if (!readingRecord)
         {
             if (inputLength < processedLength + TLS_HEADER_SIZE)
             {
                 break;
             }
 
-            currentRecord = session->currentRecord = recordPool_.acquire();
-            if (!currentRecord)
+            readingRecord = session->readingRecord = recordPool_.acquire();
+            if (!readingRecord)
             {
                 return processedLength;
             }
 
-            currentRecord->deserializeHeader({inputBytes + processedLength, TLS_HEADER_SIZE});
+            readingRecord->deserializeHeader({inputBytes + processedLength, TLS_HEADER_SIZE});
         }
 
-        processedLength += currentRecord->initPayload({inputBytes + processedLength, inputLength - processedLength});
+        processedLength += readingRecord->initPayload({inputBytes + processedLength, inputLength - processedLength});
 
-        if (currentRecord->isFullyAssembled())
+        if (readingRecord->isFullyAssembled())
         {
             for (const auto& handler : handlers_)
             {
-                handler->handleRecord(sideIndex, session, currentRecord);
+                handler->handleRecord(sideIndex, session, readingRecord);
             }
-            currentRecord = nullptr;
+            readingRecord = nullptr;
         }
     }
 
-    if (currentRecord != nullptr)
+    if (readingRecord != nullptr)
     {
         return 0;
     }

@@ -15,9 +15,8 @@ class RecordEncryptor final : public IRecordHandler
 public:
     /// @brief Default constructor.
     ///
-    RecordEncryptor(RecordPool& recordPool, RecordQueue& recordQueue)
+    RecordEncryptor(RecordPool& recordPool)
         : recordPool_(recordPool)
-        , recordQueue_(recordQueue)
     {}
 
     /// @brief Default destructor.
@@ -45,7 +44,6 @@ private:
 
 private:
     RecordPool& recordPool_;
-    RecordQueue& recordQueue_;
 };
 
 } // namespace snet::tls

@@ -26,8 +26,9 @@ using namespace casket::utils;
 namespace snet::tls
 {
 
-Session::Session()
-    : cipherContext_(crypto::AllocateCipherCtx())
+Session::Session(RecordPool& recordPool)
+    : recordPool_(recordPool)
+    , cipherContext_(crypto::AllocateCipherCtx())
     , cipherState_(0)
     , canDecrypt_(0)
 {
@@ -181,14 +182,14 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     {
         Secret masterSecret(48);
         /// @todo
-        //if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        // if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
-            //auto sessionHash = handshakeHash_.final(cipherSuite_.getHnshDigestName());
-            //PRF(derivedSecret, "extended master secret", sessionHash, {}, masterSecret);
+            // auto sessionHash = handshakeHash_.final(cipherSuite_.getHnshDigestName());
+            // PRF(derivedSecret, "extended master secret", sessionHash, {}, masterSecret);
         }
-        //else
+        // else
         {
-            //PRF(derivedSecret, "master secret", clientRandom_, serverRandom_, masterSecret);
+            // PRF(derivedSecret, "master secret", clientRandom_, serverRandom_, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
         utils::printHex(std::cout, "MS", masterSecret);
@@ -432,7 +433,7 @@ const Secret& Session::getSecret(const SecretNode::Type type) const
 void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
 {
     (void)pms;
-    //derivedSecret = std::move(pms);
+    // derivedSecret = std::move(pms);
 }
 
 void Session::setServerInfo(const ServerInfo& serverInfo)
@@ -486,14 +487,16 @@ void Session::generateHandshakeSecrets(const int8_t sideIndex, std::span<const u
 
         client.derivedSecret = HkdfExtract(digest, client.earlySecret, dheSecret, derivedKeySize);
 
-        client.clientTrafficKey = DeriveSecret(digest, client.derivedSecret, "c hs traffic", transcriptHash, derivedKeySize);
+        client.clientTrafficKey =
+            DeriveSecret(digest, client.derivedSecret, "c hs traffic", transcriptHash, derivedKeySize);
         client.clientEncKey = DeriveSecret(digest, client.clientTrafficKey, "key", {}, keySize);
         client.clientIV = DeriveSecret(digest, client.clientTrafficKey, "iv", {}, 12);
 
-        client.serverTrafficKey = DeriveSecret(digest, client.derivedSecret, "s hs traffic", transcriptHash, derivedKeySize);
+        client.serverTrafficKey =
+            DeriveSecret(digest, client.derivedSecret, "s hs traffic", transcriptHash, derivedKeySize);
         client.serverEncKey = DeriveSecret(digest, client.serverTrafficKey, "key", {}, keySize);
         client.serverIV = DeriveSecret(digest, client.serverTrafficKey, "iv", {}, 12);
-    
+
         std::cout << "================================================" << std::endl;
         utils::printHex(std::cout, "Client Handshake Write key", client.clientEncKey);
         utils::printHex(std::cout, "Client Handshake IV", client.clientIV);
@@ -511,11 +514,13 @@ void Session::generateHandshakeSecrets(const int8_t sideIndex, std::span<const u
         auto transcriptHash = server.hash.final(digest);
 
         server.derivedSecret = HkdfExtract(digest, server.earlySecret, dheSecret, derivedKeySize);
-        server.clientTrafficKey = DeriveSecret(digest, server.derivedSecret, "c hs traffic", transcriptHash, derivedKeySize);
+        server.clientTrafficKey =
+            DeriveSecret(digest, server.derivedSecret, "c hs traffic", transcriptHash, derivedKeySize);
         server.clientEncKey = DeriveSecret(digest, server.clientTrafficKey, "key", {}, keySize);
         server.clientIV = DeriveSecret(digest, server.clientTrafficKey, "iv", {}, 12);
 
-        server.serverTrafficKey = DeriveSecret(digest, server.derivedSecret, "s hs traffic", transcriptHash, derivedKeySize);
+        server.serverTrafficKey =
+            DeriveSecret(digest, server.derivedSecret, "s hs traffic", transcriptHash, derivedKeySize);
         server.serverEncKey = DeriveSecret(digest, server.serverTrafficKey, "key", {}, keySize);
         server.serverIV = DeriveSecret(digest, server.serverTrafficKey, "iv", {}, 12);
 
@@ -544,14 +549,16 @@ void Session::generateApplicationSecrets(const int8_t sideIndex)
 
         client.derivedSecret = HkdfExtract(digest, client.derivedSecret, {}, derivedKeySize);
 
-        client.clientTrafficKey = DeriveSecret(digest, client.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
+        client.clientTrafficKey =
+            DeriveSecret(digest, client.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
         client.clientEncKey = DeriveSecret(digest, client.clientTrafficKey, "key", {}, keySize);
         client.clientIV = DeriveSecret(digest, client.clientTrafficKey, "iv", {}, 12);
 
-        client.serverTrafficKey = DeriveSecret(digest, client.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
+        client.serverTrafficKey =
+            DeriveSecret(digest, client.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
         client.serverEncKey = DeriveSecret(digest, client.serverTrafficKey, "key", {}, keySize);
         client.serverIV = DeriveSecret(digest, client.serverTrafficKey, "iv", {}, 12);
-    
+
         std::cout << "================================================" << std::endl;
         utils::printHex(std::cout, "Client Application Write key", client.clientEncKey);
         utils::printHex(std::cout, "Client Application IV", client.clientIV);
@@ -565,11 +572,13 @@ void Session::generateApplicationSecrets(const int8_t sideIndex)
 
         server.derivedSecret = HkdfExtract(digest, server.derivedSecret, {}, derivedKeySize);
 
-        server.clientTrafficKey = DeriveSecret(digest, server.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
+        server.clientTrafficKey =
+            DeriveSecret(digest, server.derivedSecret, "c ap traffic", transcriptHash, derivedKeySize);
         server.clientEncKey = DeriveSecret(digest, server.clientTrafficKey, "key", {}, keySize);
         server.clientIV = DeriveSecret(digest, server.clientTrafficKey, "iv", {}, 12);
 
-        server.serverTrafficKey = DeriveSecret(digest, server.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
+        server.serverTrafficKey =
+            DeriveSecret(digest, server.derivedSecret, "s ap traffic", transcriptHash, derivedKeySize);
         server.serverEncKey = DeriveSecret(digest, server.serverTrafficKey, "key", {}, keySize);
         server.serverIV = DeriveSecret(digest, server.serverTrafficKey, "iv", {}, 12);
 
@@ -580,6 +589,28 @@ void Session::generateApplicationSecrets(const int8_t sideIndex)
         utils::printHex(std::cout, "Server Application IV", server.serverIV);
         std::cout << "================================================" << std::endl;
     }
+}
+
+
+
+size_t Session::writeRecords(std::span<uint8_t> buffer)
+{
+    size_t totalWritten = 0;
+
+    while (!writingRecords_.empty() && totalWritten < buffer.size())
+    {
+        Record* record = writingRecords_.front();
+
+        auto tempBuffer = buffer.subspan(totalWritten);
+        (void)tempBuffer;
+        //auto serialized = record->serialize(tempBuffer);
+
+        //totalWritten += serialized.size();
+        recordPool_.release(record);
+        writingRecords_.pop();
+    }
+
+    return totalWritten;
 }
 
 } // namespace snet::tls

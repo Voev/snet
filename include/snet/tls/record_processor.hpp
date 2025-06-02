@@ -77,15 +77,9 @@ public:
         return recordPool_;
     }
 
-    RecordQueue& getRecordQueue()
-    {
-        return recordQueue_;
-    }
-
 private:
     std::vector<std::shared_ptr<IRecordHandler>> handlers_;
     RecordPool recordPool_;
-    RecordQueue recordQueue_;
 };
 
 } // namespace snet::tls

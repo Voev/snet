@@ -64,6 +64,7 @@ struct SnifferManager
 
     tls::ServerInfo serverInfo;
     tls::RecordProcessor proc;
+    tls::RecordPool recordPool;
     SessionManager sessions;
 };
 
@@ -77,7 +78,7 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
         if (session == mgr->sessions.end())
         {
             auto result = mgr->sessions.emplace(
-                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>()));
+                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>(mgr->recordPool)));
             if (result.second)
             {
                 session = result.first;

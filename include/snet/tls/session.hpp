@@ -19,6 +19,7 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/tls/record_queue.hpp>
 
 #include <snet/crypto/secure_vector.hpp>
 #include <snet/crypto/pointers.hpp>
@@ -44,7 +45,7 @@ class Session
 {
 public:
     /// @brief Default constructor.
-    Session();
+    Session(RecordPool& recordPool);
 
     ~Session() noexcept;
 
@@ -157,6 +158,10 @@ public:
 
     void setCipherTraits(crypto::CipherPtr cipherTraits) noexcept;
 
+    RecordList readRecords(std::span<uint8_t> input);
+
+    size_t writeRecords(std::span<uint8_t> buffer);
+
 public:
     uint8_t sendingBuffer[MAX_CIPHERTEXT_SIZE];
     size_t sendingLength{0};
@@ -169,9 +174,11 @@ public:
 
     HandshakeMessage handshake;
 
-    Record* currentRecord{nullptr};
+    Record* readingRecord{nullptr};
+    std::queue<Record*> writingRecords_;
 
 private:
+    RecordPool& recordPool_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;

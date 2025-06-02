@@ -41,7 +41,7 @@ public:
 
         ASSERT_NO_THROW(spoofer_.addHandler<RecordDecryptor>());
         ASSERT_NO_THROW(spoofer_.addHandler<RecordPrinter>());
-        ASSERT_NO_THROW(spoofer_.addHandler<RecordEncryptor>(spoofer_.getRecordPool(), spoofer_.getRecordQueue()));
+        ASSERT_NO_THROW(spoofer_.addHandler<RecordEncryptor>(spoofer_.getRecordPool()));
     }
 
     void TearDown() override
@@ -72,7 +72,7 @@ TEST_P(TlsSpooferTest, IterativeHandshake)
     ASSERT_NO_THROW(client.setVersion(param.version));
     ASSERT_NO_THROW(server.setVersion(param.version));
 
-    auto session = std::make_unique<Session>();
+    auto session = std::make_unique<Session>(spoofer_.getRecordPool());
 
     serverBufferSize = 0;
     session->sendingLength = 0;

@@ -70,7 +70,7 @@ void RecordEncryptor::processHandshakeClientHello(const int8_t sideIndex, Sessio
 
     session->updateHash(1, {outputRecord->payloadBuffer.data() + TLS_HEADER_SIZE, msgSize - TLS_HEADER_SIZE});
 
-    recordQueue_.push(outputRecord);
+    session->writingRecords_.push(outputRecord);
 }
 
 void RecordEncryptor::processHandshakeServerHello(const int8_t sideIndex, Session* session, Record* record)
