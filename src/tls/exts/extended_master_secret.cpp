@@ -17,16 +17,15 @@ ExtensionCode ExtendedMasterSecret::type() const
     return staticType();
 }
 
-ExtendedMasterSecret::ExtendedMasterSecret(utils::DataReader& reader, uint16_t extensionSize)
+ExtendedMasterSecret::ExtendedMasterSecret(std::span<const uint8_t> input)
 {
-    (void)reader;
-    ThrowIfTrue(extensionSize != 0, "invalid extended_master_secret extension");
+    ThrowIfFalse(input.empty(), "invalid extended_master_secret extension");
 }
 
-size_t ExtendedMasterSecret::serialize(Side whoami, std::span<uint8_t> buffer) const
+size_t ExtendedMasterSecret::serialize(Side side, std::span<uint8_t> output) const
 {
-    (void)whoami;
-    (void)buffer;
+    (void)side;
+    (void)output;
     return 0;
 }
 

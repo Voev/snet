@@ -12,40 +12,34 @@ class SupportedVersions final : public Extension
 public:
     /// @brief Gets the static type of the extension.
     /// @return The extension code for Supported Versions.
-    static ExtensionCode staticType()
-    {
-        return ExtensionCode::SupportedVersions;
-    }
+    static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
     /// @return The extension code for Supported Versions.
-    ExtensionCode type() const override
-    {
-        return staticType();
-    }
+    ExtensionCode type() const override;
 
     /// @brief Checks if the extension should be encoded.
     /// @retval true If there are no supported versions.
     /// @retval false Otherwise.
-    bool empty() const override
-    {
-        return versions_.empty();
-    }
+    bool empty() const override;
+
+    /// @brief Serialize extension to bytes.
+    ///
+    /// @param[in] side Side (Client or Server).
+    /// @param[in] output Buffer for encoding.
+    ///
+    /// @return Serialized bytes count.
+    size_t serialize(Side side, std::span<uint8_t> output) const override;
 
     /// @brief Constructor with a single protocol version.
     /// @param version The protocol version.
-    SupportedVersions(ProtocolVersion version)
-    {
-        versions_.push_back(version);
-    }
+    SupportedVersions(ProtocolVersion version);
 
     /// @brief Constructor with data reader and extension size.
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.
     /// @param from The side (client or server).
-    SupportedVersions(utils::DataReader& reader, uint16_t extensionSize, Side from);
-
-    size_t serialize(Side whoami, std::span<uint8_t> buffer) const;
+    SupportedVersions(Side side, std::span<const uint8_t> input);
 
     /// @brief Checks if the extension supports a specific protocol version.
     /// @param version The protocol version to check.
@@ -55,12 +49,7 @@ public:
 
     /// @brief Gets the list of supported protocol versions.
     /// @return The list of supported protocol versions.
-    const std::vector<ProtocolVersion>& versions() const
-    {
-        return versions_;
-    }
-
-
+    const std::vector<ProtocolVersion>& versions() const;
 
 private:
     std::vector<ProtocolVersion> versions_;

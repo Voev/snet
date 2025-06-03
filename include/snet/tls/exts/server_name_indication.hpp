@@ -1,8 +1,8 @@
 #pragma once
+#include <span>
 #include <string>
 #include <string_view>
 #include <snet/tls/exts/extension.hpp>
-#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
@@ -19,6 +19,18 @@ public:
     /// @return The extension code for server name indication.
     ExtensionCode type() const override;
 
+    /// @brief Checks if the extension is empty.
+    /// @retval false Always returns false as this extension is always sent.
+    bool empty() const override;
+
+    /// @brief Serialize extension to bytes.
+    ///
+    /// @param[in] side Side (Client or Server).
+    /// @param[in] output Buffer for encoding.
+    ///
+    /// @return Serialized bytes count.
+    size_t serialize(Side side, std::span<uint8_t> output) const override;
+
     /// @brief Constructor with hostname.
     /// @param hostname The server hostname.
     explicit ServerNameIndicator(std::string_view hostname);
@@ -26,17 +38,11 @@ public:
     /// @brief Constructor with data reader and extension size.
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.
-    ServerNameIndicator(utils::DataReader& reader, uint16_t extensionSize);
+    ServerNameIndicator(Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the server hostname.
     /// @return The server hostname.
-    std::string host_name() const;
-
-    /// @brief Checks if the extension is empty.
-    /// @retval false Always returns false as this extension is always sent.
-    bool empty() const override;
-
-    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
+    const std::string& getHostname() const;
 
 private:
     std::string hostname_;

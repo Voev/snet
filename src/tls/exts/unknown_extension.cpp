@@ -7,20 +7,34 @@ using namespace casket::utils;
 namespace snet::tls
 {
 
-UnknownExtension::UnknownExtension(ExtensionCode type, utils::DataReader& reader, uint16_t extensionSize)
-    : type_(type)
-    , value_(reader.get_fixed<uint8_t>(extensionSize))
+ExtensionCode UnknownExtension::type() const
 {
+    return type_;
 }
 
-size_t UnknownExtension::serialize(Side whoami, std::span<uint8_t> buffer) const
+bool UnknownExtension::empty() const
 {
-    (void)whoami;
-    ThrowIfTrue(buffer.size_bytes() < value_.size(), "buffer is too small");
+    return false;
+}
 
-    std::copy(value_.begin(), value_.end(), buffer.data());
+size_t UnknownExtension::serialize(Side side, std::span<uint8_t> output) const
+{
+    (void)side;
+
+    ThrowIfTrue(output.size_bytes() < value_.size(), "buffer is too small");
+    std::copy(value_.begin(), value_.end(), output.data());
     return value_.size();
 }
 
+UnknownExtension::UnknownExtension(ExtensionCode type, std::span<const uint8_t> input)
+    : type_(type)
+    , value_(input.begin(), input.end())
+{
+}
+
+const std::vector<uint8_t>& UnknownExtension::value()
+{
+    return value_;
+}
 
 } // namespace snet::tls

@@ -43,20 +43,6 @@ protected:
                         const std::vector<CertificateType>& serverPreference);
 
 public:
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
-    /// @param from The side (client or server).
-    CertificateTypeBase(utils::DataReader& reader, uint16_t extensionSize, Side from);
-
-    /// @brief Validates the selected certificate type from the server.
-    /// @param fromServer The certificate type from the server.
-    void validateSelection(const CertificateTypeBase& fromServer) const;
-
-    /// @brief Gets the selected certificate type.
-    /// @return The selected certificate type.
-    CertificateType selectedCertificateType() const;
-
     /// @brief Checks if the extension should be encoded.
     /// @retval true If the client has no remaining certificate types to send other than the default
     /// X.509 type.
@@ -70,7 +56,27 @@ public:
         return from_ == Side::Client && certTypes_.size() == 1 && certTypes_.front() == CertificateType::X509;
     }
 
-    size_t serialize(Side whoami, std::span<uint8_t> buffer) const override;
+    /// @brief Serialize extension to bytes.
+    ///
+    /// @param[in] side Side (Client or Server).
+    /// @param[in] output Buffer for encoding.
+    ///
+    /// @return Serialized bytes count.
+    size_t serialize(Side side, std::span<uint8_t> output) const override;
+
+    /// @brief Constructor with data reader and extension size.
+    /// @param reader The data reader.
+    /// @param extensionSize The size of the extension.
+    /// @param from The side (client or server).
+    CertificateTypeBase(Side side, std::span<const uint8_t> input);
+
+    /// @brief Validates the selected certificate type from the server.
+    /// @param fromServer The certificate type from the server.
+    void validateSelection(const CertificateTypeBase& fromServer) const;
+
+    /// @brief Gets the selected certificate type.
+    /// @return The selected certificate type.
+    CertificateType selectedCertificateType() const;
 
 private:
     std::vector<CertificateType> certTypes_;

@@ -61,33 +61,27 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& certificateT
     throw RuntimeError("failed to agree on CertificateType");
 }
 
-CertificateTypeBase::CertificateTypeBase(utils::DataReader& reader, uint16_t extensionSize, Side from)
-    : from_(from)
+CertificateTypeBase::CertificateTypeBase(Side side, std::span<const uint8_t> input)
+    : from_(side)
 {
-    if (extensionSize == 0)
-    {
-        throw RuntimeError("certificate type extension cannot be empty");
-    }
+    utils::DataReader reader("certificate_type extension", input);
 
-    if (from == Side::Client)
+    if (side == Side::Client)
     {
         const auto typeBytes = reader.get_tls_length_value(1);
-        if (static_cast<size_t>(extensionSize) != typeBytes.size() + 1)
-        {
-            throw RuntimeError("certificate type extension had inconsistent length");
-        }
+        ThrowIfTrue(reader.remaining_bytes() != typeBytes.size(), "certificate type extension had inconsistent length");
+
         std::transform(typeBytes.begin(), typeBytes.end(), std::back_inserter(certTypes_),
                        [](const auto typeByte) { return static_cast<CertificateType>(typeByte); });
     }
     else
     {
-        if (extensionSize != 1)
-        {
-            throw RuntimeError("server's certificate type extension must be of length 1");
-        }
         const auto typeByte = reader.get_byte();
+        ThrowIfFalse(typeByte == 0 || typeByte == 2, "malformed certificate type");
         certTypes_.push_back(static_cast<CertificateType>(typeByte));
     }
+
+    reader.assert_done();
 }
 
 size_t CertificateTypeBase::serialize(Side whoami, std::span<uint8_t> buffer) const

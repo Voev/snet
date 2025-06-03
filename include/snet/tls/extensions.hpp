@@ -98,7 +98,7 @@ public:
     /// @param reader The data reader.
     /// @param from The side (client or server).
     /// @param messageType The handshake type.
-    void deserialize(utils::DataReader& reader, Side from, HandshakeType messageType);
+    void deserialize(Side side, std::span<const uint8_t> input);
 
     /// @brief Checks if the extensions contain any types other than the allowed ones.
     /// @param allowedExtensions The allowed extension types.
@@ -155,11 +155,10 @@ public:
     Extensions& operator=(Extensions&&) = default;
 
     /// @brief Constructor with data reader, side, and handshake type.
-    /// @param reader The data reader.
     /// @param side The side (client or server).
-    /// @param messageType The handshake type.
-    Extensions(utils::DataReader& reader, Side side, HandshakeType messageType) {
-        deserialize(reader, side, messageType);
+    /// @param reader The data reader.
+    Extensions(Side side, std::span<const uint8_t> input) {
+        deserialize(side, input);
     }
 
 private:

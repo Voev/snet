@@ -18,6 +18,38 @@ ExtensionCode ALPN::type() const
     return staticType();
 }
 
+bool ALPN::empty() const
+{
+    return protocols_.empty();
+}
+
+size_t ALPN::serialize(Side side, std::span<uint8_t> output) const
+{
+    (void)side;
+
+    ThrowIfTrue(output.size_bytes() < 2, "buffer too small");
+    auto buffer = output.subspan(2);
+    uint16_t totalLength{0};
+
+    for (auto&& p : protocols_)
+    {
+        ThrowIfTrue(p.length() >= 256, "ALPN name too long");
+        if (!p.empty())
+        {
+            auto encodedLength = append_length_and_value(buffer, p.data(), p.size(), 1);
+            buffer = buffer.subspan(encodedLength);
+            totalLength += encodedLength;
+        }
+    }
+
+    output[0] = utils::get_byte<0>(totalLength);
+    output[1] = utils::get_byte<1>(totalLength);
+
+    totalLength += 2;
+
+    return totalLength;
+}
+
 ALPN::ALPN(std::string_view protocol)
     : protocols_(1, std::string(protocol))
 {
@@ -28,64 +60,28 @@ ALPN::ALPN(const std::vector<std::string>& protocols)
 {
 }
 
-ALPN::ALPN(utils::DataReader& reader, uint16_t extensionSize, Side from)
+ALPN::ALPN(Side side, std::span<const uint8_t> input)
 {
-    if (extensionSize == 0)
-    {
-        return;
-    }
+    utils::DataReader reader("ALPN", input);
 
     const uint16_t nameBytes = reader.get_uint16_t();
-    size_t bytesRemaining = extensionSize - 2;
+    ThrowIfTrue(nameBytes != reader.remaining_bytes(), "bad encoding of ALPN extension, bad length field");
 
-    ThrowIfTrue(nameBytes != bytesRemaining, "bad encoding of ALPN extension, bad length field");
-
-    while (bytesRemaining)
+    while (reader.has_remaining())
     {
         const std::string p = reader.get_string(1, 0, 255);
-
-        ThrowIfTrue(bytesRemaining < p.size() + 1, "bad encoding of ALPN, length field too long");
         ThrowIfTrue(p.empty(), "empty ALPN protocol not allowed");
-
-        bytesRemaining -= (p.size() + 1);
-
         protocols_.push_back(p);
     }
+
+    reader.assert_done();
 
     // RFC 7301 3.1
     //    The "extension_data" field of the [...] extension is structured the
     //    same as described above for the client "extension_data", except that
     //    the "ProtocolNameList" MUST contain exactly one "ProtocolName".
-    ThrowIfTrue(from == Side::Server && protocols_.size() != 1, "server sent {} protocols in ALPN extension response",
+    ThrowIfTrue(side == Side::Server && protocols_.size() != 1, "server sent {} protocols in ALPN extension response",
                 protocols_.size());
-}
-
-size_t ALPN::serialize(Side side, std::span<uint8_t> buffer) const
-{
-    (void)side;
-
-    ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small");
-    buffer = buffer.subspan(2);
-
-    uint16_t size{0};
-    for (auto&& p : protocols_)
-    {
-        ThrowIfTrue(p.length() >= 256, "ALPN name too long");
-        if (!p.empty())
-        {
-            size += append_length_and_value(buffer, p.data(), p.size(), 1);
-        }
-    }
-
-    buffer[0] = utils::get_byte<0>(size);
-    buffer[1] = utils::get_byte<1>(size);
-    size += 2;
-    return size;
-}
-
-bool ALPN::empty() const
-{
-    return protocols_.empty();
 }
 
 const std::vector<std::string>& ALPN::protocols() const

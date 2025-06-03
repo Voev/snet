@@ -17,16 +17,15 @@ ExtensionCode EncryptThenMAC::type() const
     return staticType();
 }
 
-EncryptThenMAC::EncryptThenMAC(utils::DataReader& reader, uint16_t extensionSize)
+EncryptThenMAC::EncryptThenMAC(std::span<const uint8_t> input)
 {
-    (void)reader;
-    ThrowIfTrue(extensionSize != 0, "invalid encrypt_then_mac extension");
+    ThrowIfFalse(input.empty(), "invalid encrypt_then_mac extension");
 }
 
-size_t EncryptThenMAC::serialize(Side whoami, std::span<uint8_t> buffer) const
+size_t EncryptThenMAC::serialize(Side side, std::span<uint8_t> output) const
 {
-    (void)whoami;
-    (void)buffer;
+    (void)side;
+    (void)output;
     return 0;
 }
 

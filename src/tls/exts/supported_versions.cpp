@@ -7,30 +7,74 @@ using namespace casket::utils;
 namespace snet::tls
 {
 
-SupportedVersions::SupportedVersions(utils::DataReader& reader, uint16_t extensionSize, Side from)
+ExtensionCode SupportedVersions::staticType()
 {
-    if (from == Side::Server)
+    return ExtensionCode::SupportedVersions;
+}
+
+ExtensionCode SupportedVersions::type() const
+{
+    return staticType();
+}
+
+bool SupportedVersions::empty() const
+{
+    return versions_.empty();
+}
+
+size_t SupportedVersions::serialize(Side side, std::span<uint8_t> output) const
+{
+    if (side == Side::Server)
     {
-        if (extensionSize != 2)
+        ThrowIfTrue(output.size_bytes() < 2, "buffer is too small");
+        ThrowIfTrue(versions_.size() != 1, "one version for server must be selected");
+        output[0] = versions_[0].majorVersion();
+        output[1] = versions_[0].minorVersion();
+        return 2;
+    }
+    else
+    {
+        size_t bytesVersions = 2 * versions_.size();
+        size_t i = 0;
+
+        ThrowIfTrue(output.size_bytes() < bytesVersions + 1, "buffer is too small");
+        output[i++] = static_cast<uint8_t>(bytesVersions);
+
+        for (const auto& version : versions_)
         {
-            throw std::runtime_error("Server sent invalid supported_versions extension");
+            output[i++] = version.majorVersion();
+            output[i++] = version.minorVersion();
         }
+
+        return i;
+    }
+}
+
+SupportedVersions::SupportedVersions(ProtocolVersion version)
+{
+    versions_.push_back(version);
+}
+
+SupportedVersions::SupportedVersions(Side side, std::span<const uint8_t> input)
+{
+    utils::DataReader reader("supported_versions extension", input);
+
+    if (side == Side::Server)
+    {
+        ThrowIfTrue(input.size() != 2, "server sent invalid supported_versions extension");
         versions_.push_back(ProtocolVersion(reader.get_uint16_t()));
     }
     else
     {
         auto versions = reader.get_range<uint16_t>(1, 1, 127);
-
         for (auto v : versions)
         {
             versions_.push_back(ProtocolVersion(v));
         }
-
-        if (extensionSize != 1 + 2 * versions.size())
-        {
-            throw std::runtime_error("Client sent invalid supported_versions extension");
-        }
+        ThrowIfTrue(input.size() != 1 + 2 * versions.size(), "client sent invalid supported_versions extension");
     }
+
+    reader.assert_done();
 }
 
 bool SupportedVersions::supports(ProtocolVersion version) const
@@ -45,32 +89,9 @@ bool SupportedVersions::supports(ProtocolVersion version) const
     return false;
 }
 
-size_t SupportedVersions::serialize(Side whoami, std::span<uint8_t> buffer) const
+const std::vector<ProtocolVersion>& SupportedVersions::versions() const
 {
-    if (whoami == Side::Server)
-    {
-        ThrowIfTrue(buffer.size_bytes() < 2, "buffer is too small");
-        ThrowIfTrue(versions_.size() != 1, "one version for server must be selected");
-        buffer[0] = versions_[0].majorVersion();
-        buffer[1] = versions_[0].minorVersion();
-        return 2;
-    }
-    else
-    {
-        size_t bytesVersions = 2 * versions_.size();
-        size_t i = 0;
-
-        ThrowIfTrue(buffer.size_bytes() < bytesVersions + 1, "buffer is too small");
-        buffer[i++] = static_cast<uint8_t>(bytesVersions);
-
-        for (const auto& version : versions_)
-        {
-            buffer[i++] = version.majorVersion();
-            buffer[i++] = version.minorVersion();
-        }
-
-        return i;
-    }
+    return versions_;
 }
 
 } // namespace snet::tls

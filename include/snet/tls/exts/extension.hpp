@@ -20,6 +20,8 @@ enum class ExtensionCode : uint16_t
     SafeRenegotiation = 65281,        ///< Safe Renegotiation extension.
 };
 
+const char* ExtensionCodeToString(const ExtensionCode code);
+
 /// @brief Base class for TLS extensions.
 class Extension
 {

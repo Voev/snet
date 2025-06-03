@@ -18,31 +18,32 @@ ExtensionCode RenegotiationExtension::type() const
     return staticType();
 }
 
+bool RenegotiationExtension::empty() const
+{
+    return false;
+}
+
+size_t RenegotiationExtension::serialize(Side side, std::span<uint8_t> output) const
+{
+    (void)side;
+    return append_length_and_value(output, renegData_.data(), renegData_.size(), 1);
+}
+
 RenegotiationExtension::RenegotiationExtension(const std::vector<uint8_t>& bits)
     : renegData_(bits)
 {
 }
 
-RenegotiationExtension::RenegotiationExtension(utils::DataReader& reader, uint16_t extensionSize)
-    : renegData_(reader.get_range<uint8_t>(1, 0, 255))
+RenegotiationExtension::RenegotiationExtension(std::span<const uint8_t> input)
 {
-    ThrowIfFalse(renegData_.size() + 1 == extensionSize, "bad encoding for secure renegotiation extension");
-}
-
-size_t RenegotiationExtension::serialize(Side side, std::span<uint8_t> buffer) const
-{
-    (void)side;
-    return append_length_and_value(buffer, renegData_.data(), renegData_.size(), 1);
+    utils::DataReader reader("renegotiation_extension", input);
+    renegData_ = reader.get_range<uint8_t>(1, 0, 255);
+    reader.assert_done();
 }
 
 const std::vector<uint8_t>& RenegotiationExtension::renegotiation_info() const
 {
     return renegData_;
-}
-
-bool RenegotiationExtension::empty() const
-{
-    return false;
 }
 
 } // namespace snet::tls

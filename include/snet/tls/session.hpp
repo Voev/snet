@@ -72,7 +72,7 @@ public:
     /// @param reader The data reader.
     /// @param side The side (client or server).
     /// @param ht The handshake type.
-    void deserializeExtensions(utils::DataReader& reader, const Side side, const HandshakeType ht);
+    void deserializeExtensions(const Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the extensions for a specific side.
     /// @param side The side (client or server).
