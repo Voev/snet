@@ -35,6 +35,10 @@ public:
     /// @param version The protocol version.
     SupportedVersions(ProtocolVersion version);
 
+    /// @brief Constructor with multiple protocol versions.
+    /// @param versions The protocol versions.
+    SupportedVersions(const std::vector<ProtocolVersion>& versions);
+
     /// @brief Constructor with data reader and extension size.
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.

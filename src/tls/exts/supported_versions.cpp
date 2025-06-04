@@ -55,6 +55,11 @@ SupportedVersions::SupportedVersions(ProtocolVersion version)
     versions_.push_back(version);
 }
 
+SupportedVersions::SupportedVersions(const std::vector<ProtocolVersion>& versions)
+    : versions_(versions)
+{
+}
+
 SupportedVersions::SupportedVersions(Side side, std::span<const uint8_t> input)
 {
     utils::DataReader reader("supported_versions extension", input);
