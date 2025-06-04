@@ -1,8 +1,7 @@
 #pragma once
-#include <string>
+#include <vector>
 #include <snet/tls/types.hpp>
 #include <snet/tls/exts/extension.hpp>
-#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
@@ -35,17 +34,17 @@ public:
     RenegotiationExtension() = default;
 
     /// @brief Constructor with renegotiation data.
-    /// @param bits The renegotiation data.
-    explicit RenegotiationExtension(const std::vector<uint8_t>& bits);
+    /// @param renegData The renegotiation data.
+    explicit RenegotiationExtension(const std::vector<uint8_t>& renegData);
 
     /// @brief Constructor with data reader and extension size.
     /// @param reader The data reader.
     /// @param extensionSize The size of the extension.
-    RenegotiationExtension(std::span<const uint8_t> input);
+    RenegotiationExtension(Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the renegotiation information.
     /// @return The renegotiation information.
-    const std::vector<uint8_t>& renegotiation_info() const;
+    const std::vector<uint8_t>& getRenegInfo() const;
 
 private:
     std::vector<uint8_t> renegData_;

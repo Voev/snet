@@ -1,6 +1,5 @@
 #pragma once
 #include <snet/tls/exts/extension.hpp>
-#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {

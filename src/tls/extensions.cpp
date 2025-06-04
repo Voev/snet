@@ -35,6 +35,9 @@ std::unique_ptr<Extension> makeExtension(std::span<const uint8_t> input, Extensi
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(side, input);
 
+    //case ExtensionCode::SafeRenegotiation:
+    //    return std::make_unique<RenegotiationExtension>(side, input);
+
     default:
         break;
     }

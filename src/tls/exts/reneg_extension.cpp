@@ -1,4 +1,5 @@
 #include <snet/tls/exts/reneg_extension.hpp>
+#include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
 #include <casket/utils/exception.hpp>
@@ -29,19 +30,21 @@ size_t RenegotiationExtension::serialize(Side side, std::span<uint8_t> output) c
     return append_length_and_value(output, renegData_.data(), renegData_.size(), 1);
 }
 
-RenegotiationExtension::RenegotiationExtension(const std::vector<uint8_t>& bits)
-    : renegData_(bits)
+RenegotiationExtension::RenegotiationExtension(const std::vector<uint8_t>& renegData)
+    : renegData_(renegData)
 {
 }
 
-RenegotiationExtension::RenegotiationExtension(std::span<const uint8_t> input)
+RenegotiationExtension::RenegotiationExtension(Side side, std::span<const uint8_t> input)
 {
+    (void)side;
+
     utils::DataReader reader("renegotiation_extension", input);
     renegData_ = reader.get_range<uint8_t>(1, 0, 255);
     reader.assert_done();
 }
 
-const std::vector<uint8_t>& RenegotiationExtension::renegotiation_info() const
+const std::vector<uint8_t>& RenegotiationExtension::getRenegInfo() const
 {
     return renegData_;
 }

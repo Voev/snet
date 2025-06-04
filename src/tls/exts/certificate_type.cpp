@@ -1,6 +1,7 @@
 #include <snet/tls/exts/certificate_type.hpp>
 #include <snet/utils/contains.hpp>
 #include <snet/utils/data_writer.hpp>
+#include <snet/utils/data_reader.hpp>
 
 #include <casket/utils/exception.hpp>
 

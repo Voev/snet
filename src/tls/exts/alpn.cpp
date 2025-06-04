@@ -1,5 +1,6 @@
 #include <snet/tls/exts/alpn.hpp>
 #include <snet/utils/data_writer.hpp>
+#include <snet/utils/data_reader.hpp>
 
 #include <casket/utils/exception.hpp>
 

@@ -1,4 +1,5 @@
 #include <snet/tls/exts/supported_versions.hpp>
+#include <snet/utils/data_reader.hpp>
 
 #include <casket/utils/exception.hpp>
 

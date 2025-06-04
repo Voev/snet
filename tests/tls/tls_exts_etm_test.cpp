@@ -3,7 +3,6 @@
 #include <casket/utils/exception.hpp>
 
 using namespace snet::tls;
-using namespace snet::utils;
 using namespace casket::utils;
 
 class EncryptThenMACTest : public ::testing::Test

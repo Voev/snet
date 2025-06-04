@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 #include <snet/tls/exts/extension.hpp>
-#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
