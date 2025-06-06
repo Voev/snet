@@ -18,9 +18,10 @@ TEST_F(RenegotiationExtensionTest, RenegotiationInfo)
 
 TEST_F(RenegotiationExtensionTest, SerializeEmpty)
 {
-    RenegotiationExtension ext({0x00});
-    std::vector<uint8_t> output(10, 0);
+    std::vector<uint8_t> input = {0x00};
+    RenegotiationExtension ext(Side::Client, input);
 
+    std::vector<uint8_t> output(10);
     size_t written = ext.serialize(Side::Client, output);
     output.resize(written);
 
