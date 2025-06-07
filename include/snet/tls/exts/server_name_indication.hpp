@@ -12,15 +12,19 @@ class ServerNameIndicator final : public Extension
 {
 public:
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for server name indication.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for server name indication.
     ExtensionCode type() const override;
 
-    /// @brief Checks if the extension is empty.
-    /// @retval false Always returns false as this extension is always sent.
+    /// @brief Checks if the extension should be encoded.
+    ///
+    /// @retval true Should be encoded.
+    /// @retval false Otherwise.
     bool empty() const override;
 
     /// @brief Serialize extension to bytes.
@@ -32,15 +36,19 @@ public:
     size_t serialize(Side side, std::span<uint8_t> output) const override;
 
     /// @brief Constructor with hostname.
-    /// @param hostname The server hostname.
+    ///
+    /// @param[in] hostname The server hostname.
     explicit ServerNameIndicator(std::string_view hostname);
 
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
+    /// @brief Constructor with input byte buffer.
+    ///
+    /// @param[in] side Side (client or server).
+    /// @param[in] input Input byte buffer.
+    ///
     ServerNameIndicator(Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the server hostname.
+    ///
     /// @return The server hostname.
     const std::string& getHostname() const;
 

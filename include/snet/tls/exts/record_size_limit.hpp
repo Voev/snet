@@ -9,15 +9,18 @@ class RecordSizeLimit final : public Extension
 {
 public:
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for Record Size Limit.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for Record Size Limit.
     ExtensionCode type() const override;
 
     /// @brief Checks if the extension should be encoded.
-    /// @retval true If the limit is 0.
+    ///
+    /// @retval true Should be encoded.
     /// @retval false Otherwise.
     bool empty() const override;
 
@@ -30,16 +33,20 @@ public:
     size_t serialize(Side side, std::span<uint8_t> output) const override;
 
     /// @brief Constructor with record size limit.
-    /// @param limit The record size limit.
+    ///
+    /// @param[in] limit The record size limit.
+    ///
     explicit RecordSizeLimit(uint16_t limit);
 
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
-    /// @param from The side (client or server).
+    /// @brief Constructor with input byte buffer.
+    ///
+    /// @param[in] side Side (client or server).
+    /// @param[in] input Input byte buffer.
+    ///
     RecordSizeLimit(Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the record size limit.
+    ///
     /// @return The record size limit.
     uint16_t limit() const;
 

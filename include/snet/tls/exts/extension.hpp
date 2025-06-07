@@ -43,11 +43,11 @@ public:
 
     /// @brief Serialize extension to bytes.
     ///
-    /// @param[in] from Side (Client or Server).
-    /// @param[in] buffer Buffer for encoding.
+    /// @param[in] side Side (Client or Server).
+    /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    virtual size_t serialize(Side side, std::span<uint8_t> buffer) const = 0;
+    virtual size_t serialize(Side side, std::span<uint8_t> output) const = 0;
 };
 
 } // namespace snet::tls

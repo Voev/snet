@@ -11,15 +11,19 @@ class RenegotiationExtension final : public Extension
 {
 public:
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for Safe Renegotiation.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for Safe Renegotiation.
     ExtensionCode type() const override;
 
     /// @brief Checks if the extension should be encoded.
-    /// @retval false Always returns false as this extension is always sent.
+    ///
+    /// @retval true Should be encoded.
+    /// @retval false Otherwise.
     bool empty() const override;
 
     /// @brief Serialize extension to bytes.
@@ -34,15 +38,20 @@ public:
     RenegotiationExtension() = default;
 
     /// @brief Constructor with renegotiation data.
-    /// @param renegData The renegotiation data.
+    ///
+    /// @param[in] renegData The renegotiation data.
+    ///
     explicit RenegotiationExtension(const std::vector<uint8_t>& renegData);
 
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
+    /// @brief Constructor with input byte buffer.
+    ///
+    /// @param[in] side Side (client or server).
+    /// @param[in] input Input byte buffer.
+    ///
     RenegotiationExtension(Side side, std::span<const uint8_t> input);
 
     /// @brief Gets the renegotiation information.
+    ///
     /// @return The renegotiation information.
     const std::vector<uint8_t>& getRenegInfo() const;
 

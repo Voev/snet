@@ -19,9 +19,9 @@ public:
     /// @return Extension code for ALPN.
     ExtensionCode type() const override;
 
-    /// @brief Checks if the extension is empty.
+    /// @brief Checks if the extension should be encoded.
     ///
-    /// @retval true If there are no protocols.
+    /// @retval true Should be encoded.
     /// @retval false Otherwise.
     bool empty() const override;
 
@@ -44,11 +44,10 @@ public:
     ///
     explicit ALPN(const std::vector<std::string>& protocols);
 
-    /// @brief Constructor with data reader and extension size.
+    /// @brief Constructor with input byte buffer.
     ///
-    /// @param[in] reader Data reader.
-    /// @param[in] extensionSize Size of the extension.
-    /// @param[in] side Side (Client or Server).
+    /// @param[in] side Side (client or server).
+    /// @param[in] input Input byte buffer.
     ///
     ALPN(Side side, std::span<const uint8_t> input);
 

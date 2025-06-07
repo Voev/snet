@@ -15,24 +15,28 @@ public:
     ExtensionCode type() const override;
 
     /// @brief Checks if the extension should be encoded.
-    /// @retval false Always returns false as this extension is always sent.
+    ///
+    /// @retval true Should be encoded.
+    /// @retval false Otherwise.
     bool empty() const override;
 
     /// @brief Serialize extension to bytes.
     ///
     /// @param[in] side Side (Client or Server).
-    /// @param[in] buffer Buffer for encoding.
+    /// @param[in] ouput Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> buffer) const override;
+    size_t serialize(Side side, std::span<uint8_t> output) const override;
 
-    /// @brief Constructor with extension code, data reader, and extension size.
-    /// @param type The extension code.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
+    /// @brief Constructor with extension code and input byte buffer.
+    ///
+    /// @param[in] type Extension code.
+    /// @param[in] input Input byte buffer.
+    ///
     UnknownExtension(ExtensionCode type, std::span<const uint8_t> input);
 
     /// @brief Gets the value of the unknown extension.
+    ///
     /// @return The value of the unknown extension.
     const std::vector<uint8_t>& value();
 

@@ -15,12 +15,16 @@ enum class CertificateType : uint8_t
 };
 
 /// @brief Converts a CertificateType to a string representation.
-/// @param type The CertificateType to convert.
+///
+/// @param[in] type The CertificateType to convert.
+///
 /// @return The string representation of the CertificateType.
 std::string CertificateTypeToString(CertificateType type);
 
 /// @brief Converts a string representation to a CertificateType.
-/// @param type_str The string representation to convert.
+///
+/// @param[in] typeStr The string representation to convert.
+///
 /// @return The corresponding CertificateType.
 CertificateType CertificateTypeFromString(const std::string& typeStr);
 
@@ -30,21 +34,23 @@ class CertificateTypeBase : public Extension
 public:
     /// @brief Constructor called by the client to advertise support for a number of certificate
     /// types.
-    /// @param supportedCertTypes The supported certificate types.
+    ///
+    /// @param[in] supportedCertTypes The supported certificate types.
     CertificateTypeBase(std::vector<CertificateType> supportedCertTypes);
 
 protected:
     /// @brief Constructor called by the server to select a certificate type to be used in the
     /// handshake.
-    /// @param certificateTypeFromClient The certificate type from the client.
-    /// @param serverPreference The server's preferred certificate types.
+    ///
+    /// @param[in] certificateTypeFromClient The certificate type from the client.
+    /// @param[in] serverPreference The server's preferred certificate types.
     CertificateTypeBase(const CertificateTypeBase& certificateTypeFromClient,
                         const std::vector<CertificateType>& serverPreference);
 
 public:
     /// @brief Checks if the extension should be encoded.
-    /// @retval true If the client has no remaining certificate types to send other than the default
-    /// X.509 type.
+    ///
+    /// @retval true Should be encoded.
     /// @retval false Otherwise.
     bool empty() const override
     {
@@ -63,17 +69,20 @@ public:
     /// @return Serialized bytes count.
     size_t serialize(Side side, std::span<uint8_t> output) const override;
 
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
-    /// @param from The side (client or server).
+    /// @brief Constructor with input byte buffer.
+    ///
+    /// @param[in] side Side (client or server).
+    /// @param[in] input Input byte buffer.
+    ///
     CertificateTypeBase(Side side, std::span<const uint8_t> input);
 
     /// @brief Validates the selected certificate type from the server.
-    /// @param fromServer The certificate type from the server.
+    ///
+    /// @param[in] fromServer The certificate type from the server.
     void validateSelection(const CertificateTypeBase& fromServer) const;
 
     /// @brief Gets the selected certificate type.
+    ///
     /// @return The selected certificate type.
     CertificateType selectedCertificateType() const;
 
@@ -89,14 +98,17 @@ public:
     using CertificateTypeBase::CertificateTypeBase;
 
     /// @brief Creates the Server Hello extension from the received client preferences.
-    /// @param cct The client certificate type.
+    ///
+    /// @param[in] cct The client certificate type.
     ClientCertificateType(const ClientCertificateType& cct);
 
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for client certificate type.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for client certificate type.
     ExtensionCode type() const override;
 };
@@ -108,14 +120,17 @@ public:
     using CertificateTypeBase::CertificateTypeBase;
 
     /// @brief Creates the Server Hello extension from the received client preferences.
-    /// @param sct The server certificate type.
+    ///
+    /// @param[in] sct The server certificate type.
     ServerCertificateType(const ServerCertificateType& sct);
 
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for server certificate type.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for server certificate type.
     ExtensionCode type() const override;
 };

@@ -9,15 +9,19 @@ class EncryptThenMAC final : public Extension
 {
 public:
     /// @brief Gets the static type of the extension.
+    ///
     /// @return The extension code for Encrypt-then-MAC.
     static ExtensionCode staticType();
 
     /// @brief Gets the type of the extension.
+    ///
     /// @return The extension code for Encrypt-then-MAC.
     ExtensionCode type() const override;
 
     /// @brief Checks if the extension should be encoded.
-    /// @retval false Always returns false as this extension is always sent.
+    ///
+    /// @retval true Should be encoded.
+    /// @retval false Otherwise.
     bool empty() const override;
 
     /// @brief Serialize extension to bytes.
@@ -31,9 +35,10 @@ public:
     /// @brief Default constructor.
     EncryptThenMAC() = default;
 
-    /// @brief Constructor with data reader and extension size.
-    /// @param reader The data reader.
-    /// @param extensionSize The size of the extension.
+    /// @brief Constructor with input byte buffer.
+    ///
+    /// @param[in] input Input byte buffer.
+    ///
     EncryptThenMAC(std::span<const uint8_t> input);
 };
 
