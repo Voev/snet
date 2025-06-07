@@ -271,16 +271,15 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     }
 }
 
-void Session::deserializeExtensions(utils::DataReader& reader, const Side side,
-                                    const HandshakeType ht)
+void Session::deserializeExtensions(const Side side, std::span<const uint8_t> input)
 {
     if (side == Side::Client)
     {
-        clientExtensions_.deserialize(reader, side, ht);
+        clientExtensions_.deserialize(side, input);
     }
     else if (side == Side::Server)
     {
-        serverExtensions_.deserialize(reader, side, ht);
+        serverExtensions_.deserialize(side, input);
     }
 }
 

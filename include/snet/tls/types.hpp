@@ -12,7 +12,7 @@ namespace snet::tls
 {
 
 /// @brief Enum representing the side (client or server).
-enum class Side
+enum class Side : uint8_t
 {
     Client = 0,
     Server

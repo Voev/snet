@@ -42,7 +42,7 @@ public:
         return (remaining_bytes() > 0);
     }
 
-    std::span<const uint8_t> view_remaining()
+    std::span<const uint8_t> get_span_remaining()
     {
         return {m_buf.begin() + m_offset, m_buf.end()};
     }
@@ -120,11 +120,6 @@ public:
         return result;
     }
 
-    std::vector<uint8_t> get_tls_length_value(size_t len_bytes)
-    {
-        return get_fixed<uint8_t>(get_length_field(len_bytes));
-    }
-
     template <typename T>
     std::vector<T> get_range(size_t len_bytes, size_t min_elems, size_t max_elems)
     {
@@ -151,6 +146,28 @@ public:
     std::vector<T> get_fixed(size_t size)
     {
         return get_elem<T, std::vector<T>>(size);
+    }
+
+    template <typename T>
+    std::span<const T> get_span_fixed(size_t numElems)
+    {
+        assert_at_least(numElems * sizeof(T));
+
+        std::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
+
+        m_offset += numElems * sizeof(T);
+
+        return result;
+    }
+
+    std::vector<uint8_t> get_tls_length_value(size_t lenBytes)
+    {
+        return get_fixed<uint8_t>(get_length_field(lenBytes));
+    }
+
+    std::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
+    {
+        return get_span_fixed<const uint8_t>(get_length_field(lenBytes));
     }
 
 private:
