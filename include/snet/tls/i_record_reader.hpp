@@ -5,6 +5,7 @@
 #include <span>
 #include <cstdint>
 #include <snet/tls/record.hpp>
+#include <snet/tls/session.hpp>
 
 namespace snet::tls
 {
@@ -25,7 +26,7 @@ public:
     /// @param consumedBytes The number of bytes consumed during the read.
     /// @return The read TLS record.
     virtual Record readRecord(const std::int8_t sideIndex, std::span<const std::uint8_t> inputBytes,
-                              std::size_t& consumedBytes) = 0;
+                              std::size_t& consumedBytes, Session* session) = 0;
 };
 
 } // namespace snet::tls

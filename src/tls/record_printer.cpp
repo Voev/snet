@@ -15,23 +15,22 @@ RecordPrinter::~RecordPrinter() noexcept
 {
 }
 
-void RecordPrinter::handleRecord(const std::int8_t sideIndex, const tls::Record& record)
+void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, Record* record)
 {
-    std::string label{};
+    (void)session;
 
-    if (record.type() == tls::RecordType::Handshake)
-    {
-        auto ht = static_cast<tls::HandshakeType>(record.data()[0]);
-        label = toString(ht);
-    }
-
-    const auto direction = (sideIndex == 0 ? "C->S" : "C<-S");
-
-    std::cout << format("{}: {} {} [{}] {}", direction, record.version().toString(),
-                        toString(record.type()), record.totalLength(), label)
+    std::cout << format("{}: {} {} [{}]", (sideIndex == 0 ? "C->S" : "C<-S"), record->version().toString(),
+                        toString(record->type()), record->totalLength())
               << std::endl;
 
-    utils::printHex(std::cout, record.data());
+    auto data = record->data();
+    if (record->type() == RecordType::Handshake)
+    {
+        auto ht = static_cast<tls::HandshakeType>(data[TLS_HEADER_SIZE]);
+        std::cout << format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
+    }
+
+    utils::printHex(std::cout, data.subspan(TLS_HEADER_SIZE));
 }
 
 } // namespace snet::tls

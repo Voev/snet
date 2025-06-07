@@ -6,16 +6,16 @@ using namespace casket::utils;
 namespace snet::tls
 {
 
-void RecordProcessor::process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes)
+void RecordProcessor::process(const std::int8_t sideIndex, Session* session, std::span<const uint8_t> inputBytes)
 {
     std::size_t consumedBytes{0U};
     ThrowIfTrue(reader_ == nullptr, "Record reader is not setted");
     while (inputBytes.size_bytes() > 0)
     {
-        auto record = reader_->readRecord(sideIndex, inputBytes, consumedBytes);
+        auto record = reader_->readRecord(sideIndex, inputBytes, consumedBytes, session);
         for (const auto& handler : handlers_)
         {
-            handler->handleRecord(sideIndex, record);
+            handler->handleRecord(sideIndex, session, &record);
         }
         inputBytes = inputBytes.subspan(consumedBytes);
     }

@@ -36,19 +36,16 @@ public:
     RecordReader& operator=(RecordReader&& other) noexcept = default;
 
     /// @brief Reads a TLS record from the input bytes.
-    /// @param sideIndex The index indicating the side (client or server).
-    /// @param inputBytes The input bytes to read from.
-    /// @param consumedBytes The number of bytes consumed during the read.
+    ///
+    /// @param[in] sideIndex The index indicating the side (client or server).
+    /// @param[in] inputBytes The input bytes to read from.
+    /// @param[in] consumedBytes The number of bytes consumed during the read.
+    ///
     /// @return The read TLS record.
     Record readRecord(const std::int8_t sideIndex, std::span<const std::uint8_t> inputBytes,
-                      std::size_t& consumedBytes) override;
-
-    /// @brief Sets the session for the reader.
-    /// @param session The session to set.
-    void setSession(std::shared_ptr<Session> session);
+                      std::size_t& consumedBytes, Session* session) override;
 
 private:
-    std::shared_ptr<Session> session_;
     std::vector<std::uint8_t> decryptedData_;
 };
 
