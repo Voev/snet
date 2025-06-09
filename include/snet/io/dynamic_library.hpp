@@ -29,8 +29,7 @@ public:
 
     //! \overload T& get(const std::string& symbol_name) const
     template <typename T>
-    inline typename std::enable_if<std::is_member_pointer<T>::value || std::is_reference<T>::value,
-                                   T>::type
+    inline typename std::enable_if<std::is_member_pointer<T>::value || std::is_reference<T>::value, T>::type
     get(std::string_view symbol_name) const
     {
         return utils::aggressive_ptr_cast<T>(resolveSymbol(symbol_name));
@@ -38,10 +37,8 @@ public:
 
     //! \overload T& get(const std::string& symbol_name) const
     template <typename T>
-    inline
-        typename std::enable_if<!(std::is_member_pointer<T>::value || std::is_reference<T>::value),
-                                T&>::type
-        get(std::string_view symbol_name) const
+    inline typename std::enable_if<!(std::is_member_pointer<T>::value || std::is_reference<T>::value), T&>::type
+    get(std::string_view symbol_name) const
     {
         return *utils::aggressive_ptr_cast<T*>(resolveSymbol(symbol_name));
     }
@@ -80,11 +77,9 @@ public:
 };
 
 template <class T>
-using import_type = typename std::conditional<std::is_object<T>::value, std::shared_ptr<T>,
-                                              library_function<T> >::type;
+using import_type = typename std::conditional<std::is_object<T>::value, std::shared_ptr<T>, library_function<T> >::type;
 
 } // namespace detail
-
 
 template <class T>
 inline detail::import_type<T> import_alias(const std::string& path, std::string_view name)
