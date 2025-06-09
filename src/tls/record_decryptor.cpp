@@ -21,10 +21,19 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
 {
     ::utils::ThrowIfTrue(session == nullptr, "Session is not setted");
 
-    auto type = record->type();
-    auto data = record->data();
+    std::span<const uint8_t> data;
 
-    if (type == RecordType::ChangeCipherSpec)
+    if (session->canDecrypt(sideIndex) && record->type != RecordType::ChangeCipherSpec)
+    {
+        session->decrypt(sideIndex, record);
+        data = record->getDecryptedData();
+    }
+    else
+    {
+        data = record->getData().subspan(TLS_HEADER_SIZE);
+    }
+
+    if (record->getType() == RecordType::ChangeCipherSpec)
     {
         ::utils::ThrowIfFalse(data.size() == 1 && data[0] == 0x01, "Malformed Change Cipher Spec message");
 
@@ -34,7 +43,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
             session->cipherState(true);
         }
     }
-    else if (type == RecordType::Alert)
+    else if (record->getType() == RecordType::Alert)
     {
         if (session->cipherState() && !session->canDecrypt(sideIndex == 0))
         {
@@ -43,7 +52,7 @@ void RecordDecryptor::handleRecord(const std::int8_t sideIndex, Session* session
 
         ::utils::ThrowIfTrue(data.size() != 2, ::utils::format("wrong length for alert message: {}", data.size()));
     }
-    else if (type == RecordType::Handshake)
+    else if (record->getType() == RecordType::Handshake)
     {
         if (session->cipherState() && !session->canDecrypt(sideIndex == 0))
         {

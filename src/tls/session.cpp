@@ -31,32 +31,82 @@ static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
 namespace snet::tls
 {
 
-Session::Session()
-    : cipherState_(false)
+Session::Session(RecordPool& recordPool)
+    : recordPool_(recordPool)
+    , cipherState_(false)
 {
+}
+
+size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> input)
+{
+    ThrowIfTrue(input.empty(), "invalid input data");
+
+    size_t processedLength{0};
+
+    while (processedLength < input.size())
+    {
+        if (!readingRecord)
+        {
+            if (input.size() < processedLength + TLS_HEADER_SIZE)
+            {
+                break;
+            }
+
+            readingRecord = recordPool_.acquire();
+            if (!readingRecord)
+            {
+                return processedLength;
+            }
+
+            readingRecord->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+            processedLength += TLS_HEADER_SIZE;
+        }
+
+        const size_t payloadProcessed = readingRecord->initPayload(input.subspan(processedLength));
+        processedLength += payloadProcessed;
+
+        if (readingRecord->isFullyAssembled() && processor_)
+        {
+            for (const auto& handler : *processor_)
+            {
+                handler->handleRecord(sideIndex, this, readingRecord);
+            }
+            recordPool_.release(std::exchange(readingRecord, nullptr));
+        }
+    }
+
+    return readingRecord ? 0 : processedLength;
 }
 
 bool Session::canDecrypt(bool client2server) const noexcept
 {
-    return (client2server && clientToServer_.isInited()) ||
-           (!client2server && serverToClient_.isInited());
+    return (client2server && clientToServer_.isInited()) || (!client2server && serverToClient_.isInited());
 }
 
-void Session::decrypt(const std::int8_t sideIndex, RecordType recordType,
-                      ProtocolVersion recordVersion, std::span<const uint8_t> inputBytes,
-                      std::vector<std::uint8_t>& outputBytes)
+void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
-    auto version = (version_ != ProtocolVersion()) ? version_ : recordVersion;
+    auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
 
     if (sideIndex == 0 && clientToServer_.isInited())
     {
-        clientToServer_.decrypt(recordType, version, inputBytes, outputBytes,
-                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        record->decryptedLength =
+            clientToServer_.decrypt(record->getType(), version, record->getData(), record->decryptedBuffer,
+                                    serverExtensions_.has(ExtensionCode::EncryptThenMac));
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
     {
-        serverToClient_.decrypt(recordType, version, inputBytes, outputBytes,
-                                serverExtensions_.has(ExtensionCode::EncryptThenMac));
+        record->decryptedLength =
+            serverToClient_.decrypt(record->getType(), version, record->getData(), record->decryptedBuffer,
+                                    serverExtensions_.has(ExtensionCode::EncryptThenMac));
+    }
+
+    if (version == ProtocolVersion::TLSv1_3)
+    {
+        uint8_t lastByte = record->decryptedBuffer[record->decryptedLength];
+        ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value");
+
+        record->type = static_cast<RecordType>(lastByte);
+        record->decryptedLength -= 1;
     }
 }
 
@@ -92,8 +142,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (cipherSuite_.isAEAD())
     {
         keyBlock.resize(keySize * 2 + ivSize * 2);
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::MemoryViewer viewer(keyBlock);
         auto clientWriteKey = viewer.view(keySize);
@@ -119,8 +168,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_,
-            clientRandom_, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::MemoryViewer viewer(keyBlock);
         auto clientMacKey = viewer.view(macSize);

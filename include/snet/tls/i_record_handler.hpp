@@ -3,10 +3,11 @@
 
 #pragma once
 #include <snet/tls/record.hpp>
-#include <snet/tls/session.hpp>
 
 namespace snet::tls
 {
+
+class Session;
 
 /// @brief Interface for handling TLS records.
 class IRecordHandler

@@ -45,8 +45,8 @@ void RecordDecoder::reset() noexcept
     inited_ = false;
 }
 
-void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
-                         std::span<const uint8_t> encIV, std::span<const std::uint8_t> macKey)
+void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV,
+                         std::span<const std::uint8_t> macKey)
 {
     reset();
 
@@ -64,8 +64,7 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
     inited_ = true;
 }
 
-void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
-                         std::span<const uint8_t> encIV)
+void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV)
 {
     reset();
 
@@ -82,8 +81,7 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey,
     inited_ = true;
 }
 
-void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey,
-                                    const std::vector<uint8_t>& newiv)
+void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv)
 {
     crypto::ThrowIfFalse(0 < EVP_DecryptInit(cipher_, nullptr, newkey.data(), nullptr));
     std::copy(newiv.begin(), newiv.end(), implicitIv_.begin());
@@ -99,21 +97,24 @@ size_t GetTagLength(EVP_CIPHER_CTX* ctx)
     return EVP_CIPHER_CTX_get_tag_length(ctx);
 }
 
-void RecordDecoder::decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                            std::vector<uint8_t>& out, bool encryptThenMac)
+size_t RecordDecoder::decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                              std::span<uint8_t> out, bool encryptThenMac)
 {
+    size_t result{};
+
     if (version == ProtocolVersion::TLSv1_3)
     {
-        tls13Decrypt(rt, in, out);
+        result = tls13Decrypt(rt, in, out);
     }
     else if (version <= ProtocolVersion::TLSv1_2)
     {
-        tls1Decrypt(rt, version, in, out, encryptThenMac);
+        result = tls1Decrypt(rt, version, in, out, encryptThenMac);
     }
+
+    return result;
 }
 
-void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
-                                 std::vector<uint8_t>& out)
+size_t RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out)
 {
     int i;
     int x;
@@ -151,40 +152,41 @@ void RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in,
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
     {
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tag.size(),
-                                                     const_cast<uint8_t*>(tag.data())));
+        crypto::ThrowIfFalse(
+            0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tag.size(), const_cast<uint8_t*>(tag.data())));
     }
 
-    crypto::ThrowIfFalse(0 <
-                         EVP_DecryptInit_ex(cipher_, nullptr, nullptr, nullptr, aead_nonce.data()));
+    crypto::ThrowIfFalse(0 < EVP_DecryptInit_ex(cipher_, nullptr, nullptr, nullptr, aead_nonce.data()));
 
     int outSize{0};
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
     {
-        crypto::ThrowIfFalse(0 <
-                             EVP_DecryptUpdate(cipher_, nullptr, &outSize, nullptr, data.size()));
+        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, nullptr, data.size()));
     }
 
     crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad.data(), aad.size()));
 
     outSize = data.size();
-    out.resize(outSize);
-    crypto::ThrowIfFalse(
-        0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
-    out.resize(outSize);
+
+    ::utils::ThrowIfTrue(out.size() < data.size(), "too small buffer");
+    crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_GCM_MODE)
     {
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_GCM_SET_TAG, tag.size(),
-                                                     const_cast<uint8_t*>(tag.data())));
+        crypto::ThrowIfFalse(
+            0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_GCM_SET_TAG, tag.size(), const_cast<uint8_t*>(tag.data())));
         crypto::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
     }
+
+    return outSize;
 }
 
-void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                                std::vector<uint8_t>& out, bool encryptThenMac)
+size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                                  std::span<uint8_t> out, bool encryptThenMac)
 {
+    size_t outSize{};
+
     if (cipherSuite_.isAEAD())
     {
         uint8_t aad[TLS12_AEAD_AAD_SIZE];
@@ -206,8 +208,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         auto data = in.subspan(0, in.size() - tagLength);
         auto tag = in.subspan(in.size() - tagLength, tagLength);
 
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG,
-                                                     static_cast<int>(tag.size()),
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, static_cast<int>(tag.size()),
                                                      const_cast<uint8_t*>(tag.data())));
 
         utils::store_be(seq_, &aad[0]);
@@ -224,25 +225,22 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         utils::printHex(std::cout, "AEAD Nonce", aead_nonce);
         utils::printHex(std::cout, "CipherText", data);
 
-        int outSize{0};
-        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad, sizeof(aad)));
+        int len{0};
+        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &len, aad, sizeof(aad)));
 
-        out.resize(MAX_PLAINTEXT_SIZE);
-        outSize = out.size();
-
-        crypto::ThrowIfFalse(
-            0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
-
-        out.resize(outSize);
+        ::utils::ThrowIfTrue(out.size() < MAX_PLAINTEXT_SIZE, "output buffer is too small");
+        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &len, data.data(), data.size()));
 
         int x{0};
         crypto::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
+
+        outSize = len;
     }
     /* Block cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) > 1)
     {
         auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
-        size_t outSize{in.size()};
+        outSize = in.size();
 
         if (encryptThenMac)
         {
@@ -251,9 +249,7 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
             outSize -= mac.size();
             auto cipherText = in.subspan(0, outSize);
 
-            out.resize(cipherText.size());
-            crypto::ThrowIfFalse(
-                0 < EVP_Cipher(cipher_, out.data(), cipherText.data(), cipherText.size()));
+            crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), cipherText.data(), cipherText.size()));
 
             uint8_t paddingLength = out[outSize - 1];
             outSize -= (paddingLength + 1);
@@ -267,7 +263,6 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
                 tls1CheckMac(rt, version, iv, content, mac);
 
-                out.erase(out.begin(), out.begin() + blockSize);
                 outSize -= blockSize;
             }
             else
@@ -275,22 +270,17 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
                 auto content = in.subspan(0, in.size() - mac.size());
                 tls1CheckMac(rt, version, {}, content, mac);
             }
-
-            out.resize(outSize);
         }
         else
         {
             auto cipherText = in.subspan(0, outSize);
 
-            out.resize(cipherText.size());
-            crypto::ThrowIfFalse(
-                0 < EVP_Cipher(cipher_, out.data(), cipherText.data(), cipherText.size()));
+            crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), cipherText.data(), cipherText.size()));
 
             uint8_t paddingLength = out[outSize - 1];
             outSize -= (paddingLength + 1);
 
-            auto mac =
-                std::span(out.begin() + outSize - EVP_MD_get_size(md), out.begin() + outSize);
+            auto mac = std::span(out.begin() + outSize - EVP_MD_get_size(md), out.begin() + outSize);
             outSize -= mac.size();
 
             if (version >= ProtocolVersion::TLSv1_1)
@@ -301,7 +291,6 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
                 auto content = std::span(out.begin() + blockSize, out.begin() + outSize);
                 tls1CheckMac(rt, version, {}, content, mac);
 
-                out.erase(out.begin(), out.begin() + blockSize);
                 outSize -= blockSize;
             }
             else
@@ -317,8 +306,6 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
                     tls1CheckMac(rt, version, {}, content, mac);
                 }
             }
-
-            out.resize(outSize);
         }
     }
     /* Stream cipher */
@@ -327,7 +314,6 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
         size_t outSize{in.size()};
 
-        out.resize(outSize);
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), in.data(), in.size()));
 
         auto content = std::span(out.begin(), out.end() - EVP_MD_get_size(md));
@@ -342,13 +328,13 @@ void RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::spa
         }
 
         outSize -= mac.size();
-        out.resize(outSize);
     }
+
+    return outSize;
 }
 
-void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
-                                 std::span<const uint8_t> iv, std::span<const uint8_t> content,
-                                 std::span<const uint8_t> expectedMac)
+void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version, std::span<const uint8_t> iv,
+                                 std::span<const uint8_t> content, std::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
     utils::store_be(seq_, meta.data());
@@ -363,8 +349,7 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
     auto digest = cipherSuite_.getDigestName();
 
     OSSL_PARAM params[2];
-    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
-                                                 const_cast<char*>(digest.c_str()), 0);
+    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, const_cast<char*>(digest.c_str()), 0);
     params[1] = OSSL_PARAM_construct_end();
 
     auto mac = CipherSuiteManager::getInstance().fetchMac("HMAC");
@@ -389,12 +374,10 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
 
     actualMac.resize(actualMacSize);
 
-    ::utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
-                          "Bad record MAC");
+    ::utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()), "Bad record MAC");
 }
 
-void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content,
-                                 std::span<const uint8_t> mac)
+void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content, std::span<const uint8_t> mac)
 {
     unsigned int actualMacSize{EVP_MAX_MD_SIZE};
     std::vector<uint8_t> actualMac(actualMacSize);

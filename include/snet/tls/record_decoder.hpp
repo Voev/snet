@@ -43,11 +43,11 @@ public:
     /// @brief Decrypts a TLS record.
     /// @param rt The record type.
     /// @param version The protocol version.
-    /// @param in The input data.
-    /// @param out The output buffer for the decrypted data.
+    /// @param in The input buffer of encrypted data.
+    /// @param out The output buffer of decrypted data.
     /// @param encryptThenMac Indicates if Encrypt-then-MAC is used.
-    void decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                 std::vector<uint8_t>& out, bool encryptThenMac);
+    size_t decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in, std::span<uint8_t> out,
+                   bool encryptThenMac);
 
     /// @brief Updates the keys for TLS 1.3.
     /// @param newkey The new encryption key.
@@ -61,21 +61,20 @@ private:
     /// @param in The input data.
     /// @param out The output buffer for the decrypted data.
     /// @param encryptThenMac Indicates if Encrypt-then-MAC is used.
-    void tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                     std::vector<uint8_t>& out, bool encryptThenMac);
+    size_t tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in, std::span<uint8_t> out,
+                       bool encryptThenMac);
 
     /// @brief Decrypts a TLS 1.3 record.
     /// @param rt The record type.
     /// @param in The input data.
     /// @param out The output buffer for the decrypted data.
-    void tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::vector<uint8_t>& out);
+    size_t tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out);
 
     /// @brief Checks the MAC for SSL 3.0.
     /// @param recordType The record type.
     /// @param content The content data.
     /// @param mac The MAC to check.
-    void ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content,
-                      std::span<const uint8_t> mac);
+    void ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content, std::span<const uint8_t> mac);
 
     /// @brief Checks the MAC for TLS 1.x.
     /// @param recordType The record type.

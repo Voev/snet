@@ -19,6 +19,8 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/tls/record_pool.hpp>
+#include <snet/tls/record_processor.hpp>
 
 namespace snet::tls
 {
@@ -28,16 +30,20 @@ class Session
 {
 public:
     /// @brief Default constructor.
-    Session();
+    explicit Session(RecordPool& recordPool);
+
+    void setProcessor(const RecordProcessor& processor)
+    {
+        processor_ = processor;
+    }
+
+    size_t processRecords(const int8_t sideIndex, std::span<const uint8_t> input);
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
-    /// @param recordType The type of the record.
-    /// @param recordVersion The version of the record.
-    /// @param inputBytes The input bytes to decrypt.
-    /// @param outputBytes The output buffer for the decrypted data.
-    void decrypt(const std::int8_t sideIndex, RecordType recordType, ProtocolVersion recordVersion,
-                 std::span<const uint8_t> inputBytes, std::vector<std::uint8_t>& outputBytes);
+    /// @param record TLS record.
+    ///
+    void decrypt(const std::int8_t sideIndex, Record* record);
 
     /// @brief Checks if the session can decrypt data.
     /// @param client2server Indicates if the direction is client to server.
@@ -144,7 +150,11 @@ public:
     /// @return The cipher state.
     bool cipherState() const noexcept;
 
+    Record* readingRecord{nullptr};
+
 private:
+    RecordPool& recordPool_;
+    RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;
