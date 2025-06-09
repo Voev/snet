@@ -17,10 +17,13 @@ public:
     /// @brief Destructor.
     ~RecordPrinter() noexcept;
 
-    /// @brief Handles a TLS record by printing its details.
-    /// @param sideIndex The index indicating the side (client or server).
-    /// @param record The TLS record to handle.
-    void handleRecord(const std::int8_t sideIndex, const tls::Record& record) override;
+    /// @brief Handles a TLS record.
+    ///
+    /// @param[in] sideIndex Index indicating the side (client or server).
+    /// @param[in] session TLS session.
+    /// @param[in] record TLS record.
+    ///
+    void handleRecord(const std::int8_t sideIndex, Session* session, Record* record) override;
 };
 
 } // namespace snet::tls

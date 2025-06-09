@@ -1,8 +1,9 @@
 /// @file
-/// @brief Declaration of the IRecordHandler interface.
+/// @brief Declaration of the record handling interface.
 
 #pragma once
 #include <snet/tls/record.hpp>
+#include <snet/tls/session.hpp>
 
 namespace snet::tls
 {
@@ -18,9 +19,12 @@ public:
     virtual ~IRecordHandler() = default;
 
     /// @brief Handles a TLS record.
-    /// @param sideIndex The index indicating the side (client or server).
-    /// @param record The TLS record to handle.
-    virtual void handleRecord(const std::int8_t sideIndex, const Record& record) = 0;
+    ///
+    /// @param[in] sideIndex Index indicating the side (client or server).
+    /// @param[in] session TLS session.
+    /// @param[in] record TLS record.
+    ///
+    virtual void handleRecord(const std::int8_t sideIndex, Session* session, Record* record) = 0;
 };
 
 } // namespace snet::tls

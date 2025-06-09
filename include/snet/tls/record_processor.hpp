@@ -35,8 +35,9 @@ public:
 
     /// @brief Processes input bytes as TLS records.
     /// @param sideIndex The index indicating the side (client or server).
+    /// @param session TLS session.
     /// @param inputBytes The input bytes to process.
-    void process(const std::int8_t sideIndex, std::span<const uint8_t> inputBytes);
+    void process(const std::int8_t sideIndex, Session* session, std::span<const uint8_t> inputBytes);
 
     /// @brief Adds a record reader.
     /// @tparam Reader The type of the reader.
