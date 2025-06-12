@@ -21,6 +21,7 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_processor.hpp>
+#include <snet/tls/handshake_msgs.hpp>
 
 namespace snet::tls
 {
@@ -37,7 +38,13 @@ public:
         processor_ = processor;
     }
 
+    bool getCipherState(const std::int8_t sideIndex) const noexcept;
+
+    bool canDecrypt(const std::int8_t sideIndex) const noexcept;
+
     size_t processRecords(const int8_t sideIndex, std::span<const uint8_t> input);
+
+    void preprocessRecord(const std::int8_t sideIndex, Record* record);
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
@@ -56,8 +63,8 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
-             std::span<const uint8_t> rnd2, std::span<uint8_t> out);
+    void PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1, std::span<const uint8_t> rnd2,
+             std::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
@@ -66,44 +73,13 @@ public:
     /// @brief Generates key material for TLS 1.3.
     void generateTLS13KeyMaterial();
 
-    /// @brief Handles Finished message to create key material if it's necessary.
-    /// @param sideIndex The side (client or server).
-    void processFinished(const std::int8_t sideIndex);
-
-    /// @brief Handles KeyUpdate message to update key material if it's necessary.
-    /// @param sideIndex The side (client or server).
-    void processKeyUpdate(const std::int8_t sideIndex);
-
-    /// @brief Deserializes extensions from a data reader.
-    /// @param reader The data reader.
-    /// @param side The side (client or server).
-    /// @param ht The handshake type.
-    void deserializeExtensions(const Side side, std::span<const uint8_t> input);
-
-    /// @brief Gets the extensions for a specific side.
-    /// @param side The side (client or server).
-    /// @return The extensions for the specified side.
-    const Extensions& getExtensions(const Side side) const noexcept;
-
     /// @brief Updates the handshake hash with a message.
     /// @param message The message to update the hash with.
     void updateHash(std::span<const uint8_t> message);
 
-    /// @brief Sets the client random value.
-    /// @param random The client random value to set.
-    void setClientRandom(ClientRandom random);
-
     /// @brief Gets the client random value.
     /// @return The client random value.
     const ClientRandom& getClientRandom() const noexcept;
-
-    /// @brief Sets the server random value.
-    /// @param random The server random value to set.
-    void setServerRandom(ServerRandom random);
-
-    /// @brief Sets the session ID.
-    /// @param sessionID The session ID to set.
-    void setSessionID(std::vector<std::uint8_t> sessionID);
 
     /// @brief Sets the protocol version.
     /// @param version The protocol version to set.
@@ -142,33 +118,50 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    /// @brief Sets the cipher state.
-    /// @param state The cipher state to set.
-    void cipherState(bool state) noexcept;
-
-    /// @brief Gets the cipher state.
-    /// @return The cipher state.
-    bool cipherState() const noexcept;
-
     Record* readingRecord{nullptr};
 
+    void processClientHello(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processServerHello(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processEncryptedExtensions(const std::int8_t sideIndex, std::span<const uint8_t> message);
+    
+    void processSessionTicket(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processCertificateRequest(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processCertificate(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processCertificateVerify(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processServerKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processClientKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void processServerHelloDone(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    /// @brief Handles Finished message to create key material if it's necessary.
+    /// @param sideIndex The side (client or server).
+    void processFinished(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    /// @brief Handles KeyUpdate message to update key material if it's necessary.
+    /// @param sideIndex The side (client or server).
+    void processKeyUpdate(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
 private:
+    HandshakeMessages handshake_;
     RecordPool& recordPool_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     CipherSuite cipherSuite_;
     std::vector<uint8_t> PMS_;
-    ClientRandom clientRandom_;
-    ServerRandom serverRandom_;
     SecretNode secrets_;
-    std::vector<uint8_t> sessionId_;
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
-    Extensions clientExtensions_;
-    Extensions serverExtensions_;
     HandshakeHash handshakeHash_;
-    bool cipherState_;
+    uint8_t cipherState_;
+    uint8_t canDecrypt_;
 };
 
 } // namespace snet::tls

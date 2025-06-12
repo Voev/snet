@@ -35,26 +35,21 @@ using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session
 class SnifferHandler final : public tls::IRecordHandler
 {
 public:
-    SnifferHandler() = default;
-
-    void handleRecord(const std::int8_t sideIndex, tls::Session* session, tls::Record* record) override
+    explicit SnifferHandler(tls::SecretNodeManager& secretNodeManager)
+        : secretNodeManager_(secretNodeManager)
     {
-        if (sideIndex == 0 && record->getType() == tls::RecordType::Handshake)
+    }
+
+    void handleClientHello(const tls::ClientHello& clientHello, tls::Session* session) override
+    {
+        auto secrets = secretNodeManager_.getSecretNode(clientHello.random);
+        if (secrets.has_value())
         {
-            auto ht = static_cast<tls::HandshakeType>(record->getData()[0]);
-            if (ht == tls::HandshakeType::ClientHello)
-            {
-                auto secrets = secretManager.getSecretNode(session->getClientRandom());
-                if (secrets.has_value())
-                {
-                    session->setSecrets(secrets.value());
-                }
-            }
+            session->setSecrets(secrets.value());
         }
     }
 
-    tls::SecretNodeManager secretManager;
-    std::shared_ptr<tls::Session> session;
+    tls::SecretNodeManager& secretNodeManager_;
 };
 
 struct SnifferManager
@@ -63,14 +58,14 @@ struct SnifferManager
         : recordPool(1024)
         , proc(std::make_shared<tls::RecordHandlers>())
     {
-        proc->push_back(std::make_unique<tls::RecordDecryptor>());
-        proc->push_back(std::make_unique<SnifferHandler>());
+        proc->push_back(std::make_unique<SnifferHandler>(secretManager));
         proc->push_back(std::make_unique<tls::RecordPrinter>());
     }
 
     tls::RecordPool recordPool;
     tls::RecordProcessor proc;
     tls::ServerInfo serverInfo;
+    tls::SecretNodeManager secretManager;
     SessionManager sessions;
 };
 
@@ -119,7 +114,7 @@ void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileNa
 
     auto& drv = config.addDriver("nfq");
 
-    drv.setMode(Mode::Passive);
+    drv.setMode(Mode::ReadFile);
     drv.setPath(ioDriver);
 
     controller.init(config);
@@ -198,11 +193,10 @@ public:
 
         SnifferManager manager;
 
-        /*if (!options_.keylog.empty())
+        if (!options_.keylog.empty())
         {
-            auto sniffer = manager.proc.getHandler<SnifferHandler>();
-            sniffer->secretManager.parseKeyLogFile(options_.keylog);
-        }*/
+            manager.secretManager.parseKeyLogFile(options_.keylog);
+        }
 
         if (!options_.serverKeyPath.empty())
         {

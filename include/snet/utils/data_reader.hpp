@@ -66,8 +66,8 @@ public:
     uint32_t get_uint32_t()
     {
         assert_at_least(4);
-        uint32_t result = snet::utils::make_uint32(m_buf[m_offset], m_buf[m_offset + 1],
-                                                   m_buf[m_offset + 2], m_buf[m_offset + 3]);
+        uint32_t result =
+            snet::utils::make_uint32(m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2], m_buf[m_offset + 3]);
         m_offset += 4;
         return result;
     }
@@ -75,8 +75,7 @@ public:
     uint32_t get_uint24_t()
     {
         assert_at_least(3);
-        uint32_t result =
-            snet::utils::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
+        uint32_t result = snet::utils::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
         m_offset += 3;
         return result;
     }
@@ -126,6 +125,20 @@ public:
         const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
 
         return get_elem<T, std::vector<T>>(num_elems);
+    }
+
+    template <typename T>
+    std::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
+    {
+        const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
+
+        assert_at_least(num_elems * sizeof(T));
+
+        std::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
+
+        m_offset += num_elems * sizeof(T);
+
+        return result;
     }
 
     template <typename T>
