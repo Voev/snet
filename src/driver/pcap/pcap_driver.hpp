@@ -12,6 +12,8 @@ public:
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 
+    Status configure(const io::Config& config) override;
+
     Status start() override;
 
     Status stop() override;
@@ -30,6 +32,8 @@ public:
     uint32_t getCapabilities() const override;
     io::LinkLayerType getDataLinkType() const override;
     Status getMsgPoolInfo(PacketPoolInfo* info) override;
+
+    const char* getName() const override;
 
     Status getStats(Stats* stats) override;
     void resetStats() override;

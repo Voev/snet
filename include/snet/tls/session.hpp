@@ -162,6 +162,7 @@ private:
     HandshakeHash handshakeHash_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
+    uint8_t debugKeys_;
 };
 
 } // namespace snet::tls

@@ -55,8 +55,8 @@ void ClientHello::print(std::ostream& os) const
 {
     os << "Version: " << legacyVersion.toString() << "\n";
 
-    utils::printHex(os, "Random:", random);
-    utils::printHex(os, "Session ID:", sessionID);
+    utils::printHex(os, random, "Random:");
+    utils::printHex(os, sessionID, "Session ID:");
 
     os << "Cipher Suites:\n";
     os << std::hex << std::setw(2) << std::setfill('0');
@@ -66,13 +66,13 @@ void ClientHello::print(std::ostream& os) const
     }
     os << std::dec;
 
-    utils::printHex(os, "Compression:", compMethods);
+    utils::printHex(os, compMethods, "Compression:");
     os << "Extensions:\n";
     for (const auto& ext : extensions.all())
     {
         uint8_t buffer[256];
         size_t length = ext->serialize(Side::Client, buffer);
-        utils::printHex(os, std::to_string((int)ext->type()), {buffer, length});
+        utils::printHex(os, {buffer, length}, std::to_string((int)ext->type()));
     }
 }
 

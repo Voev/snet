@@ -1,5 +1,8 @@
 #include <snet/tls/record_printer.hpp>
+#include <snet/tls/session.hpp>
+
 #include <snet/utils/print_hex.hpp>
+
 #include <casket/utils/format.hpp>
 
 using namespace casket::utils;
@@ -26,23 +29,30 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
 
     if (record->isDecrypted())
     {
-        auto data = record->getData();
+        auto data = record->getDecryptedData();
         if (record->getType() == RecordType::Handshake)
         {
             auto ht = static_cast<tls::HandshakeType>(data[0]);
             std::cout << format("{} [{}] (decrypted)", toString(ht), data.size()) << std::endl;
         }
-        utils::printHex(std::cout, data);
+        utils::printHex(std::cout, data, {}, true);
     }
     else
     {
         auto data = record->getData();
         if (record->getType() == RecordType::Handshake)
         {
-            auto ht = static_cast<tls::HandshakeType>(data[TLS_HEADER_SIZE]);
-            std::cout << format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
+            if (!session->getCipherState(sideIndex))
+            {
+                auto ht = static_cast<tls::HandshakeType>(data[TLS_HEADER_SIZE]);
+                std::cout << format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
+            }
+            else
+            {
+                std::cout << format("{} [{}]", "Encrypted Handshake", data.size() - TLS_HEADER_SIZE) << std::endl;
+            }
         }
-        utils::printHex(std::cout, data.subspan(TLS_HEADER_SIZE));
+        utils::printHex(std::cout, data.subspan(TLS_HEADER_SIZE), {}, true);
     }
 }
 

@@ -5,6 +5,7 @@
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
+#include <casket/log/color.hpp>
 
 #include <snet/utils/print_hex.hpp>
 #include <snet/utils/memory_viewer.hpp>
@@ -18,7 +19,15 @@
 
 #include <openssl/core_names.h>
 
+
 using namespace casket;
+
+
+inline void DebugKey(std::string_view label, std::string_view msg)
+{
+    std::cout << "[" << casket::log::lRed << label
+              << casket::log::resetColor << "] " << msg << std::endl;
+}
 
 static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
 {
@@ -37,6 +46,7 @@ Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , cipherState_(0)
     , canDecrypt_(0)
+    , debugKeys_(1)
 {
 }
 
@@ -225,6 +235,8 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
                                     handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac));
     }
 
+    record->isDecrypted_ = true;
+
     if (version == ProtocolVersion::TLSv1_3)
     {
         uint8_t lastByte = record->decryptedBuffer[record->decryptedLength];
@@ -256,7 +268,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
             PRF(PMS_, "master secret", handshake_.clientHello.random, handshake_.serverHello.random, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
-        utils::printHex(std::cout, "MS", masterSecret);
+        utils::printHex(std::cout, masterSecret, "MS");
     }
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
@@ -276,6 +288,14 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto clientIV = viewer.view(ivSize);
         auto serverIV = viewer.view(ivSize);
 
+        if (debugKeys_)
+        {
+            utils::printHex(std::cout, clientWriteKey, ::utils::format("{}Client Write key{}", log::lRed, log::resetColor));
+            utils::printHex(std::cout, clientIV, "Client IV");
+            utils::printHex(std::cout, serverWriteKey, "Server Write key");
+            utils::printHex(std::cout, serverIV, "Server IV");
+        }
+
         if (sideIndex == 0)
         {
             clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
@@ -294,7 +314,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
 
-        utils::printHex(std::cout, "MasterKey", secrets_.getSecret(SecretNode::MasterSecret));
+        utils::printHex(std::cout, secrets_.getSecret(SecretNode::MasterSecret), "MasterKey");
 
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
@@ -307,12 +327,15 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto clientIV = viewer.view(ivSize);
         auto serverIV = viewer.view(ivSize);
 
-        utils::printHex(std::cout, "Client MAC key", clientMacKey);
-        utils::printHex(std::cout, "Client Write key", clientWriteKey);
-        utils::printHex(std::cout, "Client IV", clientIV);
-        utils::printHex(std::cout, "Server MAC key", serverMacKey);
-        utils::printHex(std::cout, "Server Write key", serverWriteKey);
-        utils::printHex(std::cout, "Server IV", serverIV);
+        if (debugKeys_)
+        {
+            utils::printHex(std::cout, clientMacKey, "Client MAC key");
+            utils::printHex(std::cout, clientWriteKey, "Client Write key");
+            utils::printHex(std::cout, clientIV, "Client IV");
+            utils::printHex(std::cout, serverMacKey, "Server MAC key");
+            utils::printHex(std::cout, serverWriteKey, "Server Write key");
+            utils::printHex(std::cout, serverIV, "Server IV");
+        }
 
         if (sideIndex == 0)
         {
@@ -347,11 +370,11 @@ void Session::generateTLS13KeyMaterial()
     auto clientHandshakeWriteKey = hkdfExpandLabel(digest, chts, "key", {}, keySize);
     auto clientHandshakeIV = hkdfExpandLabel(digest, chts, "iv", {}, 12);
 
-    utils::printHex(std::cout, "Server Handshake Write key", serverHandshakeWriteKey);
-    utils::printHex(std::cout, "Server Handshake IV", serverHandshakeIV);
+    utils::printHex(std::cout, serverHandshakeWriteKey, "Server Handshake Write key");
+    utils::printHex(std::cout, serverHandshakeIV, "Server Handshake IV");
 
-    utils::printHex(std::cout, "Client Handshake Write key", clientHandshakeWriteKey);
-    utils::printHex(std::cout, "Client Handshake IV", clientHandshakeIV);
+    utils::printHex(std::cout, clientHandshakeWriteKey, "Client Handshake Write key");
+    utils::printHex(std::cout, clientHandshakeIV, "Client Handshake IV");
 
     clientToServer_.init(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
     serverToClient_.init(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
@@ -727,8 +750,8 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
 
-            utils::printHex(std::cout, "Client Write key", clientWriteKey);
-            utils::printHex(std::cout, "Client IV", clientIV);
+            utils::printHex(std::cout, clientWriteKey, "Client Write key");
+            utils::printHex(std::cout, clientIV, "Client IV");
         }
         else
         {
@@ -740,8 +763,8 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
 
-            utils::printHex(std::cout, "Server Write key", serverWriteKey);
-            utils::printHex(std::cout, "Server IV", serverIV);
+            utils::printHex(std::cout, serverWriteKey, "Server Write key");
+            utils::printHex(std::cout, serverIV, "Server IV");
         }
     }
 }

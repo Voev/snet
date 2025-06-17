@@ -1,7 +1,6 @@
 #pragma once
 #include <string>
-#include <list>
-#include <snet/io/driver_config.hpp>
+#include <snet/io/types.hpp>
 
 namespace snet::io
 {
@@ -14,6 +13,7 @@ public:
         , msgPoolSize_(0U)
         , snaplen_(0U)
         , timeout_(0U)
+        , mode_(Mode::None)
     {
     }
 
@@ -61,23 +61,22 @@ public:
         return timeout_;
     }
 
-    DriverConfig& addDriver(std::string name)
+    void setMode(Mode newMode)
     {
-        driverConfigs_.emplace_front(DriverConfig(*this, std::move(name)));
-        return driverConfigs_.front();
+        mode_ = newMode;
     }
 
-    const std::list<DriverConfig>& getDrivers() const
+    Mode getMode() const
     {
-        return driverConfigs_;
+        return mode_;
     }
 
 private:
-    std::list<DriverConfig> driverConfigs_;
     std::string input_;
     std::size_t msgPoolSize_;
     std::size_t snaplen_;
     unsigned timeout_;
+    Mode mode_;
 };
 
 } // namespace snet::io

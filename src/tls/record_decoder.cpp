@@ -50,8 +50,8 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::s
 {
     reset();
 
-    utils::printHex(std::cout, "KEY", encKey);
-    utils::printHex(std::cout, "IV", encIV);
+    utils::printHex(std::cout, encKey, "KEY");
+    utils::printHex(std::cout, encIV, "IV");
 
     cipherSuite_ = std::move(cs);
 
@@ -68,8 +68,8 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::s
 {
     reset();
 
-    utils::printHex(std::cout, "KEY", encKey);
-    utils::printHex(std::cout, "IV", encIV);
+    utils::printHex(std::cout, encKey, "KEY");
+    utils::printHex(std::cout, encIV, "IV");
 
     cipherSuite_ = std::move(cs);
 
@@ -104,11 +104,11 @@ size_t RecordDecoder::decrypt(RecordType rt, ProtocolVersion version, std::span<
 
     if (version == ProtocolVersion::TLSv1_3)
     {
-        result = tls13Decrypt(rt, in, out);
+        result = tls13Decrypt(rt, in.subspan(TLS_HEADER_SIZE), out);
     }
     else if (version <= ProtocolVersion::TLSv1_2)
     {
-        result = tls1Decrypt(rt, version, in, out, encryptThenMac);
+        result = tls1Decrypt(rt, version, in.subspan(TLS_HEADER_SIZE), out, encryptThenMac);
     }
 
     return result;
@@ -121,7 +121,7 @@ size_t RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, s
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
 
-    utils::printHex(std::cout, "CipherText", in);
+    utils::printHex(std::cout, in, "CipherText");
     ::utils::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
@@ -144,9 +144,9 @@ size_t RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, s
     aad[3] = utils::get_byte<0>(size);
     aad[4] = utils::get_byte<1>(size);
 
-    utils::printHex(std::cout, "NONCE", aead_nonce);
-    utils::printHex(std::cout, "Tag", tag);
-    utils::printHex(std::cout, "AAD", aad);
+    utils::printHex(std::cout, aead_nonce, "NONCE");
+    utils::printHex(std::cout, tag, "Tag");
+    utils::printHex(std::cout, aad, "AAD");
 
     crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
 
@@ -221,9 +221,9 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
 
         seq_++;
 
-        utils::printHex(std::cout, "AEAD Tag", tag);
-        utils::printHex(std::cout, "AEAD Nonce", aead_nonce);
-        utils::printHex(std::cout, "CipherText", data);
+        utils::printHex(std::cout, tag, "AEAD Tag");
+        utils::printHex(std::cout, aead_nonce, "AEAD Nonce");
+        utils::printHex(std::cout, data, "CipherText");
 
         int len{0};
         crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &len, aad, sizeof(aad)));
