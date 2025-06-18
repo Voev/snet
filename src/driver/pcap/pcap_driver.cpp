@@ -218,7 +218,7 @@ Status Pcap::configure(const io::Config& config)
             }
         }
     }
-    else
+    else if (impl_->mode == Mode::Passive)
     {
         impl_->device = config.getInput();
         if (impl_->device.empty())
@@ -227,6 +227,10 @@ Status Pcap::configure(const io::Config& config)
             //           __func__);
             return Status::NoSuchDevice;
         }
+    }
+    else
+    {
+        return Status::NotSupported;
     }
 
     impl_->hwupdate_count = 0;

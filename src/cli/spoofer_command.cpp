@@ -108,29 +108,30 @@ public:
 
         SessionManager manager;
 
-        io::Controller controller;
         io::Config config;
         config.setInput(options_.input);
         config.setMsgPoolSize(128);
         config.setTimeout(0);
         config.setSnaplen(2048);
-
-        auto& drv = config.addDriver("nfq");
-
-        drv.setMode(Mode::Inline);
+        config.setMode(Mode::Inline);
+        
+        io::DriverConfig drv;
         drv.setPath(options_.driverPath);
 
-        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
-        controller.init(config);
+        io::Controller controller;
+        auto driver = controller.load(drv);
 
-        controller.start();
+        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
+        driver->configure(config);
+
+        driver->start();
         std::cout << "Starting reading '" << options_.input << "'..." << std::endl;
 
         RecvStatus status{RecvStatus::Ok};
         io::RawPacket* rawPacket{nullptr};
         do
         {
-            status = controller.receivePacket(&rawPacket);
+            status = driver->receivePacket(&rawPacket);
             if (rawPacket)
             {
                 layers::Packet parsedPacket(rawPacket, false);
@@ -153,7 +154,7 @@ public:
                         auto tcp = parsedPacket.getLayerOfType<layers::TcpLayer>(true);
                         tcp->computeCalculateFields();
 
-                        controller.finalizePacket(rawPacket, Verdict::Replace);
+                        driver->finalizePacket(rawPacket, Verdict::Replace);
 
                         std::cout << "--replaced--" << std::endl;
 
@@ -163,18 +164,18 @@ public:
                     }
                     else
                     {
-                        controller.finalizePacket(rawPacket, Verdict::Pass);
+                        driver->finalizePacket(rawPacket, Verdict::Pass);
                     }
                 }
                 /*
                 else if (replaced)
                 {
-                    controller.finalizePacket(rawPacket, Verdict::Replace);
+                    driver->finalizePacket(rawPacket, Verdict::Replace);
                 }
                 */
                 else
                 {
-                    controller.finalizePacket(rawPacket, Verdict::Block);
+                    driver->finalizePacket(rawPacket, Verdict::Block);
                 }
             }
         } while (status == RecvStatus::Ok);
@@ -182,7 +183,7 @@ public:
         size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
         tcpReassembly.closeAllConnections();
-        controller.stop();
+        driver->stop();
 
         std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }

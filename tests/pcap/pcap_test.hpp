@@ -23,14 +23,9 @@ public:
 
     void tearDown();
 
-    void setExecutable(bool executable)
+    bool skipped() const
     {
-        executable_ = executable;
-    }
-
-    bool getExecutable() const
-    {
-        return executable_;
+        return skipped_;
     }
 
 private:
@@ -44,7 +39,7 @@ protected:
     std::shared_ptr<snet::io::Driver> driver_;
 
 private:
-    bool executable_ = false;
+    bool skipped_ = false;
 };
 
 
@@ -67,6 +62,6 @@ public:
 
     static std::unique_ptr<PcapTestImpl> makeTest(const TestParam&);
 
-private:
+protected:
     std::unique_ptr<PcapTestImpl> test_;
 };
