@@ -22,11 +22,9 @@
 
 using namespace casket;
 
-
-inline void DebugKey(std::string_view label, std::string_view msg)
+inline std::string Colorize(std::string_view text, std::string_view color = log::lRed)
 {
-    std::cout << "[" << casket::log::lRed << label
-              << casket::log::resetColor << "] " << msg << std::endl;
+    return ::utils::format("[{}{}{}]", color, text, log::resetColor);
 }
 
 static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
@@ -95,6 +93,9 @@ size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> 
             {
                 handler->handleRecord(sideIndex, this, readingRecord);
             }
+
+            postprocessRecord(sideIndex, readingRecord);
+
             recordPool_.release(std::exchange(readingRecord, nullptr));
         }
     }
@@ -132,7 +133,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         if (getVersion() < ProtocolVersion::TLSv1_3)
         {
             generateKeyMaterial(sideIndex);
-            cipherState_ |= (sideIndex == 0 ? 1 : 2);
         }
     }
     else if (record->getType() == RecordType::Alert)
@@ -213,6 +213,22 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
+void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
+{
+    if (getVersion() < ProtocolVersion::TLSv1_3)
+    {
+        if (record->getType() == RecordType::ChangeCipherSpec)
+        {
+            cipherState_ |= (sideIndex == 0 ? 1 : 2);
+        }
+    }
+    else
+    {
+        /// @todo: pay attention to the HelloRetryRequest
+        cipherState_ |= (sideIndex == 0 ? 1 : 2);
+    }
+}
+
 bool Session::canDecrypt(bool client2server) const noexcept
 {
     return (client2server && clientToServer_.isInited()) || (!client2server && serverToClient_.isInited());
@@ -235,16 +251,16 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
                                     handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac));
     }
 
-    record->isDecrypted_ = true;
-
     if (version == ProtocolVersion::TLSv1_3)
     {
-        uint8_t lastByte = record->decryptedBuffer[record->decryptedLength];
-        ::utils::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value");
+        uint8_t lastByte = record->decryptedBuffer[record->decryptedLength - 1];
+        ::utils::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
 
         record->type = static_cast<RecordType>(lastByte);
         record->decryptedLength -= 1;
     }
+
+    record->isDecrypted_ = true;
 }
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
@@ -290,10 +306,10 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientWriteKey, ::utils::format("{}Client Write key{}", log::lRed, log::resetColor));
-            utils::printHex(std::cout, clientIV, "Client IV");
-            utils::printHex(std::cout, serverWriteKey, "Server Write key");
-            utils::printHex(std::cout, serverIV, "Server IV");
+            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
@@ -329,12 +345,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientMacKey, "Client MAC key");
-            utils::printHex(std::cout, clientWriteKey, "Client Write key");
-            utils::printHex(std::cout, clientIV, "Client IV");
-            utils::printHex(std::cout, serverMacKey, "Server MAC key");
-            utils::printHex(std::cout, serverWriteKey, "Server Write key");
-            utils::printHex(std::cout, serverIV, "Server IV");
+            utils::printHex(std::cout, clientMacKey, Colorize("Client MAC key"));
+            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+            utils::printHex(std::cout, serverMacKey, Colorize("Server MAC key"));
+            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
@@ -370,11 +386,11 @@ void Session::generateTLS13KeyMaterial()
     auto clientHandshakeWriteKey = hkdfExpandLabel(digest, chts, "key", {}, keySize);
     auto clientHandshakeIV = hkdfExpandLabel(digest, chts, "iv", {}, 12);
 
-    utils::printHex(std::cout, serverHandshakeWriteKey, "Server Handshake Write key");
-    utils::printHex(std::cout, serverHandshakeIV, "Server Handshake IV");
+    utils::printHex(std::cout, serverHandshakeWriteKey, Colorize("Server Handshake Write key"));
+    utils::printHex(std::cout, serverHandshakeIV, Colorize("Server Handshake IV"));
 
-    utils::printHex(std::cout, clientHandshakeWriteKey, "Client Handshake Write key");
-    utils::printHex(std::cout, clientHandshakeIV, "Client Handshake IV");
+    utils::printHex(std::cout, clientHandshakeWriteKey, Colorize("Client Handshake Write key"));
+    utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
 
     clientToServer_.init(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
     serverToClient_.init(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
@@ -499,7 +515,6 @@ void Session::processServerHello(const std::int8_t sideIndex, std::span<const ui
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
         generateTLS13KeyMaterial();
-        cipherState_ |= 3;
     }
 }
 
@@ -567,7 +582,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
         Extensions exts;
         exts.deserialize(tls::Side::Server, reader.get_span_remaining());
 
-        reader.assert_done();
+        //reader.assert_done();
     }
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
@@ -586,7 +601,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
 void Session::processEncryptedExtensions(const std::int8_t sideIndex, std::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    handshake_.encryptedExtensions.deserialize(message);
+    handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
 }
 
 void Session::processServerKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message)
@@ -750,8 +765,8 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
 
-            utils::printHex(std::cout, clientWriteKey, "Client Write key");
-            utils::printHex(std::cout, clientIV, "Client IV");
+            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
         }
         else
         {
@@ -763,8 +778,8 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
 
-            utils::printHex(std::cout, serverWriteKey, "Server Write key");
-            utils::printHex(std::cout, serverIV, "Server IV");
+            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
         }
     }
 }

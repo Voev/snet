@@ -46,6 +46,8 @@ public:
 
     void preprocessRecord(const std::int8_t sideIndex, Record* record);
 
+    void postprocessRecord(const std::int8_t sideIndex, Record* record);
+
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param record TLS record.
