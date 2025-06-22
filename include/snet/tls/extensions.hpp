@@ -161,6 +161,8 @@ public:
         deserialize(side, input);
     }
 
+    size_t serialize(Side whoami, std::span<uint8_t> buffer) const;
+
 private:
     std::vector<std::unique_ptr<Extension>> extensions_;
 };

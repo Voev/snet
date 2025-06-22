@@ -9,10 +9,9 @@
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/session.hpp>
 #include <snet/tls/server_info.hpp>
-#include <snet/tls/record_reader.hpp>
-#include <snet/tls/record_decryptor.hpp>
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/record_printer.hpp>
+#include <snet/tls/sniffer_handler.hpp>
 
 #include <snet/tls/settings.hpp>
 #include <snet/tls/connection.hpp>

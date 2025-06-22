@@ -13,17 +13,7 @@ class DriverConfig
 public:
     using Parameters = std::unordered_map<std::string, std::string>;
 
-    explicit DriverConfig(const Config& config, std::string name)
-        : config_(config)
-        , name_(std::move(name))
-        , mode(Mode::None)
-    {
-    }
-
-    const Config& getConfig() const
-    {
-        return config_;
-    }
+    DriverConfig() = default;
 
     void setPath(std::string path)
     {
@@ -33,21 +23,6 @@ public:
     const std::string& getPath() const
     {
         return path_;
-    }
-
-    const std::string& getName() const
-    {
-        return name_;
-    }
-
-    void setMode(Mode newMode)
-    {
-        mode = newMode;
-    }
-
-    Mode getMode() const
-    {
-        return mode;
     }
 
     void setVariable(const std::string& key, const std::string& value)
@@ -72,11 +47,9 @@ public:
     }
 
 private:
-    const Config& config_;
     Parameters parameters_;
-    std::string name_;
     std::string path_;
-    Mode mode;
+
 };
 
 } // namespace snet::io

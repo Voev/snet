@@ -124,4 +124,42 @@ std::set<ExtensionCode> Extensions::extensionTypes() const
     return offers;
 }
 
+
+size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
+{
+    ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
+
+    uint16_t totalWritten = 0;
+    auto data = buffer.subspan(2);
+
+    for (const auto& extension : extensions_)
+    {
+        if (extension->empty())
+        {
+            continue;
+        }
+
+        ThrowIfTrue(data.size_bytes() < 4, "buffer too small for extension header and body");
+        auto extensionBody = data.subspan(4);
+
+        uint16_t extensionType = static_cast<uint16_t>(extension->type());
+        uint16_t extensionLength= extension->serialize(whoami, extensionBody);
+
+        data[0] = utils::get_byte<0>(extensionType);
+        data[1] = utils::get_byte<1>(extensionType);
+
+        data[2] = utils::get_byte<0>(extensionLength);
+        data[3] = utils::get_byte<1>(extensionLength);
+
+        data = data.subspan(extensionLength + 4);
+        totalWritten += extensionLength + 4;
+    }
+
+    buffer[0] = utils::get_byte<0>(totalWritten);
+    buffer[1] = utils::get_byte<1>(totalWritten);
+    totalWritten += 2;
+
+    return totalWritten;
+}
+
 } // namespace snet::tls

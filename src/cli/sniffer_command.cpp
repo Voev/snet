@@ -3,6 +3,7 @@
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/utils/hexlify.hpp>
+#include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <snet/utils/print_hex.hpp>
 
@@ -22,12 +23,47 @@ using namespace casket::opt;
 namespace snet::sniffer
 {
 
+static inline log::Level ParseLogLevel(std::string_view str)
+{
+    if (::utils::iequals(str, "alert"))
+    {
+        return log::Level::Alert;
+    }
+    else if (::utils::iequals(str, "crit"))
+    {
+        return log::Level::Critical;
+    }
+    else if (::utils::iequals(str, "error"))
+    {
+        return log::Level::Error;
+    }
+    else if (::utils::iequals(str, "warn"))
+    {
+        return log::Level::Warning;
+    }
+    else if (::utils::iequals(str, "notice"))
+    {
+        return log::Level::Notice;
+    }
+    else if (::utils::iequals(str, "info"))
+    {
+        return log::Level::Info;
+    }
+    else if (::utils::iequals(str, "debug"))
+    {
+        return log::Level::Debug;
+    }
+
+    return log::Level::Emergency;
+}
+
 struct Options
 {
     std::string input;
     std::string keylog;
     std::string serverKeyPath;
     std::string driverPath;
+    std::string logLevel;
 };
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
@@ -35,45 +71,42 @@ using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session
 class SnifferHandler final : public tls::IRecordHandler
 {
 public:
-    SnifferHandler() = default;
-
-    void handleRecord(const std::int8_t sideIndex, tls::Session* session, tls::Record* record) override
+    explicit SnifferHandler(tls::SecretNodeManager& secretNodeManager)
+        : secretNodeManager_(secretNodeManager)
     {
-        if (sideIndex == 0 && record->type() == tls::RecordType::Handshake)
+    }
+
+    void handleClientHello(const tls::ClientHello& clientHello, tls::Session* session) override
+    {
+        auto secrets = secretNodeManager_.getSecretNode(clientHello.random);
+        if (secrets.has_value())
         {
-            auto ht = static_cast<tls::HandshakeType>(record->data()[0]);
-            if (ht == tls::HandshakeType::ClientHello)
-            {
-                auto secrets = secretManager.getSecretNode(session->getClientRandom());
-                if (secrets.has_value())
-                {
-                    session->setSecrets(secrets.value());
-                }
-            }
+            session->setSecrets(secrets.value());
         }
     }
 
-    tls::SecretNodeManager secretManager;
-    std::shared_ptr<tls::Session> session;
+    tls::SecretNodeManager& secretNodeManager_;
 };
 
 struct SnifferManager
 {
     SnifferManager()
+        : recordPool(1024)
+        , proc(std::make_shared<tls::RecordHandlers>())
     {
-        proc.addReader<tls::RecordReader>();
-        proc.addHandler<tls::RecordDecryptor>();
-        proc.addHandler<SnifferHandler>();
-        proc.addHandler<tls::RecordPrinter>();
+        proc->push_back(std::make_shared<SnifferHandler>(secretManager));
+        proc->push_back(std::make_shared<tls::RecordPrinter>());
     }
 
-    tls::ServerInfo serverInfo;
+    tls::RecordPool recordPool;
     tls::RecordProcessor proc;
+    tls::ServerInfo serverInfo;
+    tls::SecretNodeManager secretManager;
     SessionManager sessions;
+    io::Controller controller;
 };
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData,
-                                   void* userCookie)
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
 {
     auto mgr = static_cast<SnifferManager*>(userCookie);
 
@@ -82,70 +115,28 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamD
         auto session = mgr->sessions.find(tcpData.getConnectionData().flowKey);
         if (session == mgr->sessions.end())
         {
-            auto result = mgr->sessions.emplace(std::make_pair(tcpData.getConnectionData().flowKey,
-                                                               std::make_shared<tls::Session>()));
+            auto result = mgr->sessions.emplace(
+                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>(mgr->recordPool)));
             if (result.second)
             {
                 session = result.first;
-                // session->second->setServerInfo(mgr->serverInfo);
+                session->second->setProcessor(mgr->proc);
             }
         }
 
         if (session->second)
         {
-            auto payload = std::span(tcpData.getData(), tcpData.getDataLength());
             try
             {
-                mgr->proc.process(sideIndex, session->second.get(), payload);
+                session->second->processRecords(sideIndex, {tcpData.getData(), tcpData.getDataLength()});
             }
             catch (const std::exception& e)
             {
-                std::cerr << "Error processing payload with length " << payload.size_bytes() << ": "
-                          << e.what() << '\n';
+                std::cerr << "Error processing payload with length " << tcpData.getDataLength() << ": " << e.what()
+                          << '\n';
             }
         }
     }
-}
-
-void SniffPacketsFromFile(const std::string& ioDriver, const std::string& fileName,
-                          tcp::TcpReassembly& tcpReassembly)
-{
-    io::Controller controller;
-
-    io::Config config;
-    config.setInput(fileName);
-    config.setMsgPoolSize(128);
-    config.setTimeout(0);
-    config.setSnaplen(2048);
-
-    auto& drv = config.addDriver("nfq");
-
-    drv.setMode(Mode::Passive);
-    drv.setPath(ioDriver);
-
-    controller.init(config);
-
-    controller.start();
-    std::cout << "Starting reading '" << fileName << "'..." << std::endl;
-
-    RecvStatus status{RecvStatus::Ok};
-    io::RawPacket* rawPacket{nullptr};
-    do
-    {
-        status = controller.receivePacket(&rawPacket);
-        if (rawPacket)
-        {
-            tcpReassembly.reassemblePacket(rawPacket);
-            controller.finalizePacket(rawPacket, Verdict::Pass);
-        }
-    } while (status == RecvStatus::Ok);
-
-    size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
-
-    tcpReassembly.closeAllConnections();
-    controller.stop();
-
-    std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
 }
 
 class Command final : public cmd::Command
@@ -180,6 +171,12 @@ public:
                 .setRequired()
                 .build()
         );
+        parser_.add(
+            OptionBuilder("log-level", Value(&options_.logLevel))
+                .setDescription("Log level")
+                .setDefaultValue("warn")
+                .build()
+        );
         // clang-format on
     }
 
@@ -196,13 +193,27 @@ public:
         parser_.validate();
 
         LogManager::Instance().enable(Type::Console);
+        LogManager::Instance().setLevel(ParseLogLevel(options_.logLevel));
 
         SnifferManager manager;
 
+        io::DriverConfig drvConfig;
+        drvConfig.setPath(options_.driverPath);
+
+        auto driver = manager.controller.load(drvConfig);
+
+        io::Config config;
+        config.setInput(options_.input);
+        config.setMsgPoolSize(128);
+        config.setTimeout(0);
+        config.setSnaplen(2048);
+        config.setMode(Mode::ReadFile);
+
+        driver->configure(config);
+
         if (!options_.keylog.empty())
         {
-            auto sniffer = manager.proc.getHandler<SnifferHandler>();
-            sniffer->secretManager.parseKeyLogFile(options_.keylog);
+            manager.secretManager.parseKeyLogFile(options_.keylog);
         }
 
         if (!options_.serverKeyPath.empty())
@@ -211,8 +222,28 @@ public:
             manager.serverInfo.setServerKey(serverKey);
         }
 
+        driver->start();
+        std::cout << "Start processing: '" << options_.input << "'..." << std::endl;
+
         tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
-        SniffPacketsFromFile(options_.driverPath, options_.input, tcpReassembly);
+        RecvStatus status{RecvStatus::Ok};
+        io::RawPacket* rawPacket{nullptr};
+        do
+        {
+            status = driver->receivePacket(&rawPacket);
+            if (rawPacket)
+            {
+                tcpReassembly.reassemblePacket(rawPacket);
+                driver->finalizePacket(rawPacket, Verdict::Pass);
+            }
+        } while (status == RecvStatus::Ok);
+
+        size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
+
+        tcpReassembly.closeAllConnections();
+        driver->stop();
+
+        std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }
 
 private:

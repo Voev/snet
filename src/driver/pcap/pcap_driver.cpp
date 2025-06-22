@@ -165,15 +165,6 @@ Pcap::Impl::Impl()
 Pcap::Pcap(const io::DriverConfig& config)
     : impl_(std::make_unique<Pcap::Impl>())
 {
-    const auto& base = config.getConfig();
-    impl_->snaplen = base.getSnaplen();
-    impl_->timeout = base.getTimeout();
-    impl_->timeout_tv.tv_sec = impl_->timeout / 1000;
-    impl_->timeout_tv.tv_usec = (impl_->timeout % 1000) * 1000;
-    impl_->promisc_mode = true;
-    impl_->immediate_mode = true;
-    impl_->readback_timeout = false;
-
     for (const auto& [name, value] : config.getParameters())
     {
         if (iequals(name, "buffer_size"))
@@ -185,12 +176,34 @@ Pcap::Pcap(const io::DriverConfig& config)
         else if (iequals(name, "readback_timeout"))
             impl_->readback_timeout = true;
     }
+}
 
-    impl_->pool.allocatePool(16);
+std::shared_ptr<io::Driver> Pcap::create(const io::DriverConfig& config)
+{
+    return std::make_shared<Pcap>(config);
+}
+
+const char* Pcap::getName() const
+{
+    return "pcap";
+}
+
+Status Pcap::configure(const io::Config& config)
+{
+    impl_->snaplen = config.getSnaplen();
+    impl_->timeout = config.getTimeout();
     impl_->mode = config.getMode();
+
+    impl_->timeout_tv.tv_sec = impl_->timeout / 1000;
+    impl_->timeout_tv.tv_usec = (impl_->timeout % 1000) * 1000;
+    impl_->promisc_mode = true;
+    impl_->immediate_mode = true;
+    impl_->readback_timeout = false;
+    impl_->pool.allocatePool(16);
+
     if (impl_->mode == Mode::ReadFile)
     {
-        const auto fname = base.getInput();
+        const auto fname = config.getInput();
         if (fname[0] == '-' && fname[1] == '\0')
             impl_->fp = stdin;
         else
@@ -201,25 +214,27 @@ Pcap::Pcap(const io::DriverConfig& config)
                 // SET_ERROR(impl_->modinst, "%s: Couldn't open file '%s' for reading: %s",
                 // __func__,
                 //           fname.c_str(), strerror(errno));
+                return Status::InvalidArgument;
             }
         }
     }
-    else
+    else if (impl_->mode == Mode::Passive)
     {
-        impl_->device = base.getInput();
+        impl_->device = config.getInput();
         if (impl_->device.empty())
         {
             // SET_ERROR(impl_->modinst, "%s: Couldn't allocate memory for the device string!",
             //           __func__);
+            return Status::NoSuchDevice;
         }
+    }
+    else
+    {
+        return Status::NotSupported;
     }
 
     impl_->hwupdate_count = 0;
-}
-
-std::shared_ptr<io::Driver> Pcap::create(const io::DriverConfig& config)
-{
-    return std::make_shared<Pcap>(config);
+    return Status::Success;
 }
 
 Pcap::~Pcap() noexcept

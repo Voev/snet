@@ -9,42 +9,32 @@
 namespace snet::utils
 {
 
-inline void printHex(std::ostream& os, std::string_view message, std::span<const uint8_t> data)
+inline void printHex(std::ostream& os, std::span<const uint8_t> data, std::string_view message = {},
+                     bool printable = false)
 {
-    os << message << "(" << std::dec << data.size() << ")" << std::endl;
+    if (!message.empty())
+        os << message << "(" << std::dec << data.size() << ")" << std::endl;
+
     for (std::size_t i = 0; i < data.size(); ++i)
     {
-        os << std::hex << std::setw(2) << std::setfill('0')
-                  << static_cast<int>(data[i]) << " ";
+        os << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]) << " ";
 
         if ((i + 1) % 16 == 0)
         {
-            os << std::endl;
-        }
-    }
-    os << std::endl;
-}
-
-inline void printHex(std::ostream& os, std::span<const uint8_t> data)
-{
-    for (std::size_t i = 0; i < data.size(); ++i)
-    {
-        os << std::hex << std::setw(2) << std::setfill('0')
-                  << static_cast<int>(data[i]) << " ";
-
-        if ((i + 1) % 16 == 0)
-        {
-            os << "|";
-            for (std::size_t j = i - 15; j <= i; ++j)
+            if (printable)
             {
-                auto ch = static_cast<char>(data[j]);
-                if (isprint(ch))
-                { 
-                    os << ch;
-                }
-                else
+                os << "|";
+                for (std::size_t j = i - 15; j <= i; ++j)
                 {
-                    os << '.';
+                    auto ch = static_cast<char>(data[j]);
+                    if (isprint(ch))
+                    {
+                        os << ch;
+                    }
+                    else
+                    {
+                        os << '.';
+                    }
                 }
             }
             os << std::endl;
@@ -61,17 +51,20 @@ inline void printHex(std::ostream& os, std::span<const uint8_t> data)
             os << "   ";
         }
 
-        os << "|";
-        for (std::size_t i = data.size() - remaining; i < data.size(); ++i)
+        if (printable)
         {
-            auto ch = static_cast<char>(data[i]);
-            if (isprint(ch))
+            os << "|";
+            for (std::size_t i = data.size() - remaining; i < data.size(); ++i)
             {
-                os << ch;
-            }
-            else
-            { 
-                os << '.';
+                auto ch = static_cast<char>(data[i]);
+                if (isprint(ch))
+                {
+                    os << ch;
+                }
+                else
+                {
+                    os << '.';
+                }
             }
         }
         os << std::endl;

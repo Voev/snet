@@ -10,53 +10,71 @@
 namespace snet::tls
 {
 
-/// @brief Class representing a TLS record.
-class Record final
+class Record
 {
 public:
-    /// @brief Constructor with record type, protocol version, and data.
-    /// @param type The record type.
-    /// @param version The protocol version.
-    /// @param data The record data.
-    explicit Record(RecordType type, ProtocolVersion version, std::span<const uint8_t> data)
-        : type_(type)
-        , version_(std::move(version))
-        , data_(data)
+    Record()
+        : type(RecordType::Invalid)
+        , payload(nullptr)
+        , decrypted_(nullptr)
+        , currentLength(0)
+        , expectedLength(0)
+        , decryptedLength(0)
+        , isDecrypted_(false)
     {
     }
 
-    /// @brief Gets the record type.
-    /// @return The record type.
-    RecordType type() const noexcept
+    inline bool isFullyAssembled() const noexcept
     {
-        return type_;
+        return expectedLength == currentLength;
     }
 
-    /// @brief Gets the protocol version.
-    /// @return The protocol version.
-    const ProtocolVersion& version() const noexcept
+    inline RecordType getType() const noexcept
     {
-        return version_;
+        return type;
     }
 
-    /// @brief Gets the record data.
-    /// @return The record data.
-    std::span<const uint8_t> data() const noexcept
+    inline ProtocolVersion getVersion() const noexcept
     {
-        return data_;
+        return version;
     }
 
-    /// @brief Gets the total length of the record.
-    /// @return The total length of the record.
-    size_t totalLength() const
+    inline uint16_t getLength() const noexcept
     {
-        return TLS_HEADER_SIZE + data_.size_bytes();
+        return currentLength;
     }
 
-private:
-    RecordType type_;
-    ProtocolVersion version_;
-    std::span<const uint8_t> data_;
+    inline bool isDecrypted() const noexcept
+    {
+        return isDecrypted_;
+    }
+
+    inline std::span<const uint8_t> getData() const noexcept
+    {
+        return {payload, currentLength};
+    }
+
+    inline std::span<const uint8_t> getDecryptedData() const noexcept
+    {
+        return {decryptedBuffer.data(), decryptedLength};
+    }
+
+    void reset();
+
+    size_t initPayload(std::span<const uint8_t> data);
+
+    void deserializeHeader(std::span<const uint8_t> data);
+
+    RecordType type;
+    ProtocolVersion version;
+    std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
+    std::array<uint8_t, MAX_PLAINTEXT_SIZE> decryptedBuffer;
+    const uint8_t* payload;
+    const uint8_t* decrypted_;
+    size_t currentLength;
+    size_t expectedLength;
+    size_t decryptedLength;
+    bool isDecrypted_;
 };
 
 } // namespace snet::tls
