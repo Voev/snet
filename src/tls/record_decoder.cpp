@@ -252,13 +252,17 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
             crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), cipherText.data(), cipherText.size()));
 
             uint8_t paddingLength = out[outSize - 1];
-            outSize -= (paddingLength + 1);
+            paddingLength += 1;
+            ::utils::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
+            outSize -= paddingLength;
 
+            utils::printHex(std::cout, {out.data(), outSize}, "Decrypted", true);
+            
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
                 ::utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
-
+                
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
                 tls1CheckMac(rt, version, iv, content, mac);
@@ -270,6 +274,7 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
                 auto content = in.subspan(0, in.size() - mac.size());
                 tls1CheckMac(rt, version, {}, content, mac);
             }
+            utils::printHex(std::cout, {out.data(), outSize}, "Decrypted", true);
         }
         else
         {

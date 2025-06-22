@@ -94,8 +94,8 @@ struct SnifferManager
         : recordPool(1024)
         , proc(std::make_shared<tls::RecordHandlers>())
     {
-        proc->push_back(std::make_unique<SnifferHandler>(secretManager));
-        proc->push_back(std::make_unique<tls::RecordPrinter>());
+        proc->push_back(std::make_shared<SnifferHandler>(secretManager));
+        proc->push_back(std::make_shared<tls::RecordPrinter>());
     }
 
     tls::RecordPool recordPool;

@@ -6,7 +6,7 @@
 namespace snet::tls
 {
 
-using RecordHandlers = std::vector<std::unique_ptr<IRecordHandler>>;
+using RecordHandlers = std::vector<std::shared_ptr<IRecordHandler>>;
 
 using RecordProcessor = std::shared_ptr<RecordHandlers>;
 

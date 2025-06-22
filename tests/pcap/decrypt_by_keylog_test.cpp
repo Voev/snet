@@ -5,9 +5,24 @@
 #include <snet/layers/tcp_reassembly.hpp>
 
 using namespace snet;
+using namespace snet::tls;
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData,
-                                                    void* userCookie)
+class RecordChecker final : public tls::IRecordHandler
+{
+public:
+    void handleRecord(const std::int8_t sideIndex, Session* session, Record* record) override
+    {
+        (void)sideIndex;
+        (void)session;
+
+        if (record->isDecrypted())
+            decrypted = true;
+    }
+
+    bool decrypted{false};
+};
+
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
 {
     auto* test = static_cast<DecryptByKeylog*>(userCookie);
 
@@ -49,8 +64,9 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
     if (found != section.end())
         secretManager_.parseKeyLogFile(found->second);
 
-    processor_->push_back(std::make_unique<tls::SnifferHandler>(secretManager_));
-    processor_->push_back(std::make_unique<tls::RecordPrinter>());
+    processor_->push_back(std::make_shared<tls::SnifferHandler>(secretManager_));
+    // processor_->push_back(std::make_shared<tls::RecordPrinter>());
+    processor_->push_back(std::make_shared<RecordChecker>());
 }
 
 void DecryptByKeylog::execute()
@@ -66,4 +82,7 @@ void DecryptByKeylog::execute()
             driver_->finalizePacket(rawPacket, Verdict::Pass);
         }
     } while (status == RecvStatus::Ok);
+
+    casket::utils::ThrowIfFalse(std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decrypted,
+                                "no one record decrypted");
 }

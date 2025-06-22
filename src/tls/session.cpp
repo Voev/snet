@@ -592,10 +592,10 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
         reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
     }
-    else
+    /*else
     {
         throw std::runtime_error("NewSessionTicket can't be in TLS versions below 1.2");
-    }
+    }*/
 }
 
 void Session::processEncryptedExtensions(const std::int8_t sideIndex, std::span<const uint8_t> message)

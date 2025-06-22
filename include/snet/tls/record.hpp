@@ -16,6 +16,7 @@ public:
     Record()
         : type(RecordType::Invalid)
         , payload(nullptr)
+        , decrypted_(nullptr)
         , currentLength(0)
         , expectedLength(0)
         , decryptedLength(0)
@@ -60,17 +61,16 @@ public:
 
     void reset();
 
-
     size_t initPayload(std::span<const uint8_t> data);
 
-        void deserializeHeader(std::span<const uint8_t> data);
-
+    void deserializeHeader(std::span<const uint8_t> data);
 
     RecordType type;
     ProtocolVersion version;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> decryptedBuffer;
     const uint8_t* payload;
+    const uint8_t* decrypted_;
     size_t currentLength;
     size_t expectedLength;
     size_t decryptedLength;
