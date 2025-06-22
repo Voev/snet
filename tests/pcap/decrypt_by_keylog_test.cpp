@@ -65,8 +65,8 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
         secretManager_.parseKeyLogFile(found->second);
 
     processor_->push_back(std::make_shared<tls::SnifferHandler>(secretManager_));
-    // processor_->push_back(std::make_shared<tls::RecordPrinter>());
     processor_->push_back(std::make_shared<RecordChecker>());
+    processor_->push_back(std::make_shared<tls::RecordPrinter>());
 }
 
 void DecryptByKeylog::execute()
