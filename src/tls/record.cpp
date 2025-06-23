@@ -19,7 +19,6 @@ void Record::reset()
 
     currentLength = 0;
     expectedLength = 0;
-    decryptedLength = 0;
     isDecrypted_ = false;
 }
 

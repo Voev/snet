@@ -10,31 +10,22 @@
 #include <snet/utils/print_hex.hpp>
 #include <snet/utils/memory_viewer.hpp>
 
+#include <snet/crypto/exception.hpp>
+#include <snet/crypto/cipher_context.hpp>
+
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_decoder.hpp>
 #include <snet/tls/prf.hpp>
-#include <snet/crypto/exception.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
 #include <openssl/core_names.h>
-
 
 using namespace casket;
 
 inline std::string Colorize(std::string_view text, std::string_view color = log::lRed)
 {
     return ::utils::format("[{}{}{}]", color, text, log::resetColor);
-}
-
-static inline int GetIvLengthWithinKeyBlock(const EVP_CIPHER* c)
-{
-    if (EVP_CIPHER_get_mode(c) == EVP_CIPH_GCM_MODE)
-        return EVP_GCM_TLS_FIXED_IV_LEN;
-    else if (EVP_CIPHER_get_mode(c) == EVP_CIPH_CCM_MODE)
-        return EVP_CCM_TLS_FIXED_IV_LEN;
-    else
-        return EVP_CIPHER_get_iv_length(c);
 }
 
 namespace snet::tls
@@ -237,27 +228,43 @@ bool Session::canDecrypt(bool client2server) const noexcept
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
     auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
+    auto input = record->getData();
+    auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
 
     if (sideIndex == 0 && clientToServer_.isInited())
     {
-        record->decryptedLength =
-            clientToServer_.decrypt(record->getType(), version, record->getData(), record->decryptedBuffer,
-                                    handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac));
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            record->decryptedData = clientToServer_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
+                                                                   record->decryptedBuffer);
+        }
+        else if (version <= ProtocolVersion::TLSv1_2)
+        {
+            record->decryptedData = clientToServer_.tls1Decrypt(
+                record->getType(), version, input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, encryptThenMAC);
+        }
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
     {
-        record->decryptedLength =
-            serverToClient_.decrypt(record->getType(), version, record->getData(), record->decryptedBuffer,
-                                    handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac));
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            record->decryptedData = serverToClient_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
+                                                                   record->decryptedBuffer);
+        }
+        else if (version <= ProtocolVersion::TLSv1_2)
+        {
+            record->decryptedData = serverToClient_.tls1Decrypt(
+                record->getType(), version, input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, encryptThenMAC);
+        }
     }
 
     if (version == ProtocolVersion::TLSv1_3)
     {
-        uint8_t lastByte = record->decryptedBuffer[record->decryptedLength - 1];
+        uint8_t lastByte = record->decryptedData.back();
         ::utils::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
 
         record->type = static_cast<RecordType>(lastByte);
-        record->decryptedLength -= 1;
+        record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
     }
 
     record->isDecrypted_ = true;
@@ -289,8 +296,8 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
 
-    size_t keySize = EVP_CIPHER_get_key_length(cipher);
-    size_t ivSize = ::GetIvLengthWithinKeyBlock(cipher);
+    size_t keySize = crypto::GetKeyLength(cipher);
+    size_t ivSize = crypto::GetIVLengthWithinKeyBlock(cipher);
 
     if (cipherSuite_.isAEAD())
     {
@@ -423,29 +430,9 @@ void Session::PRF(const Secret& secret, std::string_view usage, std::span<const 
     }
 }
 
-void Session::updateHash(std::span<const uint8_t> message)
-{
-    handshakeHash_.update(message);
-}
-
-const ClientRandom& Session::getClientRandom() const noexcept
-{
-    return handshake_.clientHello.random;
-}
-
-void Session::setVersion(ProtocolVersion version)
-{
-    version_ = std::move(version);
-}
-
 const ProtocolVersion& Session::getVersion() const noexcept
 {
     return version_;
-}
-
-void Session::setCipherSuite(const CipherSuite& cipherSuite)
-{
-    cipherSuite_ = cipherSuite;
 }
 
 const CipherSuite& Session::getCipherSuite() const noexcept
@@ -582,7 +569,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
         Extensions exts;
         exts.deserialize(tls::Side::Server, reader.get_span_remaining());
 
-        //reader.assert_done();
+        // reader.assert_done();
     }
     else if (version_ == ProtocolVersion::TLSv1_2)
     {

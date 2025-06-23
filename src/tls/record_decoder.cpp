@@ -97,24 +97,7 @@ size_t GetTagLength(EVP_CIPHER_CTX* ctx)
     return EVP_CIPHER_CTX_get_tag_length(ctx);
 }
 
-size_t RecordDecoder::decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                              std::span<uint8_t> out, bool encryptThenMac)
-{
-    size_t result{};
-
-    if (version == ProtocolVersion::TLSv1_3)
-    {
-        result = tls13Decrypt(rt, in.subspan(TLS_HEADER_SIZE), out);
-    }
-    else if (version <= ProtocolVersion::TLSv1_2)
-    {
-        result = tls1Decrypt(rt, version, in.subspan(TLS_HEADER_SIZE), out, encryptThenMac);
-    }
-
-    return result;
-}
-
-size_t RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out)
+std::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out)
 {
     int i;
     int x;
@@ -179,13 +162,13 @@ size_t RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, s
         crypto::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
     }
 
-    return outSize;
+    return {out.data(), (size_t)outSize};
 }
 
-size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                                  std::span<uint8_t> out, bool encryptThenMac)
+std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                                              std::span<uint8_t> out, bool encryptThenMac)
 {
-    size_t outSize{};
+    std::span<std::uint8_t> decryptedContent;
 
     if (cipherSuite_.isAEAD())
     {
@@ -234,13 +217,13 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
         int x{0};
         crypto::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
 
-        outSize = len;
+        decryptedContent = {out.data(), (size_t)len};
     }
     /* Block cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) > 1)
     {
         auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
-        outSize = in.size();
+        auto outSize = in.size();
 
         if (encryptThenMac)
         {
@@ -256,25 +239,24 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
             ::utils::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
             outSize -= paddingLength;
 
-            utils::printHex(std::cout, {out.data(), outSize}, "Decrypted", true);
-            
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
                 ::utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
-                
+
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
                 tls1CheckMac(rt, version, iv, content, mac);
 
                 outSize -= blockSize;
+                decryptedContent = {out.data() + iv.size(), outSize};
             }
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
                 tls1CheckMac(rt, version, {}, content, mac);
+                decryptedContent = {out.data(), outSize};
             }
-            utils::printHex(std::cout, {out.data(), outSize}, "Decrypted", true);
         }
         else
         {
@@ -311,13 +293,13 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
                     tls1CheckMac(rt, version, {}, content, mac);
                 }
             }
+            decryptedContent = {out.data(), outSize};
         }
     }
     /* Stream cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) == 1)
     {
         auto md = CipherSuiteManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
-        size_t outSize{in.size()};
 
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), in.data(), in.size()));
 
@@ -332,10 +314,11 @@ size_t RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::s
             tls1CheckMac(rt, version, {}, content, mac);
         }
 
-        outSize -= mac.size();
+        decryptedContent = {out.data(), in.size() - mac.size()};
     }
 
-    return outSize;
+    utils::printHex(std::cout, decryptedContent, "Decrypted", true);
+    return decryptedContent;
 }
 
 void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version, std::span<const uint8_t> iv,

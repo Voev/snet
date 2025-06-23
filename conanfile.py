@@ -81,3 +81,4 @@ class SecureNetwork(ConanFile):
                 cmake.build(target="coverage")
             else:
                 cmake.test()
+                self.run(f"cmake --build . --target run_pcap_tests")
