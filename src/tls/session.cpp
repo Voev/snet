@@ -35,7 +35,7 @@ Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , cipherState_(0)
     , canDecrypt_(0)
-    , debugKeys_(1)
+    , debugKeys_(0)
 {
 }
 
@@ -236,7 +236,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData = clientToServer_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                   record->decryptedBuffer);
+                                                                 record->decryptedBuffer);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
@@ -249,7 +249,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData = serverToClient_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                   record->decryptedBuffer);
+                                                                 record->decryptedBuffer);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
@@ -291,7 +291,11 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
             PRF(PMS_, "master secret", handshake_.clientHello.random, handshake_.serverHello.random, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
-        utils::printHex(std::cout, masterSecret, "MS");
+    }
+
+    if (debugKeys_)
+    {
+        utils::printHex(std::cout, secrets_.getSecret(SecretNode::MasterSecret), Colorize("MasterSecret"));
     }
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
@@ -336,8 +340,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         auto macSize = EVP_MD_get_size(md);
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
-
-        utils::printHex(std::cout, secrets_.getSecret(SecretNode::MasterSecret), "MasterKey");
 
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
@@ -393,11 +395,13 @@ void Session::generateTLS13KeyMaterial()
     auto clientHandshakeWriteKey = hkdfExpandLabel(digest, chts, "key", {}, keySize);
     auto clientHandshakeIV = hkdfExpandLabel(digest, chts, "iv", {}, 12);
 
-    utils::printHex(std::cout, serverHandshakeWriteKey, Colorize("Server Handshake Write key"));
-    utils::printHex(std::cout, serverHandshakeIV, Colorize("Server Handshake IV"));
-
-    utils::printHex(std::cout, clientHandshakeWriteKey, Colorize("Client Handshake Write key"));
-    utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
+    if (debugKeys_)
+    {
+        utils::printHex(std::cout, serverHandshakeWriteKey, Colorize("Server Handshake Write key"));
+        utils::printHex(std::cout, serverHandshakeIV, Colorize("Server Handshake IV"));
+        utils::printHex(std::cout, clientHandshakeWriteKey, Colorize("Client Handshake Write key"));
+        utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
+    }
 
     clientToServer_.init(cipherSuite_, clientHandshakeWriteKey, clientHandshakeIV);
     serverToClient_.init(cipherSuite_, serverHandshakeWriteKey, serverHandshakeIV);
@@ -752,8 +756,11 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             clientToServer_.init(cipherSuite_, clientWriteKey, clientIV);
 
-            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+            if (debugKeys_)
+            {
+                utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
+                utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+            }
         }
         else
         {
@@ -765,8 +772,11 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
 
             serverToClient_.init(cipherSuite_, serverWriteKey, serverIV);
 
-            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            if (debugKeys_)
+            {
+                utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
+                utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            }
         }
     }
 }

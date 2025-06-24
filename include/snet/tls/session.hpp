@@ -134,6 +134,11 @@ public:
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const std::int8_t sideIndex, std::span<const uint8_t> message);
 
+    void setDebugKeys(const bool debug)
+    {
+        debugKeys_ = debug;
+    }
+
 private:
     HandshakeMessages handshake_;
     RecordPool& recordPool_;

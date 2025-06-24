@@ -1,6 +1,5 @@
 #include <casket/log/log_manager.hpp>
 #include <casket/utils/exception.hpp>
-#include <casket/utils/hexlify.hpp>
 
 #include <openssl/ssl.h>
 #include <openssl/core_names.h>
@@ -9,7 +8,6 @@
 
 #include <snet/utils/endianness.hpp>
 #include <snet/utils/load_store.hpp>
-#include <snet/utils/print_hex.hpp>
 
 #include <snet/crypto/exception.hpp>
 #include <snet/tls/record_decoder.hpp>
@@ -50,9 +48,6 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::s
 {
     reset();
 
-    utils::printHex(std::cout, encKey, "KEY");
-    utils::printHex(std::cout, encIV, "IV");
-
     cipherSuite_ = std::move(cs);
 
     auto cipher = CipherSuiteManager::getInstance().fetchCipher(cipherSuite_.getCipherName());
@@ -67,9 +62,6 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::s
 void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV)
 {
     reset();
-
-    utils::printHex(std::cout, encKey, "KEY");
-    utils::printHex(std::cout, encIV, "IV");
 
     cipherSuite_ = std::move(cs);
 
@@ -104,7 +96,6 @@ std::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, std::span<con
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
 
-    utils::printHex(std::cout, in, "CipherText");
     ::utils::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
@@ -126,10 +117,6 @@ std::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, std::span<con
     uint16_t size = static_cast<uint16_t>(in.size());
     aad[3] = utils::get_byte<0>(size);
     aad[4] = utils::get_byte<1>(size);
-
-    utils::printHex(std::cout, aead_nonce, "NONCE");
-    utils::printHex(std::cout, tag, "Tag");
-    utils::printHex(std::cout, aad, "AAD");
 
     crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
 
@@ -203,10 +190,6 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
         aad[12] = utils::get_byte<1>(size);
 
         seq_++;
-
-        utils::printHex(std::cout, tag, "AEAD Tag");
-        utils::printHex(std::cout, aead_nonce, "AEAD Nonce");
-        utils::printHex(std::cout, data, "CipherText");
 
         int len{0};
         crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &len, aad, sizeof(aad)));
@@ -317,7 +300,6 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
         decryptedContent = {out.data(), in.size() - mac.size()};
     }
 
-    utils::printHex(std::cout, decryptedContent, "Decrypted", true);
     return decryptedContent;
 }
 

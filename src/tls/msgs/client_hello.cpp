@@ -15,7 +15,15 @@ void ClientHello::deserialize(std::span<const uint8_t> message)
     sessionID = reader.get_range<uint8_t>(1, 0, 32);
     suites = reader.get_range_vector<uint16_t>(2, 1, 32767);
     compMethods = reader.get_range_vector<uint8_t>(1, 1, 255);
-    extensions.deserialize(Side::Client, reader.get_span_remaining());
+
+    if (legacyVersion == ProtocolVersion::SSLv3_0)
+    {
+        reader.assert_done();
+    }
+    else
+    {
+        extensions.deserialize(Side::Client, reader.get_span_remaining());
+    }
 }
 
 size_t ClientHello::serialize(std::span<uint8_t> buffer) const
