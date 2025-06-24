@@ -21,44 +21,59 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom,
-             std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
+void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
+             std::span<uint8_t> out)
 {
-    static const unsigned char* salt[3] = {
-        (const unsigned char*)"A",
-        (const unsigned char*)"BB",
-        (const unsigned char*)"CCC",
-    };
-
-    unsigned char buf[EVP_MAX_MD_SIZE];
-    unsigned int n;
+    unsigned int ch = 'A';
+    unsigned char salt[EVP_MAX_MD_SIZE];
+    unsigned char buffer[EVP_MAX_MD_SIZE];
+    unsigned int n, saltSize;
 
     auto md5 = CipherSuiteManager::getInstance().fetchDigest("MD5");
+    const auto md5Length = EVP_MD_get_size(md5);
+
     auto sha1 = CipherSuiteManager::getInstance().fetchDigest("SHA1");
 
     HashCtxPtr ctx(EVP_MD_CTX_new());
     crypto::ThrowIfTrue(ctx == nullptr);
 
-    for (size_t i = 0; i < 3; ++i)
+    saltSize = 0;
+    std::span<uint8_t> block = out;
+
+    for (size_t i = 0; i < out.size(); i += md5Length)
     {
+        saltSize++;
+        ThrowIfTrue(saltSize > sizeof(salt), "salt buffer too small");
+        std::memset(salt, ch, saltSize);
+        ch++;
+
         crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, sha1, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, salt[i], strlen((const char*)salt[i])));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, salt, saltSize));
         crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
         crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, clientRandom.data(), clientRandom.size()));
         crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, serverRandom.data(), serverRandom.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buf, &n));
+        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
+
         crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, md5, nullptr));
         crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, n));
-        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, out.data(), &n));
+        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buffer, n));
 
-        out = out.subspan(n);
+        if (i + md5Length > out.size())
+        {
+            crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
+            std::memcpy(block.data(), buffer, (out.size() - i));
+        }
+        else
+        {
+            crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, block.data(), &n));
+        }
+
+        block = block.subspan(n);
     }
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
-             std::span<uint8_t> out)
+             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -67,16 +82,14 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     crypto::ThrowIfTrue(kctx == nullptr);
 
     OSSL_PARAM params[6], *p = params;
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
-                                            const_cast<char*>(algorithm.data()), algorithm.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET,
-                                             const_cast<uint8_t*>(secret.data()), secret.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()),
-                                             label.size());
-    *p++ = OSSL_PARAM_construct_octet_string(
-        OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()), clientRandom.size());
-    *p++ = OSSL_PARAM_construct_octet_string(
-        OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()), serverRandom.size());
+    *p++ =
+        OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), algorithm.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET, const_cast<uint8_t*>(secret.data()), secret.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()), label.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()),
+                                             clientRandom.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()),
+                                             serverRandom.size());
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
@@ -115,10 +128,8 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
     OSSL_PARAM params[6], *p = params;
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
-                                            const_cast<char*>(algorithm.data()), 0);
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()),
-                                             secret.size());
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()), secret.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_INFO, const_cast<uint8_t*>(hkdfLabel.data()),
                                              hkdfLabel.size());
     *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);

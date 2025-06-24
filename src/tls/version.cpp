@@ -76,11 +76,7 @@ std::string ProtocolVersion::toString() const
 
 std::optional<ProtocolVersion> ProtocolVersion::fromString(std::string_view str)
 {
-    if (utils::iequals(str, "ssl2"))
-    {
-        return VersionCode::SSLv2_0;
-    }
-    else if (utils::iequals(str, "ssl3"))
+    if (utils::iequals(str, "sslv3.0"))
     {
         return VersionCode::SSLv3_0;
     }

@@ -42,7 +42,7 @@ public:
 
     bool canDecrypt(const std::int8_t sideIndex) const noexcept;
 
-    size_t processRecords(const int8_t sideIndex, std::span<const uint8_t> input);
+    size_t processRecords(const std::int8_t sideIndex, std::span<const std::uint8_t> input);
 
     void preprocessRecord(const std::int8_t sideIndex, Record* record);
 
@@ -75,25 +75,9 @@ public:
     /// @brief Generates key material for TLS 1.3.
     void generateTLS13KeyMaterial();
 
-    /// @brief Updates the handshake hash with a message.
-    /// @param message The message to update the hash with.
-    void updateHash(std::span<const uint8_t> message);
-
-    /// @brief Gets the client random value.
-    /// @return The client random value.
-    const ClientRandom& getClientRandom() const noexcept;
-
-    /// @brief Sets the protocol version.
-    /// @param version The protocol version to set.
-    void setVersion(ProtocolVersion version);
-
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
     const ProtocolVersion& getVersion() const noexcept;
-
-    /// @brief Sets the cipher suite for the session.
-    /// @param cipherSuite The cipher suite to set.
-    void setCipherSuite(const CipherSuite& cipherSuite);
 
     /// @brief Gets the cipher suite of the session.
     /// @return The cipher suite.
@@ -149,6 +133,11 @@ public:
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const std::int8_t sideIndex, std::span<const uint8_t> message);
+
+    void setDebugKeys(const bool debug)
+    {
+        debugKeys_ = debug;
+    }
 
 private:
     HandshakeMessages handshake_;

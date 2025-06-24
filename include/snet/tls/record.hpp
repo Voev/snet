@@ -16,10 +16,8 @@ public:
     Record()
         : type(RecordType::Invalid)
         , payload(nullptr)
-        , decrypted_(nullptr)
         , currentLength(0)
         , expectedLength(0)
-        , decryptedLength(0)
         , isDecrypted_(false)
     {
     }
@@ -56,7 +54,7 @@ public:
 
     inline std::span<const uint8_t> getDecryptedData() const noexcept
     {
-        return {decryptedBuffer.data(), decryptedLength};
+        return decryptedData;
     }
 
     void reset();
@@ -70,10 +68,9 @@ public:
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> decryptedBuffer;
     const uint8_t* payload;
-    const uint8_t* decrypted_;
     size_t currentLength;
     size_t expectedLength;
-    size_t decryptedLength;
+    std::span<const std::uint8_t> decryptedData;
     bool isDecrypted_;
 };
 

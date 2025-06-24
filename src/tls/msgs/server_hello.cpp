@@ -14,7 +14,23 @@ void ServerHello::deserialize(std::span<const uint8_t> buffer)
     sessionID = reader.get_range<uint8_t>(1, 0, 32);
     cipherSuite = reader.get_uint16_t();
     compMethod = reader.get_byte();
-    extensions.deserialize(Side::Server, reader.get_span_remaining());
+
+    auto remaining = reader.get_span_remaining();
+    if (legacyVersion == ProtocolVersion::SSLv3_0)
+    {
+        if (!remaining.empty())
+        {
+            extensions.deserialize(Side::Server, remaining);
+        }
+        else
+        {
+            reader.assert_done();
+        }
+    }
+    else
+    {
+        extensions.deserialize(Side::Server, remaining);
+    }
 }
 
 size_t ServerHello::serialize(std::span<uint8_t> buffer) const

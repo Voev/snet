@@ -40,36 +40,27 @@ public:
     /// @param encIV The encryption IV.
     void init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV);
 
-    /// @brief Decrypts a TLS record.
-    /// @param rt The record type.
-    /// @param version The protocol version.
-    /// @param in The input buffer of encrypted data.
-    /// @param out The output buffer of decrypted data.
-    /// @param encryptThenMac Indicates if Encrypt-then-MAC is used.
-    size_t decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in, std::span<uint8_t> out,
-                   bool encryptThenMac);
-
     /// @brief Updates the keys for TLS 1.3.
     /// @param newkey The new encryption key.
     /// @param newiv The new initialization vector.
     void tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv);
 
-private:
     /// @brief Decrypts a TLS 1.x record.
     /// @param rt The record type.
     /// @param version The protocol version.
     /// @param in The input data.
     /// @param out The output buffer for the decrypted data.
     /// @param encryptThenMac Indicates if Encrypt-then-MAC is used.
-    size_t tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in, std::span<uint8_t> out,
-                       bool encryptThenMac);
+    std::span<std::uint8_t> tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
+                                        std::span<uint8_t> out, bool encryptThenMac);
 
     /// @brief Decrypts a TLS 1.3 record.
     /// @param rt The record type.
     /// @param in The input data.
     /// @param out The output buffer for the decrypted data.
-    size_t tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out);
+    std::span<std::uint8_t> tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out);
 
+private:
     /// @brief Checks the MAC for SSL 3.0.
     /// @param recordType The record type.
     /// @param content The content data.

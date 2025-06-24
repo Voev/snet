@@ -4,8 +4,11 @@
 #include <snet/tls.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
 
+#include <casket/utils/string.hpp>
+
 using namespace snet;
 using namespace snet::tls;
+using namespace casket::utils;
 
 class RecordChecker final : public tls::IRecordHandler
 {
@@ -62,11 +65,18 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 {
     auto found = section.find("keylog");
     if (found != section.end())
+    {
         secretManager_.parseKeyLogFile(found->second);
+    }
 
     processor_->push_back(std::make_shared<tls::SnifferHandler>(secretManager_));
     processor_->push_back(std::make_shared<RecordChecker>());
-    processor_->push_back(std::make_shared<tls::RecordPrinter>());
+    
+    found = section.find("print_records");
+    if (found != section.end() && iequals(found->second, "yes"))
+    {
+        processor_->push_back(std::make_shared<tls::RecordPrinter>());
+    }
 }
 
 void DecryptByKeylog::execute()

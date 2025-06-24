@@ -84,7 +84,6 @@ std::string toString(const HandshakeType type);
 /// @brief Enum representing the version code.
 enum class VersionCode : std::uint16_t
 {
-    SSLv2_0 = SSL2_VERSION,
     SSLv3_0 = SSL3_VERSION,
     TLSv1_0 = TLS1_VERSION,
     TLSv1_1 = TLS1_1_VERSION,
