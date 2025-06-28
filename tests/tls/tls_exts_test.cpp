@@ -45,7 +45,7 @@ TEST_F(ExtensionsTest, GetReturnsCorrectExtension)
 
     auto* sv = exts.get<SupportedVersions>();
     ASSERT_NE(nullptr, sv);
-    EXPECT_EQ(ProtocolVersion::TLSv1_3, sv->versions()[0]);
+    EXPECT_EQ(ProtocolVersion(ProtocolVersion::TLSv1_3), sv->versions()[0]);
 
     auto* sni = exts.get<ServerNameIndicator>();
     ASSERT_NE(nullptr, sni);
@@ -125,7 +125,7 @@ TEST_F(ExtensionsTest, DeserializeCreatesCorrectExtensions)
 
     auto* sv = exts.get<SupportedVersions>();
     ASSERT_NE(nullptr, sv);
-    EXPECT_EQ(ProtocolVersion::TLSv1_3, sv->versions()[0]);
+    EXPECT_EQ(ProtocolVersion(ProtocolVersion::TLSv1_3), sv->versions()[0]);
 }
 
 TEST_F(ExtensionsTest, MoveOperationsWork)

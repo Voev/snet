@@ -30,7 +30,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, cpp::span<uint8_t> output) const override;
 
     /// @brief Default constructor.
     EncryptThenMAC() = default;
@@ -39,7 +39,7 @@ public:
     ///
     /// @param[in] input Input byte buffer.
     ///
-    EncryptThenMAC(std::span<const uint8_t> input);
+    EncryptThenMAC(cpp::span<const uint8_t> input);
 };
 
 } // namespace snet::tls

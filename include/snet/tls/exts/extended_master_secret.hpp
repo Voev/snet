@@ -30,7 +30,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, cpp::span<uint8_t> output) const override;
 
     /// @brief Default constructor.
     ///
@@ -40,7 +40,7 @@ public:
     ///
     /// @param[in] input Input byte buffer.
     ///
-    ExtendedMasterSecret(std::span<const uint8_t> input);
+    ExtendedMasterSecret(cpp::span<const uint8_t> input);
 };
 
 } // namespace snet::tls

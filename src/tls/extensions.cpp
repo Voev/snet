@@ -7,7 +7,7 @@ using namespace casket::utils;
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> makeExtension(std::span<const uint8_t> input, ExtensionCode code, const Side side)
+std::unique_ptr<Extension> makeExtension(cpp::span<const uint8_t> input, ExtensionCode code, const Side side)
 {
     switch (code)
     {
@@ -56,7 +56,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
     extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(Side side, std::span<const uint8_t> input)
+void Extensions::deserialize(Side side, cpp::span<const uint8_t> input)
 {
     utils::DataReader reader("Extensions", input);
 
@@ -125,7 +125,7 @@ std::set<ExtensionCode> Extensions::extensionTypes() const
 }
 
 
-size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
+size_t Extensions::serialize(Side whoami, cpp::span<uint8_t> buffer) const
 {
     ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
 

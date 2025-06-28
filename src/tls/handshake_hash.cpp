@@ -12,7 +12,7 @@ HandshakeHash::HandshakeHash() = default;
 
 HandshakeHash::~HandshakeHash() noexcept = default;
 
-void HandshakeHash::update(std::span<const uint8_t> in)
+void HandshakeHash::update(cpp::span<const uint8_t> in)
 {
     std::copy(in.begin(), in.end(), std::back_inserter(messages_));
 }

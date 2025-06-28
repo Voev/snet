@@ -23,7 +23,7 @@ void Record::reset()
     isDecrypted_ = false;
 }
 
-void Record::deserializeHeader(std::span<const uint8_t> data)
+void Record::deserializeHeader(cpp::span<const uint8_t> data)
 {
     ThrowIfTrue(data[0] < 20 || data[0] > 23, "TLS record type had unexpected value");
     type = static_cast<RecordType>(data[0]);
@@ -37,7 +37,7 @@ void Record::deserializeHeader(std::span<const uint8_t> data)
     expectedLength = recordLength + TLS_HEADER_SIZE;
 }
 
-size_t Record::initPayload(std::span<const uint8_t> data)
+size_t Record::initPayload(cpp::span<const uint8_t> data)
 {
     if (currentLength > 0 || expectedLength > data.size())
     {

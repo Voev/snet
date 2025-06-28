@@ -5,12 +5,12 @@
 namespace snet::tls
 {
 
-void EncryptedExtensions::deserialize(std::span<const uint8_t> buffer)
+void EncryptedExtensions::deserialize(cpp::span<const uint8_t> buffer)
 {
     extensions.deserialize(Side::Server, buffer);
 }
 
-size_t EncryptedExtensions::serialize(std::span<uint8_t> buffer) const
+size_t EncryptedExtensions::serialize(cpp::span<uint8_t> buffer) const
 {
     return extensions.serialize(Side::Server, buffer);
 }

@@ -43,6 +43,6 @@ TEST_F(SecretNodeTest, IsValidSecretForVersion)
     Secret testSecret = createTestSecret();
     secretNode.setSecret(SecretNode::MasterSecret, testSecret);
 
-    ProtocolVersion version(VersionCode::TLSv1_2);
+    ProtocolVersion version(ProtocolVersion::TLSv1_2);
     EXPECT_TRUE(secretNode.isValid(version));
 }

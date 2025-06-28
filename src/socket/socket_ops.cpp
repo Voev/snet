@@ -84,7 +84,9 @@ int SetSocketOption(SocketType s, int level, int optname, void* optval, size_t o
 
 void SetLinger(SocketType s, int onoff, int linger, std::error_code& ec)
 {
-    struct linger sl = {.l_onoff = onoff, .l_linger = linger};
+    struct linger sl{};
+    sl.l_onoff = onoff;
+    sl.l_linger = linger;
     SetSocketOption(s, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl), ec);
 }
 

@@ -62,7 +62,7 @@ CertificateTypeBase::CertificateTypeBase(const CertificateTypeBase& certificateT
     throw RuntimeError("failed to agree on CertificateType");
 }
 
-CertificateTypeBase::CertificateTypeBase(Side side, std::span<const uint8_t> input)
+CertificateTypeBase::CertificateTypeBase(Side side, cpp::span<const uint8_t> input)
     : from_(side)
 {
     utils::DataReader reader("certificate_type extension", input);
@@ -85,7 +85,7 @@ CertificateTypeBase::CertificateTypeBase(Side side, std::span<const uint8_t> inp
     reader.assert_done();
 }
 
-size_t CertificateTypeBase::serialize(Side whoami, std::span<uint8_t> buffer) const
+size_t CertificateTypeBase::serialize(Side whoami, cpp::span<uint8_t> buffer) const
 {
     if (whoami == Side::Client)
     {

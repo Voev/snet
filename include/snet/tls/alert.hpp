@@ -4,7 +4,7 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <span>
+#include <snet/cpp_port/span.hpp>
 
 namespace snet::tls
 {
@@ -86,7 +86,7 @@ public:
 
     /// @brief Constructor that deserializes a byte array into an alert message.
     /// @param buf Byte array.
-    explicit Alert(std::span<const uint8_t> buf);
+    explicit Alert(cpp::span<const uint8_t> buf);
 
     /// @brief Method to check if the alert message is fatal.
     /// @retval true - if the Alert message is fatal.

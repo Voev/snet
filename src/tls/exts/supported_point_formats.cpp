@@ -29,13 +29,13 @@ SupportedPointFormats::SupportedPointFormats(const std::vector<ECPointFormat>& f
 {
 }
 
-size_t SupportedPointFormats::serialize(Side side, std::span<uint8_t> output) const
+size_t SupportedPointFormats::serialize(Side side, cpp::span<uint8_t> output) const
 {
     (void)side;
     return append_length_and_value(output, formats_.data(), formats_.size(), 1);
 }
 
-SupportedPointFormats::SupportedPointFormats(Side side, std::span<const uint8_t> input)
+SupportedPointFormats::SupportedPointFormats(Side side, cpp::span<const uint8_t> input)
 {
     (void)side;
 

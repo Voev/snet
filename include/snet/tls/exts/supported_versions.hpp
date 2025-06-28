@@ -32,7 +32,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, cpp::span<uint8_t> output) const override;
 
     /// @brief Constructor with a single protocol version.
     ///
@@ -49,7 +49,7 @@ public:
     /// @param[in] side Side (client or server).
     /// @param[in] input Input byte buffer.
     ///
-    SupportedVersions(Side side, std::span<const uint8_t> input);
+    SupportedVersions(Side side, cpp::span<const uint8_t> input);
 
     /// @brief Checks if the extension supports a specific protocol version.
     ///

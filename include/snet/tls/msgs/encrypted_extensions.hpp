@@ -1,5 +1,5 @@
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <snet/tls/extensions.hpp>
 #include <snet/utils/noncopyable.hpp>
 
@@ -16,9 +16,9 @@ struct EncryptedExtensions final : public utils::NonCopyable
 
     EncryptedExtensions& operator=(EncryptedExtensions&& other) noexcept = default;
 
-    void deserialize(std::span<const uint8_t> message);
+    void deserialize(cpp::span<const uint8_t> message);
 
-    size_t serialize(std::span<uint8_t> buffer) const;
+    size_t serialize(cpp::span<uint8_t> buffer) const;
 
     Extensions extensions;
 };

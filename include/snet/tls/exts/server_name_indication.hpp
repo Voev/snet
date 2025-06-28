@@ -1,5 +1,5 @@
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <string>
 #include <string_view>
 #include <snet/tls/exts/extension.hpp>
@@ -33,7 +33,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, cpp::span<uint8_t> output) const override;
 
     /// @brief Constructor with hostname.
     ///
@@ -45,7 +45,7 @@ public:
     /// @param[in] side Side (client or server).
     /// @param[in] input Input byte buffer.
     ///
-    ServerNameIndicator(Side side, std::span<const uint8_t> input);
+    ServerNameIndicator(Side side, cpp::span<const uint8_t> input);
 
     /// @brief Gets the server hostname.
     ///

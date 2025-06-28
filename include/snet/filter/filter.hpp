@@ -1,6 +1,6 @@
 #pragma once
 
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -102,7 +102,7 @@ protected:
     /**
      * @param in some input for the filter
      */
-    void send(std::span<const uint8_t> in)
+    void send(cpp::span<const uint8_t> in)
     {
         send(in.data(), in.size());
     }
@@ -116,7 +116,7 @@ protected:
      * sense now that we are using a span here; you can just use `first` to get
      * a prefix.
      */
-    void send(std::span<const uint8_t> in, size_t length)
+    void send(cpp::span<const uint8_t> in, size_t length)
     {
         send(in.data(), length);
     }

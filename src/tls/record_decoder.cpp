@@ -43,8 +43,8 @@ void RecordDecoder::reset() noexcept
     inited_ = false;
 }
 
-void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV,
-                         std::span<const std::uint8_t> macKey)
+void RecordDecoder::init(CipherSuite cs, cpp::span<const uint8_t> encKey, cpp::span<const uint8_t> encIV,
+                         cpp::span<const std::uint8_t> macKey)
 {
     reset();
 
@@ -59,7 +59,7 @@ void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::s
     inited_ = true;
 }
 
-void RecordDecoder::init(CipherSuite cs, std::span<const uint8_t> encKey, std::span<const uint8_t> encIV)
+void RecordDecoder::init(CipherSuite cs, cpp::span<const uint8_t> encKey, cpp::span<const uint8_t> encIV)
 {
     reset();
 
@@ -89,7 +89,7 @@ size_t GetTagLength(EVP_CIPHER_CTX* ctx)
     return EVP_CIPHER_CTX_get_tag_length(ctx);
 }
 
-std::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, std::span<const uint8_t> in, std::span<uint8_t> out)
+cpp::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, cpp::span<const uint8_t> in, cpp::span<uint8_t> out)
 {
     int i;
     int x;
@@ -152,10 +152,10 @@ std::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, std::span<con
     return {out.data(), (size_t)outSize};
 }
 
-std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, std::span<const uint8_t> in,
-                                              std::span<uint8_t> out, bool encryptThenMac)
+cpp::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion version, cpp::span<const uint8_t> in,
+                                              cpp::span<uint8_t> out, bool encryptThenMac)
 {
-    std::span<std::uint8_t> decryptedContent;
+    cpp::span<std::uint8_t> decryptedContent;
 
     if (cipherSuite_.isAEAD())
     {
@@ -250,7 +250,7 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
             uint8_t paddingLength = out[outSize - 1];
             outSize -= (paddingLength + 1);
 
-            auto mac = std::span(out.begin() + outSize - EVP_MD_get_size(md), out.begin() + outSize);
+            auto mac = cpp::span(out.begin() + outSize - EVP_MD_get_size(md), out.begin() + outSize);
             outSize -= mac.size();
 
             if (version >= ProtocolVersion::TLSv1_1)
@@ -258,14 +258,14 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
                 ::utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
-                auto content = std::span(out.begin() + blockSize, out.begin() + outSize);
+                auto content = cpp::span(out.begin() + blockSize, out.begin() + outSize);
                 tls1CheckMac(rt, version, {}, content, mac);
 
                 outSize -= blockSize;
             }
             else
             {
-                auto content = std::span(out.begin(), out.begin() + outSize);
+                auto content = cpp::span(out.begin(), out.begin() + outSize);
 
                 if (version == ProtocolVersion::SSLv3_0)
                 {
@@ -286,8 +286,8 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
 
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), in.data(), in.size()));
 
-        auto content = std::span(out.begin(), out.end() - EVP_MD_get_size(md));
-        auto mac = std::span(out.end() - EVP_MD_get_size(md), out.end());
+        auto content = cpp::span(out.begin(), out.end() - EVP_MD_get_size(md));
+        auto mac = cpp::span(out.end() - EVP_MD_get_size(md), out.end());
         if (version == ProtocolVersion::SSLv3_0)
         {
             ssl3CheckMac(rt, content, mac);
@@ -303,8 +303,8 @@ std::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
     return decryptedContent;
 }
 
-void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version, std::span<const uint8_t> iv,
-                                 std::span<const uint8_t> content, std::span<const uint8_t> expectedMac)
+void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version, cpp::span<const uint8_t> iv,
+                                 cpp::span<const uint8_t> content, cpp::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
     utils::store_be(seq_, meta.data());
@@ -347,7 +347,7 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
     ::utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()), "Bad record MAC");
 }
 
-void RecordDecoder::ssl3CheckMac(RecordType recordType, std::span<const uint8_t> content, std::span<const uint8_t> mac)
+void RecordDecoder::ssl3CheckMac(RecordType recordType, cpp::span<const uint8_t> content, cpp::span<const uint8_t> mac)
 {
     unsigned int actualMacSize{EVP_MAX_MD_SIZE};
     std::vector<uint8_t> actualMac(actualMacSize);

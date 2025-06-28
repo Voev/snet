@@ -1,6 +1,6 @@
 #pragma once
 
-#include <chrono>
+#include <snet/cpp_port/chrono.hpp>
 #include <string_view>
 
 #include <snet/crypto/pointers.hpp>
@@ -38,13 +38,13 @@ public:
 
     CertBuilder& setNotBefore(std::chrono::seconds offsetSec);
 
-    CertBuilder& setNotBefore(std::chrono::years offsetYears);
+    CertBuilder& setNotBefore(cpp::chrono_years offsetYears);
 
     CertBuilder& setNotAfter(const Asn1Time* time);
 
     CertBuilder& setNotAfter(std::chrono::seconds offsetSec);
 
-    CertBuilder& setNotAfter(std::chrono::years offsetYears);
+    CertBuilder& setNotAfter(cpp::chrono_years offsetYears);
 
     CertBuilder& addExtension(CertExt* ext);
 

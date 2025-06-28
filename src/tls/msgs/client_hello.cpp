@@ -6,7 +6,7 @@
 namespace snet::tls
 {
 
-void ClientHello::deserialize(std::span<const uint8_t> message)
+void ClientHello::deserialize(cpp::span<const uint8_t> message)
 {
     utils::DataReader reader("Client Hello", message);
 
@@ -26,7 +26,7 @@ void ClientHello::deserialize(std::span<const uint8_t> message)
     }
 }
 
-size_t ClientHello::serialize(std::span<uint8_t> buffer) const
+size_t ClientHello::serialize(cpp::span<uint8_t> buffer) const
 {
     size_t offset{};
     size_t length{};

@@ -2,7 +2,7 @@
 /// @brief Declaration of the TLS record class.
 
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/utils/load_store.hpp>
 #include <casket/utils/exception.hpp>
@@ -47,21 +47,21 @@ public:
         return isDecrypted_;
     }
 
-    inline std::span<const uint8_t> getData() const noexcept
+    inline cpp::span<const uint8_t> getData() const noexcept
     {
         return {payload, currentLength};
     }
 
-    inline std::span<const uint8_t> getDecryptedData() const noexcept
+    inline cpp::span<const uint8_t> getDecryptedData() const noexcept
     {
         return decryptedData;
     }
 
     void reset();
 
-    size_t initPayload(std::span<const uint8_t> data);
+    size_t initPayload(cpp::span<const uint8_t> data);
 
-    void deserializeHeader(std::span<const uint8_t> data);
+    void deserializeHeader(cpp::span<const uint8_t> data);
 
     RecordType type;
     ProtocolVersion version;
@@ -70,7 +70,7 @@ public:
     const uint8_t* payload;
     size_t currentLength;
     size_t expectedLength;
-    std::span<const std::uint8_t> decryptedData;
+    cpp::span<const std::uint8_t> decryptedData;
     bool isDecrypted_;
 };
 

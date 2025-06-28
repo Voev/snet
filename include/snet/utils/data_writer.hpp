@@ -1,5 +1,5 @@
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <stdexcept>
 #include <cstdint>
 #include <snet/utils/load_store.hpp>
@@ -8,7 +8,7 @@ namespace snet
 {
 
 template <typename T>
-size_t append_length_and_value(std::span<uint8_t> outputBuffer, const T* vals, size_t valsSize, size_t tagSize)
+size_t append_length_and_value(cpp::span<uint8_t> outputBuffer, const T* vals, size_t valsSize, size_t tagSize)
 {
     constexpr size_t typeSize = sizeof(T);
     const size_t valueBytes = typeSize * valsSize;

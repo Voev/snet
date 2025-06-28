@@ -49,7 +49,7 @@ bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
     return ((canDecrypt_ & 0x1) && sideIndex == 0) || ((canDecrypt_ & 0x2) && sideIndex == 1);
 }
 
-size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> input)
+size_t Session::processRecords(const int8_t sideIndex, cpp::span<const uint8_t> input)
 {
     ::utils::ThrowIfTrue(input.empty(), "invalid input data");
 
@@ -105,7 +105,7 @@ size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> 
 
 void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 {
-    std::span<const uint8_t> data;
+    cpp::span<const uint8_t> data;
 
     if (canDecrypt(sideIndex) && record->type != RecordType::ChangeCipherSpec)
     {
@@ -409,8 +409,8 @@ void Session::generateTLS13KeyMaterial()
     canDecrypt_ |= 3;
 }
 
-void Session::PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
-                  std::span<const uint8_t> rnd2, std::span<uint8_t> out)
+void Session::PRF(const Secret& secret, std::string_view usage, cpp::span<const uint8_t> rnd1,
+                  cpp::span<const uint8_t> rnd2, cpp::span<uint8_t> out)
 {
     ::utils::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
@@ -471,7 +471,7 @@ const ServerInfo& Session::getServerInfo() const noexcept
     return serverInfo_;
 }
 
-void Session::processClientHello(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processClientHello(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
     handshake_.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -485,7 +485,7 @@ void Session::processClientHello(const std::int8_t sideIndex, std::span<const ui
     }
 }
 
-void Session::processServerHello(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerHello(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
     handshake_.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -509,7 +509,7 @@ void Session::processServerHello(const std::int8_t sideIndex, std::span<const ui
     }
 }
 
-void Session::processCertificate(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificate(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
     utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -553,7 +553,7 @@ void Session::processCertificate(const std::int8_t sideIndex, std::span<const ui
     handshakeHash_.update(message);
 }
 
-void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processSessionTicket(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     if (version_ == ProtocolVersion::TLSv1_3)
@@ -589,13 +589,13 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
     }*/
 }
 
-void Session::processEncryptedExtensions(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processEncryptedExtensions(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
 }
 
-void Session::processServerKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerKeyExchange(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -645,7 +645,7 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, std::span<co
     handshakeHash_.update(message);
 }
 
-void Session::processCertificateRequest(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificateRequest(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -672,7 +672,7 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, std::span<c
     handshakeHash_.update(message);
 }
 
-void Session::processServerHelloDone(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerHelloDone(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -682,7 +682,7 @@ void Session::processServerHelloDone(const std::int8_t sideIndex, std::span<cons
     handshakeHash_.update(message);
 }
 
-void Session::processCertificateVerify(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificateVerify(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -694,7 +694,7 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, std::span<co
     handshakeHash_.update(message);
 }
 
-void Session::processClientKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processClientKeyExchange(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     ::utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
 
@@ -738,7 +738,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, std::span<co
     }
 }
 
-void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processFinished(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     (void)message;
 
@@ -781,7 +781,7 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
     }
 }
 
-void Session::processKeyUpdate(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processKeyUpdate(const std::int8_t sideIndex, cpp::span<const uint8_t> message)
 {
     (void)message;
 

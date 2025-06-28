@@ -23,7 +23,7 @@ bool RecordSizeLimit::empty() const
     return limit_ == 0;
 }
 
-size_t RecordSizeLimit::serialize(Side side, std::span<uint8_t> output) const
+size_t RecordSizeLimit::serialize(Side side, cpp::span<uint8_t> output) const
 {
     (void)side;
 
@@ -41,7 +41,7 @@ RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
                 "RFC 8449 does not allow record size limits larger than 2^14+1");
 }
 
-RecordSizeLimit::RecordSizeLimit(Side side, std::span<const uint8_t> input)
+RecordSizeLimit::RecordSizeLimit(Side side, cpp::span<const uint8_t> input)
 {
     utils::DataReader reader("record_size_limit", input);
     limit_ = reader.get_uint16_t();

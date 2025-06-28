@@ -140,7 +140,7 @@ public:
                 {
                     std::cout << "--handled--" << std::endl;
 
-                    utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                    utils::printHex(std::cout, cpp::span{rawPacket->getRawData(),
                                                          (size_t)rawPacket->getRawDataLen()});
                     std::cout << "----" << std::endl;
                     auto p = parsedPacket.getLayerOfType<layers::PayloadLayer>(true);
@@ -158,7 +158,7 @@ public:
 
                         std::cout << "--replaced--" << std::endl;
 
-                        utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                        utils::printHex(std::cout, cpp::span{rawPacket->getRawData(),
                                                              (size_t)rawPacket->getRawDataLen()});
                         std::cout << "----" << std::endl;
                     }

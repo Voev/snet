@@ -1,5 +1,5 @@
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <cassert>
 #include <cstdint>
 
@@ -13,13 +13,13 @@ public:
         : data_({data, size}) {
     }
 
-    MemoryViewer(std::span<const uint8_t> data)
+    MemoryViewer(cpp::span<const uint8_t> data)
         : data_(data)
     {}
 
     ~MemoryViewer() noexcept = default;
 
-    std::span<const uint8_t> view(size_t size)
+    cpp::span<const uint8_t> view(size_t size)
     {
         assert(data_.size() >= size);
         auto subspan = data_.subspan(0, size);
@@ -28,7 +28,7 @@ public:
     }
 
 private:
-    std::span<const uint8_t> data_;
+    cpp::span<const uint8_t> data_;
 };
 
 } // namespace snet::utils

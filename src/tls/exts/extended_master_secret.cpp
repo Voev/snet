@@ -17,12 +17,12 @@ ExtensionCode ExtendedMasterSecret::type() const
     return staticType();
 }
 
-ExtendedMasterSecret::ExtendedMasterSecret(std::span<const uint8_t> input)
+ExtendedMasterSecret::ExtendedMasterSecret(cpp::span<const uint8_t> input)
 {
     ThrowIfFalse(input.empty(), "invalid extended_master_secret extension");
 }
 
-size_t ExtendedMasterSecret::serialize(Side side, std::span<uint8_t> output) const
+size_t ExtendedMasterSecret::serialize(Side side, cpp::span<uint8_t> output) const
 {
     (void)side;
     (void)output;

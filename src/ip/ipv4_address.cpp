@@ -14,23 +14,26 @@ namespace snet::ip
 {
 
 IPv4Address::IPv4Address() noexcept
+    : addr_{}
 {
     addr_.s_addr = 0;
 }
 
 IPv4Address::IPv4Address(std::uint32_t addr) noexcept
-    : addr_{.s_addr = utils::be_to_host(addr)}
+    : addr_{}
 {
-    // addr_.s_addr = utils::be_to_host(addr);
+    addr_.s_addr = utils::be_to_host(addr);
 }
 
-IPv4Address::IPv4Address(std::span<const std::uint8_t> bytes)
+IPv4Address::IPv4Address(cpp::span<const std::uint8_t> bytes)
+    : addr_{}
 {
     assert(bytes.size_bytes() == kBytesCount);
     std::memcpy(&addr_.s_addr, bytes.data(), bytes.size_bytes());
 }
 
 IPv4Address::IPv4Address(std::string_view str)
+    : addr_{}
 {
     if (inet_pton(AF_INET, str.data(), &addr_.s_addr) <= 0)
     {

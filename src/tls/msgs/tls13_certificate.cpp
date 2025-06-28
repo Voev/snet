@@ -9,7 +9,7 @@ using namespace casket;
 namespace snet::tls
 {
 
-void TLSv13Certificate::deserialize(Side side, std::span<const uint8_t> buffer)
+void TLSv13Certificate::deserialize(Side side, cpp::span<const uint8_t> buffer)
 {
     utils::DataReader reader("TLSv1.3 Certificate", buffer);
 
@@ -29,7 +29,7 @@ void TLSv13Certificate::deserialize(Side side, std::span<const uint8_t> buffer)
     reader.assert_done();
 }
 
-size_t TLSv13Certificate::serialize(Side side, std::span<uint8_t> buffer) const
+size_t TLSv13Certificate::serialize(Side side, cpp::span<uint8_t> buffer) const
 {
     size_t totalLength = 0;
 

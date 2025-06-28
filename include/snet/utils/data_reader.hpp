@@ -1,5 +1,5 @@
 #pragma once
-#include <span>
+#include <snet/cpp_port/span.hpp>
 #include <string>
 #include <vector>
 #include <casket/utils/exception.hpp>
@@ -12,7 +12,7 @@ namespace snet::utils
 class DataReader final
 {
 public:
-    DataReader(const char* type, std::span<const uint8_t> buf_in)
+    DataReader(const char* type, cpp::span<const uint8_t> buf_in)
         : m_typename(type)
         , m_buf(buf_in)
         , m_offset(0)
@@ -42,7 +42,7 @@ public:
         return (remaining_bytes() > 0);
     }
 
-    std::span<const uint8_t> get_span_remaining()
+    cpp::span<const uint8_t> get_span_remaining()
     {
         return {m_buf.begin() + m_offset, m_buf.end()};
     }
@@ -128,13 +128,13 @@ public:
     }
 
     template <typename T>
-    std::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
+    cpp::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
     {
         const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
 
         assert_at_least(num_elems * sizeof(T));
 
-        std::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
+        cpp::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
 
         m_offset += num_elems * sizeof(T);
 
@@ -162,11 +162,11 @@ public:
     }
 
     template <typename T>
-    std::span<const T> get_span_fixed(size_t numElems)
+    cpp::span<const T> get_span_fixed(size_t numElems)
     {
         assert_at_least(numElems * sizeof(T));
 
-        std::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
+        cpp::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
 
         m_offset += numElems * sizeof(T);
 
@@ -178,7 +178,7 @@ public:
         return get_fixed<uint8_t>(get_length_field(lenBytes));
     }
 
-    std::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
+    cpp::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
     {
         return get_span_fixed<const uint8_t>(get_length_field(lenBytes));
     }
@@ -238,7 +238,7 @@ private:
     }
 
     const char* m_typename;
-    std::span<const uint8_t> m_buf;
+    cpp::span<const uint8_t> m_buf;
     size_t m_offset;
 };
 

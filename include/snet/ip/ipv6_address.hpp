@@ -15,7 +15,7 @@ public:
 
     ~IPv6Address();
 
-    explicit IPv6Address(std::span<const std::uint8_t> bytes);
+    explicit IPv6Address(cpp::span<const std::uint8_t> bytes);
     
     explicit IPv6Address(std::string_view str);
 

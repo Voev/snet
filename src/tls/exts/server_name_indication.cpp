@@ -23,7 +23,7 @@ bool ServerNameIndicator::empty() const
     return false;
 }
 
-size_t ServerNameIndicator::serialize(Side side, std::span<uint8_t> output) const
+size_t ServerNameIndicator::serialize(Side side, cpp::span<uint8_t> output) const
 {
     // RFC 6066
     //    [...] the server SHALL include an extension of type "server_name" in
@@ -54,7 +54,7 @@ ServerNameIndicator::ServerNameIndicator(std::string_view hostname)
 {
 }
 
-ServerNameIndicator::ServerNameIndicator(Side side, std::span<const uint8_t> input)
+ServerNameIndicator::ServerNameIndicator(Side side, cpp::span<const uint8_t> input)
 {
     (void)side;
 

@@ -21,8 +21,8 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
-             std::span<uint8_t> out)
+void ssl3Prf(const Secret& secret, cpp::span<const uint8_t> clientRandom, cpp::span<const uint8_t> serverRandom,
+             cpp::span<uint8_t> out)
 {
     unsigned int ch = 'A';
     unsigned char salt[EVP_MAX_MD_SIZE];
@@ -38,7 +38,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::s
     crypto::ThrowIfTrue(ctx == nullptr);
 
     saltSize = 0;
-    std::span<uint8_t> block = out;
+    cpp::span<uint8_t> block = out;
 
     for (size_t i = 0; i < out.size(); i += md5Length)
     {
@@ -73,7 +73,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::s
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
+             cpp::span<const uint8_t> clientRandom, cpp::span<const uint8_t> serverRandom, cpp::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -96,7 +96,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
 }
 
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     std::span<const uint8_t> context, const size_t length)
+                                     cpp::span<const uint8_t> context, const size_t length)
 {
     // assemble (serialized) HkdfLabel
     std::vector<uint8_t> hkdfLabel;

@@ -126,7 +126,7 @@ Alert::Alert(const int code) {
     description_ = static_cast<Description>(description);
 }
 
-Alert::Alert(std::span<const uint8_t> buf)
+Alert::Alert(cpp::span<const uint8_t> buf)
 {
     ThrowIfTrue(buf.size() != 2,
                 "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
