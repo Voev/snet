@@ -50,22 +50,3 @@
 #include <byteswap.h>
 
 #endif
-
-template <std::unsigned_integral T>
-requires(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
-inline constexpr T reverseBytes(T x)
-{
-    if constexpr (sizeof(T) == 2)
-    {
-        return bswap_16(x);
-    }
-    else if constexpr (sizeof(T) == 4)
-    {
-        return bswap_32(x);
-    }
-    else if constexpr (sizeof(T) == 8)
-    {
-        return bswap_64(x);
-    }
-    return x;
-}
