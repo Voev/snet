@@ -1,3 +1,4 @@
+#include <cstring>
 #include <snet/tls/record.hpp>
 
 #include <casket/utils/exception.hpp>

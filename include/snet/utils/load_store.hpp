@@ -1,8 +1,5 @@
 #pragma once
-#include <bit>
-#include <vector>
 #include <cstdint>
-#include <cstring>
 #include <snet/utils/byteswap.hpp>
 #include <snet/utils/endianness.hpp>
 #include <snet/utils/alignment.hpp>
@@ -147,7 +144,7 @@ T load_be(const uint8_t* data, size_t index = 0)
     static_assert(sizeof(T) <= 8, "Type size too large");
 
     const uint8_t* ptr = data + index * sizeof(T);
-    const bool aligned = casket::is_aligned_for<T>(ptr);
+    const bool aligned = is_aligned_for<T>(ptr);
 
     return aligned ? detail::load_be_impl<T, true>::load(ptr) : detail::load_be_impl<T, false>::load(ptr);
 }
@@ -159,7 +156,7 @@ void store_be(T value, uint8_t* data, size_t index = 0)
     static_assert(sizeof(T) <= 8, "Type size too large");
 
     uint8_t* ptr = data + index * sizeof(T);
-    const bool aligned = casket::is_aligned_for<T>(ptr);
+    const bool aligned = is_aligned_for<T>(ptr);
 
     aligned ? detail::store_be_impl<T, true>::store(value, ptr) : detail::store_be_impl<T, false>::store(value, ptr);
 }
