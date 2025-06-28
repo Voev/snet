@@ -114,6 +114,30 @@ struct load_be_impl<T, false>
     }
 };
 
+template <typename T, bool Aligned>
+struct store_be_impl;
+
+template <typename T>
+struct store_be_impl<T, true>
+{
+    static void store(T value, uint8_t* data)
+    {
+        *reinterpret_cast<T*>(data) = host_to_be<T>(value);
+    }
+};
+
+template <typename T>
+struct store_be_impl<T, false>
+{
+    static void store(T value, uint8_t* data)
+    {
+        for (size_t i = 0; i < sizeof(T); ++i)
+        {
+            data[i] = (value >> (8 * (sizeof(T) - 1 - i))) & 0xFF;
+        }
+    }
+};
+
 } // namespace detail
 
 template <typename T>
@@ -128,71 +152,16 @@ T load_be(const uint8_t* data, size_t index = 0)
     return aligned ? detail::load_be_impl<T, true>::load(ptr) : detail::load_be_impl<T, false>::load(ptr);
 }
 
-template <typename T, typename = void>
-struct store_be_impl;
-
 template <typename T>
-struct store_be_impl<T, typename std::enable_if<sizeof(T) == 1>::type>
+void store_be(T value, uint8_t* data, size_t index = 0)
 {
-    static void store(T value, uint8_t* data)
-    {
-        data[0] = static_cast<uint8_t>(value);
-    }
-};
+    static_assert(std::is_unsigned<T>::value, "Only unsigned types are supported");
+    static_assert(sizeof(T) <= 8, "Type size too large");
 
-template <typename T>
-struct store_be_impl<T, typename std::enable_if<sizeof(T) == 2>::type>
-{
-    static void store(T value, uint8_t* data)
-    {
-        uint16_t val;
-#if defined(__GNUC__) || defined(__clang__)
-        val = __builtin_bswap16(value);
-#else
-        val = (value << 8) | (value >> 8);
-#endif
-        std::memcpy(data, &val, sizeof(val));
-    }
-};
+    uint8_t* ptr = data + index * sizeof(T);
+    const bool aligned = casket::is_aligned_for<T>(ptr);
 
-template <typename T>
-struct store_be_impl<T, typename std::enable_if<sizeof(T) == 4>::type>
-{
-    static void store(T value, uint8_t* data)
-    {
-        uint32_t val;
-#if defined(__GNUC__) || defined(__clang__)
-        val = __builtin_bswap32(value);
-#else
-        val = ((value & 0xFF000000) >> 24) | ((value & 0x00FF0000) >> 8) | ((value & 0x0000FF00) << 8) |
-              ((value & 0x000000FF) << 24);
-#endif
-        std::memcpy(data, &val, sizeof(val));
-    }
-};
-
-template <typename T>
-struct store_be_impl<T, typename std::enable_if<sizeof(T) == 8>::type>
-{
-    static void store(T value, uint8_t* data)
-    {
-        uint64_t val;
-#if defined(__GNUC__) || defined(__clang__)
-        val = __builtin_bswap64(value);
-#else
-        val = ((value & 0xFF00000000000000ull) >> 56) | ((value & 0x00FF000000000000ull) >> 40) |
-              ((value & 0x0000FF0000000000ull) >> 24) | ((value & 0x000000FF00000000ull) >> 8) |
-              ((value & 0x00000000FF000000ull) << 8) | ((value & 0x0000000000FF0000ull) << 24) |
-              ((value & 0x000000000000FF00ull) << 40) | ((value & 0x00000000000000FFull) << 56);
-#endif
-        std::memcpy(data, &val, sizeof(val));
-    }
-};
-
-template <typename T>
-void store_be(T value, uint8_t* data)
-{
-    store_be_impl<T>::store(value, data);
+    aligned ? detail::store_be_impl<T, true>::store(value, ptr) : detail::store_be_impl<T, false>::store(value, ptr);
 }
 
 } // namespace snet::utils
