@@ -59,14 +59,17 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
         if (i + md5Length > out.size())
         {
             crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
-            std::memcpy(block.data(), buffer, (out.size() - i));
+
+            auto delta = out.size() - i;
+            std::memcpy(block.data(), buffer, delta);
+            block = block.subspan(delta);
         }
         else
         {
             crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, block.data(), &n));
+            block = block.subspan(n);
         }
 
-        block = block.subspan(n);
     }
 }
 
