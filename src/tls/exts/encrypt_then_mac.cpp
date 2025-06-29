@@ -17,12 +17,12 @@ ExtensionCode EncryptThenMAC::type() const
     return staticType();
 }
 
-EncryptThenMAC::EncryptThenMAC(cpp::span<const uint8_t> input)
+EncryptThenMAC::EncryptThenMAC(nonstd::span<const uint8_t> input)
 {
     ThrowIfFalse(input.empty(), "invalid encrypt_then_mac extension");
 }
 
-size_t EncryptThenMAC::serialize(Side side, cpp::span<uint8_t> output) const
+size_t EncryptThenMAC::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
     (void)output;

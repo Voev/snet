@@ -32,7 +32,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, cpp::span<uint8_t> output) const override;
+    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
 
     /// @brief Default constructor.
     RenegotiationExtension() = default;
@@ -48,7 +48,7 @@ public:
     /// @param[in] side Side (client or server).
     /// @param[in] input Input byte buffer.
     ///
-    RenegotiationExtension(Side side, cpp::span<const uint8_t> input);
+    RenegotiationExtension(Side side, nonstd::span<const uint8_t> input);
 
     /// @brief Gets the renegotiation information.
     ///

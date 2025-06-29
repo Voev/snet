@@ -1,13 +1,12 @@
 #include <casket/log/log_manager.hpp>
+#include <casket/utils/endianness.hpp>
 
 #include <snet/layers/checksums.hpp>
 #include <snet/layers/ipv4_layer.hpp>
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 
-#include <snet/utils/endianness.hpp>
-
-using namespace snet::utils;
+using namespace casket;
 
 namespace snet::layers
 {

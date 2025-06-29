@@ -6,9 +6,9 @@
 #include <snet/layers/tcp_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 
-using namespace snet::utils;
+using namespace casket;
 
 namespace snet::layers
 {

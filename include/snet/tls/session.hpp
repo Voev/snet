@@ -4,7 +4,7 @@
 #pragma once
 #include <vector>
 #include <array>
-#include <snet/cpp_port/span.hpp>
+#include <casket/nonstd/span.hpp>
 #include <memory>
 #include <string>
 #include <functional>
@@ -42,7 +42,7 @@ public:
 
     bool canDecrypt(const std::int8_t sideIndex) const noexcept;
 
-    size_t processRecords(const std::int8_t sideIndex, cpp::span<const std::uint8_t> input);
+    size_t processRecords(const std::int8_t sideIndex, nonstd::span<const std::uint8_t> input);
 
     void preprocessRecord(const std::int8_t sideIndex, Record* record);
 
@@ -65,8 +65,8 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, cpp::span<const uint8_t> rnd1, cpp::span<const uint8_t> rnd2,
-             cpp::span<uint8_t> out);
+    void PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1, nonstd::span<const uint8_t> rnd2,
+             nonstd::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
@@ -106,33 +106,33 @@ public:
 
     Record* readingRecord{nullptr};
 
-    void processClientHello(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processClientHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerHello(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processServerHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processEncryptedExtensions(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
     
-    void processSessionTicket(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificateRequest(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificate(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processCertificate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificateVerify(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processCertificateVerify(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerKeyExchange(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processClientKeyExchange(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processClientKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerHelloDone(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processFinished(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processKeyUpdate(const std::int8_t sideIndex, cpp::span<const uint8_t> message);
+    void processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     void setDebugKeys(const bool debug)
     {

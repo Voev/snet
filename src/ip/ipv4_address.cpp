@@ -4,7 +4,7 @@
 
 #include <snet/ip/ipv4_address.hpp>
 
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/exception.hpp>
 
@@ -22,10 +22,10 @@ IPv4Address::IPv4Address() noexcept
 IPv4Address::IPv4Address(std::uint32_t addr) noexcept
     : addr_{}
 {
-    addr_.s_addr = utils::be_to_host(addr);
+    addr_.s_addr = casket::be_to_host(addr);
 }
 
-IPv4Address::IPv4Address(cpp::span<const std::uint8_t> bytes)
+IPv4Address::IPv4Address(nonstd::span<const std::uint8_t> bytes)
     : addr_{}
 {
     assert(bytes.size_bytes() == kBytesCount);
@@ -100,17 +100,17 @@ bool IPv4Address::operator>=(const IPv4Address& rhs) const noexcept
 
 IPv4Address IPv4Address::operator&(const IPv4Address& mask) const
 {
-    return IPv4Address(utils::be_to_host(addr_.s_addr & mask.addr_.s_addr));
+    return IPv4Address(casket::be_to_host(addr_.s_addr & mask.addr_.s_addr));
 }
 
 IPv4Address IPv4Address::operator|(const IPv4Address& mask) const
 {
-    return IPv4Address(utils::be_to_host(addr_.s_addr | mask.addr_.s_addr));
+    return IPv4Address(casket::be_to_host(addr_.s_addr | mask.addr_.s_addr));
 }
 
 IPv4Address IPv4Address::operator~() const
 {
-    return IPv4Address(utils::be_to_host(~addr_.s_addr));
+    return IPv4Address(casket::be_to_host(~addr_.s_addr));
 }
 
 IPv4Address::operator uint32_t() const
@@ -120,7 +120,7 @@ IPv4Address::operator uint32_t() const
 
 std::uint32_t IPv4Address::toUint() const
 {
-    return utils::host_to_be(addr_.s_addr);
+    return casket::host_to_be(addr_.s_addr);
 }
 
 std::string IPv4Address::toString() const
@@ -156,17 +156,17 @@ bool IPv4Address::isUnicast() const noexcept
 
 bool increment(IPv4Address& addr)
 {
-    uint32_t addr_int = utils::be_to_host<uint32_t>(addr.toUint());
+    uint32_t addr_int = casket::be_to_host<uint32_t>(addr.toUint());
     bool reached_end = ++addr_int == std::numeric_limits<uint32_t>::max();
-    addr = IPv4Address(utils::be_to_host<uint32_t>(addr_int));
+    addr = IPv4Address(casket::be_to_host<uint32_t>(addr_int));
     return reached_end;
 }
 
 bool decrement(IPv4Address& addr)
 {
-    uint32_t addrUint = utils::be_to_host<uint32_t>(addr.toUint());
+    uint32_t addrUint = casket::be_to_host<uint32_t>(addr.toUint());
     bool reachedEnd = --addrUint == 0;
-    addr = IPv4Address(utils::be_to_host<uint32_t>(addrUint));
+    addr = IPv4Address(casket::be_to_host<uint32_t>(addrUint));
     return reachedEnd;
 }
 

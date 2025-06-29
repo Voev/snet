@@ -17,7 +17,7 @@ IPv6Address::IPv6Address() noexcept
 
 IPv6Address::~IPv6Address() = default;
 
-IPv6Address::IPv6Address(cpp::span<const std::uint8_t> bytes)
+IPv6Address::IPv6Address(nonstd::span<const std::uint8_t> bytes)
 {
     assert(bytes.size_bytes() == kBytesCount);
     std::copy(bytes.begin(), bytes.end(), std::begin(addr_.s6_addr));

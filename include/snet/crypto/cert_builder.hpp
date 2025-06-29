@@ -1,15 +1,16 @@
 #pragma once
 
-#include <snet/cpp_port/chrono.hpp>
 #include <string_view>
 
+#include <casket/nonstd/chrono.hpp>
+#include <casket/utils/noncopyable.hpp>
+
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/noncopyable.hpp>
 
 namespace snet::crypto
 {
 
-class CertBuilder final : utils::NonCopyable
+class CertBuilder final : casket::NonCopyable
 {
 public:
     CertBuilder();
@@ -38,13 +39,13 @@ public:
 
     CertBuilder& setNotBefore(std::chrono::seconds offsetSec);
 
-    CertBuilder& setNotBefore(cpp::chrono_years offsetYears);
+    CertBuilder& setNotBefore(nonstd::chrono_years offsetYears);
 
     CertBuilder& setNotAfter(const Asn1Time* time);
 
     CertBuilder& setNotAfter(std::chrono::seconds offsetSec);
 
-    CertBuilder& setNotAfter(cpp::chrono_years offsetYears);
+    CertBuilder& setNotAfter(nonstd::chrono_years offsetYears);
 
     CertBuilder& addExtension(CertExt* ext);
 

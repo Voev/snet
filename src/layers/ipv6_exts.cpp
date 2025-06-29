@@ -5,9 +5,9 @@
 #include <snet/layers/ipv4_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 
-using namespace snet::utils;
+using namespace casket;
 
 namespace snet::layers
 {

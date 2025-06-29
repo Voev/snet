@@ -1,11 +1,11 @@
 #pragma once
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::crypto
 {
 
-class CertAuthority final : public utils::NonCopyable
+class CertAuthority final : public casket::NonCopyable
 {
 public:
     CertAuthority(const std::string& name);

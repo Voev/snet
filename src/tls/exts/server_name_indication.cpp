@@ -23,7 +23,7 @@ bool ServerNameIndicator::empty() const
     return false;
 }
 
-size_t ServerNameIndicator::serialize(Side side, cpp::span<uint8_t> output) const
+size_t ServerNameIndicator::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     // RFC 6066
     //    [...] the server SHALL include an extension of type "server_name" in
@@ -37,12 +37,12 @@ size_t ServerNameIndicator::serialize(Side side, cpp::span<uint8_t> output) cons
     size_t nameLength = hostname_.size();
     ThrowIfTrue(output.size_bytes() < 5 + nameLength, "buffer is too small");
 
-    output[0] = utils::get_byte<0>(static_cast<uint16_t>(nameLength + 3));
-    output[1] = utils::get_byte<1>(static_cast<uint16_t>(nameLength + 3));
+    output[0] = casket::get_byte<0>(static_cast<uint16_t>(nameLength + 3));
+    output[1] = casket::get_byte<1>(static_cast<uint16_t>(nameLength + 3));
     output[2] = 0; // DNS
 
-    output[3] = utils::get_byte<0>(static_cast<uint16_t>(nameLength));
-    output[4] = utils::get_byte<1>(static_cast<uint16_t>(nameLength));
+    output[3] = casket::get_byte<0>(static_cast<uint16_t>(nameLength));
+    output[4] = casket::get_byte<1>(static_cast<uint16_t>(nameLength));
     output = output.subspan(5);
 
     std::copy(hostname_.begin(), hostname_.end(), output.begin());
@@ -54,7 +54,7 @@ ServerNameIndicator::ServerNameIndicator(std::string_view hostname)
 {
 }
 
-ServerNameIndicator::ServerNameIndicator(Side side, cpp::span<const uint8_t> input)
+ServerNameIndicator::ServerNameIndicator(Side side, nonstd::span<const uint8_t> input)
 {
     (void)side;
 

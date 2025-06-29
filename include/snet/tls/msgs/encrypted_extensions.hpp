@@ -1,12 +1,13 @@
 #pragma once
-#include <snet/cpp_port/span.hpp>
+#include <casket/nonstd/span.hpp>
+#include <casket/utils/noncopyable.hpp>
+
 #include <snet/tls/extensions.hpp>
-#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
-struct EncryptedExtensions final : public utils::NonCopyable
+struct EncryptedExtensions final : public casket::NonCopyable
 {
     EncryptedExtensions() = default;
 
@@ -16,9 +17,9 @@ struct EncryptedExtensions final : public utils::NonCopyable
 
     EncryptedExtensions& operator=(EncryptedExtensions&& other) noexcept = default;
 
-    void deserialize(cpp::span<const uint8_t> message);
+    void deserialize(nonstd::span<const uint8_t> message);
 
-    size_t serialize(cpp::span<uint8_t> buffer) const;
+    size_t serialize(nonstd::span<uint8_t> buffer) const;
 
     Extensions extensions;
 };

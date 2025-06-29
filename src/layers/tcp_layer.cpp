@@ -2,6 +2,7 @@
 #include <sstream>
 
 #include <casket/log/log_manager.hpp>
+#include <casket/utils/endianness.hpp>
 
 #include <snet/layers/checksums.hpp>
 #include <snet/layers/tcp_layer.hpp>
@@ -9,10 +10,8 @@
 #include <snet/layers/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
-#include <snet/utils/endianness.hpp>
 
 using namespace casket;
-using namespace snet::utils;
 
 namespace snet::layers
 {

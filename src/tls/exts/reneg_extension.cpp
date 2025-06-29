@@ -24,7 +24,7 @@ bool RenegotiationExtension::empty() const
     return false;
 }
 
-size_t RenegotiationExtension::serialize(Side side, cpp::span<uint8_t> output) const
+size_t RenegotiationExtension::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
     return append_length_and_value(output, renegData_.data(), renegData_.size(), 1);
@@ -35,7 +35,7 @@ RenegotiationExtension::RenegotiationExtension(const std::vector<uint8_t>& reneg
 {
 }
 
-RenegotiationExtension::RenegotiationExtension(Side side, cpp::span<const uint8_t> input)
+RenegotiationExtension::RenegotiationExtension(Side side, nonstd::span<const uint8_t> input)
 {
     (void)side;
 

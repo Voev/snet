@@ -9,7 +9,7 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
-#include <snet/utils/load_store.hpp>
+#include <casket/utils/load_store.hpp>
 
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
@@ -19,8 +19,8 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-void ssl3Prf(const Secret& secret, cpp::span<const uint8_t> clientRandom, cpp::span<const uint8_t> serverRandom,
-             cpp::span<uint8_t> out)
+void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
+             nonstd::span<uint8_t> out)
 {
     unsigned int ch = 'A';
     unsigned char salt[EVP_MAX_MD_SIZE];
@@ -36,7 +36,7 @@ void ssl3Prf(const Secret& secret, cpp::span<const uint8_t> clientRandom, cpp::s
     crypto::ThrowIfTrue(ctx == nullptr);
 
     saltSize = 0;
-    cpp::span<uint8_t> block = out;
+    nonstd::span<uint8_t> block = out;
 
     for (size_t i = 0; i < out.size(); i += md5Length)
     {
@@ -71,7 +71,7 @@ void ssl3Prf(const Secret& secret, cpp::span<const uint8_t> clientRandom, cpp::s
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             cpp::span<const uint8_t> clientRandom, cpp::span<const uint8_t> serverRandom, cpp::span<uint8_t> out)
+             nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -94,7 +94,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
 }
 
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     cpp::span<const uint8_t> context, const size_t length)
+                                     nonstd::span<const uint8_t> context, const size_t length)
 {
     // assemble (serialized) HkdfLabel
     std::vector<uint8_t> hkdfLabel;
@@ -104,8 +104,8 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
     // length
     ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
     const auto len = static_cast<uint16_t>(length);
-    hkdfLabel.push_back(utils::get_byte<0>(len));
-    hkdfLabel.push_back(utils::get_byte<1>(len));
+    hkdfLabel.push_back(casket::get_byte<0>(len));
+    hkdfLabel.push_back(casket::get_byte<1>(len));
 
     // label
     const std::string prefix = "tls13 ";

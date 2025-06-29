@@ -24,7 +24,7 @@ bool ALPN::empty() const
     return protocols_.empty();
 }
 
-size_t ALPN::serialize(Side side, cpp::span<uint8_t> output) const
+size_t ALPN::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
 
@@ -43,8 +43,8 @@ size_t ALPN::serialize(Side side, cpp::span<uint8_t> output) const
         }
     }
 
-    output[0] = utils::get_byte<0>(totalLength);
-    output[1] = utils::get_byte<1>(totalLength);
+    output[0] = casket::get_byte<0>(totalLength);
+    output[1] = casket::get_byte<1>(totalLength);
 
     totalLength += 2;
 
@@ -61,7 +61,7 @@ ALPN::ALPN(const std::vector<std::string>& protocols)
 {
 }
 
-ALPN::ALPN(Side side, cpp::span<const uint8_t> input)
+ALPN::ALPN(Side side, nonstd::span<const uint8_t> input)
 {
     utils::DataReader reader("ALPN", input);
 

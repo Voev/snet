@@ -9,8 +9,8 @@
 
 #include <snet/io/packet_pool.hpp>
 #include <snet/socket.hpp>
-#include <snet/utils/endianness.hpp>
 
+#include <casket/utils/endianness.hpp>
 #include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/to_number.hpp>
@@ -446,22 +446,24 @@ NfQueue::Impl::Impl()
 NfQueue::NfQueue(const io::DriverConfig& config)
     : impl_(std::make_unique<NfQueue::Impl>())
 {
-    std::error_code ec;
-
-    const auto& base = config.getConfig();
-    impl_->snaplen = base.getSnaplen();
-    impl_->timeout = base.getTimeout();
-    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
-
-    to_number(base.getInput(), impl_->queueNumber, ec);
-
     for (const auto& [name, value] : config.getParameters())
     {
         if (iequals(name, "failOpen"))
             impl_->failOpen = false;
         else if (iequals(name, "queueMaxLength"))
-            to_number(value, impl_->queueMaxLength, ec);
+            to_number(value, impl_->queueMaxLength);
     }
+}
+
+Status NfQueue::configure(const io::Config& config)
+{
+    std::error_code ec;
+
+    impl_->snaplen = config.getSnaplen();
+    impl_->timeout = config.getTimeout();
+    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
+
+    to_number(config.getInput(), impl_->queueNumber, ec);
 
     impl_->buffersize = impl_->snaplen + 4096;
     impl_->buffer = new uint8_t[impl_->buffersize];
@@ -469,7 +471,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     impl_->pool.allocatePool(::kDefaultPoolSize);
     impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
-    impl_->timeout = base.getTimeout();
+    impl_->timeout = config.getTimeout();
     if (impl_->timeout)
     {
         timeval tv;

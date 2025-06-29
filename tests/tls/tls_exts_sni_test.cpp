@@ -59,7 +59,7 @@ TEST_F(ServerNameIndicationTest, SerializeDeserializeRoundtrip)
     size_t serializedSize = originalSni.serialize(Side::Client, buffer);
     ASSERT_GT(serializedSize, 0);
 
-    cpp::span<const uint8_t> serializedData(buffer.data(), serializedSize);
+    nonstd::span<const uint8_t> serializedData(buffer.data(), serializedSize);
     ServerNameIndicator deserializedSni(Side::Server, serializedData);
 
     ASSERT_EQ(originalHostname, deserializedSni.getHostname());

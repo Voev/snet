@@ -5,11 +5,9 @@
 #include <snet/layers/checksums.hpp>
 
 #include <casket/log/log_manager.hpp>
-
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 
 using namespace casket;
-using namespace snet::utils;
 
 #define PURGE_FREQ_SECS 1
 

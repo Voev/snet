@@ -1,12 +1,12 @@
 #pragma once
 #include <filesystem>
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::crypto
 {
 
-class CertManager final : public utils::NonCopyable
+class CertManager final : public casket::NonCopyable
 {
 public:
     CertManager();

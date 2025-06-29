@@ -1,12 +1,12 @@
 #pragma once
-#include <snet/cpp_port/span.hpp>
+#include <casket/nonstd/span.hpp>
 #include <snet/crypto/pointers.hpp>
 
 namespace snet::crypto::ext
 {
 
-CertExtPtr create(const int nid, cpp::span<uint8_t> value, bool critical = false);
+CertExtPtr create(const int nid, nonstd::span<uint8_t> value, bool critical = false);
 
-cpp::span<const uint8_t> view(CertExt* extension);
+nonstd::span<const uint8_t> view(CertExt* extension);
 
 } // namespace snet::crypto::ext

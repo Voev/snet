@@ -3,7 +3,7 @@
 
 #include <cstdint>
 #include <optional>
-#include <snet/cpp_port/span.hpp>
+#include <casket/nonstd/span.hpp>
 #include <string>
 #include <string_view>
 

@@ -1,14 +1,15 @@
 #pragma once
-#include <snet/cpp_port/span.hpp>
 #include <stdexcept>
 #include <cstdint>
-#include <snet/utils/load_store.hpp>
+
+#include <casket/nonstd/span.hpp>
+#include <casket/utils/load_store.hpp>
 
 namespace snet
 {
 
 template <typename T>
-size_t append_length_and_value(cpp::span<uint8_t> outputBuffer, const T* vals, size_t valsSize, size_t tagSize)
+size_t append_length_and_value(nonstd::span<uint8_t> outputBuffer, const T* vals, size_t valsSize, size_t tagSize)
 {
     constexpr size_t typeSize = sizeof(T);
     const size_t valueBytes = typeSize * valsSize;
@@ -32,14 +33,14 @@ size_t append_length_and_value(cpp::span<uint8_t> outputBuffer, const T* vals, s
 
     for (size_t i = 0; i != tagSize; ++i)
     {
-        outputBuffer[i] = utils::get_byte_var(sizeof(valueBytes) - tagSize + i, valueBytes);
+        outputBuffer[i] = casket::get_byte_var(sizeof(valueBytes) - tagSize + i, valueBytes);
     }
 
     for (size_t i = 0; i != valsSize; ++i)
     {
         for (size_t j = 0; j != typeSize; ++j)
         {
-            outputBuffer[tagSize + i * typeSize + j] = utils::get_byte_var(j, vals[i]);
+            outputBuffer[tagSize + i * typeSize + j] = casket::get_byte_var(j, vals[i]);
         }
     }
 

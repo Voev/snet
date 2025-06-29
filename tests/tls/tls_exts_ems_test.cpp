@@ -11,13 +11,13 @@ class ExtendedMasterSecretTest : public ::testing::Test
 
 TEST_F(ExtendedMasterSecretTest, EmptySpanConstruction)
 {
-    ASSERT_NO_THROW(ExtendedMasterSecret(cpp::span<const uint8_t>{}));
+    ASSERT_NO_THROW(ExtendedMasterSecret(nonstd::span<const uint8_t>{}));
 }
 
 TEST_F(ExtendedMasterSecretTest, NonEmptySpanConstruction)
 {
     uint8_t dummy = 0;
-    cpp::span<const uint8_t> span(&dummy, 1);
+    nonstd::span<const uint8_t> span(&dummy, 1);
     ASSERT_THROW(ExtendedMasterSecret ems(span), RuntimeError);
 }
 

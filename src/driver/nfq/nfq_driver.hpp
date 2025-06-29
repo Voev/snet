@@ -13,6 +13,8 @@ public:
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 
+    Status configure(const io::Config& config) override;
+
     Status start() override;
 
     Status stop() override;

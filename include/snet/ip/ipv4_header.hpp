@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 #include <snet/ip/ipv4_address.hpp>
 
 namespace snet::ip {
@@ -69,7 +69,7 @@ public:
      * \return The total length of this IP PDU.
      */
     uint16_t totalLen() const {
-        return utils::be_to_host(header_.tot_len);
+        return casket::be_to_host(header_.tot_len);
     }
 
     /**
@@ -78,7 +78,7 @@ public:
      * \return The id for this IP PDU.
      */
     uint16_t id() const {
-        return utils::be_to_host(header_.id);
+        return casket::be_to_host(header_.id);
     }
 
     /**
@@ -97,7 +97,7 @@ public:
      * \return The fragment offset, measured in units of 8 byte blocks
      */
     uint16_t fragmentOffset() const {
-        return utils::be_to_host(header_.frag_off) & 0x1fff;
+        return casket::be_to_host(header_.frag_off) & 0x1fff;
     }
 
     /**
@@ -106,7 +106,7 @@ public:
      * \return The IP flags field
      */
     Flags flags() const {
-        return static_cast<Flags>(utils::be_to_host(header_.frag_off) >> 13);
+        return static_cast<Flags>(casket::be_to_host(header_.frag_off) >> 13);
     }
 
     /**
@@ -133,7 +133,7 @@ public:
      * \return The checksum for this IP PDU.
      */
     uint16_t checksum() const {
-        return utils::be_to_host(header_.check);
+        return casket::be_to_host(header_.check);
     }
 
     /**

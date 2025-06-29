@@ -1,8 +1,6 @@
 #include <snet/layers/tlv.hpp>
 
-#include <snet/utils/endianness.hpp>
-
-using namespace snet::utils;
+#include <casket/utils/endianness.hpp>
 
 namespace snet::layers
 {
@@ -65,13 +63,13 @@ TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint8_t recValue)
 
 TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint16_t recValue)
 {
-    recValue = host_to_be(recValue);
+    recValue = casket::host_to_be(recValue);
     init(recType, (uint8_t*)&recValue, sizeof(uint16_t));
 }
 
 TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint32_t recValue)
 {
-    recValue = host_to_be(recValue);
+    recValue = casket::host_to_be(recValue);
     init(recType, (uint8_t*)&recValue, sizeof(uint32_t));
 }
 
