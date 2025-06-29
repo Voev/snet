@@ -3,7 +3,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -23,7 +23,7 @@ bool SupportedVersions::empty() const
     return versions_.empty();
 }
 
-size_t SupportedVersions::serialize(Side side, std::span<uint8_t> output) const
+size_t SupportedVersions::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     if (side == Side::Server)
     {
@@ -61,7 +61,7 @@ SupportedVersions::SupportedVersions(const std::vector<ProtocolVersion>& version
 {
 }
 
-SupportedVersions::SupportedVersions(Side side, std::span<const uint8_t> input)
+SupportedVersions::SupportedVersions(Side side, nonstd::span<const uint8_t> input)
 {
     utils::DataReader reader("supported_versions extension", input);
 

@@ -3,7 +3,7 @@
 #include <casket/utils/exception.hpp>
 
 using namespace snet::tls;
-using namespace casket::utils;
+using namespace casket;
 
 class EncryptThenMACTest : public ::testing::Test
 {
@@ -11,13 +11,13 @@ class EncryptThenMACTest : public ::testing::Test
 
 TEST_F(EncryptThenMACTest, EmptySpanConstruction)
 {
-    ASSERT_NO_THROW(EncryptThenMAC etm(std::span<const uint8_t>{}));
+    ASSERT_NO_THROW(EncryptThenMAC etm(nonstd::span<const uint8_t>{}));
 }
 
 TEST_F(EncryptThenMACTest, NonEmptySpanConstruction)
 {
     uint8_t dummy = 0;
-    std::span<const uint8_t> span(&dummy, 1);
+    nonstd::span<const uint8_t> span(&dummy, 1);
     ASSERT_THROW(EncryptThenMAC etm(span), RuntimeError);
 }
 

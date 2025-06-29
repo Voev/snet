@@ -5,7 +5,7 @@
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::ip
 {
@@ -17,7 +17,7 @@ IPv6Address::IPv6Address() noexcept
 
 IPv6Address::~IPv6Address() = default;
 
-IPv6Address::IPv6Address(std::span<const std::uint8_t> bytes)
+IPv6Address::IPv6Address(nonstd::span<const std::uint8_t> bytes)
 {
     assert(bytes.size_bytes() == kBytesCount);
     std::copy(bytes.begin(), bytes.end(), std::begin(addr_.s6_addr));

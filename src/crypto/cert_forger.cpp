@@ -26,7 +26,7 @@ KeyPtr CertForger::getForgedKey()
 
 CertPtr CertForger::resign(Cert* originCert)
 {
-    casket::utils::ThrowIfFalse(originCert != nullptr, "Invalid origin certificate");
+    casket::ThrowIfFalse(originCert != nullptr, "Invalid origin certificate");
 
     CertBuilder builder;
     builder.signedBy(caKey_, caCert_);

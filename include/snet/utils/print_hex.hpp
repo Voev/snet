@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <string_view>
-#include <span>
+#include <casket/nonstd/span.hpp>
 #include <vector>
 #include <iostream>
 #include <iomanip>
@@ -9,7 +9,7 @@
 namespace snet::utils
 {
 
-inline void printHex(std::ostream& os, std::span<const uint8_t> data, std::string_view message = {},
+inline void printHex(std::ostream& os, nonstd::span<const uint8_t> data, std::string_view message = {},
                      bool printable = false)
 {
     if (!message.empty())

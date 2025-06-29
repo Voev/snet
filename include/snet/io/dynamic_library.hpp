@@ -3,7 +3,7 @@
 #include <memory>
 #include <filesystem>
 #include <type_traits>
-#include <snet/utils/casting.hpp>
+#include <casket/utils/casting.hpp>
 
 namespace snet::io
 {
@@ -33,7 +33,7 @@ public:
                                    T>::type
     get(std::string_view symbol_name) const
     {
-        return utils::aggressive_ptr_cast<T>(resolveSymbol(symbol_name));
+        return casket::aggressive_ptr_cast<T>(resolveSymbol(symbol_name));
     }
 
     //! \overload T& get(const std::string& symbol_name) const
@@ -43,7 +43,7 @@ public:
                                 T&>::type
         get(std::string_view symbol_name) const
     {
-        return *utils::aggressive_ptr_cast<T*>(resolveSymbol(symbol_name));
+        return *casket::aggressive_ptr_cast<T*>(resolveSymbol(symbol_name));
     }
 
 private:

@@ -3,7 +3,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -23,13 +23,13 @@ bool RecordSizeLimit::empty() const
     return limit_ == 0;
 }
 
-size_t RecordSizeLimit::serialize(Side side, std::span<uint8_t> output) const
+size_t RecordSizeLimit::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
 
     ThrowIfTrue(output.size_bytes() < 2, "buffer is too small");
-    output[0] = utils::get_byte<0>(limit_);
-    output[1] = utils::get_byte<1>(limit_);
+    output[0] = casket::get_byte<0>(limit_);
+    output[1] = casket::get_byte<1>(limit_);
     return 2;
 }
 
@@ -41,7 +41,7 @@ RecordSizeLimit::RecordSizeLimit(const uint16_t limit)
                 "RFC 8449 does not allow record size limits larger than 2^14+1");
 }
 
-RecordSizeLimit::RecordSizeLimit(Side side, std::span<const uint8_t> input)
+RecordSizeLimit::RecordSizeLimit(Side side, nonstd::span<const uint8_t> input)
 {
     utils::DataReader reader("record_size_limit", input);
     limit_ = reader.get_uint16_t();

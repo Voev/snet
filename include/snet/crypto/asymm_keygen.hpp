@@ -1,4 +1,5 @@
 #pragma once
+#include <string_view>
 #include <snet/crypto/pointers.hpp>
 
 namespace snet::crypto::akey

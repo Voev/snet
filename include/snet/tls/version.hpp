@@ -11,7 +11,15 @@ namespace snet::tls {
 /// @brief Class representing a protocol version.
 class ProtocolVersion final {
 public:
-    using enum VersionCode;
+    /// @brief Enum representing the version code.
+    enum VersionCode : std::uint16_t
+    {
+        SSLv3_0 = SSL3_VERSION,
+        TLSv1_0 = TLS1_VERSION,
+        TLSv1_1 = TLS1_1_VERSION,
+        TLSv1_2 = TLS1_2_VERSION,
+        TLSv1_3 = TLS1_3_VERSION
+    };
 
     /// @brief Default constructor.
     ProtocolVersion();

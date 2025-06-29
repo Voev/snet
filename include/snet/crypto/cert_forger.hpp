@@ -1,11 +1,11 @@
 #pragma once
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::crypto
 {
 
-struct CertForger final : public utils::NonCopyable
+struct CertForger final : public casket::NonCopyable
 {
 public:
     CertForger(Key* caKey, Cert* caCert);

@@ -2,7 +2,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -17,7 +17,7 @@ bool UnknownExtension::empty() const
     return false;
 }
 
-size_t UnknownExtension::serialize(Side side, std::span<uint8_t> output) const
+size_t UnknownExtension::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
 
@@ -26,7 +26,7 @@ size_t UnknownExtension::serialize(Side side, std::span<uint8_t> output) const
     return value_.size();
 }
 
-UnknownExtension::UnknownExtension(ExtensionCode type, std::span<const uint8_t> input)
+UnknownExtension::UnknownExtension(ExtensionCode type, nonstd::span<const uint8_t> input)
     : type_(type)
     , value_(input.begin(), input.end())
 {

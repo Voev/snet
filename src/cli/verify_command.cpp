@@ -86,7 +86,7 @@ static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const CertName* name)
     }
     catch (const std::exception& e)
     {
-        log::error("{}", e.what());
+        casket::error("{}", e.what());
     }
     return crls.release();
 }

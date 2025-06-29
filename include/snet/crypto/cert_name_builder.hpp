@@ -2,12 +2,12 @@
 #pragma once
 #include <string>
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::crypto
 {
 
-class CertNameBuilder final : utils::NonCopyable
+class CertNameBuilder final : casket::NonCopyable
 {
 public:
     static CertNamePtr fromString(const std::string& DN);

@@ -66,7 +66,7 @@ bool Layer::extendLayer(int offsetInLayer, size_t numOfBytesToExtend)
 {
     if (m_Data == nullptr)
     {
-        log::error("Layer's data is nullptr");
+        error("Layer's data is nullptr");
         return false;
     }
 
@@ -74,7 +74,7 @@ bool Layer::extendLayer(int offsetInLayer, size_t numOfBytesToExtend)
     {
         if ((size_t)offsetInLayer > m_DataLen)
         {
-            log::error("Requested offset is larger than data length");
+            error("Requested offset is larger than data length");
             return false;
         }
 
@@ -95,7 +95,7 @@ bool Layer::shortenLayer(int offsetInLayer, size_t numOfBytesToShorten)
 {
     if (m_Data == nullptr)
     {
-        log::error("Layer's data is nullptr");
+        error("Layer's data is nullptr");
         return false;
     }
 
@@ -103,7 +103,7 @@ bool Layer::shortenLayer(int offsetInLayer, size_t numOfBytesToShorten)
     {
         if ((size_t)offsetInLayer >= m_DataLen)
         {
-            log::error("Requested offset is larger than data length");
+            error("Requested offset is larger than data length");
             return false;
         }
 

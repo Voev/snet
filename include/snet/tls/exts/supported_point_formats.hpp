@@ -38,14 +38,14 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
 
     /// @brief Constructor with input byte buffer.
     ///
     /// @param[in] side Side (client or server).
     /// @param[in] input Input byte buffer.
     ///
-    SupportedPointFormats(Side side, std::span<const uint8_t> input);
+    SupportedPointFormats(Side side, nonstd::span<const uint8_t> input);
 
     /// @brief Constructor with EC point formats.
     ///

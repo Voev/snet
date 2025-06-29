@@ -1,4 +1,3 @@
-#include <cassert>
 #include <openssl/err.h>
 
 #include <snet/crypto/exception.hpp>
@@ -8,7 +7,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -16,7 +15,7 @@ namespace snet::tls
 Connection::Connection(SSL* ssl)
     : ssl_(ssl)
 {
-    assert(ssl_ != nullptr);
+    casket::ThrowIfTrue(ssl_ == nullptr, "Invalid argument");
 }
 
 Connection::~Connection() noexcept

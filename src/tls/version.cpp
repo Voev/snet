@@ -1,7 +1,5 @@
-#include <casket/utils/string.hpp>
 #include <snet/tls/version.hpp>
-
-using namespace casket;
+#include <casket/utils/string.hpp>
 
 namespace snet::tls
 {
@@ -76,23 +74,23 @@ std::string ProtocolVersion::toString() const
 
 std::optional<ProtocolVersion> ProtocolVersion::fromString(std::string_view str)
 {
-    if (utils::iequals(str, "sslv3.0"))
+    if (casket::iequals(str, "sslv3.0"))
     {
         return VersionCode::SSLv3_0;
     }
-    else if (utils::iequals(str, "tlsv1.0"))
+    else if (casket::iequals(str, "tlsv1.0"))
     {
         return VersionCode::TLSv1_0;
     }
-    else if (utils::iequals(str, "tlsv1.1"))
+    else if (casket::iequals(str, "tlsv1.1"))
     {
         return VersionCode::TLSv1_1;
     }
-    else if (utils::iequals(str, "tlsv1.2"))
+    else if (casket::iequals(str, "tlsv1.2"))
     {
         return VersionCode::TLSv1_2;
     }
-    else if (utils::iequals(str, "tlsv1.3"))
+    else if (casket::iequals(str, "tlsv1.3"))
     {
         return VersionCode::TLSv1_3;
     }

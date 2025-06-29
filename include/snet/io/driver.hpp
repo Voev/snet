@@ -10,10 +10,10 @@
 
 namespace snet::io
 {
-    
+
 class Driver
 {
-    public:
+public:
     Driver() = default;
     
     virtual ~Driver() noexcept = default;
@@ -26,8 +26,6 @@ class Driver
 
     virtual Status stop() = 0;
 
-    virtual Status setFilter(const std::string& filter) = 0;
-
     virtual Status inject(const uint8_t* data, uint32_t data_len) = 0;
 
     virtual Status interrupt() = 0;
@@ -38,10 +36,6 @@ class Driver
 
     virtual int getSnaplen() const = 0;
 
-    virtual uint32_t getType() const = 0;
-
-    virtual uint32_t getCapabilities() const = 0;
-
     virtual io::LinkLayerType getDataLinkType() const = 0;
 
     virtual RecvStatus receivePacket(RawPacket** rawPacket) = 0;
@@ -49,7 +43,6 @@ class Driver
     virtual Status finalizePacket(RawPacket* rawPacket, Verdict verdict) = 0;
 
     virtual Status getMsgPoolInfo(PacketPoolInfo* info) = 0;
-
 };
 
 using DriverCreator = std::shared_ptr<Driver>(const DriverConfig&);

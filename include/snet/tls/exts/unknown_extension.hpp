@@ -26,14 +26,14 @@ public:
     /// @param[in] ouput Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
 
     /// @brief Constructor with extension code and input byte buffer.
     ///
     /// @param[in] type Extension code.
     /// @param[in] input Input byte buffer.
     ///
-    UnknownExtension(ExtensionCode type, std::span<const uint8_t> input);
+    UnknownExtension(ExtensionCode type, nonstd::span<const uint8_t> input);
 
     /// @brief Gets the value of the unknown extension.
     ///

@@ -3,9 +3,11 @@
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/cert_manager.hpp>
 
-namespace snet::crypto {
+namespace snet::crypto
+{
 
-class CertVerifier final : public utils::NonCopyable {
+class CertVerifier final : public casket::NonCopyable
+{
 public:
     explicit CertVerifier(CertManager& manager);
 

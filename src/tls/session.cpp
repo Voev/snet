@@ -21,11 +21,9 @@
 
 #include <openssl/core_names.h>
 
-using namespace casket;
-
-inline std::string Colorize(std::string_view text, std::string_view color = log::lRed)
+inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
 {
-    return ::utils::format("[{}{}{}]", color, text, log::resetColor);
+    return casket::format("[{}{}{}]", color, text, casket::resetColor);
 }
 
 namespace snet::tls
@@ -49,9 +47,9 @@ bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
     return ((canDecrypt_ & 0x1) && sideIndex == 0) || ((canDecrypt_ & 0x2) && sideIndex == 1);
 }
 
-size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> input)
+size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_t> input)
 {
-    ::utils::ThrowIfTrue(input.empty(), "invalid input data");
+    casket::ThrowIfTrue(input.empty(), "invalid input data");
 
     size_t processedLength{0};
 
@@ -105,7 +103,7 @@ size_t Session::processRecords(const int8_t sideIndex, std::span<const uint8_t> 
 
 void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 {
-    std::span<const uint8_t> data;
+    nonstd::span<const uint8_t> data;
 
     if (canDecrypt(sideIndex) && record->type != RecordType::ChangeCipherSpec)
     {
@@ -119,7 +117,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
     if (record->getType() == RecordType::ChangeCipherSpec)
     {
-        ::utils::ThrowIfFalse(data.size() == 1 && data[0] == 0x01, "Malformed Change Cipher Spec message");
+        casket::ThrowIfFalse(data.size() == 1 && data[0] == 0x01, "Malformed Change Cipher Spec message");
 
         if (getVersion() < ProtocolVersion::TLSv1_3)
         {
@@ -133,7 +131,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             return;
         }
 
-        ::utils::ThrowIfTrue(data.size() != 2, "wrong length for alert message: {}", data.size());
+        casket::ThrowIfTrue(data.size() != 2, "wrong length for alert message: {}", data.size());
     }
     else if (record->getType() == RecordType::Handshake)
     {
@@ -146,7 +144,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
         const auto messageType = static_cast<HandshakeType>(reader.get_byte());
         const auto messageLength = reader.get_uint24_t();
-        ::utils::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
+        casket::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
 
         switch (messageType)
         {
@@ -261,7 +259,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     if (version == ProtocolVersion::TLSv1_3)
     {
         uint8_t lastByte = record->decryptedData.back();
-        ::utils::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
+        casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
 
         record->type = static_cast<RecordType>(lastByte);
         record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
@@ -409,10 +407,10 @@ void Session::generateTLS13KeyMaterial()
     canDecrypt_ |= 3;
 }
 
-void Session::PRF(const Secret& secret, std::string_view usage, std::span<const uint8_t> rnd1,
-                  std::span<const uint8_t> rnd2, std::span<uint8_t> out)
+void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+                  nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
-    ::utils::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
+    casket::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
     if (version_ == tls::ProtocolVersion::TLSv1_2)
     {
@@ -471,9 +469,9 @@ const ServerInfo& Session::getServerInfo() const noexcept
     return serverInfo_;
 }
 
-void Session::processClientHello(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processClientHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
+    casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
     handshake_.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     handshakeHash_.update(message);
 
@@ -485,16 +483,16 @@ void Session::processClientHello(const std::int8_t sideIndex, std::span<const ui
     }
 }
 
-void Session::processServerHello(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+    casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
     handshake_.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     handshakeHash_.update(message);
 
     auto& serverHello = handshake_.serverHello;
 
     auto foundCipher = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    ::utils::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not found");
+    casket::ThrowIfFalse(foundCipher.has_value(), "Cipher suite not found");
     cipherSuite_ = foundCipher.value();
 
     if (serverHello.extensions.has(tls::ExtensionCode::SupportedVersions))
@@ -509,7 +507,7 @@ void Session::processServerHello(const std::int8_t sideIndex, std::span<const ui
     }
 }
 
-void Session::processCertificate(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
     utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -521,11 +519,11 @@ void Session::processCertificate(const std::int8_t sideIndex, std::span<const ui
         // RFC 8446 4.4.2
         //    [...] in the case of server authentication, this field SHALL be
         //    zero length.
-        ::utils::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
+        casket::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
                              "Server Certificate message must not contain a request context");
 
         const size_t certEntriesLength = reader.get_uint24_t();
-        ::utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "Certificate: Message malformed");
+        casket::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "Certificate: Message malformed");
 
         while (reader.has_remaining())
         {
@@ -539,7 +537,7 @@ void Session::processCertificate(const std::int8_t sideIndex, std::span<const ui
     else
     {
         const size_t certsLength = reader.get_uint24_t();
-        ::utils::ThrowIfTrue(reader.remaining_bytes() != certsLength, "Certificate: Message malformed");
+        casket::ThrowIfTrue(reader.remaining_bytes() != certsLength, "Certificate: Message malformed");
 
         while (reader.has_remaining())
         {
@@ -553,9 +551,9 @@ void Session::processCertificate(const std::int8_t sideIndex, std::span<const ui
     handshakeHash_.update(message);
 }
 
-void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     if (version_ == ProtocolVersion::TLSv1_3)
     {
         utils::DataReader reader("TLSv1.3 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -578,7 +576,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
     else if (version_ == ProtocolVersion::TLSv1_2)
     {
         utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        ::utils::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
+        casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
         reader.get_uint32_t();
         reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
@@ -589,15 +587,15 @@ void Session::processSessionTicket(const std::int8_t sideIndex, std::span<const 
     }*/
 }
 
-void Session::processEncryptedExtensions(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
 }
 
-void Session::processServerKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
@@ -645,22 +643,22 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, std::span<co
     handshakeHash_.update(message);
 }
 
-void Session::processCertificateRequest(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("Certificate Request", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
-    ::utils::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
+    casket::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
     const auto cert_type_codes = reader.get_range_vector<uint8_t>(1, 1, 255);
     const std::vector<uint8_t> algs = reader.get_range_vector<uint8_t>(2, 2, 65534);
 
-    ::utils::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
+    casket::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
 
     const uint16_t purported_size = reader.get_uint16_t();
 
-    ::utils::ThrowIfTrue(reader.remaining_bytes() != purported_size, "Inconsistent length in certificate request");
+    casket::ThrowIfTrue(reader.remaining_bytes() != purported_size, "Inconsistent length in certificate request");
 
     while (reader.has_remaining())
     {
@@ -672,9 +670,9 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, std::span<c
     handshakeHash_.update(message);
 }
 
-void Session::processServerHelloDone(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.assert_done();
@@ -682,9 +680,9 @@ void Session::processServerHelloDone(const std::int8_t sideIndex, std::span<cons
     handshakeHash_.update(message);
 }
 
-void Session::processCertificateVerify(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
     utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.get_uint16_t();
@@ -694,9 +692,9 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, std::span<co
     handshakeHash_.update(message);
 }
 
-void Session::processClientKeyExchange(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    ::utils::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
+    casket::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
 
     /// @todo: serialize
 
@@ -738,7 +736,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, std::span<co
     }
 }
 
-void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     (void)message;
 
@@ -781,7 +779,7 @@ void Session::processFinished(const std::int8_t sideIndex, std::span<const uint8
     }
 }
 
-void Session::processKeyUpdate(const std::int8_t sideIndex, std::span<const uint8_t> message)
+void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     (void)message;
 

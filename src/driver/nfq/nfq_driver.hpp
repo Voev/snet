@@ -13,6 +13,8 @@ public:
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
 
+    Status configure(const io::Config& config) override;
+
     Status start() override;
 
     Status stop() override;
@@ -21,9 +23,21 @@ public:
 
     RecvStatus receivePacket(io::RawPacket** packet) override;
 
+    Status inject(const uint8_t* data, uint32_t data_len) override;
+
     Status finalizePacket(io::RawPacket* rawPacket, Verdict verdict) override;
 
+    int getSnaplen() const override;
+    
     io::LinkLayerType getDataLinkType() const override;
+    
+    Status getMsgPoolInfo(PacketPoolInfo* info) override;
+
+    const char* getName() const override;
+
+    Status getStats(Stats* stats) override;
+
+    void resetStats() override;
 
 private:
     struct Impl;

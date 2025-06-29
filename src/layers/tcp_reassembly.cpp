@@ -5,11 +5,9 @@
 #include <snet/layers/checksums.hpp>
 
 #include <casket/log/log_manager.hpp>
-
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 
 using namespace casket;
-using namespace snet::utils;
 
 #define PURGE_FREQ_SECS 1
 
@@ -170,7 +168,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         // example: data packet that comes after FIN), ignore it.
         if (iter->second.closed)
         {
-            log::debug("Ignoring packet of already closed flow [{}]", flowKey);
+            debug("Ignoring packet of already closed flow [{}]", flowKey);
             return Ignore_PacketOfClosedFlow;
         }
 
@@ -193,7 +191,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // connection
     if (tcpReassemblyData->numOfSides == 0)
     {
-        log::debug("Setting side for new connection");
+        debug("Setting side for new connection");
 
         // open the first side of the connection, side index is 0
         sideIndex = 0;
@@ -216,7 +214,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         {
             // this means packet belong to the second side which doesn't yet
             // exist. Open a second side with side index 1
-            log::debug("Setting second side of a connection");
+            debug("Setting second side of a connection");
             sideIndex = 1;
             tcpReassemblyData->twoSides[sideIndex].srcIP = srcIP;
             tcpReassemblyData->twoSides[sideIndex].srcPort = srcPort;
@@ -243,7 +241,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         // it's handled anyway. Packet will be ignored
         else
         {
-            log::error("Error occurred - packet doesn't match either side "
+            error("Error occurred - packet doesn't match either side "
                        "of the connection!!");
             return Error_PacketDoesNotMatchFlow;
         }
@@ -252,7 +250,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // happen, but handled anyway. Packet will be ignored
     else
     {
-        log::error("Error occurred - connection has more than 2 sides!!");
+        error("Error occurred - connection has more than 2 sides!!");
         return Error_PacketDoesNotMatchFlow;
     }
 
@@ -266,7 +264,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
             return FIN_RSTWithNoData;
         }
 
-        log::debug("Got a packet after FIN or RST were already seen on this "
+        debug("Got a packet after FIN or RST were already seen on this "
                    "side ({}). Ignoring this packet",
                    static_cast<int>(sideIndex));
 
@@ -276,7 +274,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // handle FIN/RST packets that don't contain additional TCP data
     if (isFinOrRst && tcpPayloadSize == 0)
     {
-        log::debug("Got FIN or RST packet without data on side {}", sideIndex);
+        debug("Got FIN or RST packet without data on side {}", sideIndex);
 
         handleFinOrRst(tcpReassemblyData, sideIndex, flowKey, isRst);
         return FIN_RSTWithNoData;
@@ -311,7 +309,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         tcpReassemblyData->prevSide != -1 && tcpReassemblyData->prevSide != sideIndex &&
         tcpReassemblyData->twoSides[tcpReassemblyData->prevSide].tcpFragmentList.size() > 0)
     {
-        log::debug("Seeing a first data packet from a different side. "
+        debug("Seeing a first data packet from a different side. "
                    "Previous side was {}, current side is {}",
                    static_cast<int>(tcpReassemblyData->prevSide), static_cast<int>(sideIndex));
         checkOutOfOrderFragments(tcpReassemblyData, tcpReassemblyData->prevSide, true);
@@ -324,7 +322,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // if it's the first packet we see on this side of the connection
     if (first)
     {
-        log::debug("First data from this side of the connection");
+        debug("First data from this side of the connection");
 
         // set initial sequence
         tcpReassemblyData->twoSides[sideIndex].sequence = sequence + tcpPayloadSize;
@@ -353,7 +351,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // of the TCP data is being re-transmitted
     if (SEQ_LT(sequence, tcpReassemblyData->twoSides[sideIndex].sequence))
     {
-        log::debug("Found new data with the sequence lower than expected");
+        debug("Found new data with the sequence lower than expected");
 
         // calculate the sequence after this packet to see if this TCP payload
         // contains also new data
@@ -365,7 +363,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
             // calculate the size of the new data
             uint32_t newLength = tcpReassemblyData->twoSides[sideIndex].sequence - sequence;
 
-            log::debug("Although sequence is lower than expected payload "
+            debug("Although sequence is lower than expected payload "
                        "is long enough to contain new data. Calling the "
                        "callback with the new data");
 
@@ -403,7 +401,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         // if TCP data size is 0 - nothing to do
         if (tcpPayloadSize == 0)
         {
-            log::debug("Payload length is 0, doing nothing");
+            debug("Payload length is 0, doing nothing");
 
             // handle case where this packet is FIN or RST
             if (isFinOrRst)
@@ -419,7 +417,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
             return status;
         }
 
-        log::debug("Found new data with expected sequence. Calling the callback");
+        debug("Found new data with expected sequence. Calling the callback");
 
         // update the sequence for this side to include TCP data from this
         // packet
@@ -459,7 +457,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         // if TCP data size is 0 - nothing to do
         if (tcpPayloadSize == 0)
         {
-            log::debug("Payload length is 0, doing nothing");
+            debug("Payload length is 0, doing nothing");
 
             // handle case where this packet is FIN or RST
             if (isFinOrRst)
@@ -485,7 +483,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
         memcpy(newTcpFrag->data, tcpLayer->getLayerPayload(), tcpPayloadSize);
         tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.pushBack(newTcpFrag);
 
-        log::debug("Found out-of-order packet and added a new TCP fragment with size "
+        debug("Found out-of-order packet and added a new TCP fragment with size "
                    "{} to the out-of-order list of side {}",
                    tcpPayloadSize, static_cast<int>(sideIndex));
         status = OutOfOrderTcpMessageBuffered;
@@ -530,7 +528,7 @@ void TcpReassembly::handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t 
     if (tcpReassemblyData->twoSides[sideIndex].gotFinOrRst)
         return;
 
-    log::debug("Handling FIN or RST packet on side {}", static_cast<int>(sideIndex));
+    debug("Handling FIN or RST packet on side {}", static_cast<int>(sideIndex));
 
     // set FIN/RST flag for this side
     tcpReassemblyData->twoSides[sideIndex].gotFinOrRst = true;
@@ -567,7 +565,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 
     do
     {
-        log::debug("Starting first iteration of checkOutOfOrderFragments - "
+        debug("Starting first iteration of checkOutOfOrderFragments - "
                    "looking for fragments that match the current sequence "
                    "or have smaller sequence");
 
@@ -590,7 +588,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                     curSideData.sequence += curTcpFrag->dataLength;
                     if (curTcpFrag->data != nullptr)
                     {
-                        log::debug("Found an out-of-order packet matching "
+                        debug("Found an out-of-order packet matching "
                                    "to the current sequence with size "
                                    "{} on side {}"
                                    ". Pulling it out of the list and "
@@ -628,7 +626,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                         // calculate the delta new data size
                         uint32_t newLength = curSideData.sequence - curTcpFrag->sequence;
 
-                        log::debug("Found a fragment in the out-of-order list which "
+                        debug("Found a fragment in the out-of-order list which "
                                    "its sequence is lower than expected but its "
                                    "payload is long enough to contain new data. "
                                    "Calling the callback with the new data. Fragment "
@@ -652,7 +650,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                     }
                     else
                     {
-                        log::debug("Found a fragment in the out-of-order "
+                        debug("Found a fragment in the out-of-order "
                                    "list which doesn't contain any new "
                                    "data, ignoring it. Fragment size is "
                                    "{} on side {}",
@@ -681,7 +679,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
             return;
         }
 
-        log::debug("Starting second  iteration of checkOutOfOrderFragments "
+        debug("Starting second  iteration of checkOutOfOrderFragments "
                    "- handle missing data");
 
         // second fragment list iteration - now we're left only with fragments
@@ -744,7 +742,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                                              tcpReassemblyData->connData, curTcpFrag->timestamp);
                     m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 
-                    log::debug("Found missing data on side {}: {}"
+                    debug("Found missing data on side {}: {}"
                                " byte are missing. Sending the closest "
                                "fragment which is in size {}"
                                " + missing text message which size is {}",
@@ -755,7 +753,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                 }
             }
 
-            log::debug("Calling checkOutOfOrderFragments again from the start");
+            debug("Calling checkOutOfOrderFragments again from the start");
 
             // call the method again from the start to do the whole search again
             // (both iterations). the stop condition is when the list is empty
@@ -776,7 +774,7 @@ void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReaso
     ConnectionList::iterator iter = m_ConnectionList.find(flowKey);
     if (iter == m_ConnectionList.end())
     {
-        log::error("Cannot close flow with key {}: cannot find flow", flowKey);
+        error("Cannot close flow with key {}: cannot find flow", flowKey);
         return;
     }
 
@@ -785,12 +783,12 @@ void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReaso
     if (tcpReassemblyData.closed) // the connection is already closed
         return;
 
-    log::debug("Closing connection with flow key {}", flowKey);
+    debug("Closing connection with flow key {}", flowKey);
 
-    log::debug("Calling checkOutOfOrderFragments on side 0");
+    debug("Calling checkOutOfOrderFragments on side 0");
     checkOutOfOrderFragments(&tcpReassemblyData, 0, true);
 
-    log::debug("Calling checkOutOfOrderFragments on side 1");
+    debug("Calling checkOutOfOrderFragments on side 1");
     checkOutOfOrderFragments(&tcpReassemblyData, 1, true);
 
     if (m_OnConnEnd != nullptr)
@@ -799,12 +797,12 @@ void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReaso
     tcpReassemblyData.closed = true; // mark the connection as closed
     insertIntoCleanupList(flowKey);
 
-    log::debug("Connection with flow key {} is closed", flowKey);
+    debug("Connection with flow key {} is closed", flowKey);
 }
 
 void TcpReassembly::closeAllConnections()
 {
-    log::debug("Closing all flows");
+    debug("Closing all flows");
 
     ConnectionList::iterator iter = m_ConnectionList.begin(), iterEnd = m_ConnectionList.end();
     for (; iter != iterEnd; ++iter)
@@ -815,12 +813,12 @@ void TcpReassembly::closeAllConnections()
             continue;
 
         uint32_t flowKey = tcpReassemblyData.connData.flowKey;
-        log::debug("Closing connection with flow key {}", flowKey);
+        debug("Closing connection with flow key {}", flowKey);
 
-        log::debug("Calling checkOutOfOrderFragments on side 0");
+        debug("Calling checkOutOfOrderFragments on side 0");
         checkOutOfOrderFragments(&tcpReassemblyData, 0, true);
 
-        log::debug("Calling checkOutOfOrderFragments on side 1");
+        debug("Calling checkOutOfOrderFragments on side 1");
         checkOutOfOrderFragments(&tcpReassemblyData, 1, true);
 
         if (m_OnConnEnd != nullptr)
@@ -830,7 +828,7 @@ void TcpReassembly::closeAllConnections()
         tcpReassemblyData.closed = true; // mark the connection as closed
         insertIntoCleanupList(flowKey);
 
-        log::debug("Connection with flow key {} is closed", flowKey);
+        debug("Connection with flow key {} is closed", flowKey);
     }
 }
 

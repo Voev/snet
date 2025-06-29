@@ -5,13 +5,13 @@
 #include <snet/tls/version.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/connection.hpp>
-#include <snet/utils/noncopyable.hpp>
+#include <casket/utils/noncopyable.hpp>
 
 namespace snet::tls
 {
 
 /// @brief Class for managing TLS settings.
-class Settings : public utils::NonCopyable
+class Settings : public casket::NonCopyable
 {
 public:
     /// @brief Constructor with side.

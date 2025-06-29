@@ -3,7 +3,7 @@
 #include <casket/utils/exception.hpp>
 
 using namespace snet::tls;
-using namespace casket::utils;
+using namespace casket;
 
 class ServerNameIndicationTest : public ::testing::Test
 {
@@ -59,7 +59,7 @@ TEST_F(ServerNameIndicationTest, SerializeDeserializeRoundtrip)
     size_t serializedSize = originalSni.serialize(Side::Client, buffer);
     ASSERT_GT(serializedSize, 0);
 
-    std::span<const uint8_t> serializedData(buffer.data(), serializedSize);
+    nonstd::span<const uint8_t> serializedData(buffer.data(), serializedSize);
     ServerNameIndicator deserializedSni(Side::Server, serializedData);
 
     ASSERT_EQ(originalHostname, deserializedSni.getHostname());

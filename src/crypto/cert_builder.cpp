@@ -117,7 +117,7 @@ CertBuilder& CertBuilder::setNotBefore(std::chrono::seconds offsetSec) {
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotBefore(std::chrono::years offsetYears) {
+CertBuilder& CertBuilder::setNotBefore(nonstd::chrono_years offsetYears) {
     return setNotBefore(std::chrono::duration_cast<std::chrono::seconds>(offsetYears));
 }
 
@@ -131,7 +131,7 @@ CertBuilder& CertBuilder::setNotAfter(std::chrono::seconds offsetSec) {
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotAfter(std::chrono::years offsetYears) {
+CertBuilder& CertBuilder::setNotAfter(nonstd::chrono_years offsetYears) {
     return setNotAfter(std::chrono::duration_cast<std::chrono::seconds>(offsetYears));
 }
 

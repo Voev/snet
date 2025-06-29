@@ -4,7 +4,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -24,7 +24,7 @@ bool ALPN::empty() const
     return protocols_.empty();
 }
 
-size_t ALPN::serialize(Side side, std::span<uint8_t> output) const
+size_t ALPN::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
 
@@ -43,8 +43,8 @@ size_t ALPN::serialize(Side side, std::span<uint8_t> output) const
         }
     }
 
-    output[0] = utils::get_byte<0>(totalLength);
-    output[1] = utils::get_byte<1>(totalLength);
+    output[0] = casket::get_byte<0>(totalLength);
+    output[1] = casket::get_byte<1>(totalLength);
 
     totalLength += 2;
 
@@ -61,7 +61,7 @@ ALPN::ALPN(const std::vector<std::string>& protocols)
 {
 }
 
-ALPN::ALPN(Side side, std::span<const uint8_t> input)
+ALPN::ALPN(Side side, nonstd::span<const uint8_t> input)
 {
     utils::DataReader reader("ALPN", input);
 
@@ -81,8 +81,8 @@ ALPN::ALPN(Side side, std::span<const uint8_t> input)
     //    The "extension_data" field of the [...] extension is structured the
     //    same as described above for the client "extension_data", except that
     //    the "ProtocolNameList" MUST contain exactly one "ProtocolName".
-    ThrowIfTrue(side == Side::Server && protocols_.size() != 1, "server sent {} protocols in ALPN extension response",
-                protocols_.size());
+    ThrowIfTrue(side == Side::Server && protocols_.size() != 1,
+                        "server sent {} protocols in ALPN extension response", protocols_.size());
 }
 
 const std::vector<std::string>& ALPN::protocols() const

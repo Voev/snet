@@ -17,7 +17,6 @@
 
 using namespace casket;
 using namespace casket::opt;
-using namespace casket::log;
 
 namespace snet::spoofer
 {
@@ -140,7 +139,7 @@ public:
                 {
                     std::cout << "--handled--" << std::endl;
 
-                    utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                    utils::printHex(std::cout, nonstd::span{rawPacket->getRawData(),
                                                          (size_t)rawPacket->getRawDataLen()});
                     std::cout << "----" << std::endl;
                     auto p = parsedPacket.getLayerOfType<layers::PayloadLayer>(true);
@@ -158,7 +157,7 @@ public:
 
                         std::cout << "--replaced--" << std::endl;
 
-                        utils::printHex(std::cout, std::span{rawPacket->getRawData(),
+                        utils::printHex(std::cout, nonstd::span{rawPacket->getRawData(),
                                                              (size_t)rawPacket->getRawDataLen()});
                         std::cout << "----" << std::endl;
                     }

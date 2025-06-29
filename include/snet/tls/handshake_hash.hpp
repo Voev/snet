@@ -2,7 +2,7 @@
 /// @brief Declaration of the HandshakeHash class.
 
 #pragma once
-#include <span>
+#include <casket/nonstd/span.hpp>
 #include <vector>
 #include <string_view>
 
@@ -19,7 +19,7 @@ public:
 
     /// @brief Updates the handshake hash with input data.
     /// @param in The input data to update the hash with.
-    void update(std::span<const uint8_t> in);
+    void update(nonstd::span<const uint8_t> in);
 
     /// @brief Finalizes the handshake hash and returns the result.
     /// @param algorithm The hash algorithm to use.

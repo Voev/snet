@@ -4,7 +4,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -29,13 +29,13 @@ SupportedPointFormats::SupportedPointFormats(const std::vector<ECPointFormat>& f
 {
 }
 
-size_t SupportedPointFormats::serialize(Side side, std::span<uint8_t> output) const
+size_t SupportedPointFormats::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
     return append_length_and_value(output, formats_.data(), formats_.size(), 1);
 }
 
-SupportedPointFormats::SupportedPointFormats(Side side, std::span<const uint8_t> input)
+SupportedPointFormats::SupportedPointFormats(Side side, nonstd::span<const uint8_t> input)
 {
     (void)side;
 

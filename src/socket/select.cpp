@@ -27,7 +27,7 @@ void WaitSocket(SocketType socket, bool read, std::chrono::seconds timeout, std:
     }
     else if (ret == -1)
     {
-        ec = casket::utils::GetLastSystemError();
+        ec = casket::GetLastSystemError();
     }
 }
 

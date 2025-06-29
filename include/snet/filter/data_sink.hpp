@@ -57,14 +57,14 @@ public:
               std::string(pathname), use_binary ? std::ios::binary : std::ios::out))
         , m_sink(*m_sink_memory)
     {
-        casket::utils::ThrowIfFalse(m_sink.good(), "DataSink_Stream: Failure opening path '{}'",
+        casket::ThrowIfFalse(m_sink.good(), "DataSink_Stream: Failure opening path '{}'",
                                     pathname);
     }
 
     void write(const uint8_t* out, size_t length) override
     {
         m_sink.write((char*)out, length);
-        casket::utils::ThrowIfFalse(m_sink.good(), "DataSink_Stream: Failure writing to {}",
+        casket::ThrowIfFalse(m_sink.good(), "DataSink_Stream: Failure writing to {}",
                                     m_identifier);
     }
 

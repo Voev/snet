@@ -13,7 +13,7 @@ public:
 
     explicit IPv4Address(std::uint32_t addr) noexcept;
 
-    explicit IPv4Address(std::span<const std::uint8_t> bytes);
+    explicit IPv4Address(nonstd::span<const std::uint8_t> bytes);
 
     explicit IPv4Address(std::string_view str);
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include <span>
+#include <casket/nonstd/span.hpp>
 #include <snet/tls/types.hpp>
 
 namespace snet::tls
@@ -47,7 +47,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    virtual size_t serialize(Side side, std::span<uint8_t> output) const = 0;
+    virtual size_t serialize(Side side, nonstd::span<uint8_t> output) const = 0;
 };
 
 } // namespace snet::tls

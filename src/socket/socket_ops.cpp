@@ -21,7 +21,7 @@ SocketType CreateSocket(int domain, int socktype, int protocol, std::error_code&
     sock = ::socket(domain, socktype, protocol);
     if (sock == InvalidSocket)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 
     return sock;
@@ -47,7 +47,7 @@ SocketType Connect(SocketType sock, const SocketAddrType* addr, SocketLengthType
     SocketType ret = ::connect(sock, addr, addrlen);
     if (ret == InvalidSocket)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 
     return ret;
@@ -65,7 +65,7 @@ SocketType Accept(SocketType sock, SocketAddrType* addr, SocketLengthType* addrl
     SocketType ret = ::accept(sock, addr, addrlen);
     if (ret == InvalidSocket)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
 
     return ret;
@@ -77,14 +77,16 @@ int SetSocketOption(SocketType s, int level, int optname, void* optval, size_t o
     int ret = ::setsockopt(s, level, optname, optval, static_cast<SocketLengthType>(optlen));
     if (ret == InvalidSocket)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
     return ret;
 }
 
 void SetLinger(SocketType s, int onoff, int linger, std::error_code& ec)
 {
-    struct linger sl = {.l_onoff = onoff, .l_linger = linger};
+    struct linger sl{};
+    sl.l_onoff = onoff;
+    sl.l_linger = linger;
     SetSocketOption(s, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl), ec);
 }
 
@@ -97,7 +99,7 @@ int GetSocketOption(SocketType s, int level, int optname, void* optval, size_t* 
     int ret = ::getsockopt(s, level, optname, optval, &tmp_optlen);
     if (ret == InvalidSocket)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
     if (optlen)
     {
@@ -131,7 +133,7 @@ void SetNonBlocking(SocketType s, bool value, std::error_code& ec)
     int ret = ::fcntl(s, F_GETFL, 0);
     if (ret < 0)
     {
-        ec = utils::GetLastSystemError();
+        ec = GetLastSystemError();
     }
     else
     {
@@ -139,7 +141,7 @@ void SetNonBlocking(SocketType s, bool value, std::error_code& ec)
         ret = ::fcntl(s, F_SETFL, flag);
         if (ret < 0)
         {
-            ec = utils::GetLastSystemError();
+            ec = GetLastSystemError();
         }
     }
 }

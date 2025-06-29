@@ -3,7 +3,8 @@
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/pointers.hpp>
-#include <snet/utils/endianness.hpp>
+
+#include <casket/utils/endianness.hpp>
 
 using namespace snet::crypto;
 
@@ -72,7 +73,7 @@ CipherSuiteManager& CipherSuiteManager::getInstance()
 
 std::optional<CipherSuite> CipherSuiteManager::getCipherSuiteById(std::uint16_t id)
 {
-    std::uint16_t bytes = utils::host_to_be(id);
+    std::uint16_t bytes = casket::host_to_be(id);
     std::uint8_t* ptr = reinterpret_cast<std::uint8_t*>(&bytes);
 
     auto cipher = SSL_CIPHER_find(impl_->ssl, ptr);

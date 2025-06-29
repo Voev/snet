@@ -9,20 +9,18 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
-#include <casket/utils/exception.hpp>
-#include <snet/utils/load_store.hpp>
+#include <casket/utils/load_store.hpp>
 
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
 
-using namespace casket::utils;
 using namespace snet::crypto;
 
 namespace snet::tls
 {
 
-void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom,
-             std::span<uint8_t> out)
+void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
+             nonstd::span<uint8_t> out)
 {
     unsigned int ch = 'A';
     unsigned char salt[EVP_MAX_MD_SIZE];
@@ -38,7 +36,7 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::s
     crypto::ThrowIfTrue(ctx == nullptr);
 
     saltSize = 0;
-    std::span<uint8_t> block = out;
+    nonstd::span<uint8_t> block = out;
 
     for (size_t i = 0; i < out.size(); i += md5Length)
     {
@@ -61,19 +59,22 @@ void ssl3Prf(const Secret& secret, std::span<const uint8_t> clientRandom, std::s
         if (i + md5Length > out.size())
         {
             crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
-            std::memcpy(block.data(), buffer, (out.size() - i));
+
+            auto delta = out.size() - i;
+            std::memcpy(block.data(), buffer, delta);
+            block = block.subspan(delta);
         }
         else
         {
             crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, block.data(), &n));
+            block = block.subspan(n);
         }
 
-        block = block.subspan(n);
     }
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             std::span<const uint8_t> clientRandom, std::span<const uint8_t> serverRandom, std::span<uint8_t> out)
+             nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -96,7 +97,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
 }
 
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     std::span<const uint8_t> context, const size_t length)
+                                     nonstd::span<const uint8_t> context, const size_t length)
 {
     // assemble (serialized) HkdfLabel
     std::vector<uint8_t> hkdfLabel;
@@ -106,8 +107,8 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
     // length
     ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
     const auto len = static_cast<uint16_t>(length);
-    hkdfLabel.push_back(utils::get_byte<0>(len));
-    hkdfLabel.push_back(utils::get_byte<1>(len));
+    hkdfLabel.push_back(casket::get_byte<0>(len));
+    hkdfLabel.push_back(casket::get_byte<1>(len));
 
     // label
     const std::string prefix = "tls13 ";

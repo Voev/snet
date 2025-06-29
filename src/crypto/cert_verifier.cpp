@@ -15,7 +15,7 @@ namespace snet::crypto {
 
 CertVerifier::CertVerifier(CertManager& manager)
     : ctx_(X509_STORE_CTX_new()) {
-    ::utils::ThrowIfTrue(ctx_ == nullptr, "memory allocation error");
+    casket::ThrowIfTrue(ctx_ == nullptr, "memory allocation error");
     crypto::ThrowIfFalse(0 < X509_STORE_CTX_init(ctx_, manager.certStore(), nullptr, nullptr));
 
     setFlag(VerifyFlag::StrictCheck);

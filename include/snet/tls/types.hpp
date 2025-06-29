@@ -81,16 +81,6 @@ std::string toString(const RecordType type);
 /// @return The string representation of the HandshakeType.
 std::string toString(const HandshakeType type);
 
-/// @brief Enum representing the version code.
-enum class VersionCode : std::uint16_t
-{
-    SSLv3_0 = SSL3_VERSION,
-    TLSv1_0 = TLS1_VERSION,
-    TLSv1_1 = TLS1_1_VERSION,
-    TLSv1_2 = TLS1_2_VERSION,
-    TLSv1_3 = TLS1_3_VERSION
-};
-
 /// @brief Enum representing the verify mode.
 enum class VerifyMode
 {

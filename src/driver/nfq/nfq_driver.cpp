@@ -9,8 +9,8 @@
 
 #include <snet/io/packet_pool.hpp>
 #include <snet/socket.hpp>
-#include <snet/utils/endianness.hpp>
 
+#include <casket/utils/endianness.hpp>
 #include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/to_number.hpp>
@@ -18,7 +18,7 @@
 #include "nfq_driver.hpp"
 #include "nfq_packet.hpp"
 
-using namespace casket::utils;
+using namespace casket;
 using namespace snet::socket;
 
 static constexpr std::size_t kDefaultPoolSize{16};
@@ -343,19 +343,18 @@ struct NfQueue::Impl
         sockaddr_nl address;
         ssize_t ret;
 
-        iovec iov = {
-            .iov_base = buffer,
-            .iov_len = bufferSize,
-        };
-        msghdr msg = {
-            .msg_name = &address,
-            .msg_namelen = sizeof(address),
-            .msg_iov = &iov,
-            .msg_iovlen = 1,
-            .msg_control = nullptr,
-            .msg_controllen = 0,
-            .msg_flags = 0,
-        };
+        iovec iov{};
+        iov.iov_base = buffer;
+        iov.iov_len = bufferSize;
+
+        msghdr msg{};
+        msg.msg_name = &address;
+        msg.msg_namelen = sizeof(address);
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = nullptr;
+        msg.msg_controllen = 0;
+        msg.msg_flags = 0;
 
         ret = ::recvmsg(socket, &msg, blocking ? 0 : MSG_DONTWAIT);
         if (ret == -1)
@@ -426,6 +425,7 @@ struct NfQueue::Impl
     int timeout;
     bool failOpen;
     volatile bool interrupted;
+    Stats stats;
 };
 
 NfQueue::Impl::~Impl()
@@ -446,22 +446,24 @@ NfQueue::Impl::Impl()
 NfQueue::NfQueue(const io::DriverConfig& config)
     : impl_(std::make_unique<NfQueue::Impl>())
 {
-    std::error_code ec;
-
-    const auto& base = config.getConfig();
-    impl_->snaplen = base.getSnaplen();
-    impl_->timeout = base.getTimeout();
-    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
-
-    to_number(base.getInput(), impl_->queueNumber, ec);
-
     for (const auto& [name, value] : config.getParameters())
     {
         if (iequals(name, "failOpen"))
             impl_->failOpen = false;
         else if (iequals(name, "queueMaxLength"))
-            to_number(value, impl_->queueMaxLength, ec);
+            to_number(value, impl_->queueMaxLength);
     }
+}
+
+Status NfQueue::configure(const io::Config& config)
+{
+    std::error_code ec;
+
+    impl_->snaplen = config.getSnaplen();
+    impl_->timeout = config.getTimeout();
+    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
+
+    to_number(config.getInput(), impl_->queueNumber, ec);
 
     impl_->buffersize = impl_->snaplen + 4096;
     impl_->buffer = new uint8_t[impl_->buffersize];
@@ -469,7 +471,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     impl_->pool.allocatePool(::kDefaultPoolSize);
     impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
-    impl_->timeout = base.getTimeout();
+    impl_->timeout = config.getTimeout();
     if (impl_->timeout)
     {
         timeval tv;
@@ -522,6 +524,7 @@ NfQueue::NfQueue(const io::DriverConfig& config)
     }
 
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    return Status::Success;
 }
 
 std::shared_ptr<io::Driver> NfQueue::create(const io::DriverConfig& config)
@@ -659,6 +662,38 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
     impl_->pool.releasePacket(nlPacket);
 
     return Status::Success;
+}
+
+Status NfQueue::inject(const uint8_t* data, uint32_t data_len)
+{
+    (void)data;
+    (void)data_len;
+    return Status::NotSupported;
+}
+
+const char* NfQueue::getName() const
+{
+    return "nf_queue";
+}
+
+Status NfQueue::getStats(Stats *stats)
+{
+    /* There is no distinction between packets received by the hardware and those we saw. */
+    impl_->stats.hw_packets_received = impl_->stats.packets_received;
+
+    memcpy(stats, &impl_->stats, sizeof(Stats));
+
+    return Status::Success;
+}
+
+void NfQueue::resetStats()
+{
+    memset(&impl_->stats, 0, sizeof(Stats));
+}
+
+int NfQueue::getSnaplen() const
+{
+    return impl_->snaplen;
 }
 
 } // namespace snet::driver

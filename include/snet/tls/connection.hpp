@@ -6,7 +6,6 @@
 #include <snet/tls/types.hpp>
 #include <snet/crypto/pointers.hpp>
 #include <snet/tls/version.hpp>
-#include <snet/utils/noncopyable.hpp>
 
 namespace snet::tls
 {

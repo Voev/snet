@@ -3,7 +3,7 @@
 #include <casket/utils/exception.hpp>
 
 using namespace snet::tls;
-using namespace casket::utils;
+using namespace casket;
 
 class ALPNTest : public ::testing::Test
 {

@@ -3,8 +3,6 @@
 #include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
-using namespace snet::crypto;
-
 namespace snet::tls
 {
 
@@ -12,7 +10,7 @@ HandshakeHash::HandshakeHash() = default;
 
 HandshakeHash::~HandshakeHash() noexcept = default;
 
-void HandshakeHash::update(std::span<const uint8_t> in)
+void HandshakeHash::update(nonstd::span<const uint8_t> in)
 {
     std::copy(in.begin(), in.end(), std::back_inserter(messages_));
 }
@@ -22,7 +20,7 @@ std::vector<uint8_t> HandshakeHash::final(std::string_view algorithm) const
     auto md = CipherSuiteManager::getInstance().fetchDigest(algorithm);
     crypto::ThrowIfFalse(md != nullptr);
 
-    HashCtxPtr ctx(EVP_MD_CTX_new());
+    crypto::HashCtxPtr ctx(EVP_MD_CTX_new());
     crypto::ThrowIfFalse(ctx != nullptr);
 
     crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, md));

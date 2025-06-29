@@ -9,14 +9,14 @@ using namespace casket;
 namespace snet::tls
 {
 
-void TLSv13Certificate::deserialize(Side side, std::span<const uint8_t> buffer)
+void TLSv13Certificate::deserialize(Side side, nonstd::span<const uint8_t> buffer)
 {
     utils::DataReader reader("TLSv1.3 Certificate", buffer);
 
     requestContext = reader.get_range<uint8_t>(1, 0, 255);
 
     const size_t certEntriesLength = reader.get_uint24_t();
-    ::utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
+    ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
 
     while (reader.has_remaining())
     {
@@ -29,7 +29,7 @@ void TLSv13Certificate::deserialize(Side side, std::span<const uint8_t> buffer)
     reader.assert_done();
 }
 
-size_t TLSv13Certificate::serialize(Side side, std::span<uint8_t> buffer) const
+size_t TLSv13Certificate::serialize(Side side, nonstd::span<uint8_t> buffer) const
 {
     size_t totalLength = 0;
 
@@ -52,9 +52,9 @@ size_t TLSv13Certificate::serialize(Side side, std::span<uint8_t> buffer) const
         entriesLength += offset;
     }
 
-    header[0] = utils::get_byte<1>(entriesLength);
-    header[1] = utils::get_byte<2>(entriesLength);
-    header[2] = utils::get_byte<3>(entriesLength);
+    header[0] = casket::get_byte<1>(entriesLength);
+    header[1] = casket::get_byte<2>(entriesLength);
+    header[2] = casket::get_byte<3>(entriesLength);
 
     totalLength += entriesLength;
 

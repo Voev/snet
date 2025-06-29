@@ -13,7 +13,7 @@ namespace snet::tls
 {
 
 /// @brief Class for managing secret nodes.
-class SecretNodeManager final : public casket::utils::NonCopyable
+class SecretNodeManager final : public casket::NonCopyable
 {
 public:
     /// @brief Default constructor.

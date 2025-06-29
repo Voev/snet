@@ -101,7 +101,7 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
     if (!suite_.empty())
     {
         auto commaPosition = suite_.find(',');
-        utils::ThrowIfTrue(commaPosition == std::string::npos, "Invalid format for cipher suite");
+        casket::ThrowIfTrue(commaPosition == std::string::npos, "Invalid format for cipher suite");
 
         std::string firstPart = suite_.substr(0, commaPosition);
         std::string secondPart = suite_.substr(commaPosition + 1);
@@ -112,7 +112,7 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
         // Объединяем два значения в одно 16-битное число
         std::uint16_t result = (firstValue << 8) | secondValue;
         auto cipherSuite = tls::CipherSuiteManager::getInstance().getCipherSuiteById(result);
-        utils::ThrowIfFalse(cipherSuite.has_value(), "Cipher suite '" + suite_ + "' not found");
+        casket::ThrowIfFalse(cipherSuite.has_value(), "Cipher suite '" + suite_ + "' not found");
         print(cipherSuite.value());
     }
     else

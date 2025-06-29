@@ -3,7 +3,7 @@
 
 namespace snet::crypto::ext {
 
-CertExtPtr create(const int nid, std::span<uint8_t> value, bool critical) {
+CertExtPtr create(const int nid, nonstd::span<uint8_t> value, bool critical) {
     // We don't want to copy data unnecessarily.
     ASN1_OCTET_STRING octet{};
     octet.data = value.data();
@@ -15,9 +15,9 @@ CertExtPtr create(const int nid, std::span<uint8_t> value, bool critical) {
     return ext;
 }
 
-std::span<const uint8_t> view(CertExt* extension) {
+nonstd::span<const uint8_t> view(CertExt* extension) {
     auto octet = X509_EXTENSION_get_data(extension);
-    return octet ? std::span(octet->data, octet->length) : std::span<const uint8_t>();
+    return octet ? nonstd::span(octet->data, octet->length) : nonstd::span<const uint8_t>();
 }
 
 } // namespace snet::crypto::ext

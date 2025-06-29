@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <snet/socket/endpoint.hpp>
-#include <snet/utils/endianness.hpp>
+#include <casket/utils/endianness.hpp>
 
-using namespace snet::utils;
+using namespace casket;
 
 namespace snet::socket
 {

@@ -30,7 +30,7 @@ public:
     /// @param[in] output Buffer for encoding.
     ///
     /// @return Serialized bytes count.
-    size_t serialize(Side side, std::span<uint8_t> output) const override;
+    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
 
     /// @brief Constructor with record size limit.
     ///
@@ -43,7 +43,7 @@ public:
     /// @param[in] side Side (client or server).
     /// @param[in] input Input byte buffer.
     ///
-    RecordSizeLimit(Side side, std::span<const uint8_t> input);
+    RecordSizeLimit(Side side, nonstd::span<const uint8_t> input);
 
     /// @brief Gets the record size limit.
     ///

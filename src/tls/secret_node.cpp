@@ -1,8 +1,6 @@
 #include <snet/tls/secret_node.hpp>
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
-
 namespace snet::tls
 {
 
@@ -16,7 +14,7 @@ SecretNode::~SecretNode() noexcept
 
 void SecretNode::setSecret(const Type type, const Secret& secret)
 {
-    ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
+    casket::ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
 
     secrets_[type].resize(secret.size());
     std::copy(secret.begin(), secret.end(), secrets_[type].begin());
@@ -24,7 +22,7 @@ void SecretNode::setSecret(const Type type, const Secret& secret)
 
 const Secret& SecretNode::getSecret(const Type type) const
 {
-    ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
+    casket::ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
 
     return secrets_[type];
 }

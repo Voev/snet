@@ -8,7 +8,7 @@
 
 using namespace snet;
 using namespace snet::tls;
-using namespace casket::utils;
+using namespace casket;
 
 class RecordChecker final : public tls::IRecordHandler
 {
@@ -93,6 +93,6 @@ void DecryptByKeylog::execute()
         }
     } while (status == RecvStatus::Ok);
 
-    casket::utils::ThrowIfFalse(std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decrypted,
+    casket::ThrowIfFalse(std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decrypted,
                                 "no one record decrypted");
 }

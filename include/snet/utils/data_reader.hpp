@@ -1,10 +1,10 @@
 #pragma once
-#include <span>
+#include <casket/nonstd/span.hpp>
 #include <string>
 #include <vector>
 #include <casket/utils/exception.hpp>
 #include <casket/utils/format.hpp>
-#include <snet/utils/load_store.hpp>
+#include <casket/utils/load_store.hpp>
 
 namespace snet::utils
 {
@@ -12,7 +12,7 @@ namespace snet::utils
 class DataReader final
 {
 public:
-    DataReader(const char* type, std::span<const uint8_t> buf_in)
+    DataReader(const char* type, nonstd::span<const uint8_t> buf_in)
         : m_typename(type)
         , m_buf(buf_in)
         , m_offset(0)
@@ -42,7 +42,7 @@ public:
         return (remaining_bytes() > 0);
     }
 
-    std::span<const uint8_t> get_span_remaining()
+    nonstd::span<const uint8_t> get_span_remaining()
     {
         return {m_buf.begin() + m_offset, m_buf.end()};
     }
@@ -67,7 +67,7 @@ public:
     {
         assert_at_least(4);
         uint32_t result =
-            snet::utils::make_uint32(m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2], m_buf[m_offset + 3]);
+            casket::make_uint32(m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2], m_buf[m_offset + 3]);
         m_offset += 4;
         return result;
     }
@@ -75,7 +75,7 @@ public:
     uint32_t get_uint24_t()
     {
         assert_at_least(3);
-        uint32_t result = snet::utils::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
+        uint32_t result = casket::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
         m_offset += 3;
         return result;
     }
@@ -83,7 +83,7 @@ public:
     uint16_t get_uint16_t()
     {
         assert_at_least(2);
-        uint16_t result = snet::utils::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
+        uint16_t result = casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
         m_offset += 2;
         return result;
     }
@@ -91,7 +91,7 @@ public:
     uint16_t peek_uint16_t() const
     {
         assert_at_least(2);
-        return snet::utils::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
+        return casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
     }
 
     uint8_t get_byte()
@@ -111,7 +111,7 @@ public:
 
         for (size_t i = 0; i != num_elems; ++i)
         {
-            result[i] = snet::utils::load_be<T>(&m_buf[m_offset], i);
+            result[i] = casket::load_be<T>(&m_buf[m_offset], i);
         }
 
         m_offset += num_elems * sizeof(T);
@@ -128,13 +128,13 @@ public:
     }
 
     template <typename T>
-    std::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
+    nonstd::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
     {
         const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
 
         assert_at_least(num_elems * sizeof(T));
 
-        std::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
+        nonstd::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
 
         m_offset += num_elems * sizeof(T);
 
@@ -162,11 +162,11 @@ public:
     }
 
     template <typename T>
-    std::span<const T> get_span_fixed(size_t numElems)
+    nonstd::span<const T> get_span_fixed(size_t numElems)
     {
         assert_at_least(numElems * sizeof(T));
 
-        std::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
+        nonstd::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
 
         m_offset += numElems * sizeof(T);
 
@@ -178,7 +178,7 @@ public:
         return get_fixed<uint8_t>(get_length_field(lenBytes));
     }
 
-    std::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
+    nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
     {
         return get_span_fixed<const uint8_t>(get_length_field(lenBytes));
     }
@@ -234,11 +234,11 @@ private:
 
     [[noreturn]] void throw_decode_error(std::string_view why) const
     {
-        throw casket::utils::RuntimeError(casket::utils::format("Invalid {}: {}", m_typename, why));
+        throw casket::RuntimeError(casket::format("Invalid {}: {}", m_typename, why));
     }
 
     const char* m_typename;
-    std::span<const uint8_t> m_buf;
+    nonstd::span<const uint8_t> m_buf;
     size_t m_offset;
 };
 

@@ -16,7 +16,7 @@
 
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::driver
 {
@@ -242,41 +242,6 @@ Pcap::~Pcap() noexcept
     impl_.reset();
 }
 
-Status Pcap::setFilter(const std::string& filter)
-{
-    if (impl_->handle)
-    {
-        auto status = impl_->installFilter(filter);
-        if (status != Status::Success)
-            return status;
-    }
-    else
-    {
-        pcap_t* dead_handle = pcap_open_dead(DLT_EN10MB, impl_->snaplen);
-        if (!dead_handle)
-        {
-            // SET_ERROR(impl_->modinst, "%s: Could not allocate a dead PCAP handle!", __func__);
-            // return DAQ_ERROR_NOMEM;
-        }
-        struct bpf_program fcode;
-        pthread_mutex_lock(&bpf_mutex);
-        if (pcap_compile(dead_handle, &fcode, filter.c_str(), 1, impl_->netmask) < 0)
-        {
-            pthread_mutex_unlock(&bpf_mutex);
-            // SET_ERROR(impl_->modinst, "%s: pcap_compile: %s", __func__,
-            // pcap_geterr(dead_handle));
-            return Status::Error;
-        }
-        pthread_mutex_unlock(&bpf_mutex);
-        pcap_freecode(&fcode);
-        pcap_close(dead_handle);
-
-        impl_->filter_string = filter;
-    }
-
-    return Status::Success;
-}
-
 Status Pcap::start()
 {
     uint32_t localnet, netmask;
@@ -402,17 +367,6 @@ int Pcap::getSnaplen() const
     return impl_->snaplen;
 }
 
-uint32_t Pcap::getType() const
-{
-    return 0;
-}
-
-uint32_t Pcap::getCapabilities() const
-{
-    uint32_t capabilities{0};
-    return capabilities;
-}
-
 io::LinkLayerType Pcap::getDataLinkType() const
 {
     if (impl_->handle)
@@ -434,7 +388,7 @@ RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
 
     /* When dealing with a live interface, try to get the first packet in non-blocking mode.
             If there's nothing to receive, switch to blocking mode. */
-    int pcap_rval;
+    int pcap_rval{};
     if (impl_->mode != Mode::ReadFile)
     {
         if (impl_->setNonBlocking(true) != Status::Success)

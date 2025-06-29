@@ -2,12 +2,12 @@
 #include <snet/tls/extensions.hpp>
 #include <snet/tls/types.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> makeExtension(std::span<const uint8_t> input, ExtensionCode code, const Side side)
+std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, ExtensionCode code, const Side side)
 {
     switch (code)
     {
@@ -56,7 +56,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
     extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(Side side, std::span<const uint8_t> input)
+void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input)
 {
     utils::DataReader reader("Extensions", input);
 
@@ -67,8 +67,13 @@ void Extensions::deserialize(Side side, std::span<const uint8_t> input)
     {
         const uint16_t extensionCode = reader.get_uint16_t();
         const uint16_t extensionSize = reader.get_uint16_t();
+        nonstd::span<const uint8_t> extensionData{};
 
-        auto extensionData = reader.get_span_fixed<uint8_t>(extensionSize);
+        if (extensionSize > 0)
+        {
+            extensionData = reader.get_span_fixed<uint8_t>(extensionSize);
+        }
+
         add(makeExtension(extensionData, static_cast<ExtensionCode>(extensionCode), side));
     }
     reader.assert_done();
@@ -125,7 +130,7 @@ std::set<ExtensionCode> Extensions::extensionTypes() const
 }
 
 
-size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
+size_t Extensions::serialize(Side whoami, nonstd::span<uint8_t> buffer) const
 {
     ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
 
@@ -145,18 +150,18 @@ size_t Extensions::serialize(Side whoami, std::span<uint8_t> buffer) const
         uint16_t extensionType = static_cast<uint16_t>(extension->type());
         uint16_t extensionLength= extension->serialize(whoami, extensionBody);
 
-        data[0] = utils::get_byte<0>(extensionType);
-        data[1] = utils::get_byte<1>(extensionType);
+        data[0] = casket::get_byte<0>(extensionType);
+        data[1] = casket::get_byte<1>(extensionType);
 
-        data[2] = utils::get_byte<0>(extensionLength);
-        data[3] = utils::get_byte<1>(extensionLength);
+        data[2] = casket::get_byte<0>(extensionLength);
+        data[3] = casket::get_byte<1>(extensionLength);
 
         data = data.subspan(extensionLength + 4);
         totalWritten += extensionLength + 4;
     }
 
-    buffer[0] = utils::get_byte<0>(totalWritten);
-    buffer[1] = utils::get_byte<1>(totalWritten);
+    buffer[0] = casket::get_byte<0>(totalWritten);
+    buffer[1] = casket::get_byte<1>(totalWritten);
     totalWritten += 2;
 
     return totalWritten;

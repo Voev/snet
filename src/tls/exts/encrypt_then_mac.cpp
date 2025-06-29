@@ -2,7 +2,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -17,12 +17,12 @@ ExtensionCode EncryptThenMAC::type() const
     return staticType();
 }
 
-EncryptThenMAC::EncryptThenMAC(std::span<const uint8_t> input)
+EncryptThenMAC::EncryptThenMAC(nonstd::span<const uint8_t> input)
 {
     ThrowIfFalse(input.empty(), "invalid encrypt_then_mac extension");
 }
 
-size_t EncryptThenMAC::serialize(Side side, std::span<uint8_t> output) const
+size_t EncryptThenMAC::serialize(Side side, nonstd::span<uint8_t> output) const
 {
     (void)side;
     (void)output;
