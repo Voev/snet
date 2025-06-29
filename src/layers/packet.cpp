@@ -204,7 +204,7 @@ void Packet::copyDataFrom(const Packet& other)
 
 void Packet::reallocateRawData(size_t newSize)
 {
-    log::debug("Allocating packet to new size: {}", newSize);
+    debug("Allocating packet to new size: {}", newSize);
 
     // allocate a new array with size newSize
     m_MaxPacketLen = newSize;
@@ -212,7 +212,7 @@ void Packet::reallocateRawData(size_t newSize)
     // set the new array to RawPacket
     if (!m_RawPacket->reallocateData(m_MaxPacketLen))
     {
-        log::error("Couldn't reallocate data of raw packet to {} bytes",
+        error("Couldn't reallocate data of raw packet to {} bytes",
                    m_MaxPacketLen);
         return;
     }
@@ -223,7 +223,7 @@ void Packet::reallocateRawData(size_t newSize)
     Layer* curLayer = m_FirstLayer;
     while (curLayer != nullptr)
     {
-        log::debug("Setting new data pointer to layer '{}'",
+        debug("Setting new data pointer to layer '{}'",
                    typeid(curLayer).name());
         curLayer->m_Data = (uint8_t*)dataPtr;
         dataPtr += curLayer->getHeaderLen();
@@ -235,20 +235,20 @@ bool Packet::insertLayer(Layer* prevLayer, Layer* newLayer, bool ownInPacket)
 {
     if (newLayer == nullptr)
     {
-        log::error("Layer to add is nullptr");
+        error("Layer to add is nullptr");
         return false;
     }
 
     if (newLayer->isAllocatedToPacket())
     {
-        log::error("Layer is already allocated to another packet. Cannot "
+        error("Layer is already allocated to another packet. Cannot "
                    "use layer in more than one packet");
         return false;
     }
 
     if (prevLayer != nullptr && prevLayer->getProtocol() == PacketTrailer)
     {
-        log::error("Cannot insert layer after packet trailer");
+        error("Cannot insert layer after packet trailer");
         return false;
     }
 
@@ -257,7 +257,7 @@ bool Packet::insertLayer(Layer* prevLayer, Layer* newLayer, bool ownInPacket)
     {
         if (!m_CanReallocateData)
         {
-            log::error("With the new layer the packet will exceed the size "
+            error("With the new layer the packet will exceed the size "
                        "of the pre-allocated buffer: {} bytes ",
                        m_MaxPacketLen);
             return false;
@@ -360,7 +360,7 @@ bool Packet::removeLayer(ProtocolType layerType, int index)
     }
     else
     {
-        log::error("Layer of the requested type was not found in packet");
+        error("Layer of the requested type was not found in packet");
         return false;
     }
 }
@@ -370,7 +370,7 @@ bool Packet::removeFirstLayer()
     Layer* firstLayer = getFirstLayer();
     if (firstLayer == nullptr)
     {
-        log::error("Packet has no layers");
+        error("Packet has no layers");
         return false;
     }
 
@@ -382,7 +382,7 @@ bool Packet::removeLastLayer()
     Layer* lastLayer = getLastLayer();
     if (lastLayer == nullptr)
     {
-        log::error("Packet has no layers");
+        error("Packet has no layers");
         return false;
     }
 
@@ -416,7 +416,7 @@ Layer* Packet::detachLayer(ProtocolType layerType, int index)
     }
     else
     {
-        log::error("Layer of the requested type was not found in packet");
+        error("Layer of the requested type was not found in packet");
         return nullptr;
     }
 }
@@ -425,14 +425,14 @@ bool Packet::removeLayer(Layer* layer, bool tryToDelete)
 {
     if (layer == nullptr)
     {
-        log::error("Layer is nullptr");
+        error("Layer is nullptr");
         return false;
     }
 
     // verify layer is allocated to a packet
     if (!layer->isAllocatedToPacket())
     {
-        log::error("Layer isn't allocated to any packet");
+        error("Layer isn't allocated to any packet");
         return false;
     }
 
@@ -442,7 +442,7 @@ bool Packet::removeLayer(Layer* layer, bool tryToDelete)
         curLayer = curLayer->m_PrevLayer;
     if (curLayer != m_FirstLayer)
     {
-        log::error("Layer isn't allocated to this packet");
+        error("Layer isn't allocated to this packet");
         return false;
     }
 
@@ -458,7 +458,7 @@ bool Packet::removeLayer(Layer* layer, bool tryToDelete)
     int indexOfDataToRemove = layer->m_Data - m_RawPacket->getRawData();
     if (!m_RawPacket->removeData(indexOfDataToRemove, numOfBytesToRemove))
     {
-        log::error("Couldn't remove data from packet");
+        error("Couldn't remove data from packet");
         delete[] layerOldData;
         return false;
     }
@@ -588,14 +588,14 @@ bool Packet::extendLayer(Layer* layer, int offsetInLayer,
 {
     if (layer == nullptr)
     {
-        log::error("Layer is nullptr");
+        error("Layer is nullptr");
         return false;
     }
 
     // verify layer is allocated to this packet
     if (!(layer->m_Packet == this))
     {
-        log::error("Layer isn't allocated to this packet");
+        error("Layer isn't allocated to this packet");
         return false;
     }
 
@@ -603,7 +603,7 @@ bool Packet::extendLayer(Layer* layer, int offsetInLayer,
     {
         if (!m_CanReallocateData)
         {
-            log::error("With the layer extended size the packet will "
+            error("With the layer extended size the packet will "
                        "exceed the size of the pre-allocated buffer: {} bytes",
                        m_MaxPacketLen);
             return false;
@@ -666,14 +666,14 @@ bool Packet::shortenLayer(Layer* layer, int offsetInLayer,
 {
     if (layer == nullptr)
     {
-        log::error("Layer is nullptr");
+        error("Layer is nullptr");
         return false;
     }
 
     // verify layer is allocated to this packet
     if (!(layer->m_Packet == this))
     {
-        log::error("Layer isn't allocated to this packet");
+        error("Layer isn't allocated to this packet");
         return false;
     }
 
@@ -682,7 +682,7 @@ bool Packet::shortenLayer(Layer* layer, int offsetInLayer,
         layer->m_Data + offsetInLayer - m_RawPacket->getRawData();
     if (!m_RawPacket->removeData(indexOfDataToRemove, numOfBytesToShorten))
     {
-        log::error("Couldn't remove data from packet");
+        error("Couldn't remove data from packet");
         return false;
     }
 

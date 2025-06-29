@@ -96,7 +96,7 @@ cpp::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, cpp::span<con
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
 
-    ::utils::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
+    casket::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
 
@@ -139,7 +139,7 @@ cpp::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, cpp::span<con
 
     outSize = data.size();
 
-    ::utils::ThrowIfTrue(out.size() < data.size(), "too small buffer");
+    casket::ThrowIfTrue(out.size() < data.size(), "too small buffer");
     crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_GCM_MODE)
@@ -194,7 +194,7 @@ cpp::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
         int len{0};
         crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &len, aad, sizeof(aad)));
 
-        ::utils::ThrowIfTrue(out.size() < MAX_PLAINTEXT_SIZE, "output buffer is too small");
+        casket::ThrowIfTrue(out.size() < MAX_PLAINTEXT_SIZE, "output buffer is too small");
         crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &len, data.data(), data.size()));
 
         int x{0};
@@ -219,13 +219,13 @@ cpp::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
 
             uint8_t paddingLength = out[outSize - 1];
             paddingLength += 1;
-            ::utils::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
+            casket::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
             outSize -= paddingLength;
 
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
-                ::utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
+                casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
@@ -256,7 +256,7 @@ cpp::span<uint8_t> RecordDecoder::tls1Decrypt(RecordType rt, ProtocolVersion ver
             if (version >= ProtocolVersion::TLSv1_1)
             {
                 uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipher_);
-                ::utils::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
+                casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = cpp::span(out.begin() + blockSize, out.begin() + outSize);
                 tls1CheckMac(rt, version, {}, content, mac);
@@ -344,7 +344,7 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
 
     actualMac.resize(actualMacSize);
 
-    ::utils::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()), "Bad record MAC");
+    casket::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()), "Bad record MAC");
 }
 
 void RecordDecoder::ssl3CheckMac(RecordType recordType, cpp::span<const uint8_t> content, cpp::span<const uint8_t> mac)
@@ -391,7 +391,7 @@ void RecordDecoder::ssl3CheckMac(RecordType recordType, cpp::span<const uint8_t>
 
     actualMac.resize(actualMacSize);
 
-    ::utils::ThrowIfFalse(std::equal(mac.begin(), mac.end(), actualMac.begin()), "Bad record MAC");
+    casket::ThrowIfFalse(std::equal(mac.begin(), mac.end(), actualMac.begin()), "Bad record MAC");
 }
 
 } // namespace snet::tls

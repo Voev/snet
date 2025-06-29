@@ -5,8 +5,6 @@
 
 #include <casket/utils/format.hpp>
 
-using namespace casket::utils;
-
 namespace snet::tls
 {
 
@@ -23,8 +21,8 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
     (void)session;
 
     const auto direction = (sideIndex == 0 ? "C->S" : "C<-S");
-    std::cout << format("{}: {} {} [{}]", direction, record->version.toString(), toString(record->getType()),
-                        record->getLength())
+    std::cout << casket::format("{}: {} {} [{}]", direction, record->version.toString(), toString(record->getType()),
+                                record->getLength())
               << std::endl;
 
     if (record->isDecrypted())
@@ -33,7 +31,7 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
         if (record->getType() == RecordType::Handshake)
         {
             auto ht = static_cast<tls::HandshakeType>(data[0]);
-            std::cout << format("{} [{}] (decrypted)", toString(ht), data.size()) << std::endl;
+            std::cout << casket::format("{} [{}] (decrypted)", toString(ht), data.size()) << std::endl;
         }
         utils::printHex(std::cout, data, {}, true);
     }
@@ -45,11 +43,12 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
             if (!session->getCipherState(sideIndex))
             {
                 auto ht = static_cast<tls::HandshakeType>(data[TLS_HEADER_SIZE]);
-                std::cout << format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
+                std::cout << casket::format("{} [{}]", toString(ht), data.size() - TLS_HEADER_SIZE) << std::endl;
             }
             else
             {
-                std::cout << format("{} [{}]", "Encrypted Handshake", data.size() - TLS_HEADER_SIZE) << std::endl;
+                std::cout << casket::format("{} [{}]", "Encrypted Handshake", data.size() - TLS_HEADER_SIZE)
+                          << std::endl;
             }
         }
         utils::printHex(std::cout, data.subspan(TLS_HEADER_SIZE), {}, true);

@@ -17,7 +17,6 @@
 
 using namespace casket;
 using namespace casket::opt;
-using namespace casket::log;
 
 namespace snet::spoofer
 {

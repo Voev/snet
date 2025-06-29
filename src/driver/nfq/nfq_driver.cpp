@@ -18,7 +18,7 @@
 #include "nfq_driver.hpp"
 #include "nfq_packet.hpp"
 
-using namespace casket::utils;
+using namespace casket;
 using namespace snet::socket;
 
 static constexpr std::size_t kDefaultPoolSize{16};

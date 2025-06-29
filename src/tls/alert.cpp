@@ -3,7 +3,7 @@
 #include <snet/tls/alert.hpp>
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -114,13 +114,14 @@ Alert::Alert(Description description, bool fatal)
 {
 }
 
-Alert::Alert(const int code) {
-    ThrowIfTrue(code < 0 || code > 0xFFFF, "Bad value (" + std::to_string(code) + ") for TLS alert message");
+Alert::Alert(const int code)
+{
+    casket::ThrowIfTrue(code < 0 || code > 0xFFFF, "Bad value (" + std::to_string(code) + ") for TLS alert message");
 
     std::uint8_t level = (code >> 8) & 0xFF;
     std::uint8_t description = code & 0xFF;
 
-    ThrowIfTrue(level < 1 || level > 2, "Bad code for TLS alert level");
+    casket::ThrowIfTrue(level < 1 || level > 2, "Bad code for TLS alert level");
 
     fatal_ = (level == 2);
     description_ = static_cast<Description>(description);
@@ -128,10 +129,9 @@ Alert::Alert(const int code) {
 
 Alert::Alert(cpp::span<const uint8_t> buf)
 {
-    ThrowIfTrue(buf.size() != 2,
-                "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
+    casket::ThrowIfTrue(buf.size() != 2, "Bad size (" + std::to_string(buf.size()) + ") for TLS alert message");
 
-    ThrowIfFalse(buf[0] == 1 || buf[0] == 2, "Bad code for TLS alert level");
+    casket::ThrowIfFalse(buf[0] == 1 || buf[0] == 2, "Bad code for TLS alert level");
 
     fatal_ = (buf[0] == 2);
     description_ = static_cast<Description>(buf[1]);

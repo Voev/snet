@@ -16,7 +16,7 @@
 
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::driver
 {
@@ -434,7 +434,7 @@ RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
 
     /* When dealing with a live interface, try to get the first packet in non-blocking mode.
             If there's nothing to receive, switch to blocking mode. */
-    int pcap_rval;
+    int pcap_rval{};
     if (impl_->mode != Mode::ReadFile)
     {
         if (impl_->setNonBlocking(true) != Status::Success)

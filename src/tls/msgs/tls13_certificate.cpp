@@ -16,7 +16,7 @@ void TLSv13Certificate::deserialize(Side side, cpp::span<const uint8_t> buffer)
     requestContext = reader.get_range<uint8_t>(1, 0, 255);
 
     const size_t certEntriesLength = reader.get_uint24_t();
-    ::utils::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
+    ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
 
     while (reader.has_remaining())
     {

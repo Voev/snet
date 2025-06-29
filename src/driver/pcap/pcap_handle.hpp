@@ -7,7 +7,7 @@ namespace snet::driver
 {
 
 /// @brief A wrapper class for libpcap packet capture descriptor.
-class PcapHandle : public casket::utils::NonCopyable
+class PcapHandle : public casket::NonCopyable
 {
 public:
     /// @brief Creates an empty handle.

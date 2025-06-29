@@ -13,7 +13,6 @@
 using namespace snet::socket;
 using namespace snet::tls;
 
-using namespace casket::utils;
 using namespace casket::opt;
 using namespace casket::thread;
 using namespace casket::lock_free;
@@ -33,10 +32,10 @@ bool Connect(const Endpoint& endpoint)
         std::error_code ec;
 
         auto socket = CreateSocket(endpoint.isIPv4() ? Tcp::v4() : Tcp::v6(), ec);
-        ThrowIfError(ec);
+        casket::ThrowIfError(ec);
 
         SetNonBlocking(socket, true, ec);
-        ThrowIfError(ec);
+        casket::ThrowIfError(ec);
 
         Connect(socket, endpoint.data(), endpoint.size(), ec);
         if (ec == std::errc::operation_in_progress)
@@ -44,7 +43,7 @@ bool Connect(const Endpoint& endpoint)
             ec.clear();
             WaitSocket(socket, false, 3s, ec);
         }
-        ThrowIfError(ec);
+        casket::ThrowIfError(ec);
     }
     catch (const std::exception& e)
     {
@@ -73,10 +72,10 @@ void CheckCipher(const Endpoint& endpoint, const std::string& cipherSuite, Queue
         std::error_code ec;
 
         auto socket = CreateSocket(endpoint.isIPv4() ? Tcp::v4() : Tcp::v6(), ec);
-        ThrowIfError(ec);
+        casket::ThrowIfError(ec);
 
         Connect(socket, endpoint.data(), endpoint.size(), ec);
-        ThrowIfError(ec);
+        casket::ThrowIfError(ec);
 
         Connection conn = settings.createConnection();
         conn.setConnectState();
@@ -150,7 +149,7 @@ public:
                 break;
             }
         }
-        casket::utils::ThrowIfFalse(found, "Can't connect with endpoint");
+        casket::ThrowIfFalse(found, "Can't connect with endpoint");
 
         ThreadPool pool(options_.threads);
 

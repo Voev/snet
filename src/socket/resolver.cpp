@@ -17,7 +17,7 @@
 #include <casket/utils/to_number.hpp>
 
 using namespace snet::ip;
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::socket
 {

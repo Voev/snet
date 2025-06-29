@@ -5,8 +5,6 @@
 #include <casket/utils/string.hpp>
 #include <casket/utils/exception.hpp>
 
-using namespace casket;
-
 namespace snet::crypto
 {
 
@@ -20,8 +18,7 @@ CertNameBuilder& CertNameBuilder::addEntry(const std::string& field, const std::
     auto data = reinterpret_cast<const unsigned char*>(value.data());
     int sz = static_cast<int>(value.size());
 
-    crypto::ThrowIfFalse(
-        X509_NAME_add_entry_by_txt(name(), field.data(), MBSTRING_UTF8, data, sz, -1, -1));
+    crypto::ThrowIfFalse(X509_NAME_add_entry_by_txt(name(), field.data(), MBSTRING_UTF8, data, sz, -1, -1));
     return *this;
 }
 
@@ -40,18 +37,17 @@ void CertNameBuilder::reset()
 
 CertNamePtr CertNameBuilder::fromString(const std::string& DN)
 {
-    casket::utils::ThrowIfTrue(DN.empty(), "DN can't be empty");
+    casket::ThrowIfTrue(DN.empty(), "DN can't be empty");
 
     CertNameBuilder builder;
 
-    auto&& options = casket::utils::split(DN, ";");
+    auto&& options = casket::split(DN, ";");
     for (auto&& option : options)
     {
-        auto&& parts = ::utils::split(option, "=");
+        auto&& parts = casket::split(option, "=");
 
-        ::utils::ThrowIfTrue(parts.size() != 2,
-                             "Invalid format of DN: '" + DN +
-                                 "'. Expected format: <ENTRY=VALUE>[;<ENTRY=VALUE>...]");
+        casket::ThrowIfTrue(parts.size() != 2,
+                            "Invalid format of DN: '" + DN + "'. Expected format: <ENTRY=VALUE>[;<ENTRY=VALUE>...]");
 
         builder.addEntry(parts[0], parts[1]);
     }

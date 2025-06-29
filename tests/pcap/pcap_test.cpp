@@ -41,7 +41,7 @@ void PcapTestImpl::setUp(const TestParam& param)
     auto skipped = param.second.find("skip");
     if (skipped != param.second.end())
     {
-        skipped_ = casket::utils::iequals(skipped->second, "yes");
+        skipped_ = casket::iequals(skipped->second, "yes");
     }
 
     io::Config config;

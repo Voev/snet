@@ -47,9 +47,9 @@ TcpOption TcpOptionBuilder::build() const
     {
         if (m_RecValueLen != 0)
         {
-            log::error("TCP NOP and TCP EOL options are 1-byte long and don't have "
-                       "option value. Tried to set option value of size {}",
-                       m_RecValueLen);
+            error("TCP NOP and TCP EOL options are 1-byte long and don't have "
+                  "option value. Tried to set option value of size {}",
+                  m_RecValueLen);
             return TcpOption(nullptr);
         }
 
@@ -96,8 +96,8 @@ TcpOption TcpLayer::getFirstTcpOption() const
 
 TcpOption TcpLayer::getNextTcpOption(TcpOption& tcpOption) const
 {
-    TcpOption nextOpt = m_OptionReader.getNextTLVRecord(tcpOption, getOptionsBasePtr(),
-                                                        getHeaderLen() - sizeof(tcphdr));
+    TcpOption nextOpt =
+        m_OptionReader.getNextTLVRecord(tcpOption, getOptionsBasePtr(), getHeaderLen() - sizeof(tcphdr));
     if (nextOpt.isNotNull() && nextOpt.getType() == TCPOPT_DUMMY)
         return TcpOption(nullptr);
 
@@ -114,8 +114,7 @@ TcpOption TcpLayer::addTcpOption(const TcpOptionBuilder& optionBuilder)
     return addTcpOptionAt(optionBuilder, getHeaderLen() - m_NumOfTrailingBytes);
 }
 
-TcpOption TcpLayer::insertTcpOptionAfter(const TcpOptionBuilder& optionBuilder,
-                                         const TcpOptionEnumType prevOptionType)
+TcpOption TcpLayer::insertTcpOptionAfter(const TcpOptionBuilder& optionBuilder, const TcpOptionEnumType prevOptionType)
 {
     int offset = 0;
 
@@ -128,8 +127,7 @@ TcpOption TcpLayer::insertTcpOptionAfter(const TcpOptionBuilder& optionBuilder,
         const TcpOption prevOpt = getTcpOption(prevOptionType);
         if (prevOpt.isNull())
         {
-            log::error("Previous option of type {} not found, cannot add a new TCP option",
-                       (int)prevOptionType);
+            error("Previous option of type {} not found, cannot add a new TCP option", (int)prevOptionType);
             return TcpOption(nullptr);
         }
 
@@ -204,7 +202,7 @@ TcpOption TcpLayer::addTcpOptionAt(const TcpOptionBuilder& optionBuilder, const 
 
     if (!extendLayer(offset, sizeToExtend))
     {
-        log::error("Could not extend TcpLayer in [{}] bytes", sizeToExtend);
+        error("Could not extend TcpLayer in [{}] bytes", sizeToExtend);
         newOption.purgeRecordData();
         return TcpOption(nullptr);
     }
@@ -229,8 +227,7 @@ void TcpLayer::adjustTcpOptionTrailer(const size_t totalOptSize)
         newNumberOfTrailingBytes++;
 
     if (newNumberOfTrailingBytes < m_NumOfTrailingBytes)
-        shortenLayer(sizeof(tcphdr) + totalOptSize,
-                     m_NumOfTrailingBytes - newNumberOfTrailingBytes - 1);
+        shortenLayer(sizeof(tcphdr) + totalOptSize, m_NumOfTrailingBytes - newNumberOfTrailingBytes - 1);
     else if (newNumberOfTrailingBytes > m_NumOfTrailingBytes)
         extendLayer(sizeof(tcphdr) + totalOptSize, newNumberOfTrailingBytes - m_NumOfTrailingBytes);
 
@@ -251,25 +248,24 @@ uint16_t TcpLayer::calculateChecksum(const bool writeResultToPacket)
     if (m_PrevLayer != nullptr)
     {
         tcpHdr->headerChecksum = 0;
-        log::debug("TCP data len = {}");
+        debug("TCP data len = {}");
 
         if (m_PrevLayer->getProtocol() == IPv4)
         {
             const ip::IPv4Address srcIP = static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
             const ip::IPv4Address dstIP = static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
 
-            checksumRes = snet::layers::computePseudoHdrChecksum(
-                reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(), ip::IPAddress::IPv4,
-                PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+            checksumRes =
+                snet::layers::computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
+                                                       ip::IPAddress::IPv4, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
         else if (m_PrevLayer->getProtocol() == IPv6)
         {
             const ip::IPv6Address srcIP = static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
             const ip::IPv6Address dstIP = static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
 
-            checksumRes =
-                computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                                         ip::IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+            checksumRes = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
+                                                   ip::IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
     }
 

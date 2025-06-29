@@ -1,9 +1,6 @@
 
 #include <snet/tls/settings.hpp>
 #include <snet/crypto/exception.hpp>
-#include <casket/utils/exception.hpp>
-
-using namespace casket::utils;
 
 namespace snet::tls
 {
@@ -25,7 +22,7 @@ static inline const SSL_METHOD* GetMethod(Side side)
 Settings::Settings(Side side)
     : ctx_(SSL_CTX_new(GetMethod(side)))
 {
-    crypto::ThrowIfFalse(ctx_);
+    crypto::ThrowIfFalse(ctx_, "context allocation error");
 }
 
 Settings::~Settings() noexcept

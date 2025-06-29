@@ -17,44 +17,43 @@
 #include <snet/tls.hpp>
 
 using namespace casket;
-using namespace casket::log;
 using namespace casket::opt;
 
 namespace snet::sniffer
 {
 
-static inline log::Level ParseLogLevel(std::string_view str)
+static inline Level ParseLogLevel(std::string_view str)
 {
-    if (::utils::iequals(str, "alert"))
+    if (::iequals(str, "alert"))
     {
-        return log::Level::Alert;
+        return Level::Alert;
     }
-    else if (::utils::iequals(str, "crit"))
+    else if (::iequals(str, "crit"))
     {
-        return log::Level::Critical;
+        return Level::Critical;
     }
-    else if (::utils::iequals(str, "error"))
+    else if (::iequals(str, "error"))
     {
-        return log::Level::Error;
+        return Level::Error;
     }
-    else if (::utils::iequals(str, "warn"))
+    else if (::iequals(str, "warn"))
     {
-        return log::Level::Warning;
+        return Level::Warning;
     }
-    else if (::utils::iequals(str, "notice"))
+    else if (::iequals(str, "notice"))
     {
-        return log::Level::Notice;
+        return Level::Notice;
     }
-    else if (::utils::iequals(str, "info"))
+    else if (::iequals(str, "info"))
     {
-        return log::Level::Info;
+        return Level::Info;
     }
-    else if (::utils::iequals(str, "debug"))
+    else if (::iequals(str, "debug"))
     {
-        return log::Level::Debug;
+        return Level::Debug;
     }
 
-    return log::Level::Emergency;
+    return Level::Emergency;
 }
 
 struct Options

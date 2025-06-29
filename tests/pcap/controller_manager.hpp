@@ -5,7 +5,7 @@
 namespace snet
 {
 
-class ControllerManager final : public casket::utils::Singleton<ControllerManager>
+class ControllerManager final : public casket::Singleton<ControllerManager>
 {
 public:
     ControllerManager() = default;

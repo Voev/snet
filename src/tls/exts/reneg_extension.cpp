@@ -4,7 +4,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {

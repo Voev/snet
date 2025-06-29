@@ -7,7 +7,6 @@
 
 #include <snet/utils/endianness.hpp>
 
-using namespace casket;
 using namespace snet::utils;
 
 namespace snet::layers
@@ -60,8 +59,7 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
 }
 
 uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddress::Type ipAddrType,
-                                  uint8_t protocolType, ip::IPAddress srcIPAddress,
-                                  ip::IPAddress dstIPAddress)
+                                  uint8_t protocolType, ip::IPAddress srcIPAddress, ip::IPAddress dstIPAddress)
 {
     uint16_t checksumRes = 0;
     ScalarBuffer<uint16_t> vec[2];
@@ -100,8 +98,7 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddres
     }
     else
     {
-        log::error("Compute pseudo header checksum failed, for unknown IPAddrType = {}",
-                   ipAddrType);
+        casket::error("Compute pseudo header checksum failed, for unknown IPAddrType = {}", ipAddrType);
     }
 
     return checksumRes;

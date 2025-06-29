@@ -4,7 +4,7 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {
@@ -81,8 +81,8 @@ ALPN::ALPN(Side side, cpp::span<const uint8_t> input)
     //    The "extension_data" field of the [...] extension is structured the
     //    same as described above for the client "extension_data", except that
     //    the "ProtocolNameList" MUST contain exactly one "ProtocolName".
-    ThrowIfTrue(side == Side::Server && protocols_.size() != 1, "server sent {} protocols in ALPN extension response",
-                protocols_.size());
+    ThrowIfTrue(side == Side::Server && protocols_.size() != 1,
+                        "server sent {} protocols in ALPN extension response", protocols_.size());
 }
 
 const std::vector<std::string>& ALPN::protocols() const

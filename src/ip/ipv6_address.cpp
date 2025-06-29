@@ -5,7 +5,7 @@
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::ip
 {

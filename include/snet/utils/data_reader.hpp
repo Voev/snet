@@ -234,7 +234,7 @@ private:
 
     [[noreturn]] void throw_decode_error(std::string_view why) const
     {
-        throw casket::utils::RuntimeError(casket::utils::format("Invalid {}: {}", m_typename, why));
+        throw casket::RuntimeError(casket::format("Invalid {}: {}", m_typename, why));
     }
 
     const char* m_typename;

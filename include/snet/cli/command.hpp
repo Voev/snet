@@ -6,7 +6,7 @@
 namespace snet::cmd
 {
 
-class Command : public casket::utils::NonCopyable
+class Command : public casket::NonCopyable
 {
 public:
     Command() = default;

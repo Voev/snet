@@ -2,7 +2,7 @@
 #include <snet/tls/extensions.hpp>
 #include <snet/tls/types.hpp>
 
-using namespace casket::utils;
+using namespace casket;
 
 namespace snet::tls
 {

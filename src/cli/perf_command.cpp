@@ -40,7 +40,6 @@ using namespace std::chrono_literals;
 
 using namespace casket;
 using namespace casket::opt;
-using namespace casket::log;
 using namespace snet;
 using namespace snet::event;
 using namespace snet::socket;
@@ -107,7 +106,7 @@ public:
     {
         if (dt <= 0.0)
         {
-            log::error("Bad latency value - {}", dt);
+            error("Bad latency value - {}", dt);
             return;
         }
 
@@ -270,7 +269,7 @@ public:
             epoll_.add(sh, sh->get(), events, ec);
         }
         if (ec)
-            log::error("add(): {}", ec.message());
+            error("add(): {}", ec.message());
     }
 
     void del(Session* sh)
@@ -278,7 +277,7 @@ public:
         std::error_code ec;
         epoll_.del(sh->get(), ec);
         if (ec)
-            log::error("del(): {}", ec.message());
+            error("del(): {}", ec.message());
     }
 
     std::unique_ptr<tls::Connection> makeConnection()
@@ -319,7 +318,7 @@ Session::Session(SessionManager& manager, Endpoint ep, bool reuseSession, std::s
     , reuseSession_(reuseSession)
     , id_(id)
 {
-    log::debug("peer {} created", id_);
+    debug("peer {} created", id_);
 }
 
 Session::~Session() noexcept
@@ -353,7 +352,7 @@ void Session::handleWriteEvent()
 
 bool Session::handleEstablishedTcpConn()
 {
-    log::debug("peer {}: has established TCP connection", id_);
+    debug("peer {}: has established TCP connection", id_);
     stat.tcpHandshakes--;
     stat.tcpConnections++;
     return doTlsHandshake();
@@ -379,13 +378,13 @@ bool Session::doTcpConnect()
     std::error_code ec;
 
     socket_ = CreateSocket(ep_.isIPv4() ? Tcp::v4() : Tcp::v6(), ec);
-    casket::utils::ThrowIfError(ec);
+    casket::ThrowIfError(ec);
 
     SetNonBlocking(socket_, true, ec);
-    casket::utils::ThrowIfError(ec);
+    casket::ThrowIfError(ec);
 
     Connect(socket_, ep_.data(), ep_.size(), ec);
-    casket::utils::ThrowIfError(ec);
+    casket::ThrowIfError(ec);
 
     stat.tcpHandshakes++;
     state_ = State::InTcpHandshaking;
@@ -441,7 +440,7 @@ bool Session::doTlsHandshake()
         const duration<double, std::milli> latency = Clock::now() - start_;
         gLocalLatencyStats.update(latency.count());
 
-        log::debug("peer {}: has completed TLS handshake", id_);
+        debug("peer {}: has completed TLS handshake", id_);
         stat.tlsHandshakes--;
         stat.tlsConnections++;
         stat.totalHandshakes++;
@@ -729,7 +728,7 @@ public:
         std::vector<std::thread> threads(options_.threadLimit);
         for (size_t i = 0; i < options_.threadLimit; ++i)
         {
-            log::debug("thread {}: created", i + 1);
+            debug("thread {}: created", i + 1);
             threads[i] = std::thread(
                 [&]()
                 {

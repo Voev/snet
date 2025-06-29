@@ -8,7 +8,7 @@
 namespace snet::cmd
 {
 
-class CommandDispatcher final : public casket::utils::Singleton<CommandDispatcher>
+class CommandDispatcher final : public casket::Singleton<CommandDispatcher>
 {
     typedef std::unique_ptr<Command> CommandPtr;
     typedef std::string CommandDescription;

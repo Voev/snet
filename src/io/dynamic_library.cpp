@@ -9,7 +9,7 @@ namespace snet::io
 DynamicLibrary::DynamicLibrary(std::string_view path)
     : handle_(::dlopen(path.data(), RTLD_LAZY))
 {
-    casket::utils::ThrowIfFalse(handle_, "{}", ::dlerror());
+    casket::ThrowIfFalse(handle_, "{}", ::dlerror());
 }
 
 DynamicLibrary::~DynamicLibrary() noexcept
@@ -31,10 +31,10 @@ void DynamicLibrary::unload() noexcept {
 
 void* DynamicLibrary::resolveSymbol(std::string_view symbol) const
 {
-    casket::utils::ThrowIfFalse(isLoaded(), "library is not loaded");
+    casket::ThrowIfFalse(isLoaded(), "library is not loaded");
 
     void* addr = ::dlsym(handle_, symbol.data());
-    casket::utils::ThrowIfFalse(addr, "{}", ::dlerror());
+    casket::ThrowIfFalse(addr, "{}", ::dlerror());
     return addr;
 }
 

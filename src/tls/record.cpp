@@ -3,8 +3,6 @@
 
 #include <casket/utils/exception.hpp>
 
-using namespace casket::utils;
-
 namespace snet::tls
 {
 
@@ -25,15 +23,15 @@ void Record::reset()
 
 void Record::deserializeHeader(cpp::span<const uint8_t> data)
 {
-    ThrowIfTrue(data[0] < 20 || data[0] > 23, "TLS record type had unexpected value");
+    casket::ThrowIfTrue(data[0] < 20 || data[0] > 23, "TLS record type had unexpected value");
     type = static_cast<RecordType>(data[0]);
 
-    ThrowIfTrue(data[1] != 3 || data[2] >= 4, "TLS record version had unexpected value");
+    casket::ThrowIfTrue(data[1] != 3 || data[2] >= 4, "TLS record version had unexpected value");
     version = ProtocolVersion(data[1], data[2]);
 
     const size_t recordLength = utils::make_uint16(data[3], data[4]);
-    ThrowIfTrue(recordLength > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
-    ThrowIfTrue(recordLength == 0, "Received a empty record");
+    casket::ThrowIfTrue(recordLength > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
+    casket::ThrowIfTrue(recordLength == 0, "Received a empty record");
     expectedLength = recordLength + TLS_HEADER_SIZE;
 }
 

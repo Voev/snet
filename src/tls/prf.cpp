@@ -9,13 +9,11 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
-#include <casket/utils/exception.hpp>
 #include <snet/utils/load_store.hpp>
 
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
 
-using namespace casket::utils;
 using namespace snet::crypto;
 
 namespace snet::tls

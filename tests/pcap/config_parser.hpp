@@ -4,7 +4,7 @@
 #include <vector>
 #include <casket/utils/singleton.hpp>
 
-class ConfigParser : public casket::utils::Singleton<ConfigParser>
+class ConfigParser : public casket::Singleton<ConfigParser>
 {
 public:
     using Section = std::map<std::string, std::string>;
