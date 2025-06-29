@@ -343,19 +343,18 @@ struct NfQueue::Impl
         sockaddr_nl address;
         ssize_t ret;
 
-        iovec iov = {
-            .iov_base = buffer,
-            .iov_len = bufferSize,
-        };
-        msghdr msg = {
-            .msg_name = &address,
-            .msg_namelen = sizeof(address),
-            .msg_iov = &iov,
-            .msg_iovlen = 1,
-            .msg_control = nullptr,
-            .msg_controllen = 0,
-            .msg_flags = 0,
-        };
+        iovec iov{};
+        iov.iov_base = buffer;
+        iov.iov_len = bufferSize;
+
+        msghdr msg{};
+        msg.msg_name = &address;
+        msg.msg_namelen = sizeof(address);
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = nullptr;
+        msg.msg_controllen = 0;
+        msg.msg_flags = 0;
 
         ret = ::recvmsg(socket, &msg, blocking ? 0 : MSG_DONTWAIT);
         if (ret == -1)
@@ -426,6 +425,7 @@ struct NfQueue::Impl
     int timeout;
     bool failOpen;
     volatile bool interrupted;
+    Stats stats;
 };
 
 NfQueue::Impl::~Impl()
@@ -524,6 +524,7 @@ Status NfQueue::configure(const io::Config& config)
     }
 
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    return Status::Success;
 }
 
 std::shared_ptr<io::Driver> NfQueue::create(const io::DriverConfig& config)
@@ -661,6 +662,38 @@ Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
     impl_->pool.releasePacket(nlPacket);
 
     return Status::Success;
+}
+
+Status NfQueue::inject(const uint8_t* data, uint32_t data_len)
+{
+    (void)data;
+    (void)data_len;
+    return Status::NotSupported;
+}
+
+const char* NfQueue::getName() const
+{
+    return "nf_queue";
+}
+
+Status NfQueue::getStats(Stats *stats)
+{
+    /* There is no distinction between packets received by the hardware and those we saw. */
+    impl_->stats.hw_packets_received = impl_->stats.packets_received;
+
+    memcpy(stats, &impl_->stats, sizeof(Stats));
+
+    return Status::Success;
+}
+
+void NfQueue::resetStats()
+{
+    memset(&impl_->stats, 0, sizeof(Stats));
+}
+
+int NfQueue::getSnaplen() const
+{
+    return impl_->snaplen;
 }
 
 } // namespace snet::driver
