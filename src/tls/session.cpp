@@ -2,6 +2,7 @@
 #include <array>
 #include <limits>
 #include <memory>
+#include <openssl/core_names.h>
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
@@ -18,8 +19,6 @@
 #include <snet/tls/prf.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
-
-#include <openssl/core_names.h>
 
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
 {
@@ -509,136 +508,16 @@ void Session::processServerHello(const std::int8_t sideIndex, nonstd::span<const
 
 void Session::processCertificate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    static const char* debugInfo = (sideIndex == 0 ? "Client Certificate" : "Server Certificate");
-    utils::DataReader reader(debugInfo, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-    if (getVersion() == ProtocolVersion::TLSv1_3)
-    {
-        auto requestContext = reader.get_range<uint8_t>(1, 0, 255);
-
-        // RFC 8446 4.4.2
-        //    [...] in the case of server authentication, this field SHALL be
-        //    zero length.
-        casket::ThrowIfTrue(sideIndex == 1 && !requestContext.empty(),
-                             "Server Certificate message must not contain a request context");
-
-        const size_t certEntriesLength = reader.get_uint24_t();
-        casket::ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "Certificate: Message malformed");
-
-        while (reader.has_remaining())
-        {
-            /// Cert Entry
-            reader.get_tls_length_value(3);
-            /// Extensions
-            const auto extensionsLength = reader.peek_uint16_t();
-            reader.get_fixed<uint8_t>(extensionsLength + 2);
-        }
-    }
+    if (sideIndex == 0) {}
     else
     {
-        const size_t certsLength = reader.get_uint24_t();
-        casket::ThrowIfTrue(reader.remaining_bytes() != certsLength, "Certificate: Message malformed");
-
-        while (reader.has_remaining())
+        handshake_.serverCertificate.deserialize(sideIndex, version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+        if (version_ == ProtocolVersion::TLSv1_3)
         {
-            /// Certificate
-            reader.get_tls_length_value(3);
+            casket::ThrowIfFalse(handshake_.serverCertificate.requestContext_.empty(),
+                                 "Server Certificate message must not contain a request context");
         }
     }
-
-    reader.assert_done();
-
-    handshakeHash_.update(message);
-}
-
-void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
-{
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    if (version_ == ProtocolVersion::TLSv1_3)
-    {
-        utils::DataReader reader("TLSv1.3 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-        // ticket_lifetime_hint
-        reader.get_uint32_t();
-        // ticket_age_add
-        reader.get_uint32_t();
-        // ticket nonce
-        reader.get_tls_length_value(1);
-        // ticket
-        reader.get_tls_length_value(2);
-
-        // extensions
-        Extensions exts;
-        exts.deserialize(tls::Side::Server, reader.get_span_remaining());
-
-        // reader.assert_done();
-    }
-    else if (version_ == ProtocolVersion::TLSv1_2)
-    {
-        utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
-        reader.get_uint32_t();
-        reader.get_range<uint8_t>(2, 0, 65535);
-        reader.assert_done();
-    }
-    /*else
-    {
-        throw std::runtime_error("NewSessionTicket can't be in TLS versions below 1.2");
-    }*/
-}
-
-void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
-{
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
-}
-
-void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
-{
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("ServerKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-    auto kex = cipherSuite_.getKeyExchName();
-
-    if (kex == SN_kx_psk || kex == SN_kx_ecdhe_psk)
-    {
-        reader.get_string(2, 0, 65535);
-    }
-    else if (kex == SN_kx_dhe)
-    {
-        // 3 bigints, DH p, g, Y
-        for (size_t i = 0; i != 3; ++i)
-        {
-            reader.get_range<uint8_t>(2, 1, 65535);
-        }
-    }
-    else if (kex == SN_kx_ecdhe || kex == SN_kx_ecdhe_psk)
-    {
-        reader.get_byte();                    // curve type
-        reader.get_uint16_t();                // curve id
-        reader.get_range<uint8_t>(1, 1, 255); // public key
-    }
-    else if (kex != SN_kx_psk)
-    {
-        throw std::runtime_error("Server_Key_Exchange: Unsupported kex type");
-    }
-
-    auto auth = cipherSuite_.getAuthName();
-    if (auth == SN_auth_rsa || auth == SN_auth_dss || auth == SN_auth_ecdsa)
-    {
-        if (version_ == ProtocolVersion::TLSv1_2)
-        {
-            reader.get_uint16_t();                  // algorithm
-            reader.get_range<uint8_t>(2, 0, 65535); // signature
-        }
-        else /// < TLSv1.2
-        {
-            reader.get_range<uint8_t>(2, 0, 65535); // signature
-        }
-    }
-
-    reader.assert_done();
 
     handshakeHash_.update(message);
 }
@@ -670,16 +549,6 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
     handshakeHash_.update(message);
 }
 
-void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
-{
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    reader.assert_done();
-
-    handshakeHash_.update(message);
-}
-
 void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
@@ -690,6 +559,47 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span
     reader.assert_done();
 
     handshakeHash_.update(message);
+}
+
+void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+{
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
+}
+
+/* Create a buffer containing data to be signed for server key exchange */
+/*size_t construct_key_exchange_tbs(SSL_CONNECTION* s, unsigned char** ptbs, const void* param, size_t paramlen)
+{
+    size_t tbslen = 2 * SSL3_RANDOM_SIZE + paramlen;
+    unsigned char* tbs = OPENSSL_malloc(tbslen);
+
+    if (tbs == NULL)
+    {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+        return 0;
+    }
+    memcpy(tbs, s->s3.client_random, SSL3_RANDOM_SIZE);
+    memcpy(tbs + SSL3_RANDOM_SIZE, s->s3.server_random, SSL3_RANDOM_SIZE);
+
+    memcpy(tbs + SSL3_RANDOM_SIZE * 2, param, paramlen);
+
+    *ptbs = tbs;
+    return tbslen;
+}*/
+
+void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+{
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+    handshake_.serverKeyExchange.deserialize(message, cipherSuite_.getKeyExchName(), cipherSuite_.getAuthName(),
+                                             version_);
+
+    handshakeHash_.update(message);
+
+    if (true)
+    {
+        // Verify signature
+    }
 }
 
 void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
@@ -736,9 +646,42 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
     }
 }
 
+void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+{
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+    utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    reader.assert_done();
+
+    handshakeHash_.update(message);
+}
+
 void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    (void)message;
+    if (sideIndex == 0)
+    {
+        handshake_.clientFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    }
+    else
+    {
+        handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    }
+
+    if (!secrets_.getSecret(SecretNode::MasterSecret).empty() && version_ < ProtocolVersion::TLSv1_3)
+    {
+        const auto& algorithm = cipherSuite_.getHnshDigestName();
+        const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
+        const auto hash = handshakeHash_.final(algorithm);
+        const auto& expect =
+            (sideIndex == 0 ? handshake_.clientFinished.getVerifyData() : handshake_.serverFinished.getVerifyData());
+
+        std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
+
+        tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), hash, {}, actual);
+        casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
+
+        handshakeHash_.update(message);
+    }
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
@@ -777,6 +720,42 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             }
         }
     }
+}
+
+void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+{
+    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+    if (version_ == ProtocolVersion::TLSv1_3)
+    {
+        utils::DataReader reader("TLSv1.3 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+
+        // ticket_lifetime_hint
+        reader.get_uint32_t();
+        // ticket_age_add
+        reader.get_uint32_t();
+        // ticket nonce
+        reader.get_tls_length_value(1);
+        // ticket
+        reader.get_tls_length_value(2);
+
+        // extensions
+        Extensions exts;
+        exts.deserialize(tls::Side::Server, reader.get_span_remaining());
+
+        // reader.assert_done();
+    }
+    else if (version_ == ProtocolVersion::TLSv1_2)
+    {
+        utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+        casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
+        reader.get_uint32_t();
+        reader.get_range<uint8_t>(2, 0, 65535);
+        reader.assert_done();
+    }
+    /*else
+    {
+        throw std::runtime_error("NewSessionTicket can't be in TLS versions below 1.2");
+    }*/
 }
 
 void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)

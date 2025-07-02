@@ -69,12 +69,12 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
             crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, block.data(), &n));
             block = block.subspan(n);
         }
-
     }
 }
 
 void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
-             nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out)
+             nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
+             nonstd::span<uint8_t> out)
 {
     auto kdf = CipherSuiteManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
@@ -87,10 +87,12 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
         OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), algorithm.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET, const_cast<uint8_t*>(secret.data()), secret.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()), label.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()),
-                                             clientRandom.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()),
-                                             serverRandom.size());
+    if (!clientRandom.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()),
+                                                 clientRandom.size());
+    if (!serverRandom.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()),
+                                                 serverRandom.size());
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));

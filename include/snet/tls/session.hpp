@@ -4,6 +4,7 @@
 #pragma once
 #include <vector>
 #include <array>
+#include <stddef.h>
 #include <casket/nonstd/span.hpp>
 #include <memory>
 #include <string>
@@ -38,21 +39,21 @@ public:
         processor_ = processor;
     }
 
-    bool getCipherState(const std::int8_t sideIndex) const noexcept;
+    bool getCipherState(const int8_t sideIndex) const noexcept;
 
-    bool canDecrypt(const std::int8_t sideIndex) const noexcept;
+    bool canDecrypt(const int8_t sideIndex) const noexcept;
 
-    size_t processRecords(const std::int8_t sideIndex, nonstd::span<const std::uint8_t> input);
+    size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
 
-    void preprocessRecord(const std::int8_t sideIndex, Record* record);
+    void preprocessRecord(const int8_t sideIndex, Record* record);
 
-    void postprocessRecord(const std::int8_t sideIndex, Record* record);
+    void postprocessRecord(const int8_t sideIndex, Record* record);
 
     /// @brief Decrypts a TLS record.
     /// @param sideIndex The index indicating the side (client or server).
     /// @param record TLS record.
     ///
-    void decrypt(const std::int8_t sideIndex, Record* record);
+    void decrypt(const int8_t sideIndex, Record* record);
 
     /// @brief Checks if the session can decrypt data.
     /// @param client2server Indicates if the direction is client to server.
@@ -106,33 +107,33 @@ public:
 
     Record* readingRecord{nullptr};
 
-    void processClientHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processClientHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processEncryptedExtensions(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
-    void processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processSessionTicket(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificateVerify(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processClientKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerHelloDone(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processFinished(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processKeyUpdate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     void setDebugKeys(const bool debug)
     {
@@ -151,6 +152,7 @@ private:
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;
+    std::vector<uint8_t> finishedHash;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
     uint8_t debugKeys_;

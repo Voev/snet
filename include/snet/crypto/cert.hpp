@@ -3,8 +3,12 @@
 #include <string_view>
 #include <filesystem>
 #include <snet/crypto/pointers.hpp>
+#include <casket/nonstd/span.hpp>
 
-namespace snet::crypto::cert
+namespace snet::crypto
+{
+
+namespace cert
 {
 
 CertPtr shallowCopy(Cert* cert);
@@ -35,4 +39,8 @@ CertPtr fromBio(Bio* bio, Encoding encoding = Encoding::PEM);
 
 void toBio(Cert* cert, Bio* bio, Encoding encoding = Encoding::PEM);
 
-} // namespace snet::crypto::cert
+} // namespace cert
+
+CertPtr CertFromMemory(nonstd::span<const uint8_t> memory);
+
+} // namespace snet::crypto

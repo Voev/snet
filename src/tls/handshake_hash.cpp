@@ -3,6 +3,8 @@
 #include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
+#include <snet/utils/print_hex.hpp>
+
 namespace snet::tls
 {
 
@@ -12,6 +14,7 @@ HandshakeHash::~HandshakeHash() noexcept = default;
 
 void HandshakeHash::update(nonstd::span<const uint8_t> in)
 {
+    utils::printHex(std::cout, in, "TranscriptHash", true);
     std::copy(in.begin(), in.end(), std::back_inserter(messages_));
 }
 
