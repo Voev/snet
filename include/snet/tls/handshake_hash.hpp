@@ -5,11 +5,14 @@
 #include <casket/nonstd/span.hpp>
 #include <vector>
 #include <string_view>
+#include <snet/crypto/typedefs.hpp>
 
-namespace snet::tls {
+namespace snet::tls
+{
 
 /// @brief Class for handling handshake hash operations.
-class HandshakeHash final {
+class HandshakeHash final
+{
 public:
     /// @brief Default constructor.
     HandshakeHash();
@@ -24,7 +27,7 @@ public:
     /// @brief Finalizes the handshake hash and returns the result.
     /// @param algorithm The hash algorithm to use.
     /// @return The final hash value.
-    std::vector<uint8_t> final(std::string_view algorithm) const;
+    nonstd::span<uint8_t> final(HashCtx* hashCtx, const Hash* hashAlg, nonstd::span<uint8_t> buffer) const;
 
     /// @brief Gets the contents of the handshake messages.
     /// @return The contents of the handshake messages.

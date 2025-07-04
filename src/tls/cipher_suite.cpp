@@ -4,7 +4,7 @@ namespace snet::tls
 {
 
 CipherSuite::CipherSuite()
-    : bits_(0)
+    : keySize_(0)
     , id_(0)
     , aead_(false)
 {
@@ -14,7 +14,7 @@ CipherSuite::~CipherSuite() noexcept
 {
 }
 
-CipherSuite::CipherSuite(std::uint16_t id, std::uint32_t bits, std::string kexch, std::string auth,
+CipherSuite::CipherSuite(std::uint16_t id, std::uint32_t keySize, std::string kexch, std::string auth,
                          std::string cipher, std::string digest, std::string hdigest,
                          std::string name, std::string version, bool aead)
     : cipher_(std::move(cipher))
@@ -24,7 +24,7 @@ CipherSuite::CipherSuite(std::uint16_t id, std::uint32_t bits, std::string kexch
     , auth_(std::move(auth))
     , name_(std::move(name))
     , version_(std::move(version))
-    , bits_(bits)
+    , keySize_(keySize)
     , id_(id)
     , aead_(aead)
 {
@@ -35,9 +35,9 @@ std::uint16_t CipherSuite::getID() const
     return id_;
 }
 
-std::uint32_t CipherSuite::getKeyBits() const
+std::uint32_t CipherSuite::getKeySize() const
 {
-    return bits_;
+    return keySize_;
 }
 
 const std::string& CipherSuite::getCipherName() const

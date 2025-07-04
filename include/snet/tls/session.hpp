@@ -24,6 +24,7 @@
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/handshake_msgs.hpp>
 
+
 namespace snet::tls
 {
 
@@ -105,44 +106,48 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    Record* readingRecord{nullptr};
-
+    
     void processClientHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processServerHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processEncryptedExtensions(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
     void processSessionTicket(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processCertificate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processServerKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void processServerHelloDone(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processFinished(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
+    
     void setDebugKeys(const bool debug)
     {
         debugKeys_ = debug;
     }
 
 private:
-    HandshakeMessages handshake_;
     RecordPool& recordPool_;
+    Record* readingRecord{nullptr};
+    HandshakeMessages handshake_;
+    crypto::HashCtxPtr hashCtx_;
+    crypto::HashPtr handshakeHashAlg_;
+    crypto::HashPtr macAlg_;
+    crypto::CipherPtr cipherAlg_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
@@ -152,7 +157,6 @@ private:
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;
-    std::vector<uint8_t> finishedHash;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
     uint8_t debugKeys_;

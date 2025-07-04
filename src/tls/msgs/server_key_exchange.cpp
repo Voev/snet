@@ -72,4 +72,9 @@ const std::vector<uint8_t>& ServerKeyExchange::getParams() const noexcept
     return params_;
 }
 
+const std::vector<uint8_t>& ServerKeyExchange::getSignature() const noexcept
+{
+    return signature_;
+}
+
 } // namespace snet::tls

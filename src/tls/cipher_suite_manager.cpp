@@ -21,7 +21,7 @@ snet::tls::CipherSuite CreateCipherSuite(const SSL_CIPHER* cs)
     auto auth = OBJ_nid2sn(SSL_CIPHER_get_auth_nid(cs));
     auto hdigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cs));
 
-    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr),
+    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr) / 8,
                                   kexch, auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
                                   SSL_CIPHER_get_version(cs), SSL_CIPHER_is_aead(cs));
 }
@@ -110,34 +110,6 @@ std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
         sk_SSL_CIPHER_free(ciphers);
 
     return cipherSuites;
-}
-
-MacPtr CipherSuiteManager::fetchMac(std::string_view algorithm)
-{
-    auto mac = MacPtr(EVP_MAC_fetch(nullptr, algorithm.data(), nullptr));
-    crypto::ThrowIfTrue(mac == nullptr);
-    return mac;
-}
-
-KdfPtr CipherSuiteManager::fetchKdf(std::string_view algorithm)
-{
-    auto kdf = KdfPtr(EVP_KDF_fetch(nullptr, algorithm.data(), nullptr));
-    crypto::ThrowIfTrue(kdf == nullptr);
-    return kdf;
-}
-
-HashPtr CipherSuiteManager::fetchDigest(std::string_view algorithm)
-{
-    auto digest = HashPtr(EVP_MD_fetch(nullptr, algorithm.data(), nullptr));
-    crypto::ThrowIfTrue(digest == nullptr);
-    return digest;
-}
-
-CipherPtr CipherSuiteManager::fetchCipher(std::string_view algorithm)
-{
-    auto cipher = CipherPtr(EVP_CIPHER_fetch(nullptr, algorithm.data(), nullptr));
-    crypto::ThrowIfTrue(cipher == nullptr);
-    return cipher;
 }
 
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)

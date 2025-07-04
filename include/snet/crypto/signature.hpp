@@ -1,15 +1,15 @@
 #pragma once
-#include <casket/nonstd/span.hpp>
-#include <vector>
 #include <cstdint>
+#include <casket/nonstd/span.hpp>
 #include <snet/crypto/typedefs.hpp>
 
 namespace snet::crypto
 {
 
-std::vector<uint8_t> signDigest(Key* privateKey, const Hash* hash, nonstd::span<const uint8_t> messageDigest);
+size_t SignDigest(HashCtx* ctx, const Hash* hash, Key* privateKey, nonstd::span<const uint8_t> tbs,
+                  nonstd::span<uint8_t> signature);
 
-bool verifyDigest(Key* publicKey, const Hash* hash, nonstd::span<const uint8_t> messageDigest,
+bool VerifyDigest(HashCtx* ctx, const Hash* hash, Key* publicKey, nonstd::span<const uint8_t> tbs,
                   nonstd::span<const uint8_t> signature);
 
 } // namespace snet::crypto

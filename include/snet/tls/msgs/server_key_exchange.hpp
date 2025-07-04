@@ -29,6 +29,8 @@ public:
 
     const std::vector<uint8_t>& getParams() const noexcept;
 
+    const std::vector<uint8_t>& getSignature() const noexcept;
+
 private:
     crypto::KeyPtr serverPublicKey_;
     std::vector<uint8_t> params_;

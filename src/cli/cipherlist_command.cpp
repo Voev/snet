@@ -141,7 +141,7 @@ void CipherListCommand::print(const tls::CipherSuite& cipherSuite)
               << (cipherSuite.isAEAD() ? "AEAD" : cipherSuite.getDigestName())
               << std::setw(columnAlgorithmWidth) << cipherSuite.getKeyExchName().substr(2)
               << std::setw(columnAlgorithmWidth) << cipherSuite.getAuthName().substr(4)
-              << std::setw(columnKeyBitsWidth) << cipherSuite.getKeyBits()
+              << std::setw(columnKeyBitsWidth) << cipherSuite.getKeySize() * 8
               << std::setw(columnNameWidth) << cipherSuite.getSuiteName()
               << std::endl;
     // clang-format on

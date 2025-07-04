@@ -55,7 +55,7 @@ public:
 
     /// @brief Gets the number of bits used.
     /// @return The number of bits used.
-    std::uint32_t getKeyBits() const;
+    std::uint32_t getKeySize() const;
 
     /// @brief Gets the name of the cipher suite.
     /// @return The name of the cipher suite.
@@ -97,7 +97,7 @@ private:
     std::string auth_;
     std::string name_;
     std::string version_;
-    std::uint32_t bits_; ///< Number of bits really used
+    std::uint32_t keySize_;
     std::uint16_t id_;
     bool aead_;
 };
