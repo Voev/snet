@@ -48,12 +48,12 @@ public:
     /// @brief Gets a cipher suite by its ID.
     /// @param id The ID of the cipher suite.
     /// @return An optional containing the CipherSuite if found, otherwise std::nullopt.
-    std::optional<CipherSuite> getCipherSuiteById(std::uint16_t id);
+    const CipherSuite* getCipherSuiteById(std::uint16_t id);
 
     /// @brief Gets a list of cipher suites.
     /// @param supported If true, returns only supported cipher suites. Defaults to true.
     /// @return A vector of CipherSuite objects.
-    std::vector<CipherSuite> getCipherSuites(bool supported = true);
+    std::vector<const CipherSuite*> getCipherSuites(bool supported = true);
 
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.

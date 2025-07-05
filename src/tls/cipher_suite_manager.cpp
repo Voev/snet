@@ -8,26 +8,6 @@
 
 using namespace snet::crypto;
 
-namespace
-{
-
-snet::tls::CipherSuite CreateCipherSuite(const SSL_CIPHER* cs)
-{
-    assert(cs != nullptr);
-
-    auto cipher = OBJ_nid2sn(SSL_CIPHER_get_cipher_nid(cs));
-    auto digest = OBJ_nid2sn(SSL_CIPHER_get_digest_nid(cs));
-    auto kexch = OBJ_nid2sn(SSL_CIPHER_get_kx_nid(cs));
-    auto auth = OBJ_nid2sn(SSL_CIPHER_get_auth_nid(cs));
-    auto hdigest = EVP_MD_get0_name(SSL_CIPHER_get_handshake_digest(cs));
-
-    return snet::tls::CipherSuite(SSL_CIPHER_get_protocol_id(cs), SSL_CIPHER_get_bits(cs, nullptr) / 8,
-                                  kexch, auth, cipher, digest, hdigest, SSL_CIPHER_get_name(cs),
-                                  SSL_CIPHER_get_version(cs), SSL_CIPHER_is_aead(cs));
-}
-
-} // namespace
-
 namespace snet::tls
 {
 
@@ -71,21 +51,14 @@ CipherSuiteManager& CipherSuiteManager::getInstance()
     return instance;
 }
 
-std::optional<CipherSuite> CipherSuiteManager::getCipherSuiteById(std::uint16_t id)
+const CipherSuite* CipherSuiteManager::getCipherSuiteById(std::uint16_t id)
 {
     std::uint16_t bytes = casket::host_to_be(id);
     std::uint8_t* ptr = reinterpret_cast<std::uint8_t*>(&bytes);
-
-    auto cipher = SSL_CIPHER_find(impl_->ssl, ptr);
-    if (cipher == nullptr)
-    {
-        return std::nullopt;
-    }
-
-    return ::CreateCipherSuite(cipher);
+    return SSL_CIPHER_find(impl_->ssl, ptr);
 }
 
-std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
+std::vector<const CipherSuite*> CipherSuiteManager::getCipherSuites(bool supported)
 {
     STACK_OF(SSL_CIPHER) * ciphers;
 
@@ -96,14 +69,11 @@ std::vector<CipherSuite> CipherSuiteManager::getCipherSuites(bool supported)
 
     crypto::ThrowIfTrue(ciphers == nullptr, "Failed to get supported cipher suites");
 
-    std::vector<CipherSuite> cipherSuites(sk_SSL_CIPHER_num(ciphers));
+    std::vector<const CipherSuite*> cipherSuites(sk_SSL_CIPHER_num(ciphers));
 
     for (int i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i)
     {
-        auto cipher = sk_SSL_CIPHER_value(ciphers, i);
-        assert(cipher != nullptr);
-
-        cipherSuites[i] = ::CreateCipherSuite(cipher);
+        cipherSuites[i] = sk_SSL_CIPHER_value(ciphers, i);
     }
 
     if (supported)

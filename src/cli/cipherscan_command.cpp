@@ -53,7 +53,7 @@ bool Connect(const Endpoint& endpoint)
     return true;
 }
 
-void CheckCipher(const Endpoint& endpoint, const std::string& cipherSuite, Queue<std::string>& ret)
+void CheckCipher(const Endpoint& endpoint, std::string_view cipherSuite, Queue<std::string_view>& ret)
 {
     try
     {
@@ -153,12 +153,12 @@ public:
 
         ThreadPool pool(options_.threads);
 
-        Queue<std::string> ret;
+        Queue<std::string_view> ret;
         results.reserve(cipherSuites.size());
         for (const auto& cipherSuite : cipherSuites)
         {
             results.emplace_back(
-                pool.add(&CheckCipher, ep, cipherSuite.getSuiteName(), std::ref(ret)));
+                pool.add(&CheckCipher, ep, CipherSuiteGetName(cipherSuite), std::ref(ret)));
         }
 
         for (auto& result : results)
@@ -172,7 +172,7 @@ public:
             auto cs = ret.pop();
             if (cs.has_value())
             {
-                std::cout << cs.value().c_str() << std::endl;
+                std::cout << cs.value() << std::endl;
             }
             else
             {

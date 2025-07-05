@@ -23,7 +23,7 @@
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/handshake_msgs.hpp>
-
+#include <snet/tls/cipher_suite.hpp>
 
 namespace snet::tls
 {
@@ -145,13 +145,12 @@ private:
     Record* readingRecord{nullptr};
     HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;
-    crypto::HashPtr handshakeHashAlg_;
-    crypto::HashPtr macAlg_;
+    crypto::HashPtr hmacHashAlg_;
     crypto::CipherPtr cipherAlg_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
-    CipherSuite cipherSuite_;
+    const CipherSuite* cipherSuite_;
     std::vector<uint8_t> PMS_;
     SecretNode secrets_;
     RecordDecoder clientToServer_;

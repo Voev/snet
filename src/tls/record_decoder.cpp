@@ -10,7 +10,6 @@
 /// @todo: delete it
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/tls/record_decoder.hpp>
-#include <snet/tls/cipher_suite_manager.hpp>
 
 using namespace casket;
 
@@ -18,8 +17,7 @@ namespace snet::tls
 {
 
 RecordDecoder::RecordDecoder()
-    : cipherSuite_()
-    , cipher_(EVP_CIPHER_CTX_new())
+    : cipher_(EVP_CIPHER_CTX_new())
     , seq_(0)
     , inited_(false)
 {
@@ -42,12 +40,10 @@ void RecordDecoder::reset() noexcept
     inited_ = false;
 }
 
-void RecordDecoder::init(CipherSuite cs, const Cipher* cipher, nonstd::span<const uint8_t> encKey, nonstd::span<const uint8_t> encIV,
+void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> encKey, nonstd::span<const uint8_t> encIV,
                          nonstd::span<const std::uint8_t> macKey)
 {
     reset();
-
-    cipherSuite_ = std::move(cs);
 
     macKey_.resize(macKey.size());
     memcpy(macKey_.data(), macKey.data(), macKey.size());
@@ -56,11 +52,9 @@ void RecordDecoder::init(CipherSuite cs, const Cipher* cipher, nonstd::span<cons
     inited_ = true;
 }
 
-void RecordDecoder::init(CipherSuite cs, const Cipher* cipher, nonstd::span<const uint8_t> encKey, nonstd::span<const uint8_t> encIV)
+void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> encKey, nonstd::span<const uint8_t> encIV)
 {
     reset();
-
-    cipherSuite_ = std::move(cs);
 
     implicitIv_.resize(encIV.size());
     memcpy(implicitIv_.data(), encIV.data(), encIV.size());
@@ -92,8 +86,6 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::sp
     int x;
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, 12> aead_nonce;
-
-    casket::ThrowIfFalse(cipherSuite_.isAEAD(), "it must be AEAD!");
 
     memcpy(aead_nonce.data(), implicitIv_.data(), 12);
 
@@ -149,13 +141,13 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::sp
     return {out.data(), (size_t)outSize};
 }
 
-nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt, ProtocolVersion version,
-                                                 nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out,
-                                                 bool encryptThenMac)
+nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, std::string_view hmacHash, RecordType rt,
+                                                 ProtocolVersion version, nonstd::span<const uint8_t> in,
+                                                 nonstd::span<uint8_t> out, bool encryptThenMac, bool aead)
 {
     nonstd::span<std::uint8_t> decryptedContent;
 
-    if (cipherSuite_.isAEAD())
+    if (aead)
     {
         uint8_t aad[TLS12_AEAD_AAD_SIZE];
 
@@ -203,7 +195,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
     /* Block cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) > 1)
     {
-        auto md = crypto::CryptoManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
+        auto md = crypto::CryptoManager::getInstance().fetchDigest(hmacHash);
         auto outSize = in.size();
 
         if (encryptThenMac)
@@ -227,7 +219,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
-                tls1CheckMac(rt, version, iv, content, mac);
+                tls1CheckMac(hmacHash, rt, version, iv, content, mac);
 
                 outSize -= blockSize;
                 decryptedContent = {out.data() + iv.size(), outSize};
@@ -235,7 +227,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
-                tls1CheckMac(rt, version, {}, content, mac);
+                tls1CheckMac(hmacHash, rt, version, {}, content, mac);
                 decryptedContent = {out.data(), outSize};
             }
         }
@@ -257,7 +249,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
-                tls1CheckMac(rt, version, {}, content, mac);
+                tls1CheckMac(hmacHash, rt, version, {}, content, mac);
 
                 outSize -= blockSize;
             }
@@ -267,11 +259,11 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
 
                 if (version == ProtocolVersion::SSLv3_0)
                 {
-                    ssl3CheckMac(hashCtx, rt, content, mac);
+                    ssl3CheckMac(hashCtx, hmacHash, rt, content, mac);
                 }
                 else
                 {
-                    tls1CheckMac(rt, version, {}, content, mac);
+                    tls1CheckMac(hmacHash, rt, version, {}, content, mac);
                 }
             }
             decryptedContent = {out.data(), outSize};
@@ -280,7 +272,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
     /* Stream cipher */
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) == 1)
     {
-        auto md = crypto::CryptoManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
+        auto md = crypto::CryptoManager::getInstance().fetchDigest(hmacHash);
 
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipher_, out.data(), in.data(), in.size()));
 
@@ -288,11 +280,11 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
         auto mac = nonstd::span(out.end() - EVP_MD_get_size(md), out.end());
         if (version == ProtocolVersion::SSLv3_0)
         {
-            ssl3CheckMac(hashCtx, rt, content, mac);
+            ssl3CheckMac(hashCtx, hmacHash, rt, content, mac);
         }
         else
         {
-            tls1CheckMac(rt, version, {}, content, mac);
+            tls1CheckMac(hmacHash, rt, version, {}, content, mac);
         }
 
         decryptedContent = {out.data(), in.size() - mac.size()};
@@ -301,8 +293,9 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(HashCtx* hashCtx, RecordType rt
     return decryptedContent;
 }
 
-void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version, nonstd::span<const uint8_t> iv,
-                                 nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
+void RecordDecoder::tls1CheckMac(std::string_view hmacHash, RecordType recordType, ProtocolVersion version,
+                                 nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> content,
+                                 nonstd::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
     casket::store_be(seq_, meta.data());
@@ -314,10 +307,8 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
     meta[11] = casket::get_byte<0>(s);
     meta[12] = casket::get_byte<1>(s);
 
-    auto digest = cipherSuite_.getDigestName();
-
     OSSL_PARAM params[2];
-    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, const_cast<char*>(digest.c_str()), 0);
+    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, const_cast<char*>(hmacHash.data()), 0);
     params[1] = OSSL_PARAM_construct_end();
 
     auto mac = crypto::CryptoManager::getInstance().fetchMac("HMAC");
@@ -345,13 +336,13 @@ void RecordDecoder::tls1CheckMac(RecordType recordType, ProtocolVersion version,
     casket::ThrowIfFalse(std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()), "Bad record MAC");
 }
 
-void RecordDecoder::ssl3CheckMac(HashCtx* ctx, RecordType recordType, nonstd::span<const uint8_t> content,
-                                 nonstd::span<const uint8_t> mac)
+void RecordDecoder::ssl3CheckMac(HashCtx* ctx, std::string_view hmacHash, RecordType recordType,
+                                 nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac)
 {
     unsigned int actualMacSize{EVP_MAX_MD_SIZE};
     std::vector<uint8_t> actualMac(actualMacSize);
 
-    auto md = crypto::CryptoManager::getInstance().fetchDigest(cipherSuite_.getDigestName());
+    auto md = crypto::CryptoManager::getInstance().fetchDigest(hmacHash);
     crypto::ThrowIfFalse(md != nullptr);
 
     int pad_ct = EVP_MD_is_a(md, "SHA1") > 0 ? 40 : 48;

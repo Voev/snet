@@ -22,7 +22,7 @@ public:
 
     ServerKeyExchange& operator=(ServerKeyExchange&& other) noexcept = default;
 
-    void deserialize(nonstd::span<const uint8_t> input, const std::string& kex, const std::string& auth,
+    void deserialize(nonstd::span<const uint8_t> input, const int kex, const int auth,
                      const ProtocolVersion& version);
 
     size_t serialize(nonstd::span<uint8_t> buffer) const;

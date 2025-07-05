@@ -16,6 +16,7 @@ static constexpr int columnNameWidth = 40;
 
 using namespace casket;
 using namespace casket::opt;
+using namespace snet::tls;
 
 namespace snet
 {
@@ -29,9 +30,9 @@ public:
 
     void execute(const std::vector<std::string_view>& args) override;
 
-    void print(const std::vector<tls::CipherSuite>& cipherSuites);
+    void print(const std::vector<const tls::CipherSuite*>& cipherSuites);
 
-    void print(const tls::CipherSuite& cipherSuite);
+    void print(const tls::CipherSuite* cipherSuite);
 
     std::string convert(const std::uint16_t number);
 
@@ -112,8 +113,8 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
         // Объединяем два значения в одно 16-битное число
         std::uint16_t result = (firstValue << 8) | secondValue;
         auto cipherSuite = tls::CipherSuiteManager::getInstance().getCipherSuiteById(result);
-        casket::ThrowIfFalse(cipherSuite.has_value(), "Cipher suite '" + suite_ + "' not found");
-        print(cipherSuite.value());
+        casket::ThrowIfFalse(cipherSuite, "Cipher suite '" + suite_ + "' not found");
+        print(cipherSuite);
     }
     else
     {
@@ -122,7 +123,7 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
     }
 }
 
-void CipherListCommand::print(const std::vector<tls::CipherSuite>& cipherSuites)
+void CipherListCommand::print(const std::vector<const tls::CipherSuite*>& cipherSuites)
 {
     for (const auto& cipherSuite : cipherSuites)
     {
@@ -130,19 +131,19 @@ void CipherListCommand::print(const std::vector<tls::CipherSuite>& cipherSuites)
     }
 }
 
-void CipherListCommand::print(const tls::CipherSuite& cipherSuite)
+void CipherListCommand::print(const tls::CipherSuite* cipherSuite)
 {
     // clang-format off
     std::cout << std::left
-              << std::setw(columnIDWidth) << convert(cipherSuite.getID())
-              << std::setw(columnIDWidth) << cipherSuite.getVersion()
-              << std::setw(columnEncryptionWidth) << cipherSuite.getCipherName()
+              << std::setw(columnIDWidth) << convert(CipherSuiteGetID(cipherSuite))
+              << std::setw(columnIDWidth) << CipherSuiteGetVersion( cipherSuite )
+              << std::setw(columnEncryptionWidth) << CipherSuiteGetCipherName(cipherSuite)
               << std::setw(columnAlgorithmWidth)
-              << (cipherSuite.isAEAD() ? "AEAD" : cipherSuite.getDigestName())
-              << std::setw(columnAlgorithmWidth) << cipherSuite.getKeyExchName().substr(2)
-              << std::setw(columnAlgorithmWidth) << cipherSuite.getAuthName().substr(4)
-              << std::setw(columnKeyBitsWidth) << cipherSuite.getKeySize() * 8
-              << std::setw(columnNameWidth) << cipherSuite.getSuiteName()
+              << (CipherSuiteIsAEAD(cipherSuite) ? "AEAD" : CipherSuiteGetHmacDigestName(cipherSuite))
+              << std::setw(columnAlgorithmWidth) << OBJ_nid2sn(CipherSuiteGetKeyExchange(cipherSuite))
+              << std::setw(columnAlgorithmWidth) << OBJ_nid2sn(CipherSuiteGetAuth(cipherSuite))
+              << std::setw(columnKeyBitsWidth) << CipherSuiteGetKeySize(cipherSuite)
+              << std::setw(columnNameWidth) << CipherSuiteGetName(cipherSuite)
               << std::endl;
     // clang-format on
 }
