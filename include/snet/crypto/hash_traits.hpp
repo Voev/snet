@@ -38,4 +38,19 @@ inline nonstd::span<uint8_t> FinalHash(HashCtx* ctx, nonstd::span<uint8_t> buffe
     return {buffer.data(), digestSize};
 }
 
+inline size_t GetHashSize(const Hash* hash) noexcept
+{
+    return EVP_MD_size(hash);
+}
+
+inline size_t GetHashSize(const HashCtx* hashCtx) noexcept
+{
+    return EVP_MD_CTX_size(hashCtx);
+}
+
+inline const char* GetHashName(const Hash* hash) noexcept
+{
+    return EVP_MD_name(hash);
+}
+
 } // namespace snet::crypto

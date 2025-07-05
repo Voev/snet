@@ -140,13 +140,18 @@ public:
         debugKeys_ = debug;
     }
 
+    /// @brief Fetch algorithms that are often used for operations on records.
+    ///
+    void fetchAlgorithms();
+
 private:
     RecordPool& recordPool_;
     Record* readingRecord{nullptr};
     HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;
-    crypto::HashPtr hmacHashAlg_;
-    crypto::CipherPtr cipherAlg_;
+    crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
+    crypto::HashPtr hmacHashAlg_; ///< Fetched hash algorithm by cipher suite used in HMAC
+    crypto::MacCtxPtr hmacCtx_; ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;

@@ -241,10 +241,9 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
-            record->decryptedData =
-                clientToServer_.tls1Decrypt(hashCtx_, CipherSuiteGetHmacDigestName(cipherSuite_), record->getType(),
-                                            version, input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer,
-                                            encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+            record->decryptedData = clientToServer_.tls1Decrypt(
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
+                record->decryptedBuffer, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
         }
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
@@ -256,10 +255,9 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
-            record->decryptedData =
-                serverToClient_.tls1Decrypt(hashCtx_, CipherSuiteGetHmacDigestName(cipherSuite_), record->getType(),
-                                            version, input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer,
-                                            encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+            record->decryptedData = serverToClient_.tls1Decrypt(
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
+                record->decryptedBuffer, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
         }
     }
 
@@ -342,8 +340,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
     else
     {
-        auto md = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite_));
-        auto macSize = EVP_MD_get_size(md);
+        auto macSize = EVP_MD_get_size(hmacHashAlg_);
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
 
@@ -495,16 +492,16 @@ void Session::processServerHello(const std::int8_t sideIndex, nonstd::span<const
 
     auto& serverHello = handshake_.serverHello;
 
-    cipherSuite_ = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    casket::ThrowIfFalse(cipherSuite_, "Cipher suite not found");
-
-    cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(CipherSuiteGetCipherName(cipherSuite_));
-
     if (serverHello.extensions.has(tls::ExtensionCode::SupportedVersions))
     {
         auto ext = serverHello.extensions.get<tls::SupportedVersions>();
         version_ = std::move(ext->versions()[0]);
     }
+
+    cipherSuite_ = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(cipherSuite_, "Cipher suite not found");
+
+    fetchAlgorithms();
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
@@ -806,6 +803,34 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         newiv = hkdfExpandLabel(digestName, newsecret, "iv", {}, 12);
 
         serverToClient_.tls13UpdateKeys(newkey, newiv);
+    }
+}
+
+void Session::fetchAlgorithms()
+{
+    // Don't call for unknown protocol version and cipher suite
+    assert(version_ != ProtocolVersion());
+    assert(cipherSuite_ != nullptr);
+
+    cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(CipherSuiteGetCipherName(cipherSuite_));
+    if (!CipherIsAEAD(cipherAlg_)) // TLSv1.3 uses only AEAD, so don't check for version
+    {
+        hmacHashAlg_ = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite_));
+
+        if (version_ != ProtocolVersion::SSLv3_0)
+        {
+            OSSL_PARAM params[2];
+            params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
+                                                         const_cast<char*>(crypto::GetHashName(hmacHashAlg_)), 0);
+            params[1] = OSSL_PARAM_construct_end();
+
+            auto mac = crypto::CryptoManager::getInstance().fetchMac("HMAC");
+
+            hmacCtx_.reset(EVP_MAC_CTX_new(mac));
+            crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
+
+            crypto::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(hmacCtx_, params));
+        }
     }
 }
 

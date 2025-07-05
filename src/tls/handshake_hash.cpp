@@ -16,7 +16,7 @@ HandshakeHash::~HandshakeHash() noexcept = default;
 
 void HandshakeHash::update(nonstd::span<const uint8_t> in)
 {
-    utils::printHex(std::cout, in, "TranscriptHash", true);
+    //utils::printHex(std::cout, in, "TranscriptHash", true);
     std::copy(in.begin(), in.end(), std::back_inserter(messages_));
 }
 
