@@ -66,6 +66,11 @@ void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int
     reader.assert_done();
 }
 
+const SignatureScheme& ServerKeyExchange::getScheme() const noexcept
+{
+    return scheme_;
+}
+
 const std::vector<uint8_t>& ServerKeyExchange::getParams() const noexcept
 {
     return params_;

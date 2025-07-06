@@ -517,7 +517,7 @@ void Session::processCertificate(const std::int8_t sideIndex, nonstd::span<const
         handshake_.serverCertificate.deserialize(sideIndex, version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         if (version_ == ProtocolVersion::TLSv1_3)
         {
-            casket::ThrowIfFalse(handshake_.serverCertificate.requestContext_.empty(),
+            casket::ThrowIfFalse(handshake_.serverCertificate.getRequestContext().empty(),
                                  "Server Certificate message must not contain a request context");
         }
     }
@@ -600,7 +600,7 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
     handshakeHash_.update(message);
 
     /// RFC 4492: section-5.4
-    if (false) //(!handshake_.serverKeyExchange.getSignature().empty())
+    if (0)//!handshake_.serverKeyExchange.getSignature().empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
 
@@ -613,8 +613,10 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
         crypto::UpdateHash(hashCtx_, handshake_.serverKeyExchange.getParams());
         auto digest = crypto::FinalHash(hashCtx_, buffer);
 
+        auto publicKey = X509_get0_pubkey(handshake_.serverCertificate.getCert());
+
         /// @todo: get public key from server cert
-        crypto::VerifyDigest(hashCtx_, hash, nullptr, digest, handshake_.serverKeyExchange.getSignature());
+        crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, handshake_.serverKeyExchange.getSignature());
     }
 }
 
@@ -683,21 +685,31 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (false) //! secrets_.getSecret(SecretNode::MasterSecret).empty() && version_ < ProtocolVersion::TLSv1_3)
+    if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
-        std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-        const auto transcriptHash = handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(cipherSuite_), digest);
-        const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
-        const auto& expect =
-            (sideIndex == 0 ? handshake_.clientFinished.getVerifyData() : handshake_.serverFinished.getVerifyData());
+        if (version_ == ProtocolVersion::TLSv1_3) {}
+        else if (version_ == ProtocolVersion::SSLv3_0) {}
+        else
+        {
+            std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
+            const auto transcriptHash =
+                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(cipherSuite_), digest);
+            const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
+            const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
+                                                 : handshake_.serverFinished.getVerifyData());
 
-        std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
+            std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
-        std::string_view algorithm = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-        tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {}, actual);
+            std::string_view algorithm = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+            tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+                    actual);
 
-        casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
+            casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
+        }
+    }
 
+    if (sideIndex == 0)
+    {
         handshakeHash_.update(message);
     }
 
@@ -768,11 +780,14 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
         reader.get_uint32_t();
         reader.get_range<uint8_t>(2, 0, 65535);
         reader.assert_done();
+
+        // RFC 5077: 3.3 (must be included in transcript hash)
+        handshakeHash_.update(message);
     }
-    /*else
+    else
     {
-        throw std::runtime_error("NewSessionTicket can't be in TLS versions below 1.2");
-    }*/
+        handshakeHash_.update(message);
+    }
 }
 
 void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)

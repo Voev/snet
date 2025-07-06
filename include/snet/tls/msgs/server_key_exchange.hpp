@@ -27,6 +27,8 @@ public:
 
     size_t serialize(nonstd::span<uint8_t> buffer) const;
 
+    const SignatureScheme& getScheme() const noexcept;
+
     const std::vector<uint8_t>& getParams() const noexcept;
 
     const std::vector<uint8_t>& getSignature() const noexcept;

@@ -3,13 +3,10 @@
 
 #pragma once
 #include <vector>
-#include <array>
-#include <stddef.h>
-#include <casket/nonstd/span.hpp>
 #include <memory>
 #include <string>
-#include <functional>
-#include <unordered_map>
+#include <cstddef>
+#include <casket/nonstd/span.hpp>
 
 #include <snet/tls/alert.hpp>
 #include <snet/tls/record_decoder.hpp>
