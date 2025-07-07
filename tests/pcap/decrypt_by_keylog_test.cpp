@@ -5,6 +5,7 @@
 #include <snet/layers/tcp_reassembly.hpp>
 
 #include <casket/utils/string.hpp>
+#include <casket/utils/to_number.hpp>
 
 using namespace snet;
 using namespace snet::tls;
@@ -19,10 +20,12 @@ public:
         (void)session;
 
         if (record->isDecrypted())
-            decrypted = true;
+        {
+            decryptedRecordCount += 1;
+        }
     }
 
-    bool decrypted{false};
+    size_t decryptedRecordCount{0};
 };
 
 void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
@@ -71,12 +74,16 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 
     processor_->push_back(std::make_shared<tls::SnifferHandler>(secretManager_));
     processor_->push_back(std::make_shared<RecordChecker>());
-    
+
     found = section.find("print_records");
     if (found != section.end() && iequals(found->second, "yes"))
     {
         processor_->push_back(std::make_shared<tls::RecordPrinter>());
     }
+
+    found = section.find("decrypted_records_count");
+    ThrowIfTrue(found == section.end(), "not found required option 'decrypted_records_count'");
+    to_number(found->second, decryptedRecordCount_);
 }
 
 void DecryptByKeylog::execute()
@@ -93,6 +100,7 @@ void DecryptByKeylog::execute()
         }
     } while (status == RecvStatus::Ok);
 
-    casket::ThrowIfFalse(std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decrypted,
-                                "no one record decrypted");
+    auto count = std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decryptedRecordCount;
+    casket::ThrowIfFalse(count == decryptedRecordCount_, "actual: {}, expected: {}; mismatch decrypted records", count,
+                         decryptedRecordCount_);
 }

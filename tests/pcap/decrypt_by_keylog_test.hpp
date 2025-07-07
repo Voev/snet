@@ -24,4 +24,5 @@ private:
     snet::tls::SecretNodeManager secretManager_;
     snet::tcp::TcpReassembly reassembler_;
     std::unordered_map<uint32_t, std::shared_ptr<snet::tls::Session>> sessions_;
+    size_t decryptedRecordCount_{1};
 };
