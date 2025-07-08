@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <casket/nonstd/span.hpp>
 #include <snet/crypto/typedefs.hpp>
+#include <snet/crypto/signature_scheme.hpp>
 
 namespace snet::crypto
 {

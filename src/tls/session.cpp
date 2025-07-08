@@ -604,18 +604,17 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
 
-        /// @todo: get sigalg and hash from peer + prefetch hash alg everywhere
-        auto hash = EVP_sha256();
+        auto scheme = handshake_.serverKeyExchange.getScheme();
+        auto hash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
 
         crypto::InitHash(hashCtx_, hash);
         crypto::UpdateHash(hashCtx_, handshake_.clientHello.random);
         crypto::UpdateHash(hashCtx_, handshake_.serverHello.random);
         crypto::UpdateHash(hashCtx_, handshake_.serverKeyExchange.getParams());
-        auto digest = crypto::FinalHash(hashCtx_, buffer);
 
+        auto digest = crypto::FinalHash(hashCtx_, buffer);
         auto publicKey = X509_get0_pubkey(handshake_.serverCertificate.getCert());
 
-        /// @todo: get public key from server cert
         crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, handshake_.serverKeyExchange.getSignature());
     }
 }

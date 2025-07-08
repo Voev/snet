@@ -46,10 +46,6 @@ public:
     }
 
     const char* toString() const;
-    /**
-     * @returns std::nullopt if an unknown name
-     */
-    //    static std::optional<GroupParams> fromString(const char* group_name);
 
     constexpr bool operator==(GroupParams::Code code) const
     {

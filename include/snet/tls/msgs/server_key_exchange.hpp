@@ -4,9 +4,9 @@
 #include <casket/utils/noncopyable.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/tls/extensions.hpp>
-#include <snet/tls/signature_scheme.hpp>
 
 #include <snet/crypto/group_params.hpp>
+#include <snet/crypto/signature_scheme.hpp>
 
 namespace snet::tls
 {
@@ -27,7 +27,7 @@ public:
 
     size_t serialize(nonstd::span<uint8_t> buffer) const;
 
-    const SignatureScheme& getScheme() const noexcept;
+    const crypto::SignatureScheme& getScheme() const noexcept;
 
     const std::vector<uint8_t>& getParams() const noexcept;
 
@@ -37,7 +37,7 @@ private:
     crypto::KeyPtr serverPublicKey_;
     std::vector<uint8_t> params_;
     std::vector<uint8_t> signature_;
-    SignatureScheme scheme_;
+    crypto::SignatureScheme scheme_;
 };
 
 } // namespace snet::tls
