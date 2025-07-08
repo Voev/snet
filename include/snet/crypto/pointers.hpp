@@ -25,11 +25,19 @@ struct StoreCtxDeleter
     }
 };
 
-struct CertStackDeleter
+struct CertStack0Deleter
 {
     void operator()(CertStack* stack) const noexcept
     {
         sk_X509_free(stack);
+    }
+};
+
+struct CertStack1Deleter
+{
+    void operator()(CertStack* stack) const noexcept
+    {
+        sk_X509_pop_free(stack, X509_free);
     }
 };
 
@@ -95,7 +103,9 @@ DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, EVP_MAC_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(CrlDistPointsPtr, CrlDistPoints, CRL_DIST_POINTS_free);
 DEFINE_CUSTOM_UNIQUE_PTR(AuthInfoAccessPtr, AuthInfoAccess, AUTHORITY_INFO_ACCESS_free);
 
-DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertStackPtr, CertStack, CertStackDeleter);
+DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertStack0Ptr, CertStack, CertStack0Deleter);
+DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertStack1Ptr, CertStack, CertStack1Deleter);
+
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtStackPtr, CertExtStack, CertExtStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtOwningStackPtr, CertExtStack,
                                       CertExtOwningStackDeleter);

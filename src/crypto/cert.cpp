@@ -210,3 +210,14 @@ void toBio(Cert* cert, Bio* bio, Encoding encoding)
 }
 
 } // namespace snet::crypto::cert
+
+namespace snet::crypto
+{
+
+CertPtr CertFromMemory(nonstd::span<const uint8_t> memory)
+{
+    const unsigned char* ptr = memory.data();
+    return CertPtr{d2i_X509(nullptr, &ptr, static_cast<long>(memory.size_bytes()))};
+}
+
+} // namespace snet::crypto

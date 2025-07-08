@@ -128,13 +128,13 @@ public:
     }
 
     template <typename T>
-    nonstd::span<T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
+    nonstd::span<const T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
     {
         const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
 
         assert_at_least(num_elems * sizeof(T));
 
-        nonstd::span<T> result(reinterpret_cast<T*>(&m_buf[m_offset]), num_elems);
+        nonstd::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), num_elems);
 
         m_offset += num_elems * sizeof(T);
 

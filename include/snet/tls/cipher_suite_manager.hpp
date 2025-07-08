@@ -8,7 +8,6 @@
 #include <string_view>
 #include <memory>
 #include <snet/tls/cipher_suite.hpp>
-#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {
@@ -49,32 +48,12 @@ public:
     /// @brief Gets a cipher suite by its ID.
     /// @param id The ID of the cipher suite.
     /// @return An optional containing the CipherSuite if found, otherwise std::nullopt.
-    std::optional<CipherSuite> getCipherSuiteById(std::uint16_t id);
+    const CipherSuite* getCipherSuiteById(std::uint16_t id);
 
     /// @brief Gets a list of cipher suites.
     /// @param supported If true, returns only supported cipher suites. Defaults to true.
     /// @return A vector of CipherSuite objects.
-    std::vector<CipherSuite> getCipherSuites(bool supported = true);
-
-    /// @brief Fetches a Key Derivation Function (KDF) by its algorithm name.
-    /// @param algorithm The name of the KDF algorithm.
-    /// @return A pointer to the KDF object.
-    crypto::KdfPtr fetchKdf(std::string_view algorithm);
-
-    /// @brief Fetches a Message Authentication Code (MAC) by its algorithm name.
-    /// @param algorithm The name of the MAC algorithm.
-    /// @return A pointer to the MAC object.
-    crypto::MacPtr fetchMac(std::string_view algorithm);
-
-    /// @brief Fetches a Message Digest (MD) by its algorithm name.
-    /// @param algorithm The name of the MD algorithm.
-    /// @return A pointer to the MD object.
-    crypto::HashPtr fetchDigest(std::string_view algorithm);
-
-    /// @brief Fetches a Cipher by its algorithm name.
-    /// @param algorithm The name of the Cipher algorithm.
-    /// @return A pointer to the Cipher object.
-    crypto::CipherPtr fetchCipher(std::string_view algorithm);
+    std::vector<const CipherSuite*> getCipherSuites(bool supported = true);
 
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.

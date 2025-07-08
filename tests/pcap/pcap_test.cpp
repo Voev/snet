@@ -69,7 +69,9 @@ void PcapTestImpl::tearDown()
 std::unique_ptr<PcapTestImpl> PcapTest::makeTest(const TestParam& param)
 {
     if (param.first.find("decrypt_by_keylog") != std::string::npos)
+    {
         return std::make_unique<DecryptByKeylog>(param.second);
+    }
 
     return nullptr;
 }

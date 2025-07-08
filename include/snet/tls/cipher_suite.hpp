@@ -3,103 +3,65 @@
 #include <string_view>
 #include <cstdint>
 
+#include <snet/crypto/typedefs.hpp>
 #include <snet/tls/types.hpp>
+#include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
 
-/// @brief Class representing a TLS cipher suite.
-class CipherSuite final
+using CipherSuite = SSL_CIPHER;
+
+inline uint16_t CipherSuiteGetID(const CipherSuite* suite) noexcept
 {
-public:
-    /// @brief Default constructor.
-    CipherSuite();
+    return SSL_CIPHER_get_protocol_id(suite);
+}
 
-    /// @brief Destructor.
-    ~CipherSuite() noexcept;
+inline std::uint32_t CipherSuiteGetKeySize(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_bits(suite, nullptr) / 8;
+}
 
-    /// @brief Copy constructor.
-    /// @param other Constant reference to the cipher suite.
-    CipherSuite(const CipherSuite& other) = default;
+inline std::string_view CipherSuiteGetCipherName(const CipherSuite* suite) noexcept
+{
+    auto cipherNid = SSL_CIPHER_get_cipher_nid(suite);
+    return cipherNid != NID_undef ? OBJ_nid2sn(cipherNid) : "";
+}
 
-    /// @brief Move constructor.
-    /// @param other rvalue reference to the cipher suite.
-    CipherSuite(CipherSuite&& other) noexcept = default;
+inline std::string_view CipherSuiteGetHmacDigestName(const CipherSuite* suite) noexcept
+{
+    auto digestNid = SSL_CIPHER_get_digest_nid(suite);
+    return digestNid != NID_undef ? OBJ_nid2sn(digestNid) : "";
+}
 
-    /// @brief Copy assignment operator.
-    /// @param other Constant reference to the cipher suite.
-    CipherSuite& operator=(const CipherSuite& other) = default;
+inline const Hash* CipherSuiteGetHandshakeDigest(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_handshake_digest(suite);
+}
 
-    /// @brief Move assignment operator.
-    /// @param other rvalue reference to the cipher suite.
-    CipherSuite& operator=(CipherSuite&& other) noexcept = default;
+inline int CipherSuiteGetKeyExchange(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_kx_nid(suite);
+}
 
-    /// @brief Constructor with parameters.
-    /// @param id The cipher suite ID.
-    /// @param bits The number of bits used.
-    /// @param kexch The key exchange algorithm.
-    /// @param auth The authentication algorithm.
-    /// @param cipher The cipher algorithm.
-    /// @param digest The digest algorithm.
-    /// @param hdigest The handshake digest algorithm.
-    /// @param name The name of the cipher suite.
-    /// @param version The protocol version.
-    /// @param aead Indicates if the cipher suite is AEAD.
-    explicit CipherSuite(std::uint16_t id, std::uint32_t bits, std::string kexch, std::string auth,
-                         std::string cipher, std::string digest, std::string hdigest,
-                         std::string name, std::string version, bool aead);
+inline int CipherSuiteGetAuth(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_auth_nid(suite);
+}
 
-    /// @brief Gets the cipher suite ID.
-    /// @return The cipher suite ID.
-    std::uint16_t getID() const;
+inline std::string_view CipherSuiteGetName(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_name(suite);
+}
 
-    /// @brief Gets the number of bits used.
-    /// @return The number of bits used.
-    std::uint32_t getKeyBits() const;
+inline std::string_view CipherSuiteGetVersion(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_get_version(suite);
+}
 
-    /// @brief Gets the name of the cipher suite.
-    /// @return The name of the cipher suite.
-    const std::string& getSuiteName() const;
-
-    /// @brief Gets the name of the cipher algorithm.
-    /// @return The name of the cipher algorithm.
-    const std::string& getCipherName() const;
-
-    /// @brief Gets the name of the digest algorithm.
-    /// @return The name of the digest algorithm.
-    const std::string& getDigestName() const;
-
-    /// @brief Gets the name of the handshake digest algorithm.
-    /// @return The name of the handshake digest algorithm.
-    const std::string& getHnshDigestName() const;
-
-    /// @brief Gets the name of the key exchange algorithm.
-    /// @return The name of the key exchange algorithm.
-    const std::string& getKeyExchName() const;
-
-    /// @brief Gets the name of the authentication algorithm.
-    /// @return The name of the authentication algorithm.
-    const std::string& getAuthName() const;
-
-    /// @brief Gets the protocol version.
-    /// @return The protocol version.
-    const std::string& getVersion() const;
-
-    /// @brief Checks if the cipher suite is AEAD.
-    /// @return True if the cipher suite is AEAD, false otherwise.
-    bool isAEAD() const;
-
-private:
-    std::string cipher_;
-    std::string digest_;
-    std::string hdigest_;
-    std::string kexch_;
-    std::string auth_;
-    std::string name_;
-    std::string version_;
-    std::uint32_t bits_; ///< Number of bits really used
-    std::uint16_t id_;
-    bool aead_;
-};
+inline bool CipherSuiteIsAEAD(const CipherSuite* suite) noexcept
+{
+    return SSL_CIPHER_is_aead(suite);
+}
 
 } // namespace snet::tls
