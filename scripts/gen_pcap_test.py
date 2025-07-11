@@ -1,0 +1,123 @@
+import argparse
+import subprocess
+import time
+import os
+import signal
+from pathlib import Path
+
+def run_tcpdump(output_file):
+    try:
+        cmd = [
+            "sudo", "tcpdump",
+            "-i", "lo",
+            "-w", output_file,
+            "port", "8443"
+        ]
+        return subprocess.Popen(cmd, preexec_fn=os.setsid)
+    except Exception as e:
+        print(f"[!] Failed to start tcpdump: {e}")
+        raise
+
+def run_openssl_server(cipher, tls_version, keylog, key_file, cert_file):
+    if not Path(key_file).exists() or not Path(cert_file).exists():
+        raise FileNotFoundError("Certificate or key file not found")
+
+    try:
+        cmd = [
+            "openssl", "s_server",
+            "-accept", "127.0.0.1:8443",
+            "-cert", cert_file,
+            "-key", key_file,
+            "-cipher", cipher,
+            "-" + tls_version,
+            "-keylogfile", keylog,
+            "-no_ticket",
+            "-quiet"
+        ]
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except Exception as e:
+        print(f"[!] Failed to start openssl server: {e}")
+        raise
+
+def run_openssl_client(cipher, tls_version, data_size, message_count):
+    test_data = b"A" * data_size + b"\n"
+    end_marker = b"Q\r\n"
+
+    cmd = [
+        "openssl", "s_client",
+        "-connect", "127.0.0.1:8443",
+        "-cipher", cipher,
+        "-" + tls_version,
+        #"-ign_eof"
+    ]
+
+    try:
+        client = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False
+        )
+        
+        for i in range(message_count):
+            client.stdin.write(test_data)
+            client.stdin.flush()
+            print(f"[+] Sent message {i+1}/{message_count}")
+            time.sleep(0.1)
+
+        client.stdin.write(end_marker)
+        client.stdin.flush()
+        print("[+] Sent termination marker 'Q'")
+
+        time.sleep(1)
+
+        client.stdin.close()
+        client.wait(timeout=5)
+
+    except Exception as e:
+        print(f"[!] Client error: {e}")
+    finally:
+        if 'client' in locals():
+            client.terminate()
+
+def main():
+    parser = argparse.ArgumentParser(description="TLS handshake test with tcpdump capture")
+    parser.add_argument("--cipher", required=True, help="Ciphersuite")
+    parser.add_argument("--tls-version", required=True, help="TLS version (tls1, tls1_1, tls1_2, tls1_3)")
+    parser.add_argument("--keylog", default="keylog.txt", help="Keylog dump file")
+    parser.add_argument("--server-key", default="server.key", help="Server private key file")
+    parser.add_argument("--server-cert", default="server.crt", help="Server certificate file")
+    parser.add_argument("--pcap", default="tls_capture.pcap", help="PCAP file path")
+    parser.add_argument("--data-size", type=int, default=256, help="Sending data buffer size")
+    parser.add_argument("--message-count", type=int, default=10, help="Message count")
+    args = parser.parse_args()
+
+    try:
+        cipher = f"{args.cipher}@SECLEVEL=0"
+        
+        print(f"[*] Run tcpdump, writing in {args.pcap}...")
+        tcpdump_proc = run_tcpdump(args.pcap)
+        time.sleep(2)
+
+        print(f"[*] Run openssl s_server (cipher={cipher}, version={args.tls_version})...")
+        server_proc = run_openssl_server(cipher, args.tls_version, args.keylog, 
+                                       args.server_key, args.server_cert)
+        time.sleep(2)
+        
+        print(f"[*] Sending {args.message_count} messages with {args.data_size} bytes...")
+        run_openssl_client(cipher, args.tls_version, args.data_size, args.message_count)
+
+    except Exception as e:
+        print(f"[!] Error during test: {e}")
+    finally:
+        print("[*] Stopping processes...")
+        if 'server_proc' in locals():
+            server_proc.terminate()
+        if 'tcpdump_proc' in locals():
+            os.killpg(os.getpgid(tcpdump_proc.pid), signal.SIGTERM)
+        print(f"[*] PCAP file path: {args.pcap}")
+        print(f"[*] Keylog file path: {args.keylog}")
+
+if __name__ == "__main__":
+    main()

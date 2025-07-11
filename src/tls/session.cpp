@@ -241,9 +241,11 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
+            int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
+            
             record->decryptedData = clientToServer_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
         }
     }
     else if (sideIndex == 1 && serverToClient_.isInited())
@@ -255,9 +257,11 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
+            int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
+            
             record->decryptedData = serverToClient_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
         }
     }
 
@@ -684,7 +688,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
+    if (0)//!secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         if (version_ == ProtocolVersion::TLSv1_3) {}
         else if (version_ == ProtocolVersion::SSLv3_0) {}
