@@ -12,6 +12,11 @@
 namespace snet::tls
 {
 
+struct CipherSuiteMeta
+{
+    uint8_t cipherTagLength;
+};
+
 /// @brief Manages the cipher suites for the TLS protocol.
 class CipherSuiteManager final
 {
@@ -58,6 +63,8 @@ public:
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.
     void setSecurityLevel(const int securityLevel);
+
+    int getTagLengthByID(uint16_t id);
 
 private:
     struct Impl;
