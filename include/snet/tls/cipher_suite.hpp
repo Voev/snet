@@ -25,7 +25,7 @@ inline std::uint32_t CipherSuiteGetKeySize(const CipherSuite* suite) noexcept
 inline std::string_view CipherSuiteGetCipherName(const CipherSuite* suite) noexcept
 {
     auto cipherNid = SSL_CIPHER_get_cipher_nid(suite);
-    return cipherNid != NID_undef ? OBJ_nid2sn(cipherNid) : "";
+    return OBJ_nid2sn(cipherNid);
 }
 
 inline std::string_view CipherSuiteGetHmacDigestName(const CipherSuite* suite) noexcept
