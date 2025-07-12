@@ -21,8 +21,8 @@ def generate_ini(count, input_file, output_file):
         for cipher in ciphersuites:
             # Format each section according to specifications
             section = f"[decrypt_by_keylog.{cipher}]\n"
-            pcap = f"pcap = ./tests/pcap/data/decrypt_by_keylog/tls_{cipher}.pcap\n"
-            keylog = f"keylog = ./tests/pcap/data/decrypt_by_keylog/keylog_{cipher}.txt\n"
+            pcap = f"pcap = ./tests/pcap/data/decrypt_by_keylog/TLS_{cipher}.pcap\n"
+            keylog = f"keylog = ./tests/pcap/data/decrypt_by_keylog/TLS_{cipher}.txt\n"
             records = f"decrypted_records_count = {count}\n"
             
             # Write section to output file

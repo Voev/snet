@@ -39,6 +39,7 @@ public:
 private:
     CmdLineOptionsParser parser_;
     std::string suite_;
+    std::string version_;
     int securityLevel_;
 };
 
@@ -63,6 +64,11 @@ CipherListCommand::CipherListCommand()
             .setDescription("Show selected cipher suite, format 'XX,XX', where X - hex digit")
             .build()
     );
+    parser_.add(
+        OptionBuilder("version", Value(&version_))
+            .setDescription("Show only version-specific cipher suites: sslv3.0, tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3")
+            .build()
+    );
     // clang-format on
 }
 
@@ -81,6 +87,12 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
         tls::CipherSuiteManager::getInstance().setSecurityLevel(securityLevel_);
     }
 
+    if (!version_.empty())
+    {
+        auto version = ProtocolVersion::fromString(version_);
+        tls::CipherSuiteManager::getInstance().setVersion(version.value_or(ProtocolVersion()));
+    }
+
     // clang-format off
     std::cout << std::left
               << std::setw(columnIDWidth) << "ID"
@@ -94,8 +106,8 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
               << std::endl;
     // clang-format on
 
-    std::cout << std::string(2 * columnIDWidth + columnEncryptionWidth + 3 * columnAlgorithmWidth +
-                                 columnKeyBitsWidth + columnNameWidth,
+    std::cout << std::string(2 * columnIDWidth + columnEncryptionWidth + 3 * columnAlgorithmWidth + columnKeyBitsWidth +
+                                 columnNameWidth,
                              '-')
               << std::endl;
 
@@ -155,9 +167,8 @@ std::string CipherListCommand::convert(const std::uint16_t value)
     std::uint8_t highByte = (value >> 8) & 0xFF;
     std::uint8_t lowByte = value & 0xFF;
 
-    oss << "0x" << std::setw(2) << std::setfill('0') << std::hex << std::uppercase
-        << static_cast<int>(highByte) << ",0x" << std::setw(2) << std::setfill('0')
-        << static_cast<int>(lowByte);
+    oss << "0x" << std::setw(2) << std::setfill('0') << std::hex << std::uppercase << static_cast<int>(highByte)
+        << ",0x" << std::setw(2) << std::setfill('0') << static_cast<int>(lowByte);
 
     return oss.str();
 }

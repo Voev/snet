@@ -18,40 +18,45 @@ def run_tcpdump(output_file):
         print(f"[!] Failed to start tcpdump: {e}")
         raise
 
-def run_openssl_server(cipher, tls_version, keylog, key_file, cert_file):
+def run_openssl_server(tls_cipher, tls_version, keylog, key_file, cert_file):
     if not Path(key_file).exists() or not Path(cert_file).exists():
         raise FileNotFoundError("Certificate or key file not found")
 
     try:
+        
         cmd = [
             "openssl", "s_server",
             "-accept", "127.0.0.1:8443",
             "-cert", cert_file,
             "-key", key_file,
-            "-cipher", cipher,
-            "-" + tls_version,
             "-keylogfile", keylog,
             "-no_ticket",
             "-quiet"
         ]
+
+        cmd += tls_cipher
+        cmd += tls_version
+
+        print("Server args: ", cmd)
         return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except Exception as e:
         print(f"[!] Failed to start openssl server: {e}")
         raise
 
-def run_openssl_client(cipher, tls_version, data_size, message_count):
+def run_openssl_client(tls_cipher, tls_version, data_size, message_count):
     test_data = b"A" * data_size + b"\n"
     end_marker = b"Q\r\n"
 
     cmd = [
         "openssl", "s_client",
         "-connect", "127.0.0.1:8443",
-        "-cipher", cipher,
-        "-" + tls_version,
-        #"-ign_eof"
     ]
 
+    cmd += tls_cipher
+    cmd += tls_version
+
     try:
+        print("Client args: ", cmd)
         client = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -94,19 +99,24 @@ def main():
     args = parser.parse_args()
 
     try:
-        cipher = f"{args.cipher}@SECLEVEL=0"
-        
+        if args.tls_version == "tls1_3":
+            cipher_cmd = ["-ciphersuites", f"{args.cipher}"]
+        else:
+            cipher_cmd = ["-cipher", f"{args.cipher}@SECLEVEL=0"]
+
+        version_cmd = [f"-{args.tls_version}"]
+
         print(f"[*] Run tcpdump, writing in {args.pcap}...")
         tcpdump_proc = run_tcpdump(args.pcap)
         time.sleep(2)
 
-        print(f"[*] Run openssl s_server (cipher={cipher}, version={args.tls_version})...")
-        server_proc = run_openssl_server(cipher, args.tls_version, args.keylog, 
-                                       args.server_key, args.server_cert)
+        print(f"[*] Running openssl s_server...")
+        server_proc = run_openssl_server(cipher_cmd, version_cmd, args.keylog, 
+                                         args.server_key, args.server_cert)
         time.sleep(2)
         
-        print(f"[*] Sending {args.message_count} messages with {args.data_size} bytes...")
-        run_openssl_client(cipher, args.tls_version, args.data_size, args.message_count)
+        print(f"[*] Running openssl s_client...")
+        run_openssl_client(cipher_cmd, version_cmd, args.data_size, args.message_count)
 
     except Exception as e:
         print(f"[!] Error during test: {e}")

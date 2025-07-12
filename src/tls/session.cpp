@@ -7,6 +7,7 @@
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
 #include <casket/log/color.hpp>
+#include <casket/utils/string.hpp>
 
 #include <snet/utils/print_hex.hpp>
 #include <snet/utils/memory_viewer.hpp>
@@ -34,6 +35,7 @@ namespace snet::tls
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , hashCtx_(crypto::CreateHashCtx())
+    , cipherSuite_(nullptr)
     , cipherState_(0)
     , canDecrypt_(0)
     , debugKeys_(0)
@@ -242,7 +244,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
-            
+
             record->decryptedData = clientToServer_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
                 record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
@@ -258,7 +260,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
-            
+
             record->decryptedData = serverToClient_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
                 record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
@@ -306,6 +308,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (debugKeys_)
     {
         utils::printHex(std::cout, secrets_.getSecret(SecretNode::MasterSecret), Colorize("MasterSecret"));
+    }
+
+    if (!cipherAlg_)
+    {
+        /// NULL cipher algorithm in cipher suite
+        return;
     }
 
     size_t keySize = crypto::GetKeyLength(cipherAlg_);
@@ -604,7 +612,7 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
     handshakeHash_.update(message);
 
     /// RFC 4492: section-5.4
-    if (0)//!handshake_.serverKeyExchange.getSignature().empty())
+    if (0) //! handshake_.serverKeyExchange.getSignature().empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
 
@@ -688,7 +696,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (0)//!secrets_.getSecret(SecretNode::MasterSecret).empty())
+    if (0) //! secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         if (version_ == ProtocolVersion::TLSv1_3) {}
         else if (version_ == ProtocolVersion::SSLv3_0) {}
@@ -830,8 +838,15 @@ void Session::fetchAlgorithms()
     assert(version_ != ProtocolVersion());
     assert(cipherSuite_ != nullptr);
 
-    cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(CipherSuiteGetCipherName(cipherSuite_));
-    if (!CipherIsAEAD(cipherAlg_)) // TLSv1.3 uses only AEAD, so don't check for version
+    auto isAEAD = false;
+    auto cipherName = CipherSuiteGetCipherName(cipherSuite_);
+    if (!casket::iequals(cipherName, "UNDEF"))
+    {
+        cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
+        isAEAD = CipherIsAEAD(cipherAlg_);
+    }
+
+    if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
     {
         hmacHashAlg_ = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite_));
 

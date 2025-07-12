@@ -15,31 +15,18 @@ namespace snet::tls
 {
 
 static std::unordered_map<uint16_t, CipherSuiteMeta> gCipherSuiteMeta = {
-    {make_uint16(0x13, 0x04), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0x13, 0x05), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0x9C), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0x9D), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0x9E), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0x9F), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA0), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA1), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA2), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA3), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA4), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA5), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA6), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA7), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA8), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xA9), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAA), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAB), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAC), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAD), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAE), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xAF), {EVP_CCM8_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xB2), {EVP_CCM_TLS_TAG_LEN}},
-    {make_uint16(0xC0, 0xB3), {EVP_CCM_TLS_TAG_LEN}}
-};
+    {make_uint16(0x13, 0x04), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0x13, 0x05), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0x9C), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0x9D), {EVP_CCM_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0x9E), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0x9F), {EVP_CCM_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xA0), {EVP_CCM8_TLS_TAG_LEN}}, {make_uint16(0xC0, 0xA1), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xA2), {EVP_CCM8_TLS_TAG_LEN}}, {make_uint16(0xC0, 0xA3), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xA4), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0xA5), {EVP_CCM_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xA6), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0xA7), {EVP_CCM_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xA8), {EVP_CCM8_TLS_TAG_LEN}}, {make_uint16(0xC0, 0xA9), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xAA), {EVP_CCM8_TLS_TAG_LEN}}, {make_uint16(0xC0, 0xAB), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xAC), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0xAD), {EVP_CCM_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xAE), {EVP_CCM8_TLS_TAG_LEN}}, {make_uint16(0xC0, 0xAF), {EVP_CCM8_TLS_TAG_LEN}},
+    {make_uint16(0xC0, 0xB2), {EVP_CCM_TLS_TAG_LEN}},  {make_uint16(0xC0, 0xB3), {EVP_CCM_TLS_TAG_LEN}}};
 
 struct CipherSuiteManager::Impl final
 {
@@ -112,10 +99,15 @@ std::vector<const CipherSuite*> CipherSuiteManager::getCipherSuites(bool support
     return cipherSuites;
 }
 
+void CipherSuiteManager::setVersion(const ProtocolVersion& version)
+{
+    crypto::ThrowIfFalse(SSL_set_min_proto_version(impl_->ssl, static_cast<int>(version.code())));
+    crypto::ThrowIfFalse(SSL_set_max_proto_version(impl_->ssl, static_cast<int>(version.code())));
+}
+
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)
 {
-    crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5,
-                         "Security level must be in range [0..5]");
+    crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5, "Security level must be in range [0..5]");
     SSL_set_security_level(impl_->ssl, securityLevel);
 }
 

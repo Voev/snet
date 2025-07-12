@@ -8,6 +8,7 @@
 #include <string_view>
 #include <memory>
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
@@ -63,6 +64,8 @@ public:
     /// @brief Sets the security level.
     /// @param securityLevel The security level to set.
     void setSecurityLevel(const int securityLevel);
+
+    void setVersion(const ProtocolVersion& version);
 
     int getTagLengthByID(uint16_t id);
 

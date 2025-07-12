@@ -7,7 +7,6 @@ import signal
 from pathlib import Path
 import argparse
 
-TLS_VERSION = "tls1_2"
 DATA_SIZE = 256
 MESSAGE_COUNT = 10
 DELAY_BETWEEN_TESTS = 2
@@ -18,8 +17,9 @@ def load_ciphersuites(filename):
 
 def run_test(ciphersuite, tls_version, data_size, message_count):
     safe_cipher = ciphersuite.replace('/', '_').replace('+', '_')
-    keylog_file = f"keylog_{safe_cipher}.txt"
-    pcap_file = f"tls_{safe_cipher}.pcap"
+    upper_version = tls_version.upper()
+    keylog_file = f"{upper_version}_{safe_cipher}.txt"
+    pcap_file = f"{upper_version}_{safe_cipher}.pcap"
     
     print(f"\n\033[1mTesting cipher: {ciphersuite}\033[0m")
     
@@ -46,6 +46,8 @@ def main():
     parser = argparse.ArgumentParser(description='Iterative TLS handshake tests with tcpdump capture')
     parser.add_argument('-i', '--input', required=True,
                        help='Input TLS cipher suites list file path')
+    parser.add_argument('-v', '--tls-version', required=True,
+                       help='TLS version (tls1, tls1_1, tls1_2, tls1_3)')
 
     args = parser.parse_args()
     if not shutil.which("openssl"):
@@ -56,7 +58,7 @@ def main():
         print("Error: gen_pcap_test.py not found!")
         return 1
 
-    print(f"Starting TLS cipher tests for {TLS_VERSION}...")
+    print(f"Starting TLS cipher tests for {args.tls_version}...")
     print("=" * 50)
 
     try:
@@ -66,7 +68,7 @@ def main():
         return 1
 
     for cipher in ciphersuites:
-        run_test(cipher, TLS_VERSION, DATA_SIZE, MESSAGE_COUNT)
+        run_test(cipher, args.tls_version, DATA_SIZE, MESSAGE_COUNT)
         time.sleep(DELAY_BETWEEN_TESTS)
 
     print("\nAll tests completed!")
