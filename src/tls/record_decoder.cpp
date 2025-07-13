@@ -74,19 +74,6 @@ void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey, const st
     seq_ = 0U;
 }
 
-size_t GetTagLength(EVP_CIPHER_CTX* ctx)
-{
-    if (EVP_CIPHER_CTX_get_mode(ctx) == EVP_CIPH_CCM_MODE)
-    {
-        return EVP_CCM_TLS_TAG_LEN;
-    }
-    else if (EVP_CIPHER_CTX_nid(ctx) == NID_chacha20_poly1305)
-    {
-        return EVP_CHACHAPOLY_TLS_TAG_LEN;
-    }
-    return EVP_CIPHER_CTX_get_tag_length(ctx);
-}
-
 nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> in,
                                                        nonstd::span<uint8_t> out, int tagLength)
 {
