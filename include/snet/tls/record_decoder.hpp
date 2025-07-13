@@ -33,7 +33,8 @@ public:
                                            ProtocolVersion version, nonstd::span<const uint8_t> in,
                                            nonstd::span<uint8_t> out, int tagLength, bool encryptThenMac, bool aead);
 
-    nonstd::span<std::uint8_t> tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out);
+    nonstd::span<std::uint8_t> tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out,
+                                            int tagLength);
 
 private:
     void tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, ProtocolVersion version, nonstd::span<const uint8_t> iv,
