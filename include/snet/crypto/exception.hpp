@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <string>
+#include <string_view>
 #include <system_error>
 #include <stdexcept>
 
@@ -13,87 +13,77 @@ namespace snet::crypto
 {
 
 /// @brief Main class for TLS exceptions.
-class Exception final : public std::system_error
+class CryptoException final : public std::system_error
 {
 public:
     /// @brief Constructor.
     ///
-    /// @param ec Error code.
-    explicit Exception(std::error_code ec)
+    /// @param[in] ec Error code.
+    ///
+    explicit CryptoException(std::error_code ec)
         : std::system_error(ec)
     {
     }
 
     /// @brief Constructor.
     ///
-    /// @param ec Error code.
-    /// @param what_arg Error message.
-    Exception(std::error_code ec, const std::string& what_arg)
-        : std::system_error(ec, what_arg)
-    {
-    }
-
-    /// @brief Constructor.
+    /// @param[in] ec Error code.
+    /// @param[in] what Error message.
     ///
-    /// @param ec Error code.
-    /// @param what_arg Error message.
-    Exception(std::error_code ec, const char* what_arg)
-        : std::system_error(ec, what_arg)
+    CryptoException(std::error_code ec, std::string_view what)
+        : std::system_error(ec, what.data())
     {
     }
 };
 
-/// @brief Throws an exception if @p exprResult is true.
+/// @brief Throws an exception if @p expression is true.
 ///
-/// @param exprResult The result of the expression to check.
+/// @param[in] expression Result of the expression to check.
 ///
-/// @code{.cpp}
-/// /* EXAMPLE */
-/// auto* somePointer = new (std::nothrow) int;
-/// Exception::ThrowIfTrue(somePointer == nullptr);
-/// @endcode
-inline void ThrowIfTrue(bool exprResult)
+inline void ThrowIfTrue(bool expression)
 {
-    if (exprResult)
+    if (expression)
     {
-        throw Exception(GetLastError());
+        throw CryptoException(GetLastError());
     }
 }
 
-/// @brief Throws an exception if @p exprResult is true.
+/// @brief Throws an exception if @p expression is true.
 ///
-/// @param exprResult The result of the expression to check.
-/// @param msg Additional message.
-inline void ThrowIfTrue(bool exprResult, std::string msg)
+/// @param[in] expression Result of the expression to check.
+/// @param[in] message Additional message.
+///
+inline void ThrowIfTrue(bool expression, std::string_view message)
 {
-    if (exprResult)
+    if (expression)
     {
-        throw Exception(GetLastError(), msg);
+        throw CryptoException(GetLastError(), message);
     }
 }
 
-/// @brief Throws an exception if @p exprResult is false.
+/// @brief Throws an exception if @p expression is false.
 ///
-/// @param exprResult The result of the expression to check.
+/// @param[in] expression Result of the expression to check.
 ///
-/// @code{.cpp}
-/// /* EXAMPLE */
-/// void* inputData = nullptr;
-/// SomeValidator validator;
-/// Exception::ThrowIfFalse(validator.isValid(inputData));
-/// @endcode
-inline void ThrowIfFalse(bool exprResult)
+inline void ThrowIfFalse(bool expression)
 {
-    return ThrowIfTrue(!exprResult);
+    if (!expression)
+    {
+        throw CryptoException(GetLastError());
+    }
 }
 
-/// @brief Throws an exception if @p exprResult is false.
+/// @brief Throws an exception if @p expression is false.
 ///
-/// @param exprResult The result of the expression to check.
-/// @param msg Additional message.
-inline void ThrowIfFalse(bool exprResult, std::string msg)
+/// @param[in] expression Result of the expression to check.
+/// @param[in] message Additional message.
+///
+inline void ThrowIfFalse(bool expression, std::string_view message)
 {
-    return ThrowIfTrue(!exprResult, std::move(msg));
+    if (!expression)
+    {
+        throw CryptoException(GetLastError(), message);
+    }
 }
 
 } // namespace snet::crypto
