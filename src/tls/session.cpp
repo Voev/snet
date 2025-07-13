@@ -233,18 +233,17 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
     auto input = record->getData();
     auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
+    auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
     if (sideIndex == 0 && clientToServer_.isInited())
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData = clientToServer_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer);
+                                                                 record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
-            int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
-
             record->decryptedData = clientToServer_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
                 record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
@@ -255,7 +254,7 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData = serverToClient_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer);
+                                                                 record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {

@@ -1,3 +1,4 @@
+#include <cassert>
 #include <casket/log/log_manager.hpp>
 #include <casket/utils/exception.hpp>
 #include <casket/utils/load_store.hpp>
@@ -62,50 +63,58 @@ void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> encKe
     key_.resize(encKey.size());
     memcpy(key_.data(), encKey.data(), encKey.size());
 
-    crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, encKey.data(), nullptr, 0));
+    crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
     inited_ = true;
 }
 
 void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv)
 {
-    crypto::ThrowIfFalse(0 < EVP_DecryptInit(cipher_, nullptr, newkey.data(), nullptr));
+    std::copy(newkey.begin(), newkey.end(), key_.begin());
     std::copy(newiv.begin(), newiv.end(), iv_.begin());
     seq_ = 0U;
 }
 
-size_t GetTagLength(EVP_CIPHER_CTX* ctx)
-{
-    if (EVP_CIPHER_CTX_get_mode(ctx) == EVP_CIPH_CCM_MODE)
-    {
-        return EVP_CCM_TLS_TAG_LEN;
-    }
-    else if (EVP_CIPHER_CTX_nid(ctx) == NID_chacha20_poly1305)
-    {
-        return EVP_CHACHAPOLY_TLS_TAG_LEN;
-    }
-    return EVP_CIPHER_CTX_get_tag_length(ctx);
-}
-
 nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> in,
-                                                       nonstd::span<uint8_t> out)
+                                                       nonstd::span<uint8_t> out, int tagLength)
 {
     int i;
-    int x;
+    int updateLength = 0;
+    int finalLength = 0;
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
-    std::array<uint8_t, 12> aead_nonce;
+    std::array<uint8_t, TLS13_AEAD_NONCE_SIZE> nonce;
 
-    memcpy(aead_nonce.data(), iv_.data(), 12);
+    memcpy(nonce.data(), iv_.data(), 12);
+
+    assert(tagLength > 0);
 
     // AEAD NONCE according to RFC TLS1.3
     for (i = 0; i < 8; i++)
     {
-        aead_nonce[12 - 1 - i] ^= ((seq_ >> (i * 8)) & 0xFF);
+        nonce[12 - 1 - i] ^= ((seq_ >> (i * 8)) & 0xFF);
     }
     seq_++;
 
-    auto tagLength = GetTagLength(cipher_);
-    auto data = in.subspan(0, in.size() - tagLength);
-    auto tag = in.subspan(in.size() - tagLength, tagLength);
+    int dataLength = in.size() - tagLength;
+
+    if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
+    {
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key_.data(), nonce.data(), 0));
+    }
+    else
+    {
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key_.data(), nonce.data(), 0));
+    }
+
+    crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength,
+                                                 const_cast<uint8_t*>(in.data()) + dataLength));
+
+    if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
+    {
+        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &updateLength, nullptr, dataLength));
+    }
 
     aad[0] = static_cast<uint8_t>(rt);
     aad[1] = 0x03;
@@ -114,43 +123,17 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::sp
     aad[3] = casket::get_byte<0>(size);
     aad[4] = casket::get_byte<1>(size);
 
-    crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
+    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipher_, nullptr, &updateLength, aad.data(), aad.size()));
+    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipher_, out.data(), &updateLength, in.data(), dataLength));
+    crypto::ThrowIfFalse(0 < EVP_CipherFinal(cipher_, out.data() + updateLength, &finalLength));
 
-    if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
-    {
-        crypto::ThrowIfFalse(
-            0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tag.size(), const_cast<uint8_t*>(tag.data())));
-    }
-
-    crypto::ThrowIfFalse(0 < EVP_DecryptInit_ex(cipher_, nullptr, nullptr, nullptr, aead_nonce.data()));
-
-    int outSize{0};
-
-    if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
-    {
-        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, nullptr, data.size()));
-    }
-
-    crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, nullptr, &outSize, aad.data(), aad.size()));
-
-    outSize = data.size();
-
-    casket::ThrowIfTrue(out.size() < data.size(), "too small buffer");
-    crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipher_, out.data(), &outSize, data.data(), data.size()));
-
-    if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_GCM_MODE)
-    {
-        crypto::ThrowIfFalse(
-            0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_GCM_SET_TAG, tag.size(), const_cast<uint8_t*>(tag.data())));
-        crypto::ThrowIfFalse(0 < EVP_DecryptFinal(cipher_, nullptr, &x));
-    }
-
-    return {out.data(), (size_t)outSize};
+    return {out.data(), (size_t)updateLength};
 }
 
 nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,
                                                  ProtocolVersion version, nonstd::span<const uint8_t> in,
-                                                 nonstd::span<uint8_t> out, int tagLength, bool encryptThenMac, bool aead)
+                                                 nonstd::span<uint8_t> out, int tagLength, bool encryptThenMac,
+                                                 bool aead)
 {
     nonstd::span<std::uint8_t> decryptedContent;
 
@@ -162,27 +145,29 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
         if (mode == EVP_CIPH_GCM_MODE)
         {
             crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_GCM_SET_IV_FIXED, iv_.size(), iv_.data()));
+            crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key_.data(), nullptr, 0));
         }
         else if (mode == EVP_CIPH_CCM_MODE)
         {
             crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_CCM_SET_IV_FIXED, iv_.size(), iv_.data()));
-            crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
+            crypto::ThrowIfFalse(0 <
+                                 EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
             crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength, nullptr));
             crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key_.data(), nullptr, 0));
         }
         else
         {
             auto recordIvSize = EVP_CIPHER_CTX_iv_length(cipher_);
-            std::vector<uint8_t> aead_nonce;
+            std::vector<uint8_t> nonce;
 
-            aead_nonce.reserve(recordIvSize);
-            aead_nonce.insert(aead_nonce.end(), iv_.begin(), iv_.end());
+            nonce.reserve(recordIvSize);
+            nonce.insert(nonce.end(), iv_.begin(), iv_.end());
 
             auto recordIv = in.subspan(0, recordIvSize - iv_.size());
 
-            aead_nonce.insert(aead_nonce.end(), recordIv.begin(), recordIv.end());
+            nonce.insert(nonce.end(), recordIv.begin(), recordIv.end());
 
-            crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, nullptr, aead_nonce.data(), 0));
+            crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key_.data(), nonce.data(), 0));
         }
 
         casket::store_be(seq_, &aad[0]);
