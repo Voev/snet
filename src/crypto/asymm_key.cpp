@@ -67,7 +67,7 @@ KeyPtr fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth
     break;
 
     default:
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported key type");
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported key type");
     }
 
     auto storeLoader = StoreLoader(uri, meth, data);
@@ -117,15 +117,15 @@ KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding)
 
     default:
     {
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT),
-                        "CertBuilder parse error: unsupported input BIO format");
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT),
+                              "CertBuilder parse error: unsupported input BIO format");
     }
     break;
     }
 
     if (!result)
     {
-        throw Exception(GetLastError(), "Failed to parse certificate");
+        throw CryptoException(GetLastError(), "Failed to parse certificate");
     }
 
     return result;
@@ -165,14 +165,14 @@ void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
 
     default:
     {
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
     }
     break;
     }
 
     if (!ret)
     {
-        throw Exception(GetLastError(), "Failed to save key");
+        throw CryptoException(GetLastError(), "Failed to save key");
     }
 }
 

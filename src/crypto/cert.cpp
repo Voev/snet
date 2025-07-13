@@ -26,7 +26,7 @@ time_t asn1TimeToEpoch(const Asn1Integer* asn1Time)
     time_t result = std::mktime(&tmTime);
     if (result == static_cast<time_t>(-1))
     {
-        throw Exception(TranslateError(ERR_R_OPERATION_FAIL), "Cannot convert ASN1_TIME to epoch");
+        throw CryptoException(TranslateError(ERR_R_OPERATION_FAIL), "Cannot convert ASN1_TIME to epoch");
     }
 
     return result;
@@ -69,8 +69,8 @@ CertVersion version(Cert* cert)
     case static_cast<long>(CertVersion::V3):
         return static_cast<CertVersion>(value);
     default:
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT),
-                        "Unsupported version of certificate: " + std::to_string(value));
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT),
+                              "Unsupported version of certificate: " + std::to_string(value));
     }
 }
 
@@ -165,14 +165,14 @@ CertPtr fromBio(Bio* bio, Encoding encoding)
 
     default:
     {
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
     }
     break;
     }
 
     if (!result)
     {
-        throw Exception(GetLastError(), "Failed to parse certificate");
+        throw CryptoException(GetLastError(), "Failed to parse certificate");
     }
 
     return result;
@@ -198,14 +198,14 @@ void toBio(Cert* cert, Bio* bio, Encoding encoding)
 
     default:
     {
-        throw Exception(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
+        throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT), "Unsupported encoding");
     }
     break;
     }
 
     if (!ret)
     {
-        throw Exception(GetLastError(), "Failed to save certificate");
+        throw CryptoException(GetLastError(), "Failed to save certificate");
     }
 }
 

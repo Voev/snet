@@ -30,7 +30,7 @@ int getInfoCallbackDataIndex()
         gInfoDataIndex = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
         if (gInfoDataIndex == -1)
         {
-            throw crypto::Exception(crypto::GetLastError());
+            throw crypto::CryptoException(crypto::GetLastError());
         }
     }
     return gInfoDataIndex;
@@ -133,9 +133,8 @@ void StateMachine::clear() noexcept
     alert_ = Alert();
 }
 
-Want StateMachine::handshake(const std::uint8_t* bufferIn, const std::size_t bufferInSize,
-                             std::uint8_t* bufferOut, std::size_t* bufferOutSize,
-                             std::error_code& ec) noexcept
+Want StateMachine::handshake(const std::uint8_t* bufferIn, const std::size_t bufferInSize, std::uint8_t* bufferOut,
+                             std::size_t* bufferOutSize, std::error_code& ec) noexcept
 {
 
     std::size_t pendingOutputBefore;
@@ -186,9 +185,8 @@ Want StateMachine::handshake(const std::uint8_t* bufferIn, const std::size_t buf
     return want;
 }
 
-Want StateMachine::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
-                           std::uint8_t* bufferOut, std::size_t* bufferOutSize,
-                           std::error_code& ec) noexcept
+Want StateMachine::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std::uint8_t* bufferOut,
+                           std::size_t* bufferOutSize, std::error_code& ec) noexcept
 {
 
     if (bufferIn && bufferInSize > 0)
@@ -206,9 +204,8 @@ Want StateMachine::decrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
     return handleResult(result, pendingOutputBefore, pendingOutputAfter, ec);
 }
 
-Want StateMachine::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
-                           std::uint8_t* bufferOut, std::size_t* bufferOutSize,
-                           std::error_code& ec) noexcept
+Want StateMachine::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize, std::uint8_t* bufferOut,
+                           std::size_t* bufferOutSize, std::error_code& ec) noexcept
 {
     auto pendingOutputBefore = BIO_ctrl_pending(lowerLayer_);
     auto result = doWrite(bufferIn, bufferInSize);
@@ -225,8 +222,7 @@ Want StateMachine::encrypt(std::uint8_t* bufferIn, std::size_t bufferInSize,
     return Want::Nothing;
 }
 
-Want StateMachine::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize,
-                               std::error_code& ec) noexcept
+Want StateMachine::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize, std::error_code& ec) noexcept
 {
 
     std::size_t pendingBufferSize = BIO_ctrl_pending(lowerLayer_);
@@ -258,8 +254,7 @@ Want StateMachine::closeNotify(std::uint8_t* buffer, std::size_t* bufferSize,
     return Want::Nothing;
 }
 
-Want StateMachine::handleResult(int result, std::size_t before, std::size_t after,
-                                std::error_code& ec) noexcept
+Want StateMachine::handleResult(int result, std::size_t before, std::size_t after, std::error_code& ec) noexcept
 {
     int sslError = getError(result);
     if (sslError == SSL_ERROR_SSL || sslError == SSL_ERROR_SYSCALL)
@@ -286,8 +281,7 @@ Want StateMachine::handleResult(int result, std::size_t before, std::size_t afte
     return Want::Nothing;
 }
 
-std::size_t StateMachine::lowerLayerRead(std::uint8_t* buffer, std::size_t length,
-                                         std::error_code& ec) noexcept
+std::size_t StateMachine::lowerLayerRead(std::uint8_t* buffer, std::size_t length, std::error_code& ec) noexcept
 {
     auto ret = BIO_read(lowerLayer_, buffer, static_cast<int>(std::min(length, kDataLimit)));
     if (ret < 0)
@@ -299,8 +293,7 @@ std::size_t StateMachine::lowerLayerRead(std::uint8_t* buffer, std::size_t lengt
     return static_cast<std::size_t>(ret);
 }
 
-std::size_t StateMachine::lowerLayerWrite(const std::uint8_t* buffer, std::size_t length,
-                                          std::error_code& ec) noexcept
+std::size_t StateMachine::lowerLayerWrite(const std::uint8_t* buffer, std::size_t length, std::error_code& ec) noexcept
 {
     auto ret = BIO_write(lowerLayer_, buffer, static_cast<int>(std::min(length, kDataLimit)));
     if (ret < 0)
