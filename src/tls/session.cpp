@@ -611,13 +611,23 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
     handshakeHash_.update(message);
 
     /// RFC 4492: section-5.4
-    if (0) //! handshake_.serverKeyExchange.getSignature().empty())
+    if (!handshake_.serverKeyExchange.getSignature().empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        const Hash* hash;
+        crypto::HashPtr fetchedHash;
 
         auto scheme = handshake_.serverKeyExchange.getScheme();
-        auto hash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
-
+        if (scheme.isSet())
+        {
+            fetchedHash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
+            hash = fetchedHash.get();
+        }
+        else
+        {
+            hash = CipherSuiteGetHandshakeDigest(cipherSuite_);
+        }
+        
         crypto::InitHash(hashCtx_, hash);
         crypto::UpdateHash(hashCtx_, handshake_.clientHello.random);
         crypto::UpdateHash(hashCtx_, handshake_.serverHello.random);
