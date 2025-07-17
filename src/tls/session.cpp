@@ -424,28 +424,31 @@ void Session::generateTLS13KeyMaterial()
     canDecrypt_ |= 3;
 }
 
+std::string_view Session::getHashAlgorithm() const
+{
+    assert(version_ <= ProtocolVersion::TLSv1_2);
+
+    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+    if (version_ == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
+    {
+        return CipherSuiteGetHmacDigestName(cipherSuite_);
+    }
+    return digest;
+}
+
 void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
     casket::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
-    if (version_ == tls::ProtocolVersion::TLSv1_2)
+    if (version_ == tls::ProtocolVersion::SSLv3_0)
     {
-        std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-        if (digest == "MD5-SHA1")
-        {
-            digest = CipherSuiteGetHmacDigestName(cipherSuite_);
-        }
-        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
-    }
-    else if (version_ >= tls::ProtocolVersion::TLSv1_0)
-    {
-        std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
+        ssl3Prf(secret, rnd1, rnd2, out);
     }
     else
     {
-        ssl3Prf(secret, rnd1, rnd2, out);
+        auto algorithm = getHashAlgorithm();
+        tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -627,7 +630,7 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
         {
             hash = CipherSuiteGetHandshakeDigest(cipherSuite_);
         }
-        
+
         crypto::InitHash(hashCtx_, hash);
         crypto::UpdateHash(hashCtx_, handshake_.clientHello.random);
         crypto::UpdateHash(hashCtx_, handshake_.serverHello.random);
@@ -705,22 +708,22 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (0) //! secrets_.getSecret(SecretNode::MasterSecret).empty())
+    if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         if (version_ == ProtocolVersion::TLSv1_3) {}
         else if (version_ == ProtocolVersion::SSLv3_0) {}
         else
         {
+            std::string_view algorithm = getHashAlgorithm();
+            auto fecthedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
+
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-            const auto transcriptHash =
-                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(cipherSuite_), digest);
+            const auto transcriptHash = handshakeHash_.final(hashCtx_, fecthedAlg, digest);
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
             const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
                                                  : handshake_.serverFinished.getVerifyData());
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-
-            std::string_view algorithm = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
             tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
                     actual);
 

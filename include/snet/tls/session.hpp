@@ -141,6 +141,8 @@ public:
     ///
     void fetchAlgorithms();
 
+    std::string_view getHashAlgorithm() const;
+
 private:
     RecordPool& recordPool_;
     Record* readingRecord{nullptr};
