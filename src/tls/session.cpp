@@ -584,26 +584,6 @@ void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::sp
     handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
 }
 
-/* Create a buffer containing data to be signed for server key exchange */
-/*size_t construct_key_exchange_tbs(SSL_CONNECTION* s, unsigned char** ptbs, const void* param, size_t paramlen)
-{
-    size_t tbslen = 2 * SSL3_RANDOM_SIZE + paramlen;
-    unsigned char* tbs = OPENSSL_malloc(tbslen);
-
-    if (tbs == NULL)
-    {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
-        return 0;
-    }
-    memcpy(tbs, s->s3.client_random, SSL3_RANDOM_SIZE);
-    memcpy(tbs + SSL3_RANDOM_SIZE, s->s3.server_random, SSL3_RANDOM_SIZE);
-
-    memcpy(tbs + SSL3_RANDOM_SIZE * 2, param, paramlen);
-
-    *ptbs = tbs;
-    return tbslen;
-}*/
-
 void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
@@ -710,9 +690,14 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
 
     if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
-        if (version_ == ProtocolVersion::TLSv1_3) {}
-        else if (version_ == ProtocolVersion::SSLv3_0) {}
-        else
+        switch (version_.code())
+        {
+        case ProtocolVersion::TLSv1_3:
+            /// @todo: do it
+            break;
+        case ProtocolVersion::TLSv1_2:
+        case ProtocolVersion::TLSv1_1:
+        case ProtocolVersion::TLSv1_0:
         {
             std::string_view algorithm = getHashAlgorithm();
             auto fecthedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
@@ -728,6 +713,11 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
                     actual);
 
             casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
+            break;
+        }
+        case ProtocolVersion::SSLv3_0:
+            /// @todo: do it.
+            break;
         }
     }
 
