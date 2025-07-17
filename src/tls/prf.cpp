@@ -128,49 +128,20 @@ void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<c
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
+void DeriveFinishedKey(std::string_view algorithm, const Secret& secret, nonstd::span<uint8_t> out)
+{
+    static constexpr std::array<unsigned char, 8> finishedLabel = {0x66, 0x69, 0x6E, 0x69, 0x73, 0x68, 0x65, 0x64};
+
+    HkdfExpand(algorithm, secret, finishedLabel, {}, out);
+}
+
+/// @todo: remove std::vector
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
                                      nonstd::span<const uint8_t> context, const size_t length)
 {
-    // assemble (serialized) HkdfLabel
-    std::vector<uint8_t> hkdfLabel;
-    hkdfLabel.reserve(2 /* length */ + (label.size() + 6 /* 'tls13 ' */ + 1 /* length field*/) +
-                      (context.size() + 1 /* length field*/));
-
-    // length
-    ThrowIfFalse(length <= std::numeric_limits<uint16_t>::max(), "invalid length");
-    const auto len = static_cast<uint16_t>(length);
-    hkdfLabel.push_back(casket::get_byte<0>(len));
-    hkdfLabel.push_back(casket::get_byte<1>(len));
-
-    // label
-    const std::string prefix = "tls13 ";
-    ThrowIfFalse(prefix.size() + label.size() <= 255, "label too large");
-    hkdfLabel.push_back(static_cast<uint8_t>(prefix.size() + label.size()));
-    hkdfLabel.insert(hkdfLabel.end(), prefix.cbegin(), prefix.cend());
-    hkdfLabel.insert(hkdfLabel.end(), label.cbegin(), label.cend());
-
-    // context
-    ThrowIfFalse(context.size() <= 255, "context too large");
-    hkdfLabel.push_back(static_cast<uint8_t>(context.size()));
-    hkdfLabel.insert(hkdfLabel.end(), context.begin(), context.end());
-
-    auto kdf = crypto::CryptoManager::getInstance().fetchKdf("HKDF");
-
-    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
-    crypto::ThrowIfTrue(kctx == nullptr);
-
-    static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
-    OSSL_PARAM params[6], *p = params;
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()), secret.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_INFO, const_cast<uint8_t*>(hkdfLabel.data()),
-                                             hkdfLabel.size());
-    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
-    *p = OSSL_PARAM_construct_end();
-
     std::size_t outlen(length);
     std::vector<uint8_t> out(outlen);
-    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+    HkdfExpand(algorithm, secret, {(uint8_t*)label.data(), label.size()}, context, out);
     out.resize(outlen);
 
     return out;

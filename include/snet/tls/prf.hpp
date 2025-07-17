@@ -17,8 +17,8 @@ namespace snet::tls
 /// @param clientRandom The client's random value.
 /// @param serverRandom The server's random value.
 /// @param out The output buffer for the generated pseudo-random data.
-void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom,
-             nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out);
+void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
+             nonstd::span<uint8_t> out);
 
 /// @brief TLS 1.0/1.1/1.2 Pseudo-Random Function (PRF).
 ///
@@ -45,5 +45,7 @@ std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& s
 
 void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
+void DeriveFinishedKey(std::string_view algorithm, const Secret& secret, nonstd::span<uint8_t> out);
 
 } // namespace snet::tls
