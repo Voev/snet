@@ -582,6 +582,7 @@ void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::sp
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
+    handshakeHash_.update(message);
 }
 
 void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
@@ -677,6 +678,58 @@ void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<c
     handshakeHash_.update(message);
 }
 
+/*
+size_t tls13_final_finish_mac(SSL *s, const char *str, size_t slen,
+                             unsigned char *out)
+{
+    const EVP_MD *md = ssl_handshake_md(s);
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    size_t hashlen, ret = 0;
+    EVP_PKEY *key = NULL;
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+
+    if (!ssl_handshake_hash(s, hash, sizeof(hash), &hashlen)) {
+        goto err;
+    }
+
+    if (str == s->method->ssl3_enc->server_finished_label) {
+        key = EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, NULL,
+                                           s->server_finished_secret, hashlen);
+    } else if (SSL_IS_FIRST_HANDSHAKE(s)) {
+        key = EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, NULL,
+                                           s->client_finished_secret, hashlen);
+    } else {
+        unsigned char finsecret[EVP_MAX_MD_SIZE];
+
+        if (!tls13_derive_finishedkey(s, ssl_handshake_md(s),
+                                      s->client_app_traffic_secret,
+                                      finsecret, hashlen))
+            goto err;
+
+        key = EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, NULL, finsecret,
+                                           hashlen);
+        OPENSSL_cleanse(finsecret, sizeof(finsecret));
+    }
+
+    if (key == NULL
+            || ctx == NULL
+            || EVP_DigestSignInit(ctx, NULL, md, NULL, key) <= 0
+            || EVP_DigestSignUpdate(ctx, hash, hashlen) <= 0
+            || EVP_DigestSignFinal(ctx, out, &hashlen) <= 0) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS13_FINAL_FINISH_MAC,
+                 ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
+    ret = hashlen;
+ err:
+    EVP_PKEY_free(key);
+    EVP_MD_CTX_free(ctx);
+    return ret;
+
+}
+*/
+
 void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     if (sideIndex == 0)
@@ -688,16 +741,45 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
+    /// Check Finished data
+
+    switch (version_.code())
     {
-        switch (version_.code())
-        {
-        case ProtocolVersion::TLSv1_3:
-            /// @todo: do it
-            break;
-        case ProtocolVersion::TLSv1_2:
-        case ProtocolVersion::TLSv1_1:
-        case ProtocolVersion::TLSv1_0:
+    case ProtocolVersion::TLSv1_3:
+    {
+        static constexpr std::array<unsigned char, 8> finishedLabel = {0x66, 0x69, 0x6E, 0x69, 0x73, 0x68, 0x65, 0x64};
+        const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+        const auto digestName = EVP_MD_name(digest);
+        const auto& secret = (sideIndex == 0 ? secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret)
+                                             : secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret));
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
+        size_t keySize = EVP_MD_get_size(digest);
+
+        HkdfExpand(digestName, secret, finishedLabel, {}, {finishedKey.data(), keySize});
+
+        crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+        const auto& expect =
+            (sideIndex == 0 ? handshake_.clientFinished.getVerifyData() : handshake_.serverFinished.getVerifyData());
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
+        size_t length = actual.size();
+        const auto transcriptHash = handshakeHash_.final(hashCtx_, digest, buffer);
+
+        crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
+        crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
+        crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
+
+        casket::ThrowIfFalse(expect.size() == length && std::equal(expect.begin(), expect.end(), actual.begin()),
+                             "Bad Finished MAC");
+        break;
+    }
+    case ProtocolVersion::TLSv1_2:
+    case ProtocolVersion::TLSv1_1:
+    case ProtocolVersion::TLSv1_0:
+    {
+        if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
         {
             std::string_view algorithm = getHashAlgorithm();
             auto fecthedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
@@ -712,19 +794,32 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
                     actual);
 
-            casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
-            break;
+            casket::ThrowIfFalse(expect.size() == actual.size() &&
+                                     std::equal(expect.begin(), expect.end(), actual.begin()),
+                                 "Bad Finished MAC");
         }
-        case ProtocolVersion::SSLv3_0:
-            /// @todo: do it.
-            break;
-        }
+        break;
+    }
+    case ProtocolVersion::SSLv3_0:
+        /// @todo: do it.
+        break;
     }
 
-    if (sideIndex == 0)
+    /// Update transcript hash
+
+    if (version_ == ProtocolVersion::TLSv1_3)
     {
         handshakeHash_.update(message);
     }
+    else
+    {
+        if (sideIndex == 0)
+        {
+            handshakeHash_.update(message);
+        }
+    }
+
+    /// Generate key material
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {

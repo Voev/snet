@@ -99,6 +99,35 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
+void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<const uint8_t> label,
+                nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
+{
+    static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
+    static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0x33, 0x20};
+
+    auto kdf = crypto::CryptoManager::getInstance().fetchKdf(OSSL_KDF_NAME_TLS1_3_KDF);
+
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    crypto::ThrowIfTrue(kctx == nullptr);
+
+    OSSL_PARAM params[7], *p = params;
+    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()), secret.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PREFIX, const_cast<uint8_t*>(labelPrefix.data()),
+                                             labelPrefix.size());
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_LABEL, const_cast<uint8_t*>(label.data()), label.size());
+
+    if (!data.empty())
+    {
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_DATA, const_cast<uint8_t*>(data.data()), data.size());
+    }
+
+    *p = OSSL_PARAM_construct_end();
+
+    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+}
+
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
                                      nonstd::span<const uint8_t> context, const size_t length)
 {

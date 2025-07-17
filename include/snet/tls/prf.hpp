@@ -43,4 +43,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
 std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
                                      nonstd::span<const uint8_t> context, const size_t length);
 
+void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<const uint8_t> label,
+                nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
 } // namespace snet::tls
