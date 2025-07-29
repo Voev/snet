@@ -628,7 +628,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 {
     casket::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
 
-    /// @todo: serialize
+    /// @todo: deserialize
 
     handshakeHash_.update(message);
 
@@ -695,33 +695,36 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
     {
     case ProtocolVersion::TLSv1_3:
     {
-        /// @todo: check for secrets, monitor mode
-
-        const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
-        const auto digestName = EVP_MD_name(digest);
         const auto& secret = (sideIndex == 0 ? secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret)
                                              : secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret));
+        if (!secret.empty())
+        {
 
-        std::array<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
-        size_t keySize = EVP_MD_get_size(digest);
+            const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+            const auto digestName = EVP_MD_name(digest);
 
-        DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+            /// @todo: clean sensitive data
+            std::array<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
+            size_t keySize = EVP_MD_get_size(digest);
 
-        crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
-        const auto& expect =
-            (sideIndex == 0 ? handshake_.clientFinished.getVerifyData() : handshake_.serverFinished.getVerifyData());
+            DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
-        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
-        size_t length = actual.size();
-        const auto transcriptHash = handshakeHash_.final(hashCtx_, digest, buffer);
+            crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+            const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
+                                                 : handshake_.serverFinished.getVerifyData());
 
-        crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
-        crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
+            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+            std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
+            size_t length = actual.size();
+            const auto transcriptHash = handshakeHash_.final(hashCtx_, digest, buffer);
 
-        casket::ThrowIfFalse(expect.size() == length && std::equal(expect.begin(), expect.end(), actual.begin()),
-                             "Bad Finished MAC");
+            crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
+            crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
+            crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
+
+            casket::ThrowIfFalse(expect.size() == length && std::equal(expect.begin(), expect.end(), actual.begin()),
+                                 "Bad Finished MAC");
+        }
         break;
     }
     case ProtocolVersion::TLSv1_2:
