@@ -67,7 +67,7 @@ void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> encKe
     inited_ = true;
 }
 
-void RecordDecoder::tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv)
+void RecordDecoder::tls13UpdateKeys(nonstd::span<const uint8_t> newkey, nonstd::span<const uint8_t> newiv)
 {
     std::copy(newkey.begin(), newkey.end(), key_.begin());
     std::copy(newiv.begin(), newiv.end(), iv_.begin());

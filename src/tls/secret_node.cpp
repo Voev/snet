@@ -1,3 +1,4 @@
+#include <cassert>
 #include <snet/tls/secret_node.hpp>
 #include <casket/utils/exception.hpp>
 
@@ -27,14 +28,20 @@ const Secret& SecretNode::getSecret(const Type type) const
     return secrets_[type];
 }
 
+nonstd::span<uint8_t> SecretNode::get(const Type type)
+{
+    assert(type >= MasterSecret && type < SecretTypesCount);
+
+    return secrets_[type];
+}
+
 bool SecretNode::isValid(const ProtocolVersion version) const
 {
     if (version == ProtocolVersion::TLSv1_3)
     {
         return !secrets_[SecretNode::ClientHandshakeTrafficSecret].empty() &&
                !secrets_[SecretNode::ServerHandshakeTrafficSecret].empty() &&
-               !secrets_[SecretNode::ClientTrafficSecret].empty() &&
-               !secrets_[SecretNode::ServerTrafficSecret].empty();
+               !secrets_[SecretNode::ClientTrafficSecret].empty() && !secrets_[SecretNode::ServerTrafficSecret].empty();
     }
     else if (version <= ProtocolVersion::TLSv1_2)
     {

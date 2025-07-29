@@ -27,7 +27,7 @@ public:
 
     void init(const Cipher* cipher, nonstd::span<const uint8_t> encKey, nonstd::span<const uint8_t> encIV);
 
-    void tls13UpdateKeys(const std::vector<uint8_t>& newkey, const std::vector<uint8_t>& newiv);
+    void tls13UpdateKeys(nonstd::span<const uint8_t> newkey, nonstd::span<const uint8_t> newiv);
 
     nonstd::span<std::uint8_t> tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,
                                            ProtocolVersion version, nonstd::span<const uint8_t> in,

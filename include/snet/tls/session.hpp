@@ -86,11 +86,6 @@ public:
     /// @param secrets The secrets to set.
     void setSecrets(SecretNode secrets);
 
-    /// @brief Gets a secret of a specific type.
-    /// @param type The type of the secret.
-    /// @return The secret of the specified type.
-    const Secret& getSecret(const SecretNode::Type type) const;
-
     /// @brief Sets the premaster secret for the session.
     /// @param pms The premaster secret to set.
     void setPremasterSecret(std::vector<std::uint8_t> pms);
@@ -157,6 +152,10 @@ private:
     const CipherSuite* cipherSuite_;
     std::vector<uint8_t> PMS_;
     SecretNode secrets_;
+    std::array<uint8_t, EVP_MAX_KEY_LENGTH> clientEncKey_;
+    std::array<uint8_t, EVP_MAX_KEY_LENGTH> serverEncKey_;
+    std::array<uint8_t, EVP_MAX_IV_LENGTH> clientIV_;
+    std::array<uint8_t, EVP_MAX_IV_LENGTH> serverIV_;
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;

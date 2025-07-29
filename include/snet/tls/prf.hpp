@@ -32,20 +32,15 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
              nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out);
 
-/// @brief HKDF-Expand-Label function used in TLS 1.3.
-///
-/// @param algorithm The HKDF algorithm.
-/// @param secret The secret key.
-/// @param label The label for the HKDF expansion.
-/// @param context The context for the HKDF expansion.
-/// @param length The length of the output keying material.
-/// @return The expanded keying material.
-std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     nonstd::span<const uint8_t> context, const size_t length);
-
-void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<const uint8_t> label,
+void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
 
-void DeriveFinishedKey(std::string_view algorithm, const Secret& secret, nonstd::span<uint8_t> out);
+void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out);
+
+void DeriveKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out);
+
+void DeriveIV(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out);
+
+void UpdateTrafficSecret(std::string_view algorithm, nonstd::span<uint8_t> secret);
 
 } // namespace snet::tls

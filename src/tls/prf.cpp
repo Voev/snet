@@ -99,7 +99,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
-void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<const uint8_t> label,
+void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
@@ -128,23 +128,33 @@ void HkdfExpand(std::string_view algorithm, const Secret& secret, nonstd::span<c
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 }
 
-void DeriveFinishedKey(std::string_view algorithm, const Secret& secret, nonstd::span<uint8_t> out)
+void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
     static constexpr std::array<unsigned char, 8> finishedLabel = {0x66, 0x69, 0x6E, 0x69, 0x73, 0x68, 0x65, 0x64};
 
     HkdfExpand(algorithm, secret, finishedLabel, {}, out);
 }
 
-/// @todo: remove std::vector
-std::vector<uint8_t> hkdfExpandLabel(std::string_view algorithm, const Secret& secret, std::string_view label,
-                                     nonstd::span<const uint8_t> context, const size_t length)
+void DeriveKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
-    std::size_t outlen(length);
-    std::vector<uint8_t> out(outlen);
-    HkdfExpand(algorithm, secret, {(uint8_t*)label.data(), label.size()}, context, out);
-    out.resize(outlen);
+    static constexpr std::array<unsigned char, 3> keyLabel = {0x6B, 0x65, 0x79};
 
-    return out;
+    HkdfExpand(algorithm, secret, keyLabel, {}, out);
+}
+
+void DeriveIV(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
+{
+    static constexpr std::array<unsigned char, 2> ivLabel = {0x69, 0x76};
+
+    HkdfExpand(algorithm, secret, ivLabel, {}, out);
+}
+
+void UpdateTrafficSecret(std::string_view algorithm, nonstd::span<uint8_t> secret)
+{
+    static constexpr std::array<unsigned char, 11> trafficUpdateLabel = {0x74, 0x72, 0x61, 0x66, 0x66, 0x69,
+                                                                         0x63, 0x20, 0x75, 0x70, 0x64};
+
+    HkdfExpand(algorithm, secret, trafficUpdateLabel, {}, secret);
 }
 
 } // namespace snet::tls

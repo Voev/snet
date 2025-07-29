@@ -402,13 +402,19 @@ void Session::generateTLS13KeyMaterial()
     const auto digestName = EVP_MD_name(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
-    auto serverHandshakeWriteKey = hkdfExpandLabel(digestName, shts, "key", {}, keySize);
-    auto serverHandshakeIV = hkdfExpandLabel(digestName, shts, "iv", {}, 12);
+    nonstd::span<uint8_t> serverHandshakeWriteKey = {serverEncKey_.data(), keySize};
+    nonstd::span<uint8_t> serverHandshakeIV = {serverIV_.data(), 12};
+
+    DeriveKey(digestName, shts, serverHandshakeWriteKey);
+    DeriveIV(digestName, shts, serverHandshakeIV);
 
     const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
 
-    auto clientHandshakeWriteKey = hkdfExpandLabel(digestName, chts, "key", {}, keySize);
-    auto clientHandshakeIV = hkdfExpandLabel(digestName, chts, "iv", {}, 12);
+    nonstd::span<uint8_t> clientHandshakeWriteKey = {clientEncKey_.data(), keySize};
+    nonstd::span<uint8_t> clientHandshakeIV = {clientIV_.data(), 12};
+
+    DeriveKey(digestName, chts, clientHandshakeWriteKey);
+    DeriveIV(digestName, chts, clientHandshakeIV);
 
     if (debugKeys_)
     {
@@ -460,11 +466,6 @@ const ProtocolVersion& Session::getVersion() const noexcept
 void Session::setSecrets(SecretNode secrets)
 {
     secrets_ = std::move(secrets);
-}
-
-const Secret& Session::getSecret(const SecretNode::Type type) const
-{
-    return secrets_.getSecret(type);
 }
 
 void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
@@ -779,10 +780,13 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         {
             const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
             const auto digestName = EVP_MD_name(digest);
-            const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
+            const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
-            auto clientWriteKey = hkdfExpandLabel(digestName, secret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-            auto clientIV = hkdfExpandLabel(digestName, secret, "iv", {}, 12);
+            nonstd::span<uint8_t> clientWriteKey = {clientEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
+            DeriveKey(digestName, secret, clientWriteKey);
+
+            nonstd::span<uint8_t> clientIV = {clientIV_.data(), 12};
+            DeriveIV(digestName, secret, clientIV);
 
             clientToServer_.init(cipherAlg_, clientWriteKey, clientIV);
 
@@ -794,11 +798,14 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         }
         else
         {
-            std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-            const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
+            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+            const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
-            auto serverWriteKey = hkdfExpandLabel(digest, secret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-            auto serverIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
+            nonstd::span<uint8_t> serverWriteKey = {serverEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
+            DeriveKey(digestName, secret, serverWriteKey);
+
+            nonstd::span<uint8_t> serverIV = {serverIV_.data(), 12};
+            DeriveIV(digestName, secret, serverIV);
 
             serverToClient_.init(cipherAlg_, serverWriteKey, serverIV);
 
@@ -855,27 +862,32 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     (void)message;
 
     std::vector<uint8_t> newsecret;
-    std::vector<uint8_t> newkey;
-    std::vector<uint8_t> newiv;
 
     const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
     std::string_view digestName = EVP_MD_name(digest);
 
     if (sideIndex == 0)
     {
-        const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
-        auto newsecret = hkdfExpandLabel(digestName, secret, "traffic upd", {}, EVP_MD_size(digest));
-        newkey = hkdfExpandLabel(digestName, newsecret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-        newiv = hkdfExpandLabel(digestName, newsecret, "iv", {}, 12);
+        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
+
+        nonstd::span<uint8_t> newkey = {clientEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
+        DeriveKey(digestName, newsecret, newkey);
+
+        nonstd::span<uint8_t> newiv = {clientIV_.data(), 12};
+        DeriveIV(digestName, newsecret, newiv);
 
         clientToServer_.tls13UpdateKeys(newkey, newiv);
     }
     else
     {
-        const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
-        auto newsecret = hkdfExpandLabel(digestName, secret, "traffic upd", {}, EVP_MD_size(digest));
-        newkey = hkdfExpandLabel(digestName, newsecret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-        newiv = hkdfExpandLabel(digestName, newsecret, "iv", {}, 12);
+        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
+
+        /// @todo: check size of array before
+        nonstd::span<uint8_t> newkey = {serverEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
+        DeriveKey(digestName, newsecret, newkey);
+
+        nonstd::span<uint8_t> newiv = {serverIV_.data(), 12};
+        DeriveIV(digestName, newsecret, newiv);
 
         serverToClient_.tls13UpdateKeys(newkey, newiv);
     }
