@@ -39,23 +39,26 @@ public:
 
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
-    bool canDecrypt(const int8_t sideIndex) const noexcept;
-
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
-
+    
     void preprocessRecord(const int8_t sideIndex, Record* record);
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
 
+    /// @brief Checks if the session can decrypt data.
+    ///
+    /// @param[in] client2server Indicates if the direction is client to server.
+    ///
+    /// @return true - if session can decrypt data, false - otherwise.
+    bool canDecrypt(const int8_t sideIndex) const noexcept;
+
     /// @brief Decrypts a TLS record.
-    /// @param sideIndex The index indicating the side (client or server).
-    /// @param record TLS record.
+    ///
+    /// @param[in] sideIndex The index indicating the side (client or server).
+    /// @param[in] record TLS record.
     ///
     void decrypt(const int8_t sideIndex, Record* record);
 
-    /// @brief Checks if the session can decrypt data.
-    /// @param client2server Indicates if the direction is client to server.
-    /// @return True if the session can decrypt data, false otherwise.
     bool canDecrypt(bool client2server) const noexcept;
 
     /// @brief Generates key material using the PRF.
@@ -150,8 +153,10 @@ private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     const CipherSuite* cipherSuite_;
-    std::vector<uint8_t> PMS_;
     SecretNode secrets_;
+    std::vector<uint8_t> PMS_;
+    std::vector<uint8_t> clientMacKey_;
+    std::vector<uint8_t> serverMacKey_;
     std::array<uint8_t, EVP_MAX_KEY_LENGTH> clientEncKey_;
     std::array<uint8_t, EVP_MAX_KEY_LENGTH> serverEncKey_;
     std::array<uint8_t, EVP_MAX_IV_LENGTH> clientIV_;

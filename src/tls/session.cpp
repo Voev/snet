@@ -224,11 +224,6 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
-bool Session::canDecrypt(bool client2server) const noexcept
-{
-    return (client2server && clientToServer_.isInited()) || (!client2server && serverToClient_.isInited());
-}
-
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
     auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
@@ -236,34 +231,38 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
     auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
-    if (sideIndex == 0 && clientToServer_.isInited())
+    if (sideIndex == 0)
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
-            record->decryptedData = clientToServer_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer, tagLength);
+            record->decryptedData =
+                clientToServer_.tls13Decrypt(record->getType(), clientEncKey_, clientIV_,
+                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             record->decryptedData = clientToServer_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, clientEncKey_, clientMacKey_, clientIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
+                CipherSuiteIsAEAD(cipherSuite_));
         }
     }
-    else if (sideIndex == 1 && serverToClient_.isInited())
+    else if (sideIndex == 1)
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
-            record->decryptedData = serverToClient_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer, tagLength);
+            record->decryptedData =
+                serverToClient_.tls13Decrypt(record->getType(), serverEncKey_, serverIV_,
+                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
             record->decryptedData = serverToClient_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, serverEncKey_, serverMacKey_, serverIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
+                CipherSuiteIsAEAD(cipherSuite_));
         }
     }
 
@@ -325,66 +324,79 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        size_t offset{0};
+        std::copy_n(keyBlock.begin(), keySize, clientEncKey_.begin());
+        offset += keySize;
+        std::copy_n(keyBlock.begin() + offset, keySize, serverEncKey_.begin());
+        offset += keySize;
+
+        std::copy_n(keyBlock.begin() + offset, ivSize, clientIV_.begin());
+        offset += ivSize;
+        std::copy_n(keyBlock.begin() + offset, ivSize, serverIV_.begin());
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
-            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
+            utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV);
+            clientToServer_.init(cipherAlg_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV);
+            serverToClient_.init(cipherAlg_);
             canDecrypt_ |= 2;
         }
     }
     else
     {
         auto macSize = EVP_MD_get_size(hmacHashAlg_);
+        clientMacKey_.resize(macSize);
+        serverMacKey_.resize(macSize);
 
         keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
 
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientMacKey = viewer.view(macSize);
-        auto serverMacKey = viewer.view(macSize);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        size_t offset{0};
+        std::copy_n(keyBlock.begin(), macSize, clientMacKey_.begin());
+        offset += macSize;
+        std::copy_n(keyBlock.begin() + offset, keySize, serverMacKey_.begin());
+        offset += macSize;
+
+        std::copy_n(keyBlock.begin() + offset, keySize, clientEncKey_.begin());
+        offset += keySize;
+        std::copy_n(keyBlock.begin() + offset, keySize, serverEncKey_.begin());
+        offset += keySize;
+
+        std::copy_n(keyBlock.begin() + offset, ivSize, clientIV_.begin());
+        offset += ivSize;
+        std::copy_n(keyBlock.begin() + offset, ivSize, serverIV_.begin());
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientMacKey, Colorize("Client MAC key"));
-            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
-            utils::printHex(std::cout, serverMacKey, Colorize("Server MAC key"));
-            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            utils::printHex(std::cout, clientMacKey_, Colorize("Client MAC key"));
+            utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
+            utils::printHex(std::cout, serverMacKey_, Colorize("Server MAC key"));
+            utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV, clientMacKey);
+            clientToServer_.init(cipherAlg_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV, serverMacKey);
+            serverToClient_.init(cipherAlg_);
             canDecrypt_ |= 2;
         }
     }
@@ -425,8 +437,8 @@ void Session::generateTLS13KeyMaterial()
         utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
     }
 
-    clientToServer_.init(cipherAlg_, clientHandshakeWriteKey, clientHandshakeIV);
-    serverToClient_.init(cipherAlg_, serverHandshakeWriteKey, serverHandshakeIV);
+    clientToServer_.init(cipherAlg_);
+    serverToClient_.init(cipherAlg_);
 
     canDecrypt_ |= 3;
 }
@@ -788,7 +800,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             nonstd::span<uint8_t> clientIV = {clientIV_.data(), 12};
             DeriveIV(digestName, secret, clientIV);
 
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV);
+            clientToServer_.init(cipherAlg_);
 
             if (debugKeys_)
             {
@@ -807,7 +819,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             nonstd::span<uint8_t> serverIV = {serverIV_.data(), 12};
             DeriveIV(digestName, secret, serverIV);
 
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV);
+            serverToClient_.init(cipherAlg_);
 
             if (debugKeys_)
             {
@@ -874,7 +886,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         nonstd::span<uint8_t> newiv = {clientIV_.data(), 12};
         DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), newiv);
 
-        clientToServer_.tls13UpdateKeys(newkey, newiv);
+        clientToServer_.resetCounter();
     }
     else
     {
@@ -887,7 +899,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         nonstd::span<uint8_t> newiv = {serverIV_.data(), 12};
         DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), newiv);
 
-        serverToClient_.tls13UpdateKeys(newkey, newiv);
+        serverToClient_.resetCounter();
     }
 }
 
