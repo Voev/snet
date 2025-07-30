@@ -17,6 +17,7 @@
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
+#include <snet/crypto/secure_array.hpp>
 
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_decoder.hpp>
@@ -704,8 +705,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
             const auto digestName = EVP_MD_name(digest);
 
-            /// @todo: clean sensitive data
-            std::array<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
+            crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
             size_t keySize = EVP_MD_get_size(digest);
 
             DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
@@ -735,10 +735,10 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
         {
             std::string_view algorithm = getHashAlgorithm();
-            auto fecthedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
+            auto fetchedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
 
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-            const auto transcriptHash = handshakeHash_.final(hashCtx_, fecthedAlg, digest);
+            const auto transcriptHash = handshakeHash_.final(hashCtx_, fetchedAlg, digest);
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
             const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
                                                  : handshake_.serverFinished.getVerifyData());
