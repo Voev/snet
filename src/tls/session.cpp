@@ -548,8 +548,8 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     casket::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
-    const auto cert_type_codes = reader.get_range_vector<uint8_t>(1, 1, 255);
-    const std::vector<uint8_t> algs = reader.get_range_vector<uint8_t>(2, 2, 65534);
+    const auto cert_type_codes = reader.get_range<uint8_t>(1, 1, 255);
+    const auto algs = reader.get_span<uint8_t>(2, 2, 65534);
 
     casket::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
 
@@ -559,7 +559,7 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     while (reader.has_remaining())
     {
-        std::vector<uint8_t> name_bits = reader.get_range_vector<uint8_t>(2, 0, 65535);
+        auto name_bits = reader.get_span<uint8_t>(2, 0, 65535);
     }
 
     reader.assert_done();
@@ -573,7 +573,7 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span
 
     utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.get_uint16_t();
-    reader.get_range<uint8_t>(2, 0, 65535);
+    reader.get_span<uint8_t>(2, 0, 65535);
     reader.assert_done();
 
     handshakeHash_.update(message);
@@ -641,7 +641,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
     if (CipherSuiteGetKeyExchange(cipherSuite_) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        const std::vector<uint8_t> encryptedPreMaster = reader.get_range<uint8_t>(2, 0, 65535);
+        const auto encryptedPreMaster = reader.get_span<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
         crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, getServerInfo().getServerKey(), nullptr));
@@ -845,7 +845,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
         utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
         reader.get_uint32_t();
-        reader.get_range<uint8_t>(2, 0, 65535);
+        reader.get_span<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
         // RFC 5077: 3.3 (must be included in transcript hash)
@@ -861,8 +861,6 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 {
     (void)message;
 
-    std::vector<uint8_t> newsecret;
-
     const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
     std::string_view digestName = EVP_MD_name(digest);
 
@@ -871,10 +869,10 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
         nonstd::span<uint8_t> newkey = {clientEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-        DeriveKey(digestName, newsecret, newkey);
+        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), newkey);
 
         nonstd::span<uint8_t> newiv = {clientIV_.data(), 12};
-        DeriveIV(digestName, newsecret, newiv);
+        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), newiv);
 
         clientToServer_.tls13UpdateKeys(newkey, newiv);
     }
@@ -884,10 +882,10 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 
         /// @todo: check size of array before
         nonstd::span<uint8_t> newkey = {serverEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-        DeriveKey(digestName, newsecret, newkey);
+        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), newkey);
 
         nonstd::span<uint8_t> newiv = {serverIV_.data(), 12};
-        DeriveIV(digestName, newsecret, newiv);
+        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), newiv);
 
         serverToClient_.tls13UpdateKeys(newkey, newiv);
     }
