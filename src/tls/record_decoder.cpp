@@ -46,6 +46,14 @@ void RecordDecoder::init(const Cipher* cipher)
     crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
 }
 
+void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
+{
+    reset();
+    resetCounter();
+
+    crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, key.data(), iv.data(), 0));
+}
+
 nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> key,
                                                        nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
                                                        nonstd::span<uint8_t> out, int tagLength)
@@ -184,8 +192,6 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
     else if (EVP_CIPHER_CTX_get_block_size(cipher_) > 1)
     {
         auto outSize = in.size();
-
-        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), iv.data(), 0));
 
         if (encryptThenMac)
         {

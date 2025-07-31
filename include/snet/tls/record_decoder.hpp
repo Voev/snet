@@ -24,6 +24,8 @@ public:
 
     void init(const Cipher* cipher);
 
+    void init(const Cipher* cipher, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv);
+
     nonstd::span<std::uint8_t> tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,
                                            ProtocolVersion version, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                                            nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,

@@ -1,5 +1,4 @@
 #include <cassert>
-#include <array>
 #include <limits>
 #include <memory>
 #include <openssl/core_names.h>
@@ -285,7 +284,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         return;
     }
 
-    std::vector<uint8_t> keyBlock;
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
@@ -320,19 +318,22 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (CipherSuiteIsAEAD(cipherSuite_))
     {
-        keyBlock.resize(keySize * 2 + ivSize * 2);
+        crypto::SecureArray<uint8_t, (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        size_t keyBlockSize = (keySize + ivSize) * 2;
+
+        auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
+
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        size_t offset{0};
-        std::copy_n(keyBlock.begin(), keySize, clientEncKey_.begin());
-        offset += keySize;
-        std::copy_n(keyBlock.begin() + offset, keySize, serverEncKey_.begin());
-        offset += keySize;
+        utils::DataReader reader("Key block (for AEAD)", keyBlock);
 
-        std::copy_n(keyBlock.begin() + offset, ivSize, clientIV_.begin());
-        offset += ivSize;
-        std::copy_n(keyBlock.begin() + offset, ivSize, serverIV_.begin());
+        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
+
+        reader.assert_done();
 
         if (debugKeys_)
         {
@@ -356,28 +357,25 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     else
     {
         auto macSize = EVP_MD_get_size(hmacHashAlg_);
-        clientMacKey_.resize(macSize);
-        serverMacKey_.resize(macSize);
 
-        keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
+        crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
+
+        auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        size_t offset{0};
-        std::copy_n(keyBlock.begin(), macSize, clientMacKey_.begin());
-        offset += macSize;
-        std::copy_n(keyBlock.begin() + offset, keySize, serverMacKey_.begin());
-        offset += macSize;
+        utils::DataReader reader("Key block (with MAC key)", keyBlock);
 
-        std::copy_n(keyBlock.begin() + offset, keySize, clientEncKey_.begin());
-        offset += keySize;
-        std::copy_n(keyBlock.begin() + offset, keySize, serverEncKey_.begin());
-        offset += keySize;
+        clientMacKey_ = reader.get_fixed<uint8_t>(macSize);
+        serverMacKey_ = reader.get_fixed<uint8_t>(macSize);
+        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
 
-        std::copy_n(keyBlock.begin() + offset, ivSize, clientIV_.begin());
-        offset += ivSize;
-        std::copy_n(keyBlock.begin() + offset, ivSize, serverIV_.begin());
+        reader.assert_done();
 
         if (debugKeys_)
         {
@@ -391,12 +389,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_);
+            clientToServer_.init(cipherAlg_, clientEncKey_, clientIV_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_);
+            serverToClient_.init(cipherAlg_, serverEncKey_, serverIV_);
             canDecrypt_ |= 2;
         }
     }
@@ -415,26 +413,26 @@ void Session::generateTLS13KeyMaterial()
     const auto digestName = EVP_MD_name(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
-    nonstd::span<uint8_t> serverHandshakeWriteKey = {serverEncKey_.data(), keySize};
-    nonstd::span<uint8_t> serverHandshakeIV = {serverIV_.data(), 12};
+    serverEncKey_.resize(keySize);
+    serverIV_.resize(12);
 
-    DeriveKey(digestName, shts, serverHandshakeWriteKey);
-    DeriveIV(digestName, shts, serverHandshakeIV);
+    DeriveKey(digestName, shts, serverEncKey_);
+    DeriveIV(digestName, shts, serverIV_);
 
     const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
 
-    nonstd::span<uint8_t> clientHandshakeWriteKey = {clientEncKey_.data(), keySize};
-    nonstd::span<uint8_t> clientHandshakeIV = {clientIV_.data(), 12};
+    clientEncKey_.resize(keySize);
+    clientIV_.resize(12);
 
-    DeriveKey(digestName, chts, clientHandshakeWriteKey);
-    DeriveIV(digestName, chts, clientHandshakeIV);
+    DeriveKey(digestName, chts, clientEncKey_);
+    DeriveIV(digestName, chts, clientIV_);
 
     if (debugKeys_)
     {
-        utils::printHex(std::cout, serverHandshakeWriteKey, Colorize("Server Handshake Write key"));
-        utils::printHex(std::cout, serverHandshakeIV, Colorize("Server Handshake IV"));
-        utils::printHex(std::cout, clientHandshakeWriteKey, Colorize("Client Handshake Write key"));
-        utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
+        utils::printHex(std::cout, serverEncKey_, Colorize("Server Handshake Write key"));
+        utils::printHex(std::cout, serverIV_, Colorize("Server Handshake IV"));
+        utils::printHex(std::cout, clientEncKey_, Colorize("Client Handshake Write key"));
+        utils::printHex(std::cout, clientIV_, Colorize("Client Handshake IV"));
     }
 
     clientToServer_.init(cipherAlg_);
@@ -794,18 +792,18 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             const auto digestName = EVP_MD_name(digest);
             const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
-            nonstd::span<uint8_t> clientWriteKey = {clientEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-            DeriveKey(digestName, secret, clientWriteKey);
+            clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            clientIV_.resize(12);
 
-            nonstd::span<uint8_t> clientIV = {clientIV_.data(), 12};
-            DeriveIV(digestName, secret, clientIV);
-
+            DeriveKey(digestName, secret, clientEncKey_);
+            DeriveIV(digestName, secret, clientIV_);
+    
             clientToServer_.init(cipherAlg_);
 
             if (debugKeys_)
             {
-                utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-                utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+                utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+                utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
             }
         }
         else
@@ -813,18 +811,18 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
             const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
-            nonstd::span<uint8_t> serverWriteKey = {serverEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-            DeriveKey(digestName, secret, serverWriteKey);
+            serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            serverIV_.resize(12);
 
-            nonstd::span<uint8_t> serverIV = {serverIV_.data(), 12};
-            DeriveIV(digestName, secret, serverIV);
+            DeriveKey(digestName, secret, serverEncKey_);
+            DeriveIV(digestName, secret, serverIV_);
 
             serverToClient_.init(cipherAlg_);
 
             if (debugKeys_)
             {
-                utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-                utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+                utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+                utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
             }
         }
     }
@@ -880,11 +878,11 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     {
         UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
-        nonstd::span<uint8_t> newkey = {clientEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), newkey);
+        clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        clientIV_.resize(12);
 
-        nonstd::span<uint8_t> newiv = {clientIV_.data(), 12};
-        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), newiv);
+        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
+        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
 
         clientToServer_.resetCounter();
     }
@@ -892,12 +890,11 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     {
         UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
 
-        /// @todo: check size of array before
-        nonstd::span<uint8_t> newkey = {serverEncKey_.data(), CipherSuiteGetKeySize(cipherSuite_)};
-        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), newkey);
+        serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        serverIV_.resize(12);
 
-        nonstd::span<uint8_t> newiv = {serverIV_.data(), 12};
-        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), newiv);
+        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
+        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
 
         serverToClient_.resetCounter();
     }

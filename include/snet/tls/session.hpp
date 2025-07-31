@@ -157,10 +157,10 @@ private:
     std::vector<uint8_t> PMS_;
     std::vector<uint8_t> clientMacKey_;
     std::vector<uint8_t> serverMacKey_;
-    std::array<uint8_t, EVP_MAX_KEY_LENGTH> clientEncKey_;
-    std::array<uint8_t, EVP_MAX_KEY_LENGTH> serverEncKey_;
-    std::array<uint8_t, EVP_MAX_IV_LENGTH> clientIV_;
-    std::array<uint8_t, EVP_MAX_IV_LENGTH> serverIV_;
+    std::vector<uint8_t> clientEncKey_;
+    std::vector<uint8_t> serverEncKey_;
+    std::vector<uint8_t> clientIV_;
+    std::vector<uint8_t> serverIV_;
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;
