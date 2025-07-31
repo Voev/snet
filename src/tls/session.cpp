@@ -1,5 +1,4 @@
 #include <cassert>
-#include <array>
 #include <limits>
 #include <memory>
 #include <openssl/core_names.h>
@@ -17,6 +16,7 @@
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
+#include <snet/crypto/secure_array.hpp>
 
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_decoder.hpp>
@@ -223,11 +223,6 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
-bool Session::canDecrypt(bool client2server) const noexcept
-{
-    return (client2server && clientToServer_.isInited()) || (!client2server && serverToClient_.isInited());
-}
-
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
     auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
@@ -235,34 +230,38 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
     auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
-    if (sideIndex == 0 && clientToServer_.isInited())
+    if (sideIndex == 0)
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
-            record->decryptedData = clientToServer_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer, tagLength);
+            record->decryptedData =
+                clientToServer_.tls13Decrypt(record->getType(), clientEncKey_, clientIV_,
+                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             record->decryptedData = clientToServer_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, clientEncKey_, clientMacKey_, clientIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
+                CipherSuiteIsAEAD(cipherSuite_));
         }
     }
-    else if (sideIndex == 1 && serverToClient_.isInited())
+    else if (sideIndex == 1)
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
-            record->decryptedData = serverToClient_.tls13Decrypt(record->getType(), input.subspan(TLS_HEADER_SIZE),
-                                                                 record->decryptedBuffer, tagLength);
+            record->decryptedData =
+                serverToClient_.tls13Decrypt(record->getType(), serverEncKey_, serverIV_,
+                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
             record->decryptedData = serverToClient_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, serverEncKey_, serverMacKey_, serverIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
+                CipherSuiteIsAEAD(cipherSuite_));
         }
     }
 
@@ -285,7 +284,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         return;
     }
 
-    std::vector<uint8_t> keyBlock;
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
@@ -320,32 +318,39 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (CipherSuiteIsAEAD(cipherSuite_))
     {
-        keyBlock.resize(keySize * 2 + ivSize * 2);
+        crypto::SecureArray<uint8_t, (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        size_t keyBlockSize = (keySize + ivSize) * 2;
+
+        auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
+
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        utils::DataReader reader("Key block (for AEAD)", keyBlock);
+
+        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
+
+        reader.assert_done();
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
-            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
+            utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV);
+            clientToServer_.init(cipherAlg_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV);
+            serverToClient_.init(cipherAlg_);
             canDecrypt_ |= 2;
         }
     }
@@ -353,37 +358,43 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     {
         auto macSize = EVP_MD_get_size(hmacHashAlg_);
 
-        keyBlock.resize(macSize * 2 + keySize * 2 + ivSize * 2);
+        crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
+
+        auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
         PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
             handshake_.clientHello.random, keyBlock);
 
-        utils::MemoryViewer viewer(keyBlock);
-        auto clientMacKey = viewer.view(macSize);
-        auto serverMacKey = viewer.view(macSize);
-        auto clientWriteKey = viewer.view(keySize);
-        auto serverWriteKey = viewer.view(keySize);
-        auto clientIV = viewer.view(ivSize);
-        auto serverIV = viewer.view(ivSize);
+        utils::DataReader reader("Key block (with MAC key)", keyBlock);
+
+        clientMacKey_ = reader.get_fixed<uint8_t>(macSize);
+        serverMacKey_ = reader.get_fixed<uint8_t>(macSize);
+        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
+        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
+        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
+
+        reader.assert_done();
 
         if (debugKeys_)
         {
-            utils::printHex(std::cout, clientMacKey, Colorize("Client MAC key"));
-            utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-            utils::printHex(std::cout, clientIV, Colorize("Client IV"));
-            utils::printHex(std::cout, serverMacKey, Colorize("Server MAC key"));
-            utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-            utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+            utils::printHex(std::cout, clientMacKey_, Colorize("Client MAC key"));
+            utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+            utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
+            utils::printHex(std::cout, serverMacKey_, Colorize("Server MAC key"));
+            utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+            utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
         }
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV, clientMacKey);
+            clientToServer_.init(cipherAlg_, clientEncKey_, clientIV_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV, serverMacKey);
+            serverToClient_.init(cipherAlg_, serverEncKey_, serverIV_);
             canDecrypt_ |= 2;
         }
     }
@@ -402,26 +413,44 @@ void Session::generateTLS13KeyMaterial()
     const auto digestName = EVP_MD_name(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
-    auto serverHandshakeWriteKey = hkdfExpandLabel(digestName, shts, "key", {}, keySize);
-    auto serverHandshakeIV = hkdfExpandLabel(digestName, shts, "iv", {}, 12);
+    serverEncKey_.resize(keySize);
+    serverIV_.resize(12);
+
+    DeriveKey(digestName, shts, serverEncKey_);
+    DeriveIV(digestName, shts, serverIV_);
 
     const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
 
-    auto clientHandshakeWriteKey = hkdfExpandLabel(digestName, chts, "key", {}, keySize);
-    auto clientHandshakeIV = hkdfExpandLabel(digestName, chts, "iv", {}, 12);
+    clientEncKey_.resize(keySize);
+    clientIV_.resize(12);
+
+    DeriveKey(digestName, chts, clientEncKey_);
+    DeriveIV(digestName, chts, clientIV_);
 
     if (debugKeys_)
     {
-        utils::printHex(std::cout, serverHandshakeWriteKey, Colorize("Server Handshake Write key"));
-        utils::printHex(std::cout, serverHandshakeIV, Colorize("Server Handshake IV"));
-        utils::printHex(std::cout, clientHandshakeWriteKey, Colorize("Client Handshake Write key"));
-        utils::printHex(std::cout, clientHandshakeIV, Colorize("Client Handshake IV"));
+        utils::printHex(std::cout, serverEncKey_, Colorize("Server Handshake Write key"));
+        utils::printHex(std::cout, serverIV_, Colorize("Server Handshake IV"));
+        utils::printHex(std::cout, clientEncKey_, Colorize("Client Handshake Write key"));
+        utils::printHex(std::cout, clientIV_, Colorize("Client Handshake IV"));
     }
 
-    clientToServer_.init(cipherAlg_, clientHandshakeWriteKey, clientHandshakeIV);
-    serverToClient_.init(cipherAlg_, serverHandshakeWriteKey, serverHandshakeIV);
+    clientToServer_.init(cipherAlg_);
+    serverToClient_.init(cipherAlg_);
 
     canDecrypt_ |= 3;
+}
+
+std::string_view Session::getHashAlgorithm() const
+{
+    assert(version_ <= ProtocolVersion::TLSv1_2);
+
+    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+    if (version_ == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
+    {
+        return CipherSuiteGetHmacDigestName(cipherSuite_);
+    }
+    return digest;
 }
 
 void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
@@ -429,23 +458,14 @@ void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<con
 {
     casket::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
-    if (version_ == tls::ProtocolVersion::TLSv1_2)
+    if (version_ == tls::ProtocolVersion::SSLv3_0)
     {
-        std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-        if (digest == "MD5-SHA1")
-        {
-            digest = CipherSuiteGetHmacDigestName(cipherSuite_);
-        }
-        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
-    }
-    else if (version_ >= tls::ProtocolVersion::TLSv1_0)
-    {
-        std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-        tls1Prf(digest, secret, usage, rnd1, rnd2, out);
+        ssl3Prf(secret, rnd1, rnd2, out);
     }
     else
     {
-        ssl3Prf(secret, rnd1, rnd2, out);
+        auto algorithm = getHashAlgorithm();
+        tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -457,11 +477,6 @@ const ProtocolVersion& Session::getVersion() const noexcept
 void Session::setSecrets(SecretNode secrets)
 {
     secrets_ = std::move(secrets);
-}
-
-const Secret& Session::getSecret(const SecretNode::Type type) const
-{
-    return secrets_.getSecret(type);
 }
 
 void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
@@ -544,8 +559,8 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     casket::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
-    const auto cert_type_codes = reader.get_range_vector<uint8_t>(1, 1, 255);
-    const std::vector<uint8_t> algs = reader.get_range_vector<uint8_t>(2, 2, 65534);
+    const auto cert_type_codes = reader.get_range<uint8_t>(1, 1, 255);
+    const auto algs = reader.get_span<uint8_t>(2, 2, 65534);
 
     casket::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
 
@@ -555,7 +570,7 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     while (reader.has_remaining())
     {
-        std::vector<uint8_t> name_bits = reader.get_range_vector<uint8_t>(2, 0, 65535);
+        auto name_bits = reader.get_span<uint8_t>(2, 0, 65535);
     }
 
     reader.assert_done();
@@ -569,7 +584,7 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span
 
     utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     reader.get_uint16_t();
-    reader.get_range<uint8_t>(2, 0, 65535);
+    reader.get_span<uint8_t>(2, 0, 65535);
     reader.assert_done();
 
     handshakeHash_.update(message);
@@ -579,27 +594,8 @@ void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::sp
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
     handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
+    handshakeHash_.update(message);
 }
-
-/* Create a buffer containing data to be signed for server key exchange */
-/*size_t construct_key_exchange_tbs(SSL_CONNECTION* s, unsigned char** ptbs, const void* param, size_t paramlen)
-{
-    size_t tbslen = 2 * SSL3_RANDOM_SIZE + paramlen;
-    unsigned char* tbs = OPENSSL_malloc(tbslen);
-
-    if (tbs == NULL)
-    {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
-        return 0;
-    }
-    memcpy(tbs, s->s3.client_random, SSL3_RANDOM_SIZE);
-    memcpy(tbs + SSL3_RANDOM_SIZE, s->s3.server_random, SSL3_RANDOM_SIZE);
-
-    memcpy(tbs + SSL3_RANDOM_SIZE * 2, param, paramlen);
-
-    *ptbs = tbs;
-    return tbslen;
-}*/
 
 void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
@@ -627,7 +623,7 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
         {
             hash = CipherSuiteGetHandshakeDigest(cipherSuite_);
         }
-        
+
         crypto::InitHash(hashCtx_, hash);
         crypto::UpdateHash(hashCtx_, handshake_.clientHello.random);
         crypto::UpdateHash(hashCtx_, handshake_.serverHello.random);
@@ -644,7 +640,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 {
     casket::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
 
-    /// @todo: serialize
+    /// @todo: deserialize
 
     handshakeHash_.update(message);
 
@@ -656,7 +652,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
     if (CipherSuiteGetKeyExchange(cipherSuite_) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        const std::vector<uint8_t> encryptedPreMaster = reader.get_range<uint8_t>(2, 0, 65535);
+        const auto encryptedPreMaster = reader.get_span<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
         crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, getServerInfo().getServerKey(), nullptr));
@@ -705,33 +701,88 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
     }
 
-    if (0) //! secrets_.getSecret(SecretNode::MasterSecret).empty())
+    /// Check Finished data
+
+    switch (version_.code())
     {
-        if (version_ == ProtocolVersion::TLSv1_3) {}
-        else if (version_ == ProtocolVersion::SSLv3_0) {}
-        else
+    case ProtocolVersion::TLSv1_3:
+    {
+        const auto& secret = (sideIndex == 0 ? secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret)
+                                             : secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret));
+        if (!secret.empty())
         {
+
+            const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+            const auto digestName = EVP_MD_name(digest);
+
+            crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
+            size_t keySize = EVP_MD_get_size(digest);
+
+            DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+
+            crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+            const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
+                                                 : handshake_.serverFinished.getVerifyData());
+
+            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+            std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
+            size_t length = actual.size();
+            const auto transcriptHash = handshakeHash_.final(hashCtx_, digest, buffer);
+
+            crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
+            crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
+            crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
+
+            casket::ThrowIfFalse(expect.size() == length && std::equal(expect.begin(), expect.end(), actual.begin()),
+                                 "Bad Finished MAC");
+        }
+        break;
+    }
+    case ProtocolVersion::TLSv1_2:
+    case ProtocolVersion::TLSv1_1:
+    case ProtocolVersion::TLSv1_0:
+    {
+        if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
+        {
+            std::string_view algorithm = getHashAlgorithm();
+            auto fetchedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
+
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-            const auto transcriptHash =
-                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(cipherSuite_), digest);
+            const auto transcriptHash = handshakeHash_.final(hashCtx_, fetchedAlg, digest);
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
             const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
                                                  : handshake_.serverFinished.getVerifyData());
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-
-            std::string_view algorithm = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
             tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
                     actual);
 
-            casket::ThrowIfFalse(std::equal(expect.begin(), expect.end(), actual.begin()), "Bad Finished MAC");
+            casket::ThrowIfFalse(expect.size() == actual.size() &&
+                                     std::equal(expect.begin(), expect.end(), actual.begin()),
+                                 "Bad Finished MAC");
         }
+        break;
+    }
+    case ProtocolVersion::SSLv3_0:
+        /// @todo: do it.
+        break;
     }
 
-    if (sideIndex == 0)
+    /// Update transcript hash
+
+    if (version_ == ProtocolVersion::TLSv1_3)
     {
         handshakeHash_.update(message);
     }
+    else
+    {
+        if (sideIndex == 0)
+        {
+            handshakeHash_.update(message);
+        }
+    }
+
+    /// Generate key material
 
     if (version_ == tls::ProtocolVersion::TLSv1_3)
     {
@@ -739,33 +790,39 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
         {
             const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
             const auto digestName = EVP_MD_name(digest);
-            const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
+            const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
-            auto clientWriteKey = hkdfExpandLabel(digestName, secret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-            auto clientIV = hkdfExpandLabel(digestName, secret, "iv", {}, 12);
+            clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            clientIV_.resize(12);
 
-            clientToServer_.init(cipherAlg_, clientWriteKey, clientIV);
+            DeriveKey(digestName, secret, clientEncKey_);
+            DeriveIV(digestName, secret, clientIV_);
+    
+            clientToServer_.init(cipherAlg_);
 
             if (debugKeys_)
             {
-                utils::printHex(std::cout, clientWriteKey, Colorize("Client Write key"));
-                utils::printHex(std::cout, clientIV, Colorize("Client IV"));
+                utils::printHex(std::cout, clientEncKey_, Colorize("Client Write key"));
+                utils::printHex(std::cout, clientIV_, Colorize("Client IV"));
             }
         }
         else
         {
-            std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-            const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
+            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+            const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
-            auto serverWriteKey = hkdfExpandLabel(digest, secret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-            auto serverIV = hkdfExpandLabel(digest, secret, "iv", {}, 12);
+            serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            serverIV_.resize(12);
 
-            serverToClient_.init(cipherAlg_, serverWriteKey, serverIV);
+            DeriveKey(digestName, secret, serverEncKey_);
+            DeriveIV(digestName, secret, serverIV_);
+
+            serverToClient_.init(cipherAlg_);
 
             if (debugKeys_)
             {
-                utils::printHex(std::cout, serverWriteKey, Colorize("Server Write key"));
-                utils::printHex(std::cout, serverIV, Colorize("Server IV"));
+                utils::printHex(std::cout, serverEncKey_, Colorize("Server Write key"));
+                utils::printHex(std::cout, serverIV_, Colorize("Server IV"));
             }
         }
     }
@@ -798,7 +855,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
         utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
         reader.get_uint32_t();
-        reader.get_range<uint8_t>(2, 0, 65535);
+        reader.get_span<uint8_t>(2, 0, 65535);
         reader.assert_done();
 
         // RFC 5077: 3.3 (must be included in transcript hash)
@@ -814,30 +871,32 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 {
     (void)message;
 
-    std::vector<uint8_t> newsecret;
-    std::vector<uint8_t> newkey;
-    std::vector<uint8_t> newiv;
-
     const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
     std::string_view digestName = EVP_MD_name(digest);
 
     if (sideIndex == 0)
     {
-        const auto& secret = getSecret(SecretNode::ClientTrafficSecret);
-        auto newsecret = hkdfExpandLabel(digestName, secret, "traffic upd", {}, EVP_MD_size(digest));
-        newkey = hkdfExpandLabel(digestName, newsecret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-        newiv = hkdfExpandLabel(digestName, newsecret, "iv", {}, 12);
+        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
-        clientToServer_.tls13UpdateKeys(newkey, newiv);
+        clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        clientIV_.resize(12);
+
+        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
+        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
+
+        clientToServer_.resetCounter();
     }
     else
     {
-        const auto& secret = getSecret(SecretNode::ServerTrafficSecret);
-        auto newsecret = hkdfExpandLabel(digestName, secret, "traffic upd", {}, EVP_MD_size(digest));
-        newkey = hkdfExpandLabel(digestName, newsecret, "key", {}, CipherSuiteGetKeySize(cipherSuite_));
-        newiv = hkdfExpandLabel(digestName, newsecret, "iv", {}, 12);
+        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
 
-        serverToClient_.tls13UpdateKeys(newkey, newiv);
+        serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        serverIV_.resize(12);
+
+        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
+        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
+
+        serverToClient_.resetCounter();
     }
 }
 

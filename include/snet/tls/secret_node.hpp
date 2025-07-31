@@ -5,6 +5,7 @@
 #include <array>
 #include <vector>
 #include <cstdint>
+#include <casket/nonstd/span.hpp>
 #include <snet/tls/version.hpp>
 
 namespace snet::tls
@@ -65,9 +66,10 @@ public:
     /// @return True if the secret node is valid, false otherwise.
     bool isValid(const ProtocolVersion version) const;
 
+    nonstd::span<uint8_t> get(const Type type);
+
 private:
     std::array<Secret, SecretTypesCount> secrets_;
 };
 
 } // namespace snet::tls
-

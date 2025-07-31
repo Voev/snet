@@ -39,23 +39,26 @@ public:
 
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
-    bool canDecrypt(const int8_t sideIndex) const noexcept;
-
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
-
+    
     void preprocessRecord(const int8_t sideIndex, Record* record);
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
 
+    /// @brief Checks if the session can decrypt data.
+    ///
+    /// @param[in] client2server Indicates if the direction is client to server.
+    ///
+    /// @return true - if session can decrypt data, false - otherwise.
+    bool canDecrypt(const int8_t sideIndex) const noexcept;
+
     /// @brief Decrypts a TLS record.
-    /// @param sideIndex The index indicating the side (client or server).
-    /// @param record TLS record.
+    ///
+    /// @param[in] sideIndex The index indicating the side (client or server).
+    /// @param[in] record TLS record.
     ///
     void decrypt(const int8_t sideIndex, Record* record);
 
-    /// @brief Checks if the session can decrypt data.
-    /// @param client2server Indicates if the direction is client to server.
-    /// @return True if the session can decrypt data, false otherwise.
     bool canDecrypt(bool client2server) const noexcept;
 
     /// @brief Generates key material using the PRF.
@@ -85,11 +88,6 @@ public:
     /// @brief Sets the secrets for the session.
     /// @param secrets The secrets to set.
     void setSecrets(SecretNode secrets);
-
-    /// @brief Gets a secret of a specific type.
-    /// @param type The type of the secret.
-    /// @return The secret of the specified type.
-    const Secret& getSecret(const SecretNode::Type type) const;
 
     /// @brief Sets the premaster secret for the session.
     /// @param pms The premaster secret to set.
@@ -141,6 +139,8 @@ public:
     ///
     void fetchAlgorithms();
 
+    std::string_view getHashAlgorithm() const;
+
 private:
     RecordPool& recordPool_;
     Record* readingRecord{nullptr};
@@ -153,8 +153,14 @@ private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     const CipherSuite* cipherSuite_;
-    std::vector<uint8_t> PMS_;
     SecretNode secrets_;
+    std::vector<uint8_t> PMS_;
+    std::vector<uint8_t> clientMacKey_;
+    std::vector<uint8_t> serverMacKey_;
+    std::vector<uint8_t> clientEncKey_;
+    std::vector<uint8_t> serverEncKey_;
+    std::vector<uint8_t> clientIV_;
+    std::vector<uint8_t> serverIV_;
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;

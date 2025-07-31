@@ -13,8 +13,8 @@ void ClientHello::deserialize(nonstd::span<const uint8_t> message)
     legacyVersion = ProtocolVersion(reader.get_uint16_t());
     random = reader.get_fixed<uint8_t>(32);
     sessionID = reader.get_range<uint8_t>(1, 0, 32);
-    suites = reader.get_range_vector<uint16_t>(2, 1, 32767);
-    compMethods = reader.get_range_vector<uint8_t>(1, 1, 255);
+    suites = reader.get_range<uint16_t>(2, 1, 32767);
+    compMethods = reader.get_range<uint8_t>(1, 1, 255);
 
     if (legacyVersion == ProtocolVersion::SSLv3_0)
     {

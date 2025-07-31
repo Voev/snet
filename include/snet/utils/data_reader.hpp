@@ -141,17 +141,9 @@ public:
         return result;
     }
 
-    template <typename T>
-    std::vector<T> get_range_vector(size_t len_bytes, size_t min_elems, size_t max_elems)
-    {
-        const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
-
-        return get_elem<T, std::vector<T>>(num_elems);
-    }
-
     std::string get_string(size_t len_bytes, size_t min_bytes, size_t max_bytes)
     {
-        std::vector<uint8_t> v = get_range_vector<uint8_t>(len_bytes, min_bytes, max_bytes);
+        auto v = get_span<uint8_t>(len_bytes, min_bytes, max_bytes);
         return std::string(v.begin(), v.end());
     }
 
