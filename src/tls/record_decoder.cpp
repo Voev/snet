@@ -19,7 +19,6 @@ namespace snet::tls
 
 RecordDecoder::RecordDecoder()
     : cipher_(EVP_CIPHER_CTX_new())
-    , seq_(0)
 {
     crypto::ThrowIfTrue(cipher_ == nullptr);
 }
@@ -33,15 +32,9 @@ void RecordDecoder::reset() noexcept
     EVP_CIPHER_CTX_reset(cipher_);
 }
 
-void RecordDecoder::resetCounter() noexcept
-{
-    seq_ = 0U;
-}
-
 void RecordDecoder::init(const Cipher* cipher)
 {
     reset();
-    resetCounter();
 
     crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, nullptr, nullptr, 0));
 }
@@ -49,12 +42,11 @@ void RecordDecoder::init(const Cipher* cipher)
 void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
 {
     reset();
-    resetCounter();
 
     crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, key.data(), iv.data(), 0));
 }
 
-nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::span<const uint8_t> key,
+nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
                                                        nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
                                                        nonstd::span<uint8_t> out, int tagLength)
 {
@@ -72,9 +64,8 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::sp
     // AEAD NONCE according to RFC TLS1.3
     for (i = 0; i < 8; i++)
     {
-        nonce[12 - 1 - i] ^= ((seq_ >> (i * 8)) & 0xFF);
+        nonce[12 - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
     }
-    seq_++;
 
     int dataLength = in.size() - tagLength;
 
@@ -113,7 +104,7 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, nonstd::sp
 }
 
 nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,
-                                                 ProtocolVersion version, nonstd::span<const uint8_t> key,
+                                                 ProtocolVersion version, uint64_t seq, nonstd::span<const uint8_t> key,
                                                  nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                                                  nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out,
                                                  int tagLength, bool encryptThenMac, bool aead)
@@ -155,7 +146,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
             crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), 0));
         }
 
-        casket::store_be(seq_, &aad[0]);
+        casket::store_be(seq, &aad[0]);
         aad[8] = static_cast<uint8_t>(rt);
         aad[9] = version.majorVersion();
         aad[10] = version.minorVersion();
@@ -166,8 +157,6 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
         auto tagLength = EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_TLS1_AAD, static_cast<int>(aad.size()),
                                              const_cast<uint8_t*>(aad.data()));
         crypto::ThrowIfFalse(tagLength > 0, "Invalid tag length");
-
-        seq_++;
 
         casket::ThrowIfTrue(out.size() < MAX_PLAINTEXT_SIZE, "output buffer is too small");
 
@@ -214,7 +203,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, version, macKey, iv, content, mac);
+                tls1CheckMac(hmacCtx, rt, version, seq, macKey, iv, content, mac);
 
                 outSize -= blockSize;
                 decryptedContent = {out.data() + iv.size(), outSize};
@@ -222,7 +211,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, version, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, rt, version, seq, macKey, {}, content, mac);
                 decryptedContent = {out.data(), outSize};
             }
         }
@@ -244,7 +233,7 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
-                tls1CheckMac(hmacCtx, rt, version, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, rt, version, seq, macKey, {}, content, mac);
 
                 outSize -= blockSize;
             }
@@ -254,11 +243,11 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
 
                 if (version == ProtocolVersion::SSLv3_0)
                 {
-                    ssl3CheckMac(hashCtx, hmacHash, rt, macKey, content, mac);
+                    ssl3CheckMac(hashCtx, hmacHash, rt, seq, macKey, content, mac);
                 }
                 else
                 {
-                    tls1CheckMac(hmacCtx, rt, version, macKey, {}, content, mac);
+                    tls1CheckMac(hmacCtx, rt, version, seq, macKey, {}, content, mac);
                 }
             }
             decryptedContent = {out.data(), outSize};
@@ -275,11 +264,11 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
 
         if (version == ProtocolVersion::SSLv3_0)
         {
-            ssl3CheckMac(hashCtx, hmacHash, rt, macKey, content, mac);
+            ssl3CheckMac(hashCtx, hmacHash, rt, seq, macKey, content, mac);
         }
         else
         {
-            tls1CheckMac(hmacCtx, rt, version, macKey, {}, content, mac);
+            tls1CheckMac(hmacCtx, rt, version, seq, macKey, {}, content, mac);
         }
 
         decryptedContent = {out.data(), in.size() - mac.size()};
@@ -288,13 +277,13 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
     return decryptedContent;
 }
 
-void RecordDecoder::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, ProtocolVersion version,
+void RecordDecoder::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, ProtocolVersion version, uint64_t seq,
                                  nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                                  nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
-    casket::store_be(seq_, meta.data());
-    seq_++;
+    casket::store_be(seq, meta.data());
+
     meta[8] = static_cast<uint8_t>(recordType);
     meta[9] = version.majorVersion();
     meta[10] = version.minorVersion();
@@ -321,7 +310,7 @@ void RecordDecoder::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, Protoco
                          "Bad record MAC");
 }
 
-void RecordDecoder::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType,
+void RecordDecoder::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
                                  nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
                                  nonstd::span<const uint8_t> expectedMac)
 {
@@ -335,8 +324,8 @@ void RecordDecoder::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType 
     crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, pad_ct));
 
     std::array<uint8_t, 11> meta;
-    casket::store_be(seq_, meta.data());
-    seq_++;
+    casket::store_be(seq, meta.data());
+
     meta[8] = static_cast<uint8_t>(recordType);
     uint16_t s = content.size();
     meta[9] = casket::get_byte<0>(s);

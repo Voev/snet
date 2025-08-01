@@ -235,23 +235,25 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData =
-                clientToServer_.tls13Decrypt(record->getType(), clientEncKey_, clientIV_,
+                clientToServer_.tls13Decrypt(record->getType(), seqnum_.getClientSequence(), clientEncKey_, clientIV_,
                                              input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
             record->decryptedData = clientToServer_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, clientEncKey_, clientMacKey_, clientIV_,
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_,
                 input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
                 CipherSuiteIsAEAD(cipherSuite_));
         }
+
+        seqnum_.acceptClientSequence();
     }
     else if (sideIndex == 1)
     {
         if (version == ProtocolVersion::TLSv1_3)
         {
             record->decryptedData =
-                serverToClient_.tls13Decrypt(record->getType(), serverEncKey_, serverIV_,
+                serverToClient_.tls13Decrypt(record->getType(), seqnum_.getServerSequence(), serverEncKey_, serverIV_,
                                              input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
         else if (version <= ProtocolVersion::TLSv1_2)
@@ -259,10 +261,12 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
             int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
             record->decryptedData = serverToClient_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, serverEncKey_, serverMacKey_, serverIV_,
+                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_,
                 input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
                 CipherSuiteIsAEAD(cipherSuite_));
         }
+
+        seqnum_.acceptServerSequence();
     }
 
     if (version == ProtocolVersion::TLSv1_3)
@@ -797,8 +801,9 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
 
             DeriveKey(digestName, secret, clientEncKey_);
             DeriveIV(digestName, secret, clientIV_);
-    
+
             clientToServer_.init(cipherAlg_);
+            seqnum_.resetClientSequence();
 
             if (debugKeys_)
             {
@@ -818,6 +823,7 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             DeriveIV(digestName, secret, serverIV_);
 
             serverToClient_.init(cipherAlg_);
+            seqnum_.resetServerSequence();
 
             if (debugKeys_)
             {
@@ -884,7 +890,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
         DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
 
-        clientToServer_.resetCounter();
+        seqnum_.resetClientSequence();
     }
     else
     {
@@ -896,7 +902,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
         DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
 
-        serverToClient_.resetCounter();
+        seqnum_.resetServerSequence();
     }
 }
 
