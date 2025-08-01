@@ -9,7 +9,6 @@
 #include <casket/utils/string.hpp>
 
 #include <snet/utils/print_hex.hpp>
-#include <snet/utils/memory_viewer.hpp>
 
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/cipher_context.hpp>
