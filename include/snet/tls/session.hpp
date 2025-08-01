@@ -21,6 +21,7 @@
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/handshake_msgs.hpp>
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/sequence_numbers.hpp>
 
 namespace snet::tls
 {
@@ -58,8 +59,6 @@ public:
     /// @param[in] record TLS record.
     ///
     void decrypt(const int8_t sideIndex, Record* record);
-
-    bool canDecrypt(bool client2server) const noexcept;
 
     /// @brief Generates key material using the PRF.
     /// @param secret The secret to use.
@@ -101,7 +100,6 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    
     void processClientHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
     void processServerHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
@@ -164,6 +162,7 @@ private:
     RecordDecoder clientToServer_;
     RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;
+    SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
     uint8_t debugKeys_;
