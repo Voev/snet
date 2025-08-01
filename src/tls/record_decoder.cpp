@@ -56,12 +56,11 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, uint64_t s
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
     std::array<uint8_t, TLS13_AEAD_NONCE_SIZE> nonce;
 
-    /// @todo: check iv length
-    memcpy(nonce.data(), iv.data(), 12);
+    casket::ThrowIfFalse(iv.size() >= TLS13_AEAD_NONCE_SIZE, "Invalid IV size");
+    std::copy_n(iv.begin(), TLS13_AEAD_NONCE_SIZE, nonce.begin());
 
     assert(tagLength > 0);
 
-    // AEAD NONCE according to RFC TLS1.3
     for (i = 0; i < 8; i++)
     {
         nonce[12 - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
@@ -133,15 +132,15 @@ nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashC
         }
         else
         {
-            auto recordIvSize = EVP_CIPHER_CTX_iv_length(cipher_);
-            std::vector<uint8_t> nonce;
+            std::array<uint8_t, 2 * EVP_MAX_IV_LENGTH> nonce;
+            const size_t recordIvSize = EVP_CIPHER_CTX_iv_length(cipher_);
 
-            nonce.reserve(recordIvSize);
-            nonce.insert(nonce.end(), iv.begin(), iv.end());
+            casket::ThrowIfFalse(recordIvSize <= nonce.size(), "IV too large");
+            casket::ThrowIfFalse(recordIvSize >= iv.size(), "IV too small");
+            casket::ThrowIfFalse(in.size() >= recordIvSize - iv.size(), "Not enough input");
 
-            auto recordIv = in.subspan(0, recordIvSize - iv.size());
-
-            nonce.insert(nonce.end(), recordIv.begin(), recordIv.end());
+            std::copy_n(iv.begin(), iv.size(), nonce.begin());
+            std::copy_n(in.begin(), recordIvSize - iv.size(), nonce.begin() + iv.size());
 
             crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), 0));
         }
