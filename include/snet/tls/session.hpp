@@ -17,6 +17,7 @@
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
+#include <snet/tls/record_layer.hpp>
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/handshake_msgs.hpp>
 #include <snet/tls/cipher_suite.hpp>
@@ -142,6 +143,7 @@ public:
 
 private:
     RecordPool& recordPool_;
+    RecordLayer recordLayer_;
     Record* readingRecord{nullptr};
     HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;

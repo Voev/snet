@@ -57,11 +57,16 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
 
     ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
-    ASSERT_NO_THROW(encryptedData = RecordLayer::tls13Encrypt(ctx, RecordType::Handshake, 0, key, nonce, plaintext,
-                                                              encryptedBuffer, tagLength));
+    RecordLayer recordLayer;
 
-    ASSERT_NO_THROW(decryptedData = RecordLayer::tls13Decrypt(ctx, RecordType::Handshake, 0, key, nonce, encryptedData,
-                                                              decryptedBuffer, tagLength));
+    recordLayer.enableAEAD();
+    recordLayer.setTagLength(tagLength);
+
+    ASSERT_NO_THROW(encryptedData = recordLayer.tls13Encrypt(ctx, RecordType::Handshake, 0, key, nonce, plaintext,
+                                                             encryptedBuffer));
+
+    ASSERT_NO_THROW(decryptedData = recordLayer.tls13Decrypt(ctx, RecordType::Handshake, 0, key, nonce, encryptedData,
+                                                             decryptedBuffer));
 
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
 }

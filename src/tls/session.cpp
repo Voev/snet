@@ -45,6 +45,8 @@ Session::Session(RecordPool& recordPool)
 
 void Session::reset() noexcept
 {
+    recordLayer_.reset();
+
     ResetCipherCtx(clientCipherCtx_);
     ResetCipherCtx(serverCipherCtx_);
     ResetHashCtx(hashCtx_);
@@ -234,22 +236,20 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
     auto input = record->getData();
-    auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
-    auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
     if (version_ == ProtocolVersion::TLSv1_3)
     {
         if (sideIndex == 0)
         {
-            record->decryptedData = RecordLayer::tls13Decrypt(
+            record->decryptedData = recordLayer_.tls13Decrypt(
                 clientCipherCtx_, record->getType(), seqnum_.getClientSequence(), clientEncKey_, clientIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
         }
         else
         {
-            record->decryptedData = RecordLayer::tls13Decrypt(
+            record->decryptedData = recordLayer_.tls13Decrypt(
                 serverCipherCtx_, record->getType(), seqnum_.getServerSequence(), serverEncKey_, serverIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
         }
 
         uint8_t lastByte = record->decryptedData.back();
@@ -262,17 +262,17 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     {
         if (sideIndex == 0)
         {
-            record->decryptedData = RecordLayer::tls1Decrypt(
-                clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version_,
+            record->decryptedData = recordLayer_.tls1Decrypt(
+                clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(),
                 seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                record->decryptedBuffer);
         }
         else
         {
-            record->decryptedData = RecordLayer::tls1Decrypt(
-                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version_,
+            record->decryptedData = recordLayer_.tls1Decrypt(
+                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(),
                 seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+                record->decryptedBuffer);
         }
     }
 
@@ -535,8 +535,15 @@ void Session::processServerHello(const std::int8_t sideIndex, nonstd::span<const
         version_ = std::move(ext->versions()[0]);
     }
 
+    if (serverHello.extensions.has(tls::ExtensionCode::EncryptThenMac))
+    {
+        recordLayer_.enableEncryptThenMAC();
+    }
+
     cipherSuite_ = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
     casket::ThrowIfFalse(cipherSuite_, "Cipher suite not found");
+
+    recordLayer_.setVersion(version_);
 
     fetchAlgorithms();
 
@@ -923,6 +930,13 @@ void Session::fetchAlgorithms()
     {
         cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
         isAEAD = CipherIsAEAD(cipherAlg_);
+
+        if (isAEAD)
+        {
+            recordLayer_.enableAEAD();
+            recordLayer_.setTagLength(
+                CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_)));
+        }
     }
 
     if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
