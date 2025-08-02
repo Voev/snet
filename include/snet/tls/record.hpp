@@ -10,9 +10,14 @@
 namespace snet::tls
 {
 
+class Session;
+
 class Record
 {
 public:
+    /// @todo: use class RecordLayer
+    friend class Session;
+
     Record()
         : type(RecordType::Invalid)
         , payload(nullptr)
@@ -63,6 +68,7 @@ public:
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
+private:
     RecordType type;
     ProtocolVersion version;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
