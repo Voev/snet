@@ -18,7 +18,7 @@
 #include <snet/crypto/secure_array.hpp>
 
 #include <snet/tls/session.hpp>
-#include <snet/tls/record_decoder.hpp>
+#include <snet/tls/record_layer.hpp>
 #include <snet/tls/prf.hpp>
 #include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
@@ -34,11 +34,20 @@ namespace snet::tls
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , hashCtx_(crypto::CreateHashCtx())
+    , clientCipherCtx_(crypto::CreateCipherCtx())
+    , serverCipherCtx_(crypto::CreateCipherCtx())
     , cipherSuite_(nullptr)
     , cipherState_(0)
     , canDecrypt_(0)
     , debugKeys_(0)
 {
+}
+
+void Session::reset() noexcept
+{
+    ResetCipherCtx(clientCipherCtx_);
+    ResetCipherCtx(serverCipherCtx_);
+    ResetHashCtx(hashCtx_);
 }
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
@@ -224,55 +233,56 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
-    auto version = (version_ != ProtocolVersion()) ? version_ : record->getVersion();
     auto input = record->getData();
     auto encryptThenMAC = handshake_.serverHello.extensions.has(ExtensionCode::EncryptThenMac);
     auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
 
-    if (sideIndex == 0)
+    if (version_ == ProtocolVersion::TLSv1_3)
     {
-        if (version == ProtocolVersion::TLSv1_3)
+        if (sideIndex == 0)
         {
-            record->decryptedData =
-                clientToServer_.tls13Decrypt(record->getType(), seqnum_.getClientSequence(), clientEncKey_, clientIV_,
-                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
+            record->decryptedData = RecordLayer::tls13Decrypt(
+                clientCipherCtx_, record->getType(), seqnum_.getClientSequence(), clientEncKey_, clientIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
-        else if (version <= ProtocolVersion::TLSv1_2)
+        else
         {
-            record->decryptedData = clientToServer_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
-                CipherSuiteIsAEAD(cipherSuite_));
+            record->decryptedData = RecordLayer::tls13Decrypt(
+                serverCipherCtx_, record->getType(), seqnum_.getServerSequence(), serverEncKey_, serverIV_,
+                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
         }
 
-        seqnum_.acceptClientSequence();
-    }
-    else if (sideIndex == 1)
-    {
-        if (version == ProtocolVersion::TLSv1_3)
-        {
-            record->decryptedData =
-                serverToClient_.tls13Decrypt(record->getType(), seqnum_.getServerSequence(), serverEncKey_, serverIV_,
-                                             input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength);
-        }
-        else if (version <= ProtocolVersion::TLSv1_2)
-        {
-            record->decryptedData = serverToClient_.tls1Decrypt(
-                hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,
-                CipherSuiteIsAEAD(cipherSuite_));
-        }
-
-        seqnum_.acceptServerSequence();
-    }
-
-    if (version == ProtocolVersion::TLSv1_3)
-    {
         uint8_t lastByte = record->decryptedData.back();
         casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
 
         record->type = static_cast<RecordType>(lastByte);
         record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
+    }
+    else
+    {
+        if (sideIndex == 0)
+        {
+            record->decryptedData = RecordLayer::tls1Decrypt(
+                clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version_,
+                seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_, input.subspan(TLS_HEADER_SIZE),
+                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+        }
+        else
+        {
+            record->decryptedData = RecordLayer::tls1Decrypt(
+                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version_,
+                seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_, input.subspan(TLS_HEADER_SIZE),
+                record->decryptedBuffer, tagLength, encryptThenMAC, CipherSuiteIsAEAD(cipherSuite_));
+        }
+    }
+
+    if (sideIndex == 0)
+    {
+        seqnum_.acceptClientSequence();
+    }
+    else
+    {
+        seqnum_.acceptServerSequence();
     }
 
     record->isDecrypted_ = true;
@@ -346,12 +356,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_);
+            RecordLayer::init(clientCipherCtx_, cipherAlg_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_);
+            RecordLayer::init(serverCipherCtx_, cipherAlg_);
             canDecrypt_ |= 2;
         }
     }
@@ -390,12 +400,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            clientToServer_.init(cipherAlg_, clientEncKey_, clientIV_);
+            RecordLayer::init(clientCipherCtx_, cipherAlg_, clientEncKey_, clientIV_);
             canDecrypt_ |= 1;
         }
         else
         {
-            serverToClient_.init(cipherAlg_, serverEncKey_, serverIV_);
+            RecordLayer::init(serverCipherCtx_, cipherAlg_, serverEncKey_, serverIV_);
             canDecrypt_ |= 2;
         }
     }
@@ -436,8 +446,8 @@ void Session::generateTLS13KeyMaterial()
         utils::printHex(std::cout, clientIV_, Colorize("Client Handshake IV"));
     }
 
-    clientToServer_.init(cipherAlg_);
-    serverToClient_.init(cipherAlg_);
+    RecordLayer::init(clientCipherCtx_, cipherAlg_);
+    RecordLayer::init(serverCipherCtx_, cipherAlg_);
 
     canDecrypt_ |= 3;
 }
@@ -799,7 +809,6 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             DeriveKey(digestName, secret, clientEncKey_);
             DeriveIV(digestName, secret, clientIV_);
 
-            clientToServer_.init(cipherAlg_);
             seqnum_.resetClientSequence();
 
             if (debugKeys_)
@@ -819,7 +828,6 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             DeriveKey(digestName, secret, serverEncKey_);
             DeriveIV(digestName, secret, serverIV_);
 
-            serverToClient_.init(cipherAlg_);
             seqnum_.resetServerSequence();
 
             if (debugKeys_)

@@ -3,7 +3,7 @@
 
 #include <casket/utils/string.hpp>
 
-#include <snet/tls/record_decoder.hpp>
+#include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/rand.hpp>
@@ -31,20 +31,6 @@ std::vector<RecordLayerTestParam> GetTLSv13CipherSuites()
 
 class RecordLayerTest : public TestWithParam<RecordLayerTestParam>
 {
-public:
-    RecordLayerTest() = default;
-
-    ~RecordLayerTest() = default;
-
-    void SetUp() override
-    {
-    }
-
-    void TearDown() override
-    {
-    }
-
-    RecordDecoder recLayer_;
 };
 
 TEST_P(RecordLayerTest, EncryptDecrypt)
@@ -67,13 +53,15 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
     nonstd::span<uint8_t> encryptedData;
     nonstd::span<uint8_t> decryptedData;
 
-    ASSERT_NO_THROW(recLayer_.init(cipherAlg));
+    auto ctx = CreateCipherCtx();
 
-    ASSERT_NO_THROW(encryptedData = recLayer_.tls13Encrypt(RecordType::Handshake, 0, key, nonce, plaintext,
-                                                           encryptedBuffer, tagLength));
+    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
-    ASSERT_NO_THROW(decryptedData = recLayer_.tls13Decrypt(RecordType::Handshake, 0, key, nonce, encryptedData,
-                                                           decryptedBuffer, tagLength));
+    ASSERT_NO_THROW(encryptedData = RecordLayer::tls13Encrypt(ctx, RecordType::Handshake, 0, key, nonce, plaintext,
+                                                              encryptedBuffer, tagLength));
+
+    ASSERT_NO_THROW(decryptedData = RecordLayer::tls13Decrypt(ctx, RecordType::Handshake, 0, key, nonce, encryptedData,
+                                                              decryptedBuffer, tagLength));
 
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
 }

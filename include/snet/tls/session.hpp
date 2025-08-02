@@ -9,7 +9,6 @@
 #include <casket/nonstd/span.hpp>
 
 #include <snet/tls/alert.hpp>
-#include <snet/tls/record_decoder.hpp>
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/client_random.hpp>
 #include <snet/tls/extensions.hpp>
@@ -32,6 +31,8 @@ class Session
 public:
     /// @brief Default constructor.
     explicit Session(RecordPool& recordPool);
+
+    void reset() noexcept;
 
     void setProcessor(const RecordProcessor& processor)
     {
@@ -144,9 +145,11 @@ private:
     Record* readingRecord{nullptr};
     HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;
-    crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
     crypto::HashPtr hmacHashAlg_; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::MacCtxPtr hmacCtx_; ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
+    crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
+    crypto::CipherCtxPtr clientCipherCtx_;
+    crypto::CipherCtxPtr serverCipherCtx_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;
@@ -159,8 +162,6 @@ private:
     std::vector<uint8_t> serverEncKey_;
     std::vector<uint8_t> clientIV_;
     std::vector<uint8_t> serverIV_;
-    RecordDecoder clientToServer_;
-    RecordDecoder serverToClient_;
     HandshakeHash handshakeHash_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
