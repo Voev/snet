@@ -25,9 +25,14 @@ public:
     void init(const Cipher* cipher, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv);
 
     nonstd::span<std::uint8_t> tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,
-                                           ProtocolVersion version, uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                                           nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
-                                           nonstd::span<uint8_t> out, int tagLength, bool encryptThenMac, bool aead);
+                                           ProtocolVersion version, uint64_t seq, nonstd::span<const uint8_t> key,
+                                           nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                                           nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, int tagLength,
+                                           bool encryptThenMac, bool aead);
+
+    nonstd::span<std::uint8_t> tls13Encrypt(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
+                                            nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                            nonstd::span<uint8_t> out, int tagLength);
 
     nonstd::span<std::uint8_t> tls13Decrypt(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
                                             nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
@@ -38,8 +43,13 @@ private:
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                       nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac);
 
-    void ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
-                      nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac);
+    void ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
+                      nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
+                      nonstd::span<const uint8_t> mac);
+
+    nonstd::span<std::uint8_t> tls13process(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
+                                            nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                            nonstd::span<uint8_t> out, int tagLength, bool encrypt);
 
 private:
     crypto::CipherCtxPtr cipher_;

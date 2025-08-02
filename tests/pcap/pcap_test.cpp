@@ -3,11 +3,12 @@
 #include <string>
 
 #include <gtest/gtest.h>
-#include <snet/io.hpp>
 #include <casket/utils/string.hpp>
 
+#include <snet/io.hpp>
+#include <snet/config_parser/config_parser.hpp>
+
 #include "pcap_test.hpp"
-#include "config_parser.hpp"
 #include "decrypt_by_keylog_test.hpp"
 #include "controller_manager.hpp"
 

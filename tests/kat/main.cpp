@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
-#include <snet/config_parser/config_parser.hpp>
-#include "controller_manager.hpp"
+#include "config_parser.hpp"
 
 void ParseCommandLine(int argc, char* argv[])
 {
@@ -15,27 +14,11 @@ void ParseCommandLine(int argc, char* argv[])
             }
             else
             {
-                throw std::runtime_error("Error: Missing value for " +
-                                         std::string(arg));
-            }
-        }
-        else if (arg == "--driver")
-        {
-            if (i + 1 < argc)
-            {
-                snet::io::DriverConfig config;
-                config.setPath(argv[++i]);
-                snet::ControllerManager::Instance().loadDriver(config);
-            }
-            else
-            {
-                throw std::runtime_error("Error: Missing value for " +
-                                         std::string(arg));
+                throw std::runtime_error("Error: Missing value for " + std::string(arg));
             }
         }
     }
 }
-
 
 int main(int argc, char* argv[])
 {

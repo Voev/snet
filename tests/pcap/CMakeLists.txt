@@ -12,6 +12,7 @@ target_link_libraries(${TEST_NAME}
     PRIVATE
         snet_tls
         snet_layers
+        snet_config_parser
         snet_io
         GTest::GTest)
 

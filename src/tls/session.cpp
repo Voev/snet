@@ -257,8 +257,6 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
         }
         else if (version <= ProtocolVersion::TLSv1_2)
         {
-            int tagLength = CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_));
-
             record->decryptedData = serverToClient_.tls1Decrypt(
                 hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(), version, seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_,
                 input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer, tagLength, encryptThenMAC,

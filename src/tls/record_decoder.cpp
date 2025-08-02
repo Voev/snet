@@ -46,11 +46,24 @@ void RecordDecoder::init(const Cipher* cipher, nonstd::span<const uint8_t> key, 
     crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, cipher, key.data(), iv.data(), 0));
 }
 
+nonstd::span<std::uint8_t> RecordDecoder::tls13Encrypt(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
+                                                       nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                                       nonstd::span<uint8_t> out, int tagLength)
+{
+    return tls13process(rt, seq, key, iv, in, out, tagLength, true);
+}
+
 nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
                                                        nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
                                                        nonstd::span<uint8_t> out, int tagLength)
 {
-    int i;
+    return tls13process(rt, seq, key, iv, in, out, tagLength, false);
+}
+
+nonstd::span<std::uint8_t> RecordDecoder::tls13process(RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
+                                                       nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                                       nonstd::span<uint8_t> out, int tagLength, bool encrypt)
+{
     int updateLength = 0;
     int finalLength = 0;
     std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
@@ -61,27 +74,41 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, uint64_t s
 
     assert(tagLength > 0);
 
-    for (i = 0; i < 8; i++)
+    for (int i = 0; i < 8; ++i)
     {
-        nonce[12 - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
+        nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
     }
-
-    int dataLength = in.size() - tagLength;
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
     {
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), 0));
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
     }
     else
     {
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), 0));
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipher_, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
     }
 
-    crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength,
-                                                 const_cast<uint8_t*>(in.data()) + dataLength));
+    int dataLength = in.size();
+    uint16_t encryptedRecordLength = static_cast<uint16_t>(in.size());
+
+    if (!encrypt)
+    {
+        /// TLSv1.3 uses 1 byte to denote inner content type.
+        casket::ThrowIfFalse(in.size() >= static_cast<size_t>(tagLength) + 1, "Invalid data size");
+        dataLength -= tagLength;
+
+        /// Set tag for decryption.
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_SET_TAG, tagLength,
+                                                     const_cast<uint8_t*>(in.data()) + dataLength));
+    }
+    else
+    {
+        /// Calculate size for AAD
+        encryptedRecordLength += tagLength;
+    }
 
     if (EVP_CIPHER_CTX_get_mode(cipher_) == EVP_CIPH_CCM_MODE)
     {
@@ -91,15 +118,24 @@ nonstd::span<std::uint8_t> RecordDecoder::tls13Decrypt(RecordType rt, uint64_t s
     aad[0] = static_cast<uint8_t>(rt);
     aad[1] = 0x03;
     aad[2] = 0x03;
-    uint16_t size = static_cast<uint16_t>(in.size());
-    aad[3] = casket::get_byte<0>(size);
-    aad[4] = casket::get_byte<1>(size);
+    aad[3] = casket::get_byte<0>(encryptedRecordLength);
+    aad[4] = casket::get_byte<1>(encryptedRecordLength);
 
     crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipher_, nullptr, &updateLength, aad.data(), aad.size()));
     crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipher_, out.data(), &updateLength, in.data(), dataLength));
-    crypto::ThrowIfFalse(0 < EVP_CipherFinal(cipher_, out.data() + updateLength, &finalLength));
+    crypto::ThrowIfFalse(0 < EVP_CipherFinal(cipher_, out.data() + updateLength, &finalLength), "Bad record MAC");
 
-    return {out.data(), (size_t)updateLength};
+    casket::ThrowIfFalse(dataLength == updateLength + finalLength, "Invalid processed length");
+
+    if (encrypt)
+    {
+        /// Add the tag
+        crypto::ThrowIfFalse(0 <
+                             EVP_CIPHER_CTX_ctrl(cipher_, EVP_CTRL_AEAD_GET_TAG, tagLength, out.data() + dataLength));
+        dataLength += tagLength;
+    }
+
+    return {out.data(), static_cast<size_t>(dataLength)};
 }
 
 nonstd::span<uint8_t> RecordDecoder::tls1Decrypt(MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, RecordType rt,

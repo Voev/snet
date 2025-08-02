@@ -1,3 +1,4 @@
+add_subdirectory(config_parser)
 add_subdirectory(io)
 add_subdirectory(driver)
 add_subdirectory(ip)

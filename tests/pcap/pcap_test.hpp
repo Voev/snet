@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <snet/io.hpp>
 
-#include "config_parser.hpp"
+#include <snet/config_parser/config_parser.hpp>
 
 using TestParam = std::pair<const std::string, ConfigParser::Section>;
 

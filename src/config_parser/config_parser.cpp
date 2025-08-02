@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <fstream>
 
-#include "config_parser.hpp"
+#include <snet/config_parser/config_parser.hpp>
 
 void ConfigParser::parse(const std::string& filename)
 {
