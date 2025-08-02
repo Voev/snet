@@ -35,6 +35,22 @@ nonstd::span<std::uint8_t> RecordLayer::tls13Encrypt(CipherCtx* cipherCtx, Recor
     return tls13process(cipherCtx, rt, seq, key, iv, in, out, true);
 }
 
+void RecordLayer::tls13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                               nonstd::span<const uint8_t> iv)
+{
+    auto input = record->getData();
+
+    record->decryptedData = tls13process(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE),
+                                         record->decryptedBuffer, false);
+
+    uint8_t lastByte = record->decryptedData.back();
+    casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
+
+    record->type = static_cast<RecordType>(lastByte);
+    record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
+    record->isDecrypted_ = true;
+}
+
 nonstd::span<std::uint8_t> RecordLayer::tls13Decrypt(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
                                                      nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
                                                      nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out)
@@ -121,6 +137,18 @@ nonstd::span<std::uint8_t> RecordLayer::tls13process(CipherCtx* cipherCtx, Recor
     }
 
     return {out.data(), static_cast<size_t>(dataLength)};
+}
+
+void RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+                              Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                              nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
+{
+    auto input = record->getData();
+
+    record->decryptedData = tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
+                                        input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
+    
+    record->isDecrypted_ = true;
 }
 
 nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
@@ -223,7 +251,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, version_, seq, macKey, iv, content, mac);
+                tls1CheckMac(hmacCtx, rt, seq, macKey, iv, content, mac);
 
                 outSize -= blockSize;
                 decryptedContent = {out.data() + iv.size(), outSize};
@@ -231,7 +259,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, version_, seq, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
                 decryptedContent = {out.data(), outSize};
             }
         }
@@ -253,7 +281,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
-                tls1CheckMac(hmacCtx, rt, version_, seq, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
 
                 outSize -= blockSize;
             }
@@ -267,7 +295,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
                 }
                 else
                 {
-                    tls1CheckMac(hmacCtx, rt, version_, seq, macKey, {}, content, mac);
+                    tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
                 }
             }
             decryptedContent = {out.data(), outSize};
@@ -288,7 +316,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         }
         else
         {
-            tls1CheckMac(hmacCtx, rt, version_, seq, macKey, {}, content, mac);
+            tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
         }
 
         decryptedContent = {out.data(), in.size() - mac.size()};
@@ -297,16 +325,16 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
     return decryptedContent;
 }
 
-void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, ProtocolVersion version, uint64_t seq,
-                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
-                               nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
+void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
+                               nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> content,
+                               nonstd::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
     casket::store_be(seq, meta.data());
 
     meta[8] = static_cast<uint8_t>(recordType);
-    meta[9] = version.majorVersion();
-    meta[10] = version.minorVersion();
+    meta[9] = version_.majorVersion();
+    meta[10] = version_.minorVersion();
     uint16_t s = content.size() + iv.size();
     meta[11] = casket::get_byte<0>(s);
     meta[12] = casket::get_byte<1>(s);

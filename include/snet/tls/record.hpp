@@ -15,8 +15,7 @@ class Session;
 class Record
 {
 public:
-    /// @todo: use class RecordLayer
-    friend class Session;
+    friend class RecordLayer;
 
     Record()
         : type(RecordType::Invalid)

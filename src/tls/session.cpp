@@ -120,7 +120,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 {
     nonstd::span<const uint8_t> data;
 
-    if (canDecrypt(sideIndex) && record->type != RecordType::ChangeCipherSpec)
+    if (canDecrypt(sideIndex) && record->getType() != RecordType::ChangeCipherSpec)
     {
         decrypt(sideIndex, record);
         data = record->getDecryptedData();
@@ -235,44 +235,29 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 
 void Session::decrypt(const std::int8_t sideIndex, Record* record)
 {
-    auto input = record->getData();
-
     if (version_ == ProtocolVersion::TLSv1_3)
     {
         if (sideIndex == 0)
         {
-            record->decryptedData = recordLayer_.tls13Decrypt(
-                clientCipherCtx_, record->getType(), seqnum_.getClientSequence(), clientEncKey_, clientIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
+            recordLayer_.tls13Decrypt(clientCipherCtx_, record, seqnum_.getClientSequence(), clientEncKey_, clientIV_);
         }
         else
         {
-            record->decryptedData = recordLayer_.tls13Decrypt(
-                serverCipherCtx_, record->getType(), seqnum_.getServerSequence(), serverEncKey_, serverIV_,
-                input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
+            recordLayer_.tls13Decrypt(serverCipherCtx_, record, seqnum_.getServerSequence(), serverEncKey_, serverIV_);
         }
-
-        uint8_t lastByte = record->decryptedData.back();
-        casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
-
-        record->type = static_cast<RecordType>(lastByte);
-        record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
     }
     else
     {
         if (sideIndex == 0)
         {
-            record->decryptedData = recordLayer_.tls1Decrypt(
-                clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(),
-                seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer);
+            recordLayer_.tls1Decrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record,
+                                     seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_);
         }
         else
         {
-            record->decryptedData = recordLayer_.tls1Decrypt(
-                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record->getType(),
-                seqnum_.getServerSequence(), serverEncKey_, serverMacKey_, serverIV_, input.subspan(TLS_HEADER_SIZE),
-                record->decryptedBuffer);
+            recordLayer_.tls1Decrypt(
+                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
+                serverEncKey_, serverMacKey_, serverIV_);
         }
     }
 
@@ -284,8 +269,6 @@ void Session::decrypt(const std::int8_t sideIndex, Record* record)
     {
         seqnum_.acceptServerSequence();
     }
-
-    record->isDecrypted_ = true;
 }
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
