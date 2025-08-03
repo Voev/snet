@@ -47,11 +47,7 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
     Rand::generate(key);
     Rand::generate(nonce);
 
-    std::vector<uint8_t> plaintext = {0x16, 0x03, 0x03, 0x01, 0x02};
-    std::vector<uint8_t> decryptedBuffer(32);
-    std::vector<uint8_t> encryptedBuffer(32);
-    nonstd::span<uint8_t> encryptedData;
-    nonstd::span<uint8_t> decryptedData;
+    std::vector<uint8_t> plaintext = {0x17, 0x03, 0x03, 0x00, 0x01, 0x00};
 
     auto ctx = CreateCipherCtx();
 
@@ -59,15 +55,17 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
 
     RecordLayer recordLayer;
 
+    recordLayer.setVersion(ProtocolVersion::TLSv1_3);
     recordLayer.enableAEAD();
     recordLayer.setTagLength(tagLength);
 
-    ASSERT_NO_THROW(encryptedData = recordLayer.tls13Encrypt(ctx, RecordType::Handshake, 0, key, nonce, plaintext,
-                                                             encryptedBuffer));
+    Record record(RecordType::ApplicationData);
+    record.initPlaintext(plaintext);
 
-    ASSERT_NO_THROW(decryptedData = recordLayer.tls13Decrypt(ctx, RecordType::Handshake, 0, key, nonce, encryptedData,
-                                                             decryptedBuffer));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Encrypt(ctx, &record, 0, key, nonce));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Decrypt(ctx, &record, 0, key, nonce));
 
+    auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
 }
 

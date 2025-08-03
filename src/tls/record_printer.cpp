@@ -27,7 +27,7 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
 
     if (record->isDecrypted())
     {
-        auto data = record->getDecryptedData();
+        auto data = record->getPlaintext();
         if (record->getType() == RecordType::Handshake)
         {
             auto ht = static_cast<tls::HandshakeType>(data[0]);
@@ -37,7 +37,7 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
     }
     else
     {
-        auto data = record->getData();
+        auto data = record->getCiphertext();
         if (record->getType() == RecordType::Handshake)
         {
             if (!session->getCipherState(sideIndex))

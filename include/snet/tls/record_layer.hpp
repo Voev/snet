@@ -15,6 +15,18 @@ namespace snet::tls
 class RecordLayer final
 {
 public:
+    struct Operation
+    {
+        CipherCtx* cipherCtx;
+        MacCtx* hmacCtx;
+        HashCtx* hashCtx;
+        const Hash* hmacHash;
+
+        uint8_t* encKey;
+        uint8_t* macKey;
+        uint8_t* iv;
+    };
+
     void reset() noexcept
     {
         version_ = ProtocolVersion();
@@ -48,6 +60,10 @@ public:
     static void init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
                      nonstd::span<const uint8_t> iv);
 
+    void decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                 uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                 nonstd::span<const uint8_t> iv);
+
     nonstd::span<std::uint8_t> tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
                                            const Hash* hmacHash, RecordType rt, uint64_t seq,
                                            nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
@@ -58,16 +74,11 @@ public:
                      uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                      nonstd::span<const uint8_t> iv);
 
-    void tls13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
-                      nonstd::span<const uint8_t> iv);
+    void doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                         nonstd::span<const uint8_t> iv);
 
-    nonstd::span<std::uint8_t> tls13Encrypt(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                            nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                            nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out);
-
-    nonstd::span<std::uint8_t> tls13Decrypt(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                            nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                            nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out);
+    void doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                         nonstd::span<const uint8_t> iv);
 
 private:
     void tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
@@ -78,9 +89,9 @@ private:
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
                       nonstd::span<const uint8_t> mac);
 
-    nonstd::span<std::uint8_t> tls13process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                            nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                            nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
+    nonstd::span<std::uint8_t> doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
+                                               nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
+                                               nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
 
 private:
     ProtocolVersion version_;

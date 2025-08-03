@@ -28,126 +28,31 @@ void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const 
     crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, key.data(), iv.data(), 0));
 }
 
-nonstd::span<std::uint8_t> RecordLayer::tls13Encrypt(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                                     nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                                     nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out)
+void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                          uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                          nonstd::span<const uint8_t> iv)
 {
-    return tls13process(cipherCtx, rt, seq, key, iv, in, out, true);
-}
+    if (version_ == ProtocolVersion::TLSv1_3)
+    {
+        doTLSv13Decrypt(cipherCtx, record, seq, key, iv);
+    }
+    else
+    {
+        tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
+    }
 
-void RecordLayer::tls13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
-                               nonstd::span<const uint8_t> iv)
-{
-    auto input = record->getData();
-
-    record->decryptedData = tls13process(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE),
-                                         record->decryptedBuffer, false);
-
-    uint8_t lastByte = record->decryptedData.back();
-    casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
-
-    record->type = static_cast<RecordType>(lastByte);
-    record->decryptedData = record->decryptedData.first(record->decryptedData.size() - 1);
     record->isDecrypted_ = true;
-}
-
-nonstd::span<std::uint8_t> RecordLayer::tls13Decrypt(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                                     nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                                     nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out)
-{
-    return tls13process(cipherCtx, rt, seq, key, iv, in, out, false);
-}
-
-nonstd::span<std::uint8_t> RecordLayer::tls13process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                                     nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                                     nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out,
-                                                     bool encrypt)
-{
-    int updateLength = 0;
-    int finalLength = 0;
-    std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
-    std::array<uint8_t, TLS13_AEAD_NONCE_SIZE> nonce;
-
-    casket::ThrowIfFalse(iv.size() >= TLS13_AEAD_NONCE_SIZE, "Invalid IV size");
-    std::copy_n(iv.begin(), TLS13_AEAD_NONCE_SIZE, nonce.begin());
-
-    assert(tagLength_ > 0);
-
-    for (int i = 0; i < 8; ++i)
-    {
-        nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
-    }
-
-    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
-    {
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, nullptr));
-        crypto::ThrowIfFalse(0 <
-                             EVP_CipherInit(cipherCtx, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
-    }
-    else
-    {
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
-        crypto::ThrowIfFalse(0 <
-                             EVP_CipherInit(cipherCtx, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
-    }
-
-    int dataLength = in.size();
-    uint16_t encryptedRecordLength = static_cast<uint16_t>(in.size());
-
-    if (!encrypt)
-    {
-        /// TLSv1.3 uses 1 byte to denote inner content type.
-        casket::ThrowIfFalse(in.size() >= static_cast<size_t>(tagLength_) + 1, "Invalid data size");
-        dataLength -= tagLength_;
-
-        /// Set tag for decryption.
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_,
-                                                     const_cast<uint8_t*>(in.data()) + dataLength));
-    }
-    else
-    {
-        /// Calculate size for AAD
-        encryptedRecordLength += tagLength_;
-    }
-
-    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
-    {
-        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
-    }
-
-    aad[0] = static_cast<uint8_t>(rt);
-    aad[1] = 0x03;
-    aad[2] = 0x03;
-    aad[3] = casket::get_byte<0>(encryptedRecordLength);
-    aad[4] = casket::get_byte<1>(encryptedRecordLength);
-
-    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, nullptr, &updateLength, aad.data(), aad.size()));
-    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, out.data(), &updateLength, in.data(), dataLength));
-    crypto::ThrowIfFalse(0 < EVP_CipherFinal(cipherCtx, out.data() + updateLength, &finalLength), "Bad record MAC");
-
-    casket::ThrowIfFalse(dataLength == updateLength + finalLength, "Invalid processed length");
-
-    if (encrypt)
-    {
-        /// Add the tag
-        crypto::ThrowIfFalse(
-            0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_GET_TAG, tagLength_, out.data() + dataLength));
-        dataLength += tagLength_;
-    }
-
-    return {out.data(), static_cast<size_t>(dataLength)};
 }
 
 void RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
                               Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
 {
-    auto input = record->getData();
+    auto input = record->getCiphertext();
 
-    record->decryptedData = tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
-                                        input.subspan(TLS_HEADER_SIZE), record->decryptedBuffer);
-    
+    record->plaintext_ = tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
+                                     input.subspan(TLS_HEADER_SIZE), record->plaintextBuffer_);
+
     record->isDecrypted_ = true;
 }
 
@@ -397,6 +302,124 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
     casket::ThrowIfFalse(expectedMac.size() == actualMacSize &&
                              std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
                          "Bad record MAC");
+}
+
+void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                                  nonstd::span<const uint8_t> iv)
+{
+    assert(record->ciphertextBuffer_.size() >= record->plaintext_.size() + 1 + tagLength_);
+
+    record->plaintext_ = record->plaintext_.first(record->plaintext_.size() + 1);
+    record->plaintext_.back() = static_cast<uint8_t>(record->getType());
+
+    nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
+    auto encryptedData = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, record->plaintext_,
+                                         ciphertext.subspan(TLS_HEADER_SIZE), true);
+
+    record->type_ = RecordType::ApplicationData;
+    record->ciphertext_ = {ciphertext.data(), TLS_HEADER_SIZE + encryptedData.size()};
+    record->isDecrypted_ = false;
+}
+
+void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                                  nonstd::span<const uint8_t> iv)
+{
+    assert(record->getCiphertext().size() > TLS_HEADER_SIZE);
+
+    casket::ThrowIfTrue(record->getType() != RecordType::ApplicationData,
+                        "TLSv1.3 encrypted record must have outer type ApplicationData");
+
+    auto input = record->getCiphertext();
+    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE),
+                                         record->plaintextBuffer_, false);
+
+    uint8_t lastByte = record->plaintext_.back();
+    casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
+
+    record->type_ = static_cast<RecordType>(lastByte);
+    record->plaintext_ = record->plaintext_.first(record->plaintext_.size() - 1);
+    record->isDecrypted_ = true;
+}
+
+nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
+                                                        nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
+                                                        nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out,
+                                                        bool encrypt)
+{
+    int updateLength = 0;
+    int finalLength = 0;
+    std::array<uint8_t, TLS13_AEAD_AAD_SIZE> aad;
+    std::array<uint8_t, TLS13_AEAD_NONCE_SIZE> nonce;
+
+    casket::ThrowIfFalse(iv.size() >= TLS13_AEAD_NONCE_SIZE, "Invalid IV size");
+    std::copy_n(iv.begin(), TLS13_AEAD_NONCE_SIZE, nonce.begin());
+
+    assert(tagLength_ > 0);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
+    }
+
+    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    {
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, nullptr));
+        crypto::ThrowIfFalse(0 <
+                             EVP_CipherInit(cipherCtx, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
+    }
+    else
+    {
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr));
+        crypto::ThrowIfFalse(0 <
+                             EVP_CipherInit(cipherCtx, nullptr, key.data(), nonce.data(), static_cast<int>(encrypt)));
+    }
+
+    int dataLength = in.size();
+    uint16_t encryptedRecordLength = static_cast<uint16_t>(in.size());
+
+    if (!encrypt)
+    {
+        /// TLSv1.3 uses 1 byte to denote inner content type.
+        casket::ThrowIfFalse(in.size() >= static_cast<size_t>(tagLength_) + 1, "Invalid data size");
+        dataLength -= tagLength_;
+
+        /// Set tag for decryption.
+        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_,
+                                                     const_cast<uint8_t*>(in.data()) + dataLength));
+    }
+    else
+    {
+        /// Calculate size for AAD
+        encryptedRecordLength += tagLength_;
+    }
+
+    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    {
+        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
+    }
+
+    aad[0] = static_cast<uint8_t>(rt);
+    aad[1] = 0x03;
+    aad[2] = 0x03;
+    aad[3] = casket::get_byte<0>(encryptedRecordLength);
+    aad[4] = casket::get_byte<1>(encryptedRecordLength);
+
+    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, nullptr, &updateLength, aad.data(), aad.size()));
+    crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, out.data(), &updateLength, in.data(), dataLength));
+    crypto::ThrowIfFalse(0 < EVP_CipherFinal(cipherCtx, out.data() + updateLength, &finalLength), "Bad record MAC");
+
+    casket::ThrowIfFalse(dataLength == updateLength + finalLength, "Invalid processed length");
+
+    if (encrypt)
+    {
+        /// Add the tag
+        crypto::ThrowIfFalse(
+            0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_GET_TAG, tagLength_, out.data() + dataLength));
+        dataLength += tagLength_;
+    }
+
+    return {out.data(), static_cast<size_t>(dataLength)};
 }
 
 } // namespace snet::tls

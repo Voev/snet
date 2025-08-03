@@ -123,11 +123,11 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
     if (canDecrypt(sideIndex) && record->getType() != RecordType::ChangeCipherSpec)
     {
         decrypt(sideIndex, record);
-        data = record->getDecryptedData();
+        data = record->getPlaintext();
     }
     else
     {
-        data = record->getData().subspan(TLS_HEADER_SIZE);
+        data = record->getCiphertext().subspan(TLS_HEADER_SIZE);
     }
 
     if (record->getType() == RecordType::ChangeCipherSpec)
@@ -233,40 +233,18 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
-void Session::decrypt(const std::int8_t sideIndex, Record* record)
+void Session::decrypt(const int8_t sideIndex, Record* record)
 {
-    if (version_ == ProtocolVersion::TLSv1_3)
-    {
-        if (sideIndex == 0)
-        {
-            recordLayer_.tls13Decrypt(clientCipherCtx_, record, seqnum_.getClientSequence(), clientEncKey_, clientIV_);
-        }
-        else
-        {
-            recordLayer_.tls13Decrypt(serverCipherCtx_, record, seqnum_.getServerSequence(), serverEncKey_, serverIV_);
-        }
-    }
-    else
-    {
-        if (sideIndex == 0)
-        {
-            recordLayer_.tls1Decrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record,
-                                     seqnum_.getClientSequence(), clientEncKey_, clientMacKey_, clientIV_);
-        }
-        else
-        {
-            recordLayer_.tls1Decrypt(
-                serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
-                serverEncKey_, serverMacKey_, serverIV_);
-        }
-    }
-
     if (sideIndex == 0)
     {
+        recordLayer_.decrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
+                             clientEncKey_, clientMacKey_, clientIV_);
         seqnum_.acceptClientSequence();
     }
     else
     {
+        recordLayer_.decrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
+                             serverEncKey_, serverMacKey_, serverIV_);
         seqnum_.acceptServerSequence();
     }
 }
