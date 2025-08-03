@@ -13,33 +13,42 @@ namespace snet::tls
 class Record
 {
 public:
+    friend class RecordLayer;
+
     Record()
-        : type(RecordType::Invalid)
-        , payload(nullptr)
-        , currentLength(0)
-        , expectedLength(0)
+        : type_(RecordType::Invalid)
+        , currentLength_(0)
+        , expectedLength_(0)
+        , isDecrypted_(false)
+    {
+    }
+
+    Record(const RecordType type)
+        : type_(type)
+        , currentLength_(0)
+        , expectedLength_(0)
         , isDecrypted_(false)
     {
     }
 
     inline bool isFullyAssembled() const noexcept
     {
-        return expectedLength == currentLength;
+        return expectedLength_ == currentLength_;
     }
 
     inline RecordType getType() const noexcept
     {
-        return type;
+        return type_;
     }
 
     inline ProtocolVersion getVersion() const noexcept
     {
-        return version;
+        return version_;
     }
 
     inline uint16_t getLength() const noexcept
     {
-        return currentLength;
+        return currentLength_;
     }
 
     inline bool isDecrypted() const noexcept
@@ -47,30 +56,33 @@ public:
         return isDecrypted_;
     }
 
-    inline nonstd::span<const uint8_t> getData() const noexcept
+    inline nonstd::span<const uint8_t> getCiphertext() const noexcept
     {
-        return {payload, currentLength};
+        return ciphertext_;
     }
 
-    inline nonstd::span<const uint8_t> getDecryptedData() const noexcept
+    inline nonstd::span<const uint8_t> getPlaintext() const noexcept
     {
-        return decryptedData;
+        return plaintext_;
     }
 
     void reset();
+
+    size_t initPlaintext(nonstd::span<const uint8_t> plaintext);
 
     size_t initPayload(nonstd::span<const uint8_t> data);
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
-    RecordType type;
-    ProtocolVersion version;
-    std::array<uint8_t, MAX_CIPHERTEXT_SIZE> payloadBuffer;
-    std::array<uint8_t, MAX_PLAINTEXT_SIZE> decryptedBuffer;
-    const uint8_t* payload;
-    size_t currentLength;
-    size_t expectedLength;
-    nonstd::span<const std::uint8_t> decryptedData;
+private:
+    RecordType type_;
+    ProtocolVersion version_;
+    std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
+    std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
+    size_t currentLength_;
+    size_t expectedLength_;
+    nonstd::span<const std::uint8_t> ciphertext_;
+    nonstd::span<std::uint8_t> plaintext_;
     bool isDecrypted_;
 };
 

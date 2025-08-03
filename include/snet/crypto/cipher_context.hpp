@@ -6,11 +6,16 @@
 namespace snet::crypto
 {
 
-inline CipherCtxPtr AllocateCipherCtx()
+inline CipherCtxPtr CreateCipherCtx()
 {
     CipherCtxPtr ctx(EVP_CIPHER_CTX_new());
     crypto::ThrowIfFalse(ctx);
     return ctx;
+}
+
+inline void ResetCipherCtx(CipherCtx* ctx) noexcept
+{
+    EVP_CIPHER_CTX_reset(ctx);
 }
 
 inline bool CipherIsAEAD(const Cipher* cipher)

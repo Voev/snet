@@ -5,7 +5,7 @@
 #include <snet/tls.hpp>
 #include <snet/layers/tcp_reassembly.hpp>
 
-#include "config_parser.hpp"
+#include <snet/config_parser/config_parser.hpp>
 #include "pcap_test.hpp"
 
 class DecryptByKeylog final : public PcapTestImpl

@@ -15,6 +15,11 @@ inline HashCtxPtr CreateHashCtx()
     return ctx;
 }
 
+inline void ResetHashCtx(HashCtx* ctx) noexcept
+{
+    EVP_MD_CTX_reset(ctx);
+}
+
 inline void InitHash(HashCtx* ctx, const Hash* algorithm)
 {
     ThrowIfFalse(0 < EVP_DigestInit(ctx, algorithm));
@@ -23,11 +28,6 @@ inline void InitHash(HashCtx* ctx, const Hash* algorithm)
 inline void UpdateHash(HashCtx* ctx, nonstd::span<const uint8_t> message)
 {
     ThrowIfFalse(0 < EVP_DigestUpdate(ctx, message.data(), message.size()));
-}
-
-inline void ResetHash(HashCtx* ctx) noexcept
-{
-    EVP_MD_CTX_reset(ctx);
 }
 
 inline nonstd::span<uint8_t> FinalHash(HashCtx* ctx, nonstd::span<uint8_t> buffer)

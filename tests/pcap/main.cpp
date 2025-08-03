@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "config_parser.hpp"
+#include <snet/config_parser/config_parser.hpp>
 #include "controller_manager.hpp"
 
 void ParseCommandLine(int argc, char* argv[])
