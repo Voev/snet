@@ -396,7 +396,7 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
 
     if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
     {
-        crypto::ThrowIfFalse(0 < EVP_DecryptUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
+        crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
     }
 
     aad[0] = static_cast<uint8_t>(rt);
