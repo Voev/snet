@@ -11,13 +11,13 @@ namespace snet::tls
 
 struct HandshakeMessages
 {
-    ClientHello clientHello;
-    ServerHello serverHello;
+    //ClientHello clientHello;
+    //ServerHello serverHello;
     EncryptedExtensions encryptedExtensions;
     ServerKeyExchange serverKeyExchange;
     Certificate serverCertificate;
-    Finished clientFinished;
-    Finished serverFinished;
+    //Finished clientFinished;
+    //Finished serverFinished;
 };
 
 } // namespace snet::tls

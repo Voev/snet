@@ -72,8 +72,8 @@ void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input)
         if (extensionSize > 0)
         {
             extensionData = reader.get_span_fixed<uint8_t>(extensionSize);
+            
         }
-
         add(makeExtension(extensionData, static_cast<ExtensionCode>(extensionCode), side));
     }
     reader.assert_done();

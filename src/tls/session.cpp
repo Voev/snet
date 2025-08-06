@@ -167,11 +167,25 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             /* Not implemented */
             break;
         case HandshakeType::ClientHello:
-            processClientHello(sideIndex, data);
+        {
+            casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
+
+            record->deserializeClientHello(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            processClientHello(record->getHandshakeMsg<ClientHello>());
+
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::ServerHello:
-            processServerHello(sideIndex, data);
+        {
+            casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+
+            record->deserializeServerHello(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            processServerHello(record->getHandshakeMsg<ServerHello>());
+
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::HelloVerifyRequest:
             /* Not implemented */
             break;
@@ -202,8 +216,20 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             processClientKeyExchange(sideIndex, data);
             break;
         case HandshakeType::Finished:
-            processFinished(sideIndex, data);
+        {
+            record->deserializeFinished(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            processFinished(sideIndex, record->getHandshakeMsg<Finished>());
+
+            if (version_ == ProtocolVersion::TLSv1_3)
+            {
+                handshakeHash_.update(data);
+            }
+            else if (sideIndex == 0)
+            {
+                handshakeHash_.update(data);
+            }
             break;
+        }
         case HandshakeType::KeyUpdate:
             processKeyUpdate(sideIndex, data);
             break;
@@ -259,7 +285,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
         Secret masterSecret(48);
-        if (handshake_.serverHello.extensions.has(tls::ExtensionCode::ExtendedMasterSecret))
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
             const auto sessionHash =
@@ -269,7 +295,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         }
         else
         {
-            PRF(PMS_, "master secret", handshake_.clientHello.random, handshake_.serverHello.random, masterSecret);
+            PRF(PMS_, "master secret", clientRandom_, serverRandom_, masterSecret);
         }
         secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
     }
@@ -295,8 +321,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
-            handshake_.clientHello.random, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::DataReader reader("Key block (for AEAD)", keyBlock);
 
@@ -335,8 +360,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", handshake_.serverHello.random,
-            handshake_.clientHello.random, keyBlock);
+        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::DataReader reader("Key block (with MAC key)", keyBlock);
 
@@ -468,37 +492,43 @@ const ServerInfo& Session::getServerInfo() const noexcept
     return serverInfo_;
 }
 
-void Session::processClientHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processClientHello(const ClientHello& clientHello)
 {
-    casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
-    handshake_.clientHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    handshakeHash_.update(message);
+    version_ = clientHello.version;
 
-    version_ = handshake_.clientHello.legacyVersion;
+    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
+
+    if (version_ != ProtocolVersion::SSLv3_0)
+    {
+        clientExtensions_.deserialize(Side::Client, clientHello.extensions);
+    }
 
     for (const auto& handler : *processor_)
     {
-        handler->handleClientHello(handshake_.clientHello, this);
+        handler->handleClientHello(clientHello, this);
     }
 }
 
-void Session::processServerHello(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processServerHello(const ServerHello& serverHello)
 {
-    casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-    handshake_.serverHello.deserialize(message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    handshakeHash_.update(message);
+    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
 
-    auto& serverHello = handshake_.serverHello;
-
-    if (serverHello.extensions.has(tls::ExtensionCode::SupportedVersions))
+    if (!serverHello.extensions.empty())
     {
-        auto ext = serverHello.extensions.get<tls::SupportedVersions>();
-        version_ = std::move(ext->versions()[0]);
-    }
+        serverExtensions_.deserialize(Side::Server, serverHello.extensions);
 
-    if (serverHello.extensions.has(tls::ExtensionCode::EncryptThenMac))
-    {
-        recordLayer_.enableEncryptThenMAC();
+        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
+        {
+            auto ext = serverExtensions_.get<tls::SupportedVersions>();
+            version_ = std::move(ext->versions()[0]);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
+        {
+            recordLayer_.enableEncryptThenMAC();
+        }
     }
 
     cipherSuite_ = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
@@ -604,8 +634,8 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
         }
 
         crypto::InitHash(hashCtx_, hash);
-        crypto::UpdateHash(hashCtx_, handshake_.clientHello.random);
-        crypto::UpdateHash(hashCtx_, handshake_.serverHello.random);
+        crypto::UpdateHash(hashCtx_, clientRandom_);
+        crypto::UpdateHash(hashCtx_, serverRandom_);
         crypto::UpdateHash(hashCtx_, handshake_.serverKeyExchange.getParams());
 
         auto digest = crypto::FinalHash(hashCtx_, buffer);
@@ -669,17 +699,8 @@ void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<c
     handshakeHash_.update(message);
 }
 
-void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processFinished(const std::int8_t sideIndex, const Finished& finished)
 {
-    if (sideIndex == 0)
-    {
-        handshake_.clientFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    }
-    else
-    {
-        handshake_.serverFinished.deserialize(version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    }
-
     /// Check Finished data
 
     switch (version_.code())
@@ -700,8 +721,6 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
-            const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
-                                                 : handshake_.serverFinished.getVerifyData());
 
             std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
             std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
@@ -712,7 +731,8 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
             crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
 
-            casket::ThrowIfFalse(expect.size() == length && std::equal(expect.begin(), expect.end(), actual.begin()),
+            casket::ThrowIfFalse(finished.verifyData.size() == length &&
+                                     std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
                                  "Bad Finished MAC");
         }
         break;
@@ -729,15 +749,13 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
             const auto transcriptHash = handshakeHash_.final(hashCtx_, fetchedAlg, digest);
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
-            const auto& expect = (sideIndex == 0 ? handshake_.clientFinished.getVerifyData()
-                                                 : handshake_.serverFinished.getVerifyData());
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
             tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
                     actual);
 
-            casket::ThrowIfFalse(expect.size() == actual.size() &&
-                                     std::equal(expect.begin(), expect.end(), actual.begin()),
+            casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
+                                     std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
                                  "Bad Finished MAC");
         }
         break;
@@ -748,18 +766,6 @@ void Session::processFinished(const std::int8_t sideIndex, nonstd::span<const ui
     }
 
     /// Update transcript hash
-
-    if (version_ == ProtocolVersion::TLSv1_3)
-    {
-        handshakeHash_.update(message);
-    }
-    else
-    {
-        if (sideIndex == 0)
-        {
-            handshakeHash_.update(message);
-        }
-    }
 
     /// Generate key material
 

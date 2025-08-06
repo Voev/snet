@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstring>
+#include <limits>
 
 #include <snet/tls/record.hpp>
 
@@ -35,6 +36,22 @@ void Record::deserializeHeader(nonstd::span<const uint8_t> data)
     expectedLength_ = recordLength + TLS_HEADER_SIZE;
 }
 
+size_t Record::serializeHeader(nonstd::span<uint8_t> output)
+{
+    casket::ThrowIfTrue(output.size() < TLS_HEADER_SIZE, "Output buffer is too small");
+    output[0] = static_cast<uint8_t>(type_);
+
+    output[1] = version_.majorVersion();
+    output[2] = version_.minorVersion();
+
+    assert(expectedLength_ < std::numeric_limits<uint16_t>::max());
+    uint16_t recordLength = static_cast<uint16_t>(expectedLength_);
+    output[3] = casket::get_byte<0>(recordLength);
+    output[4] = casket::get_byte<1>(recordLength);
+
+    return TLS_HEADER_SIZE;
+}
+
 size_t Record::initPlaintext(nonstd::span<const uint8_t> plaintext)
 {
     assert(plaintext.size() <= plaintextBuffer_.size());
@@ -63,5 +80,24 @@ size_t Record::initPayload(nonstd::span<const uint8_t> data)
         return expectedLength_;
     }
 }
+
+void Record::deserializeClientHello(nonstd::span<const uint8_t> input)
+{
+    auto& clientHello = handshakeMsgs_.emplace<ClientHello>();
+    clientHello.deserialize(input);
+}
+
+void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
+{
+    auto& serverHello = handshakeMsgs_.emplace<ServerHello>();
+    serverHello.deserialize(input);
+}
+
+void Record::deserializeFinished(nonstd::span<const uint8_t> input)
+{
+    auto& finished = handshakeMsgs_.emplace<Finished>();
+    finished.deserialize(input);
+}
+
 
 } // namespace snet::tls

@@ -102,9 +102,9 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    void processClientHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processClientHello(const ClientHello& clientHello);
     
-    void processServerHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerHello(const ServerHello& serverHello);
     
     void processEncryptedExtensions(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
@@ -124,7 +124,7 @@ public:
     
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processFinished(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processFinished(const int8_t sideIndex, const Finished& finished);
     
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
@@ -156,6 +156,8 @@ private:
     ServerInfo serverInfo_;
     ProtocolVersion version_;
     const CipherSuite* cipherSuite_;
+    std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
+    std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> PMS_;
     std::vector<uint8_t> clientMacKey_;
@@ -165,6 +167,8 @@ private:
     std::vector<uint8_t> clientIV_;
     std::vector<uint8_t> serverIV_;
     HandshakeHash handshakeHash_;
+    Extensions clientExtensions_;
+    Extensions serverExtensions_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;

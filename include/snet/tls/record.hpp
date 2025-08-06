@@ -2,10 +2,15 @@
 /// @brief Declaration of the TLS record class.
 
 #pragma once
+#include <variant>
 #include <casket/nonstd/span.hpp>
-#include <snet/tls/version.hpp>
 #include <casket/utils/load_store.hpp>
 #include <casket/utils/exception.hpp>
+
+#include <snet/tls/version.hpp>
+#include <snet/tls/msgs/client_hello.hpp>
+#include <snet/tls/msgs/server_hello.hpp>
+#include <snet/tls/msgs/finished.hpp>
 
 namespace snet::tls
 {
@@ -74,11 +79,30 @@ public:
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
+    size_t serializeHeader(nonstd::span<uint8_t> output);
+
+    /// @brief Deserialize ClientHello handshake message.
+    ///
+    /// @param[in] input Record data without Record header (5 bytes) and Handshake header (3 bytes).
+    ///
+    void deserializeClientHello(nonstd::span<const uint8_t> input);
+
+    void deserializeServerHello(nonstd::span<const uint8_t> input);
+
+    void deserializeFinished(nonstd::span<const uint8_t> input);
+
+    template<typename T>
+    const T& getHandshakeMsg() const
+    {
+        return std::get<T>(handshakeMsgs_);
+    }
+
 private:
     RecordType type_;
     ProtocolVersion version_;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
+    std::variant<ClientHello, ServerHello, Finished> handshakeMsgs_;
     size_t currentLength_;
     size_t expectedLength_;
     nonstd::span<const std::uint8_t> ciphertext_;

@@ -16,7 +16,8 @@ public:
 
     void handleClientHello(const ClientHello& clientHello, Session* session) override
     {
-        auto secrets = secretNodeManager_.getSecretNode(clientHello.random);
+        ClientRandom random{clientHello.random.begin(), clientHello.random.end()};
+        auto secrets = secretNodeManager_.getSecretNode(random);
         if (secrets.has_value())
         {
             session->setSecrets(secrets.value());

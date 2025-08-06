@@ -5,22 +5,22 @@
 namespace snet::tls
 {
 
-void ServerHello::deserialize(nonstd::span<const uint8_t> buffer)
+void ServerHello::deserialize(nonstd::span<const uint8_t> input)
 {
-    utils::DataReader reader("Server Hello", buffer);
+    utils::DataReader reader("Server Hello", input);
 
-    legacyVersion = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_fixed<uint8_t>(32);
-    sessionID = reader.get_range<uint8_t>(1, 0, 32);
+    version = ProtocolVersion(reader.get_uint16_t());
+    random = reader.get_span_fixed<uint8_t>(32);
+    sessionID = reader.get_span<uint8_t>(1, 0, 32);
     cipherSuite = reader.get_uint16_t();
     compMethod = reader.get_byte();
 
     auto remaining = reader.get_span_remaining();
-    if (legacyVersion == ProtocolVersion::SSLv3_0)
+    if (version == ProtocolVersion::SSLv3_0)
     {
         if (!remaining.empty())
         {
-            extensions.deserialize(Side::Server, remaining);
+            extensions = remaining;
         }
         else
         {
@@ -29,17 +29,18 @@ void ServerHello::deserialize(nonstd::span<const uint8_t> buffer)
     }
     else
     {
-        extensions.deserialize(Side::Server, remaining);
+        extensions = remaining;
     }
 }
 
+/*
 size_t ServerHello::serialize(nonstd::span<uint8_t> buffer) const
 {
     size_t offset{};
     size_t length{};
 
-    buffer[0] = legacyVersion.majorVersion();
-    buffer[1] = legacyVersion.minorVersion();
+    buffer[0] = version.majorVersion();
+    buffer[1] = version.minorVersion();
     buffer = buffer.subspan(2);
     length += 2;
 
@@ -61,6 +62,6 @@ size_t ServerHello::serialize(nonstd::span<uint8_t> buffer) const
     length += offset;
 
     return length;
-}
+}*/
 
 } // namespace snet::tls
