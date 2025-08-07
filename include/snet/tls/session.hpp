@@ -116,7 +116,7 @@ public:
     
     void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
-    void processServerKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerKeyExchange(const ServerKeyExchange& keyExchange);
     
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     

@@ -202,8 +202,16 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             processCertificate(sideIndex, data);
             break;
         case HandshakeType::ServerKeyExchange:
-            processServerKeyExchange(sideIndex, data);
+        {
+            casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+
+            record->deserializeServerKeyExchange(data, CipherSuiteGetKeyExchange(cipherSuite_),
+                                                 CipherSuiteGetAuth(cipherSuite_), version_);
+
+            processServerKeyExchange(record->getHandshakeMsg<ServerKeyExchange>());
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::CertificateRequest:
             break;
         case HandshakeType::ServerHelloDone:
@@ -606,23 +614,16 @@ void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::sp
     handshakeHash_.update(message);
 }
 
-void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
 {
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    handshake_.serverKeyExchange.deserialize(message, CipherSuiteGetKeyExchange(cipherSuite_),
-                                             CipherSuiteGetAuth(cipherSuite_), version_);
-
-    handshakeHash_.update(message);
-
     /// RFC 4492: section-5.4
-    if (!handshake_.serverKeyExchange.getSignature().empty())
+    if (!keyExchange.signature.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
         const Hash* hash;
         crypto::HashPtr fetchedHash;
 
-        auto scheme = handshake_.serverKeyExchange.getScheme();
+        auto scheme = keyExchange.scheme;
         if (scheme.isSet())
         {
             fetchedHash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
@@ -636,12 +637,12 @@ void Session::processServerKeyExchange(const std::int8_t sideIndex, nonstd::span
         crypto::InitHash(hashCtx_, hash);
         crypto::UpdateHash(hashCtx_, clientRandom_);
         crypto::UpdateHash(hashCtx_, serverRandom_);
-        crypto::UpdateHash(hashCtx_, handshake_.serverKeyExchange.getParams());
+        crypto::UpdateHash(hashCtx_, keyExchange.data);
 
         auto digest = crypto::FinalHash(hashCtx_, buffer);
         auto publicKey = X509_get0_pubkey(handshake_.serverCertificate.getCert());
 
-        crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, handshake_.serverKeyExchange.getSignature());
+        crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
     }
 }
 

@@ -14,7 +14,7 @@ struct HandshakeMessages
     //ClientHello clientHello;
     //ServerHello serverHello;
     EncryptedExtensions encryptedExtensions;
-    ServerKeyExchange serverKeyExchange;
+    //ServerKeyExchange serverKeyExchange;
     Certificate serverCertificate;
     //Finished clientFinished;
     //Finished serverFinished;

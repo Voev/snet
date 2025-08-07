@@ -1,29 +1,27 @@
 #include <snet/tls/msgs/server_key_exchange.hpp>
 
-#include <snet/crypto/group_params.hpp>
-#include <snet/crypto/asymm_key.hpp>
+#include <snet/utils/data_reader.hpp>
 
 using namespace snet::crypto;
 
 namespace snet::tls
 {
 
-static KeyPtr HandlePeerKeyECDHE(utils::DataReader& reader)
+void DhParams::deserialize(utils::DataReader& reader)
 {
-    auto curveType = reader.get_byte();                 // curve type
-    auto curveID = GroupParams(reader.get_uint16_t());  // curve id
-    auto peerKey = reader.get_span<uint8_t>(1, 1, 255); // public key
+    prime = reader.get_span<uint8_t>(2, 1, 65535);
+    generator = reader.get_span<uint8_t>(2, 1, 65535);
+    publicValue = reader.get_span<uint8_t>(2, 1, 65535);
+}
 
-    /*
-     * Check curve is named curve type and one of our preferences, if not
-     * server has sent an invalid curve.
-     */
-    (void)curveType;
+void EcdheParams::deserialize(utils::DataReader& reader)
+{
+    curveType = reader.get_byte();
 
-    auto key = GenerateGroupParams(curveID);
-    SetEncodedPublicKey(key, peerKey);
+    curveID = GroupParams(reader.get_uint16_t());
+    casket::ThrowIfFalse(curveID.isPureEccGroup(), "Invalid curve ID");
 
-    return key;
+    publicPoint = reader.get_span<uint8_t>(1, 1, 255);
 }
 
 void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int kex, const int auth,
@@ -33,52 +31,35 @@ void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int
 
     if (kex == NID_kx_dhe)
     {
-        // 3 bigints, DH p, g, Y
-        for (size_t i = 0; i != 3; ++i)
-        {
-            reader.get_range<uint8_t>(2, 1, 65535);
-        }
+        auto& dhParams = params.emplace<DhParams>();
+        dhParams.deserialize(reader);
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        serverPublicKey_ = HandlePeerKeyECDHE(reader);
+        auto& ecdheParams = params.emplace<EcdheParams>();
+        ecdheParams.deserialize(reader);
     }
     else if (kex != NID_kx_psk)
     {
-        throw std::runtime_error("Server_Key_Exchange: Unsupported kex type");
+        throw std::runtime_error("ServerKeyExchange: Unsupported kex type");
     }
 
-    params_.assign(input.data(), input.data() + reader.read_so_far());
+    data = {input.data(), input.data() + reader.read_so_far()};
 
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
         if (version == ProtocolVersion::TLSv1_2)
         {
-            scheme_ = SignatureScheme(reader.get_uint16_t());    // algorithm
-            signature_ = reader.get_range<uint8_t>(2, 0, 65535); // signature
+            scheme = SignatureScheme(reader.get_uint16_t());   // algorithm
+            signature = reader.get_span<uint8_t>(2, 0, 65535); // signature
         }
         else /// < TLSv1.2
         {
-            signature_ = reader.get_range<uint8_t>(2, 0, 65535); // signature
+            signature = reader.get_span<uint8_t>(2, 0, 65535); // signature
         }
     }
 
     reader.assert_done();
-}
-
-const SignatureScheme& ServerKeyExchange::getScheme() const noexcept
-{
-    return scheme_;
-}
-
-const std::vector<uint8_t>& ServerKeyExchange::getParams() const noexcept
-{
-    return params_;
-}
-
-const std::vector<uint8_t>& ServerKeyExchange::getSignature() const noexcept
-{
-    return signature_;
 }
 
 } // namespace snet::tls

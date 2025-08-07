@@ -124,7 +124,7 @@ KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams)
     auto ctx = CryptoManager::getInstance().createKeyContext(param->second.algorithm);
     ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
 
-    if (groupParams.is_ecdh_named_curve())
+    if (groupParams.isEcdhNamedCurve())
     {
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
     }
@@ -142,7 +142,7 @@ KeyPtr GenerateGroupParams(const GroupParams groupParams)
     auto ctx = CryptoManager::getInstance().createKeyContext(param->second.algorithm);
     ThrowIfFalse(0 < EVP_PKEY_paramgen_init(ctx));
 
-    if (groupParams.is_ecdh_named_curve())
+    if (groupParams.isEcdhNamedCurve())
     {
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
     }

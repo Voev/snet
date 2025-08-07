@@ -93,11 +93,17 @@ void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
     serverHello.deserialize(input);
 }
 
+void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
+                                          const ProtocolVersion& version)
+{
+    auto& keyExchange = handshakeMsgs_.emplace<ServerKeyExchange>();
+    keyExchange.deserialize(input, kex, auth, version);
+}
+
 void Record::deserializeFinished(nonstd::span<const uint8_t> input)
 {
     auto& finished = handshakeMsgs_.emplace<Finished>();
     finished.deserialize(input);
 }
-
 
 } // namespace snet::tls
