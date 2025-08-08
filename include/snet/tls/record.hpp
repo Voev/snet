@@ -8,12 +8,7 @@
 #include <casket/utils/exception.hpp>
 
 #include <snet/tls/version.hpp>
-#include <snet/tls/msgs/client_hello.hpp>
-#include <snet/tls/msgs/server_hello.hpp>
-#include <snet/tls/msgs/encrypted_extensions.hpp>
-#include <snet/tls/msgs/server_key_exchange.hpp>
-#include <snet/tls/msgs/certificate.hpp>
-#include <snet/tls/msgs/finished.hpp>
+#include <snet/tls/messages.hpp>
 
 namespace snet::tls
 {
@@ -99,12 +94,14 @@ public:
 
     void deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version);
 
+    void deserializeCertificateVerify(nonstd::span<const uint8_t> input);
+
     void deserializeFinished(nonstd::span<const uint8_t> input);
 
     template <typename T>
     const T& getHandshakeMsg() const
     {
-        return std::get<T>(handshakeMsgs_);
+        return std::get<T>(messages_);
     }
 
 private:
@@ -112,8 +109,7 @@ private:
     ProtocolVersion version_;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
-    std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, Certificate, Finished>
-        handshakeMsgs_;
+    Messages messages_;
     size_t currentLength_;
     size_t expectedLength_;
     nonstd::span<const std::uint8_t> ciphertext_;

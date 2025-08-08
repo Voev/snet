@@ -19,7 +19,6 @@
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/record_processor.hpp>
-#include <snet/tls/handshake_msgs.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
@@ -114,7 +113,7 @@ public:
     
     void processCertificate(const Certificate& certificate);
     
-    void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificateVerify(const CertificateVerify& certVerify);
     
     void processServerKeyExchange(const ServerKeyExchange& keyExchange);
     
@@ -145,7 +144,6 @@ private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
     Record* readingRecord{nullptr};
-    HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;
     crypto::HashPtr hmacHashAlg_; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::MacCtxPtr hmacCtx_; ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites

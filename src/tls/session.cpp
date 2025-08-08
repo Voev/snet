@@ -233,8 +233,15 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         case HandshakeType::CertificateRequest:
             break;
         case HandshakeType::CertificateVerify:
-            processCertificateVerify(sideIndex, data);
+        {
+            casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+            record->deserializeCertificateVerify(data);
+            processCertificateVerify(record->getHandshakeMsg<CertificateVerify>());
+
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::Finished:
         {
             record->deserializeFinished(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
@@ -607,21 +614,17 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
         auto name_bits = reader.get_span<uint8_t>(2, 0, 65535);
     }
 
+    /// @todo: TLSv1.3 fix it.
+
     reader.assert_done();
 
     handshakeHash_.update(message);
 }
 
-void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processCertificateVerify(const CertificateVerify& certVerify)
 {
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("CertificateVerify", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    reader.get_uint16_t();
-    reader.get_span<uint8_t>(2, 0, 65535);
-    reader.assert_done();
-
-    handshakeHash_.update(message);
+    (void)certVerify;
+    /// @todo: verify data.
 }
 
 void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)

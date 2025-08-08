@@ -83,38 +83,44 @@ size_t Record::initPayload(nonstd::span<const uint8_t> data)
 
 void Record::deserializeClientHello(nonstd::span<const uint8_t> input)
 {
-    auto& clientHello = handshakeMsgs_.emplace<ClientHello>();
+    auto& clientHello = messages_.emplace<ClientHello>();
     clientHello.deserialize(input);
 }
 
 void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
 {
-    auto& serverHello = handshakeMsgs_.emplace<ServerHello>();
+    auto& serverHello = messages_.emplace<ServerHello>();
     serverHello.deserialize(input);
 }
 
 void Record::deserializeEncryptedExtensions(nonstd::span<const uint8_t> input)
 {
-    auto& encryptedExtensions = handshakeMsgs_.emplace<EncryptedExtensions>();
+    auto& encryptedExtensions = messages_.emplace<EncryptedExtensions>();
     encryptedExtensions.deserialize(input);
 }
 
 void Record::deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version)
 {
-    auto& certMessage = handshakeMsgs_.emplace<Certificate>();
+    auto& certMessage = messages_.emplace<Certificate>();
     certMessage.deserialize(input, version);
+}
+
+void Record::deserializeCertificateVerify(nonstd::span<const uint8_t> input)
+{
+    auto& certVerify = messages_.emplace<CertificateVerify>();
+    certVerify.deserialize(input);
 }
 
 void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
                                           const ProtocolVersion& version)
 {
-    auto& keyExchange = handshakeMsgs_.emplace<ServerKeyExchange>();
+    auto& keyExchange = messages_.emplace<ServerKeyExchange>();
     keyExchange.deserialize(input, kex, auth, version);
 }
 
 void Record::deserializeFinished(nonstd::span<const uint8_t> input)
 {
-    auto& finished = handshakeMsgs_.emplace<Finished>();
+    auto& finished = messages_.emplace<Finished>();
     finished.deserialize(input);
 }
 
