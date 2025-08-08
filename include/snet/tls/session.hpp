@@ -106,13 +106,13 @@ public:
     
     void processServerHello(const ServerHello& serverHello);
     
-    void processEncryptedExtensions(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
     
     void processSessionTicket(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
-    void processCertificate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificate(const Certificate& certificate);
     
     void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
@@ -152,6 +152,7 @@ private:
     crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
+    crypto::CertPtr serverCert_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
     ProtocolVersion version_;

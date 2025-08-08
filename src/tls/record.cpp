@@ -93,6 +93,18 @@ void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
     serverHello.deserialize(input);
 }
 
+void Record::deserializeEncryptedExtensions(nonstd::span<const uint8_t> input)
+{
+    auto& encryptedExtensions = handshakeMsgs_.emplace<EncryptedExtensions>();
+    encryptedExtensions.deserialize(input);
+}
+
+void Record::deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version)
+{
+    auto& certMessage = handshakeMsgs_.emplace<Certificate>();
+    certMessage.deserialize(input, version);
+}
+
 void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
                                           const ProtocolVersion& version)
 {

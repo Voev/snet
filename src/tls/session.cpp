@@ -11,6 +11,7 @@
 #include <snet/utils/print_hex.hpp>
 
 #include <snet/crypto/exception.hpp>
+#include <snet/crypto/cert.hpp>
 #include <snet/crypto/cipher_context.hpp>
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/signature.hpp>
@@ -163,9 +164,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
         switch (messageType)
         {
-        case HandshakeType::HelloRequest:
-            /* Not implemented */
-            break;
         case HandshakeType::ClientHello:
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
@@ -186,21 +184,26 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::HelloVerifyRequest:
-            /* Not implemented */
-            break;
-        case HandshakeType::NewSessionTicket:
-            processSessionTicket(sideIndex, data);
-            break;
-        case HandshakeType::EndOfEarlyData:
-            /* Not implemented */
-            break;
         case HandshakeType::EncryptedExtensions:
-            processEncryptedExtensions(sideIndex, data);
+        {
+            casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+            record->deserializeEncryptedExtensions(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            processEncryptedExtensions(record->getHandshakeMsg<EncryptedExtensions>());
+
+            handshakeHash_.update(data);
             break;
-        case HandshakeType::Certificate:
-            processCertificate(sideIndex, data);
+        }
+        case HandshakeType::ServerHelloDone:
+        {
+            casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+
+            utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+            reader.assert_done();
+
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::ServerKeyExchange:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
@@ -212,16 +215,25 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::CertificateRequest:
+        case HandshakeType::ClientKeyExchange:
+        {
+            processClientKeyExchange(sideIndex, data);
             break;
-        case HandshakeType::ServerHelloDone:
-            processServerHelloDone(sideIndex, data);
+        }
+        case HandshakeType::Certificate:
+        {
+            casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
+
+            record->deserializeCertificate(data.subspan(TLS_HANDSHAKE_HEADER_SIZE), version_);
+            processCertificate(record->getHandshakeMsg<Certificate>());
+
+            handshakeHash_.update(data);
+            break;
+        }
+        case HandshakeType::CertificateRequest:
             break;
         case HandshakeType::CertificateVerify:
             processCertificateVerify(sideIndex, data);
-            break;
-        case HandshakeType::ClientKeyExchange:
-            processClientKeyExchange(sideIndex, data);
             break;
         case HandshakeType::Finished:
         {
@@ -238,14 +250,19 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             }
             break;
         }
+        case HandshakeType::NewSessionTicket:
+            processSessionTicket(sideIndex, data);
+            break;
         case HandshakeType::KeyUpdate:
             processKeyUpdate(sideIndex, data);
             break;
+        case HandshakeType::HelloRequest:
+        case HandshakeType::HelloVerifyRequest:
+        case HandshakeType::EndOfEarlyData:
         case HandshakeType::HelloRetryRequest:
-            break;
         case HandshakeType::HandshakeCCS:
-            break;
         default:
+            /* Not implemented */
             break;
         }
     }
@@ -552,20 +569,20 @@ void Session::processServerHello(const ServerHello& serverHello)
     }
 }
 
-void Session::processCertificate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processCertificate(const Certificate& certificate)
 {
-    if (sideIndex == 0) {}
-    else
+    if (std::holds_alternative<TLSv13Certificate>(certificate.message))
     {
-        handshake_.serverCertificate.deserialize(sideIndex, version_, message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        if (version_ == ProtocolVersion::TLSv1_3)
-        {
-            casket::ThrowIfFalse(handshake_.serverCertificate.getRequestContext().empty(),
-                                 "Server Certificate message must not contain a request context");
-        }
+        const auto& message = std::get<TLSv13Certificate>(certificate.message);
+        serverCert_ = crypto::CertFromMemory(message.certList[0].data);
+    }
+    else if (std::holds_alternative<TLSv1Certificate>(certificate.message))
+    {
+        const auto& message = std::get<TLSv1Certificate>(certificate.message);
+        serverCert_ = crypto::CertFromMemory(message.certList[0].data);
     }
 
-    handshakeHash_.update(message);
+    /// @todo verify certificate chain
 }
 
 void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
@@ -607,11 +624,9 @@ void Session::processCertificateVerify(const std::int8_t sideIndex, nonstd::span
     handshakeHash_.update(message);
 }
 
-void Session::processEncryptedExtensions(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
 {
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    handshake_.encryptedExtensions.deserialize(message.subspan((TLS_HANDSHAKE_HEADER_SIZE)));
-    handshakeHash_.update(message);
+    serverExtensions_.deserialize(Side::Server, encryptedExtensions.extensions);
 }
 
 void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
@@ -640,7 +655,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         crypto::UpdateHash(hashCtx_, keyExchange.data);
 
         auto digest = crypto::FinalHash(hashCtx_, buffer);
-        auto publicKey = X509_get0_pubkey(handshake_.serverCertificate.getCert());
+        auto publicKey = X509_get0_pubkey(serverCert_);
 
         crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
     }
@@ -688,16 +703,6 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 
         setPremasterSecret(std::move(pms));
     }
-}
-
-void Session::processServerHelloDone(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
-{
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("Server Hello Done", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-    reader.assert_done();
-
-    handshakeHash_.update(message);
 }
 
 void Session::processFinished(const std::int8_t sideIndex, const Finished& finished)

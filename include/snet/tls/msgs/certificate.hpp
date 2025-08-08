@@ -1,40 +1,36 @@
 
 #pragma once
-#include <cstdint>
-#include <vector>
-#include <casket/nonstd/span.hpp>
-#include <snet/crypto/pointers.hpp>
-#include <snet/tls/extensions.hpp>
+#include <variant>
+#include <snet/tls/msgs/tls1_certificate.hpp>
+#include <snet/tls/msgs/tls13_certificate.hpp>
+#include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
 
-class Certificate final
+struct Certificate final
 {
-public:
-    Certificate() = default;
-
-    ~Certificate() = default;
-
-    void deserialize(const int8_t sideIndex, const ProtocolVersion& version, nonstd::span<const uint8_t> input);
-
-    size_t serialize(const int8_t sideIndex, const ProtocolVersion& version, nonstd::span<uint8_t> output) const;
-
-    Cert* getCert() const noexcept
+    void deserialize(nonstd::span<const uint8_t> input, const ProtocolVersion& version)
     {
-        return cert_.get();
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            auto& cert = message.emplace<TLSv13Certificate>();
+            cert.deserialize(input);
+        }
+        else
+        {
+            auto& cert = message.emplace<TLSv1Certificate>();
+            cert.deserialize(input);
+        }
     }
 
-    const std::vector<uint8_t>& getRequestContext() const noexcept
+    size_t serialize(nonstd::span<uint8_t> output) const
     {
-        return requestContext_;
+        (void)output;
+        return 0;
     }
 
-private:
-    std::vector<uint8_t> requestContext_;
-    crypto::CertPtr cert_;
-    crypto::CertStack1Ptr intermediateCerts_;
-    std::vector<Extensions> certExts_;
+    std::variant<TLSv1Certificate, TLSv13Certificate> message;
 };
 
 } // namespace snet::tls

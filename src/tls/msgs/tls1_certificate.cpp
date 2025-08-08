@@ -1,4 +1,4 @@
-#include <snet/tls/msgs/tls13_certificate.hpp>
+#include <snet/tls/msgs/tls1_certificate.hpp>
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
@@ -9,37 +9,26 @@ using namespace casket;
 namespace snet::tls
 {
 
-void TLSv13Certificate::deserialize(nonstd::span<const uint8_t> buffer)
+void TLSv1Certificate::deserialize(nonstd::span<const uint8_t> buffer)
 {
-    utils::DataReader reader("TLSv1.3 Certificate", buffer);
-
-    requestContext = reader.get_span<uint8_t>(1, 0, 255);
+    utils::DataReader reader("Certificate", buffer);
 
     const size_t certEntriesLength = reader.get_uint24_t();
-    ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
+    ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "Certificate: message malformed");
 
     while (reader.has_remaining())
     {
         Entry entry;
         entry.data = reader.get_span_length_and_value(3);
-        
-        const auto length = reader.get_uint16_t();
-        if (length > 0)
-        {
-            entry.extensions = reader.get_span_fixed<uint8_t>(length);
-        }
-
         certList[certCount++] = std::move(entry);
     }
 
     reader.assert_done();
 }
 
-size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> buffer) const
+size_t TLSv1Certificate::serialize(nonstd::span<uint8_t> buffer) const
 {
     size_t totalLength{0};
-
-    totalLength += append_length_and_value(buffer, requestContext.data(), requestContext.size(), 1);
 
     auto header = buffer.subspan(totalLength);
     auto entries = header.subspan(3);

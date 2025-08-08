@@ -10,7 +10,9 @@
 #include <snet/tls/version.hpp>
 #include <snet/tls/msgs/client_hello.hpp>
 #include <snet/tls/msgs/server_hello.hpp>
+#include <snet/tls/msgs/encrypted_extensions.hpp>
 #include <snet/tls/msgs/server_key_exchange.hpp>
+#include <snet/tls/msgs/certificate.hpp>
 #include <snet/tls/msgs/finished.hpp>
 
 namespace snet::tls
@@ -90,8 +92,12 @@ public:
 
     void deserializeServerHello(nonstd::span<const uint8_t> input);
 
+    void deserializeEncryptedExtensions(nonstd::span<const uint8_t> input);
+
     void deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
                                       const ProtocolVersion& version);
+
+    void deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version);
 
     void deserializeFinished(nonstd::span<const uint8_t> input);
 
@@ -106,7 +112,8 @@ private:
     ProtocolVersion version_;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
-    std::variant<ClientHello, ServerHello, ServerKeyExchange, Finished> handshakeMsgs_;
+    std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, Certificate, Finished>
+        handshakeMsgs_;
     size_t currentLength_;
     size_t expectedLength_;
     nonstd::span<const std::uint8_t> ciphertext_;

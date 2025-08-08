@@ -6,20 +6,18 @@
 namespace snet::tls
 {
 
-struct TLSv13Certificate final
+struct TLSv1Certificate final
 {
     static constexpr size_t kMaxCertChain{10};
     struct Entry final
     {
         nonstd::span<const uint8_t> data;
-        nonstd::span<const uint8_t> extensions;
     };
 
     void deserialize(nonstd::span<const uint8_t> input);
 
     size_t serialize(nonstd::span<uint8_t> output) const;
 
-    nonstd::span<const uint8_t> requestContext;
     std::array<Entry, kMaxCertChain> certList;
     uint8_t certCount{0};
 };
