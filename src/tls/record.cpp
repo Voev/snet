@@ -84,44 +84,43 @@ size_t Record::initPayload(nonstd::span<const uint8_t> data)
 void Record::deserializeClientHello(nonstd::span<const uint8_t> input)
 {
     auto& clientHello = messages_.emplace<ClientHello>();
-    clientHello.deserialize(input);
+    clientHello.parse(input);
 }
 
 void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
 {
     auto& serverHello = messages_.emplace<ServerHello>();
-    serverHello.deserialize(input);
+    serverHello.parse(input);
 }
 
 void Record::deserializeEncryptedExtensions(nonstd::span<const uint8_t> input)
 {
     auto& encryptedExtensions = messages_.emplace<EncryptedExtensions>();
-    encryptedExtensions.deserialize(input);
+    encryptedExtensions.parse(input);
 }
 
-void Record::deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version)
+void Record::deserializeCertificate(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     auto& certMessage = messages_.emplace<Certificate>();
-    certMessage.deserialize(input, version);
+    certMessage.parse(input, metaInfo);
 }
 
 void Record::deserializeCertificateVerify(nonstd::span<const uint8_t> input)
 {
     auto& certVerify = messages_.emplace<CertificateVerify>();
-    certVerify.deserialize(input);
+    certVerify.parse(input);
 }
 
-void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
-                                          const ProtocolVersion& version)
+void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     auto& keyExchange = messages_.emplace<ServerKeyExchange>();
-    keyExchange.deserialize(input, kex, auth, version);
+    keyExchange.parse(input, metaInfo);
 }
 
 void Record::deserializeFinished(nonstd::span<const uint8_t> input)
 {
     auto& finished = messages_.emplace<Finished>();
-    finished.deserialize(input);
+    finished.parse(input);
 }
 
 } // namespace snet::tls

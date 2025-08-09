@@ -6,11 +6,15 @@
 namespace snet::tls
 {
 
+class Session;
+
 struct CertificateVerify final
 {
-    void deserialize(nonstd::span<const uint8_t> input);
+    void parse(nonstd::span<const uint8_t> input);
 
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    static CertificateVerify deserialize(nonstd::span<const uint8_t> input);
+
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 
     crypto::SignatureScheme scheme{0};
     nonstd::span<const uint8_t> signature;

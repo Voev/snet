@@ -140,6 +140,16 @@ public:
 
     std::string_view getHashAlgorithm() const;
 
+    const Extensions& getClientExtensions() const noexcept
+    {
+        return clientExtensions_;
+    }
+
+    const Extensions& getServerExtensions() const noexcept
+    {
+        return serverExtensions_;
+    }
+
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
@@ -153,8 +163,7 @@ private:
     crypto::CertPtr serverCert_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
-    ProtocolVersion version_;
-    const CipherSuite* cipherSuite_;
+    MetaInfo metaInfo_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
     SecretNode secrets_;

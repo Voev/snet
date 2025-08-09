@@ -37,7 +37,6 @@ Session::Session(RecordPool& recordPool)
     , hashCtx_(crypto::CreateHashCtx())
     , clientCipherCtx_(crypto::CreateCipherCtx())
     , serverCipherCtx_(crypto::CreateCipherCtx())
-    , cipherSuite_(nullptr)
     , cipherState_(0)
     , canDecrypt_(0)
     , debugKeys_(0)
@@ -164,7 +163,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
         switch (messageType)
         {
-        case HandshakeType::ClientHello:
+        case HandshakeType::ClientHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
 
@@ -174,7 +173,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::ServerHello:
+        case HandshakeType::ServerHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
@@ -184,7 +183,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::EncryptedExtensions:
+        case HandshakeType::EncryptedExtensionsCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -194,7 +193,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::ServerHelloDone:
+        case HandshakeType::ServerHelloDoneCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -204,35 +203,34 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::ServerKeyExchange:
+        case HandshakeType::ServerKeyExchangeCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
-            record->deserializeServerKeyExchange(data, CipherSuiteGetKeyExchange(cipherSuite_),
-                                                 CipherSuiteGetAuth(cipherSuite_), version_);
+            record->deserializeServerKeyExchange(data, metaInfo_);
 
             processServerKeyExchange(record->getHandshakeMsg<ServerKeyExchange>());
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::ClientKeyExchange:
+        case HandshakeType::ClientKeyExchangeCode:
         {
             processClientKeyExchange(sideIndex, data);
             break;
         }
-        case HandshakeType::Certificate:
+        case HandshakeType::CertificateCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
 
-            record->deserializeCertificate(data.subspan(TLS_HANDSHAKE_HEADER_SIZE), version_);
+            record->deserializeCertificate(data.subspan(TLS_HANDSHAKE_HEADER_SIZE), metaInfo_);
             processCertificate(record->getHandshakeMsg<Certificate>());
 
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::CertificateRequest:
+        case HandshakeType::CertificateRequestCode:
             break;
-        case HandshakeType::CertificateVerify:
+        case HandshakeType::CertificateVerifyCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
 
@@ -242,12 +240,12 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             handshakeHash_.update(data);
             break;
         }
-        case HandshakeType::Finished:
+        case HandshakeType::FinishedCode:
         {
             record->deserializeFinished(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             processFinished(sideIndex, record->getHandshakeMsg<Finished>());
 
-            if (version_ == ProtocolVersion::TLSv1_3)
+            if (metaInfo_.version == ProtocolVersion::TLSv1_3)
             {
                 handshakeHash_.update(data);
             }
@@ -257,17 +255,17 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             }
             break;
         }
-        case HandshakeType::NewSessionTicket:
+        case HandshakeType::NewSessionTicketCode:
             processSessionTicket(sideIndex, data);
             break;
-        case HandshakeType::KeyUpdate:
+        case HandshakeType::KeyUpdateCode:
             processKeyUpdate(sideIndex, data);
             break;
-        case HandshakeType::HelloRequest:
-        case HandshakeType::HelloVerifyRequest:
-        case HandshakeType::EndOfEarlyData:
-        case HandshakeType::HelloRetryRequest:
-        case HandshakeType::HandshakeCCS:
+        case HandshakeType::HelloRequestCode:
+        case HandshakeType::HelloVerifyRequestCode:
+        case HandshakeType::EndOfEarlyDataCode:
+        case HandshakeType::HelloRetryRequestCode:
+        case HandshakeType::HandshakeCCSCode:
         default:
             /* Not implemented */
             break;
@@ -321,7 +319,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
             const auto sessionHash =
-                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(cipherSuite_), digest);
+                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite), digest);
 
             PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
         }
@@ -346,7 +344,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     size_t keySize = crypto::GetKeyLength(cipherAlg_);
     size_t ivSize = crypto::GetIVLengthWithinKeyBlock(cipherAlg_);
 
-    if (CipherSuiteIsAEAD(cipherSuite_))
+    if (CipherSuiteIsAEAD(metaInfo_.cipherSuite))
     {
         crypto::SecureArray<uint8_t, (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (keySize + ivSize) * 2;
@@ -435,9 +433,9 @@ void Session::generateTLS13KeyMaterial()
         return;
     }
 
-    auto keySize = CipherSuiteGetKeySize(cipherSuite_);
+    auto keySize = CipherSuiteGetKeySize(metaInfo_.cipherSuite);
 
-    const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+    const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
     const auto digestName = EVP_MD_name(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
@@ -471,12 +469,12 @@ void Session::generateTLS13KeyMaterial()
 
 std::string_view Session::getHashAlgorithm() const
 {
-    assert(version_ <= ProtocolVersion::TLSv1_2);
+    assert(metaInfo_.version <= ProtocolVersion::TLSv1_2);
 
-    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
-    if (version_ == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
+    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+    if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
-        return CipherSuiteGetHmacDigestName(cipherSuite_);
+        return CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite);
     }
     return digest;
 }
@@ -484,9 +482,9 @@ std::string_view Session::getHashAlgorithm() const
 void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
-    casket::ThrowIfFalse(version_ <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
+    casket::ThrowIfFalse(metaInfo_.version <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
-    if (version_ == tls::ProtocolVersion::SSLv3_0)
+    if (metaInfo_.version == tls::ProtocolVersion::SSLv3_0)
     {
         ssl3Prf(secret, rnd1, rnd2, out);
     }
@@ -499,7 +497,7 @@ void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<con
 
 const ProtocolVersion& Session::getVersion() const noexcept
 {
-    return version_;
+    return metaInfo_.version;
 }
 
 void Session::setSecrets(SecretNode secrets)
@@ -526,12 +524,12 @@ const ServerInfo& Session::getServerInfo() const noexcept
 
 void Session::processClientHello(const ClientHello& clientHello)
 {
-    version_ = clientHello.version;
+    metaInfo_.version = clientHello.version;
 
     assert(clientHello.random.size() == TLS_RANDOM_SIZE);
     std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
 
-    if (version_ != ProtocolVersion::SSLv3_0)
+    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
     {
         clientExtensions_.deserialize(Side::Client, clientHello.extensions);
     }
@@ -554,7 +552,7 @@ void Session::processServerHello(const ServerHello& serverHello)
         if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
         {
             auto ext = serverExtensions_.get<tls::SupportedVersions>();
-            version_ = std::move(ext->versions()[0]);
+            metaInfo_.version = std::move(ext->versions()[0]);
         }
 
         if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
@@ -563,14 +561,14 @@ void Session::processServerHello(const ServerHello& serverHello)
         }
     }
 
-    cipherSuite_ = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    casket::ThrowIfFalse(cipherSuite_, "Cipher suite not found");
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
 
-    recordLayer_.setVersion(version_);
+    recordLayer_.setVersion(metaInfo_.version);
 
     fetchAlgorithms();
 
-    if (version_ == tls::ProtocolVersion::TLSv1_3)
+    if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
     {
         generateTLS13KeyMaterial();
     }
@@ -592,6 +590,7 @@ void Session::processCertificate(const Certificate& certificate)
     /// @todo verify certificate chain
 }
 
+/// @todo: use it
 void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
@@ -649,7 +648,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         }
         else
         {
-            hash = CipherSuiteGetHandshakeDigest(cipherSuite_);
+            hash = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
         }
 
         crypto::InitHash(hashCtx_, hash);
@@ -677,7 +676,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         return;
     }
 
-    if (CipherSuiteGetKeyExchange(cipherSuite_) == NID_kx_rsa)
+    if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         const auto encryptedPreMaster = reader.get_span<uint8_t>(2, 0, 65535);
@@ -690,7 +689,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_WITH_TLS_PADDING));
 
         OSSL_PARAM params[2];
-        unsigned int value = version_.code();
+        unsigned int value = metaInfo_.version.code();
         params[0] = OSSL_PARAM_construct_uint(OSSL_ASYM_CIPHER_PARAM_TLS_CLIENT_VERSION, &value);
         params[1] = OSSL_PARAM_construct_end();
 
@@ -712,7 +711,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 {
     /// Check Finished data
 
-    switch (version_.code())
+    switch (metaInfo_.version.code())
     {
     case ProtocolVersion::TLSv1_3:
     {
@@ -721,7 +720,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         if (!secret.empty())
         {
 
-            const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+            const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
             const auto digestName = EVP_MD_name(digest);
 
             crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
@@ -774,19 +773,17 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         break;
     }
 
-    /// Update transcript hash
-
     /// Generate key material
 
-    if (version_ == tls::ProtocolVersion::TLSv1_3)
+    if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
     {
         if (sideIndex == 0)
         {
-            const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+            const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
             const auto digestName = EVP_MD_name(digest);
             const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
-            clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             clientIV_.resize(12);
 
             DeriveKey(digestName, secret, clientEncKey_);
@@ -802,10 +799,10 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         }
         else
         {
-            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(cipherSuite_));
+            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
             const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
-            serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+            serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             serverIV_.resize(12);
 
             DeriveKey(digestName, secret, serverEncKey_);
@@ -825,7 +822,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
     casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    if (version_ == ProtocolVersion::TLSv1_3)
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
         utils::DataReader reader("TLSv1.3 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
 
@@ -844,7 +841,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
 
         // reader.assert_done();
     }
-    else if (version_ == ProtocolVersion::TLSv1_2)
+    else if (metaInfo_.version == ProtocolVersion::TLSv1_2)
     {
         utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
@@ -865,14 +862,14 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 {
     (void)message;
 
-    const auto& digest = CipherSuiteGetHandshakeDigest(cipherSuite_);
+    const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
     std::string_view digestName = EVP_MD_name(digest);
 
     if (sideIndex == 0)
     {
         UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
-        clientEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         clientIV_.resize(12);
 
         DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
@@ -884,7 +881,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     {
         UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
 
-        serverEncKey_.resize(CipherSuiteGetKeySize(cipherSuite_));
+        serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         serverIV_.resize(12);
 
         DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
@@ -897,11 +894,11 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 void Session::fetchAlgorithms()
 {
     // Don't call for unknown protocol version and cipher suite
-    assert(version_ != ProtocolVersion());
-    assert(cipherSuite_ != nullptr);
+    assert(metaInfo_.version != ProtocolVersion());
+    assert(metaInfo_.cipherSuite != nullptr);
 
     auto isAEAD = false;
-    auto cipherName = CipherSuiteGetCipherName(cipherSuite_);
+    auto cipherName = CipherSuiteGetCipherName(metaInfo_.cipherSuite);
     if (!casket::iequals(cipherName, "UNDEF"))
     {
         cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
@@ -911,15 +908,15 @@ void Session::fetchAlgorithms()
         {
             recordLayer_.enableAEAD();
             recordLayer_.setTagLength(
-                CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(cipherSuite_)));
+                CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(metaInfo_.cipherSuite)));
         }
     }
 
     if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
     {
-        hmacHashAlg_ = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite_));
+        hmacHashAlg_ = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
 
-        if (version_ != ProtocolVersion::SSLv3_0)
+        if (metaInfo_.version != ProtocolVersion::SSLv3_0)
         {
             OSSL_PARAM params[2];
             params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,

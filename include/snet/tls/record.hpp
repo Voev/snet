@@ -89,10 +89,9 @@ public:
 
     void deserializeEncryptedExtensions(nonstd::span<const uint8_t> input);
 
-    void deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const int kex, const int auth,
-                                      const ProtocolVersion& version);
+    void deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    void deserializeCertificate(nonstd::span<const uint8_t> input, const ProtocolVersion& version);
+    void deserializeCertificate(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
     void deserializeCertificateVerify(nonstd::span<const uint8_t> input);
 

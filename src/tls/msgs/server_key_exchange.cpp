@@ -1,4 +1,5 @@
 #include <snet/tls/msgs/server_key_exchange.hpp>
+#include <snet/tls/session.hpp>
 
 #include <snet/utils/data_reader.hpp>
 
@@ -24,10 +25,11 @@ void EcdheParams::deserialize(utils::DataReader& reader)
     publicPoint = reader.get_span<uint8_t>(1, 1, 255);
 }
 
-void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int kex, const int auth,
-                                    const ProtocolVersion& version)
+void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     utils::DataReader reader("ServerKeyExchange", input.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+
+    auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
 
     if (kex == NID_kx_dhe)
     {
@@ -46,9 +48,10 @@ void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int
 
     data = {input.data(), input.data() + reader.read_so_far()};
 
+    auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
-        if (version == ProtocolVersion::TLSv1_2)
+        if (metaInfo.version == ProtocolVersion::TLSv1_2)
         {
             scheme = SignatureScheme(reader.get_uint16_t());   // algorithm
             signature = reader.get_span<uint8_t>(2, 0, 65535); // signature
@@ -60,6 +63,20 @@ void ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const int
     }
 
     reader.assert_done();
+}
+
+ServerKeyExchange ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+{
+    ServerKeyExchange keyExchange;
+    keyExchange.parse(input, metaInfo);
+    return keyExchange;
+}
+
+size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session) const
+{
+    (void)output;
+    (void)session;
+    return 0;
 }
 
 } // namespace snet::tls

@@ -2,14 +2,18 @@
 #include <variant>
 #include <casket/nonstd/span.hpp>
 #include <snet/tls/version.hpp>
+#include <snet/tls/meta_info.hpp>
 
 #include <snet/crypto/group_params.hpp>
 #include <snet/crypto/signature_scheme.hpp>
 
 #include <snet/utils/data_reader.hpp>
 
+
 namespace snet::tls
 {
+
+class Session;
 
 struct DhParams final
 {
@@ -37,9 +41,11 @@ struct ServerKeyExchange final
 {
     using Params = std::variant<DhParams, EcdheParams>;
 
-    void deserialize(nonstd::span<const uint8_t> input, const int kex, const int auth, const ProtocolVersion& version);
+    void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    static ServerKeyExchange deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 
     Params params;
     nonstd::span<const uint8_t> data;

@@ -50,28 +50,28 @@ enum SizeLimits : size_t
 /// @brief Enum representing the handshake type.
 enum class HandshakeType : uint8_t
 {
-    HelloRequest = 0,
-    ClientHello = 1,
-    ServerHello = 2,
-    HelloVerifyRequest = 3,
-    NewSessionTicket = 4, ///< RFC 5077
+    HelloRequestCode = 0,
+    ClientHelloCode = 1,
+    ServerHelloCode = 2,
+    HelloVerifyRequestCode = 3,
+    NewSessionTicketCode = 4, ///< RFC 5077
 
-    EndOfEarlyData = 5,      ///< RFC 8446 (TLS 1.3)
-    EncryptedExtensions = 8, ///< RFC 8446 (TLS 1.3)
+    EndOfEarlyDataCode = 5,      ///< RFC 8446 (TLS 1.3)
+    EncryptedExtensionsCode = 8, ///< RFC 8446 (TLS 1.3)
 
-    Certificate = 11,
-    ServerKeyExchange = 12,
-    CertificateRequest = 13,
-    ServerHelloDone = 14,
-    CertificateVerify = 15,
-    ClientKeyExchange = 16,
-    Finished = 20,
+    CertificateCode = 11,
+    ServerKeyExchangeCode = 12,
+    CertificateRequestCode = 13,
+    ServerHelloDoneCode = 14,
+    CertificateVerifyCode = 15,
+    ClientKeyExchangeCode = 16,
+    FinishedCode = 20,
 
-    KeyUpdate = 24, ///< RFC 8446 (TLS 1.3)
+    KeyUpdateCode = 24, ///< RFC 8446 (TLS 1.3)
 
-    HelloRetryRequest = 253, ///< Not a wire value (HRR appears as an ordinary Server Hello)
-    HandshakeCCS = 254,      ///< Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
-    None = 255               ///< Null value
+    HelloRetryRequestCode = 253, ///< Not a wire value (HRR appears as an ordinary Server Hello)
+    HandshakeCCSCode = 254,      ///< Not a wire value (TLS 1.3 uses this value for 'message_hash' -- RFC 8446 4.4.1)
+    NoneCode = 255               ///< Null value
 };
 
 /// @brief Converts a RecordType to a string representation.
