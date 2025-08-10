@@ -19,15 +19,24 @@ struct HandshakeMessage final
     using MessageType = std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, Certificate,
                                      CertificateVerify, Finished>;
 
+    HandshakeMessage()
+        : message(ClientHello())
+        , type(HandshakeType::NoneCode)
+    {}
+
     static HandshakeMessage deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    static size_t serialize(nonstd::span<uint8_t> output, const MessageType& message, const Session& session);
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session);
+
+    HandshakeType getType() const;
 
     MessageType message;
+    HandshakeType type;
 
 private:
-    explicit HandshakeMessage(MessageType&& msg)
+    explicit HandshakeMessage(MessageType&& msg, HandshakeType htype)
         : message(std::move(msg))
+        , type(htype)
     {
     }
 

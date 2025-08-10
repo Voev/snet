@@ -81,46 +81,9 @@ size_t Record::initPayload(nonstd::span<const uint8_t> data)
     }
 }
 
-void Record::deserializeClientHello(nonstd::span<const uint8_t> input)
+void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
-    auto& clientHello = messages_.emplace<ClientHello>();
-    clientHello.parse(input);
-}
-
-void Record::deserializeServerHello(nonstd::span<const uint8_t> input)
-{
-    auto& serverHello = messages_.emplace<ServerHello>();
-    serverHello.parse(input);
-}
-
-void Record::deserializeEncryptedExtensions(nonstd::span<const uint8_t> input)
-{
-    auto& encryptedExtensions = messages_.emplace<EncryptedExtensions>();
-    encryptedExtensions.parse(input);
-}
-
-void Record::deserializeCertificate(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
-{
-    auto& certMessage = messages_.emplace<Certificate>();
-    certMessage.parse(input, metaInfo);
-}
-
-void Record::deserializeCertificateVerify(nonstd::span<const uint8_t> input)
-{
-    auto& certVerify = messages_.emplace<CertificateVerify>();
-    certVerify.parse(input);
-}
-
-void Record::deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
-{
-    auto& keyExchange = messages_.emplace<ServerKeyExchange>();
-    keyExchange.parse(input, metaInfo);
-}
-
-void Record::deserializeFinished(nonstd::span<const uint8_t> input)
-{
-    auto& finished = messages_.emplace<Finished>();
-    finished.parse(input);
+    handshake_ = HandshakeMessage::deserialize(input, metaInfo);
 }
 
 } // namespace snet::tls

@@ -5,14 +5,6 @@
 namespace snet::tls
 {
 
-namespace detail
-{
-
-template <typename>
-constexpr bool always_false = false;
-
-} // namespace detail
-
 HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     if (input.size() < TLS_HANDSHAKE_HEADER_SIZE)
@@ -25,9 +17,9 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     const auto messageType = static_cast<HandshakeType>(reader.get_byte());
     const auto messageLength = reader.get_uint24_t();
     casket::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
-
+    
     auto payload = input.subspan(TLS_HANDSHAKE_HEADER_SIZE, messageLength);
-
+    
     MessageType message;
     switch (messageType)
     {
@@ -52,48 +44,27 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     case HandshakeType::FinishedCode:
         message = Finished::deserialize(payload);
         break;
+    case HandshakeType::ServerHelloDoneCode:
+        // Nothing to do?
+        break;
+    case HandshakeType::KeyUpdateCode:
+        // Nothing to do?
+        break;
+    case HandshakeType::ClientKeyExchangeCode:
+        /// @todo: support it.
+        break;
+    case HandshakeType::NewSessionTicketCode:
+        /// @todo: support it.
+        break;
     default:
         throw casket::RuntimeError("Unknown handshake message type");
     }
 
-    return HandshakeMessage(std::move(message));
+    return HandshakeMessage(std::move(message), messageType);
 }
 
-inline void writeUint24(nonstd::span<uint8_t> out, uint32_t value)
+size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session)
 {
-    assert(out.size() < 3);
-    out[0] = casket::get_byte<0>(value);
-    out[1] = casket::get_byte<1>(value);
-    out[2] = casket::get_byte<2>(value);
-}
-
-size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const MessageType& message, const Session& session)
-{
-    HandshakeType messageType = std::visit(
-        [](auto&& msg) -> HandshakeType
-        {
-            using T = std::decay_t<decltype(msg)>;
-            if constexpr (std::is_same_v<T, ClientHello>)
-                return HandshakeType::ClientHelloCode;
-            else if constexpr (std::is_same_v<T, ServerHello>)
-                return HandshakeType::ServerHelloCode;
-            else if constexpr (std::is_same_v<T, EncryptedExtensions>)
-                return HandshakeType::EncryptedExtensionsCode;
-            else if constexpr (std::is_same_v<T, Certificate>)
-                return HandshakeType::CertificateCode;
-            else if constexpr (std::is_same_v<T, CertificateVerify>)
-                return HandshakeType::CertificateVerifyCode;
-            else if constexpr (std::is_same_v<T, ServerKeyExchange>)
-                return HandshakeType::ServerKeyExchangeCode;
-            else if constexpr (std::is_same_v<T, Finished>)
-                return HandshakeType::FinishedCode;
-            else
-            {
-                static_assert(detail::always_false<T>, "Unknown handshake message type");
-            }
-        },
-        message);
-
     const size_t payloadSize = std::visit(
         [&output, &session](auto&& msg) -> size_t
         {
@@ -102,8 +73,11 @@ size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const MessageTy
         },
         message);
 
-    output[0] = static_cast<uint8_t>(messageType);
-    writeUint24(output.subspan(1), static_cast<uint32_t>(payloadSize));
+    output[0] = static_cast<uint8_t>(type);
+    auto length = static_cast<uint32_t>(payloadSize);
+    output[1] = casket::get_byte<0>(length);
+    output[2] = casket::get_byte<1>(length);
+    output[3] = casket::get_byte<2>(length);
 
     return TLS_HANDSHAKE_HEADER_SIZE + payloadSize;
 }

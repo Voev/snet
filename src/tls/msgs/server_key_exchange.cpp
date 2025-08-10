@@ -27,7 +27,7 @@ void EcdheParams::deserialize(utils::DataReader& reader)
 
 void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
-    utils::DataReader reader("ServerKeyExchange", input.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("ServerKeyExchange", input);
 
     auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
 

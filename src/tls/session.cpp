@@ -156,61 +156,43 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             return;
         }
 
-        utils::DataReader reader("Handshake Message", data);
+        record->deserializeHandshake(data, metaInfo_);
 
-        const auto messageType = static_cast<HandshakeType>(reader.get_byte());
-        const auto messageLength = reader.get_uint24_t();
-        casket::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
-
-        switch (messageType)
+        switch (record->getHandshakeType())
         {
         case HandshakeType::ClientHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
-
-            record->deserializeClientHello(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-            processClientHello(record->getHandshakeMsg<ClientHello>());
-
+            processClientHello(record->getHandshake<ClientHello>());
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ServerHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-
-            record->deserializeServerHello(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-            processServerHello(record->getHandshakeMsg<ServerHello>());
-
+            processServerHello(record->getHandshake<ServerHello>());
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::EncryptedExtensionsCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-            record->deserializeEncryptedExtensions(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-            processEncryptedExtensions(record->getHandshakeMsg<EncryptedExtensions>());
-
+            processEncryptedExtensions(record->getHandshake<EncryptedExtensions>());
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ServerHelloDoneCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
             utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             reader.assert_done();
-
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ServerKeyExchangeCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-
-            record->deserializeServerKeyExchange(data, metaInfo_);
-
-            processServerKeyExchange(record->getHandshakeMsg<ServerKeyExchange>());
+            processServerKeyExchange(record->getHandshake<ServerKeyExchange>());
             handshakeHash_.update(data);
             break;
         }
@@ -222,10 +204,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         case HandshakeType::CertificateCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-
-            record->deserializeCertificate(data.subspan(TLS_HANDSHAKE_HEADER_SIZE), metaInfo_);
-            processCertificate(record->getHandshakeMsg<Certificate>());
-
+            processCertificate(record->getHandshake<Certificate>());
             handshakeHash_.update(data);
             break;
         }
@@ -234,17 +213,13 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         case HandshakeType::CertificateVerifyCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-            record->deserializeCertificateVerify(data);
-            processCertificateVerify(record->getHandshakeMsg<CertificateVerify>());
-
+            processCertificateVerify(record->getHandshake<CertificateVerify>());
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::FinishedCode:
         {
-            record->deserializeFinished(data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-            processFinished(sideIndex, record->getHandshakeMsg<Finished>());
+            processFinished(sideIndex, record->getHandshake<Finished>());
 
             if (metaInfo_.version == ProtocolVersion::TLSv1_3)
             {
@@ -257,11 +232,15 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             break;
         }
         case HandshakeType::NewSessionTicketCode:
+        {
             processSessionTicket(sideIndex, data);
             break;
+        }
         case HandshakeType::KeyUpdateCode:
+        {
             processKeyUpdate(sideIndex, data);
             break;
+        }
         case HandshakeType::HelloRequestCode:
         case HandshakeType::HelloVerifyRequestCode:
         case HandshakeType::EndOfEarlyDataCode:

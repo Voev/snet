@@ -8,7 +8,7 @@
 #include <casket/utils/exception.hpp>
 
 #include <snet/tls/version.hpp>
-#include <snet/tls/messages.hpp>
+#include <snet/tls/msgs/handshake_message.hpp>
 
 namespace snet::tls
 {
@@ -79,28 +79,17 @@ public:
 
     size_t serializeHeader(nonstd::span<uint8_t> output);
 
-    /// @brief Deserialize ClientHello handshake message.
-    ///
-    /// @param[in] input Record data without Record header (5 bytes) and Handshake header (3 bytes).
-    ///
-    void deserializeClientHello(nonstd::span<const uint8_t> input);
+    void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    void deserializeServerHello(nonstd::span<const uint8_t> input);
-
-    void deserializeEncryptedExtensions(nonstd::span<const uint8_t> input);
-
-    void deserializeServerKeyExchange(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
-
-    void deserializeCertificate(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
-
-    void deserializeCertificateVerify(nonstd::span<const uint8_t> input);
-
-    void deserializeFinished(nonstd::span<const uint8_t> input);
+    inline HandshakeType getHandshakeType() const
+    {
+        return handshake_.type;
+    }
 
     template <typename T>
-    const T& getHandshakeMsg() const
+    const T& getHandshake() const
     {
-        return std::get<T>(messages_);
+        return std::get<T>(handshake_.message);
     }
 
 private:
@@ -108,7 +97,7 @@ private:
     ProtocolVersion version_;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
-    Messages messages_;
+    HandshakeMessage handshake_;
     size_t currentLength_;
     size_t expectedLength_;
     nonstd::span<const std::uint8_t> ciphertext_;

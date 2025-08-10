@@ -9,7 +9,7 @@ namespace snet::tls
 
 void CertificateVerify::parse(nonstd::span<const uint8_t> input)
 {
-    utils::DataReader reader("CertificateVerify", input.subspan(TLS_HANDSHAKE_HEADER_SIZE));
+    utils::DataReader reader("CertificateVerify", input);
 
     scheme = SignatureScheme(reader.get_uint16_t());
     signature = reader.get_span(2, 0, 65535);
