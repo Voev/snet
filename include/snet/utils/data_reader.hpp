@@ -127,23 +127,22 @@ public:
         return get_elem<T, std::vector<T>>(num_elems);
     }
 
-    template <typename T>
-    nonstd::span<const T> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
+    nonstd::span<const uint8_t> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
     {
-        const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
+        const size_t num_elems = get_num_elems(len_bytes, sizeof(uint8_t), min_elems, max_elems);
 
-        assert_at_least(num_elems * sizeof(T));
+        assert_at_least(num_elems * sizeof(uint8_t));
 
-        nonstd::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), num_elems);
+        nonstd::span<const uint8_t> result(reinterpret_cast<const uint8_t*>(&m_buf[m_offset]), num_elems);
 
-        m_offset += num_elems * sizeof(T);
+        m_offset += num_elems * sizeof(uint8_t);
 
         return result;
     }
 
     std::string get_string(size_t len_bytes, size_t min_bytes, size_t max_bytes)
     {
-        auto v = get_span<uint8_t>(len_bytes, min_bytes, max_bytes);
+        auto v = get_span(len_bytes, min_bytes, max_bytes);
         return std::string(v.begin(), v.end());
     }
 
@@ -153,14 +152,13 @@ public:
         return get_elem<T, std::vector<T>>(size);
     }
 
-    template <typename T>
-    nonstd::span<const T> get_span_fixed(size_t numElems)
+    nonstd::span<const uint8_t> get_span_fixed(size_t numElems)
     {
-        assert_at_least(numElems * sizeof(T));
+        assert_at_least(numElems * sizeof(uint8_t));
 
-        nonstd::span<const T> result(reinterpret_cast<const T*>(&m_buf[m_offset]), numElems);
+        nonstd::span<const uint8_t> result(reinterpret_cast<const uint8_t*>(&m_buf[m_offset]), numElems);
 
-        m_offset += numElems * sizeof(T);
+        m_offset += numElems * sizeof(uint8_t);
 
         return result;
     }
@@ -172,7 +170,7 @@ public:
 
     nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
     {
-        return get_span_fixed<const uint8_t>(get_length_field(lenBytes));
+        return get_span_fixed(get_length_field(lenBytes));
     }
 
 private:

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <snet/tls/msgs/encrypted_extensions.hpp>
+#include <snet/tls/session.hpp>
 
 using namespace testing;
 using namespace snet::tls;
@@ -11,21 +12,27 @@ class EncryptedExtensionsTest : public TestWithParam<SerializeTestParam>
 protected:
     EncryptedExtensionsTest() = default;
     ~EncryptedExtensionsTest() = default;
+
+protected:
+    RecordPool recordPool_{8};
 };
 
 TEST_P(EncryptedExtensionsTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
-    //SerializeTestParam serialized(param.size());
-    //size_t serializedLength;
+    SerializeTestParam serialized(param.size());
+    size_t serializedLength;
 
-    EncryptedExtensions msg;
-    ASSERT_NO_THROW(msg.deserialize(param));
+    EncryptedExtensions encryptedExtensions;
+    ASSERT_NO_THROW(encryptedExtensions.parse(param));
 
-    //ASSERT_NO_THROW(serializedLength = msg.serialize(serialized));
-    //serialized.resize(serializedLength);
+    Session session(recordPool_);
+    ASSERT_NO_THROW(session.processEncryptedExtensions(encryptedExtensions));
 
-    //ASSERT_EQ(serialized, param);
+    ASSERT_NO_THROW(serializedLength = encryptedExtensions.serialize(serialized, session));
+    serialized.resize(serializedLength);
+
+    ASSERT_EQ(serialized, param);
 }
 
 std::vector<std::vector<uint8_t>> gEncryptedExtensionsParams = {

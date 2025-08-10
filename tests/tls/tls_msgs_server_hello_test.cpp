@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <snet/tls/msgs/server_hello.hpp>
+#include <snet/tls/session.hpp>
 
 using namespace testing;
 using namespace snet::tls;
@@ -11,21 +12,28 @@ class ServerHelloSerializeTest : public TestWithParam<SerializeTestParam>
 public:
     ServerHelloSerializeTest() = default;
     ~ServerHelloSerializeTest() = default;
+
+protected:
+    RecordPool recordPool_{8};
 };
 
 TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
-    //SerializeTestParam serialized(param.size());
-    //size_t serializedLength;
+    SerializeTestParam serialized(param.size());
+    size_t serializedLength;
 
-    ServerHello msg;
-    ASSERT_NO_THROW(msg.deserialize(param));
+    ServerHello serverHello;
+    ASSERT_NO_THROW(serverHello.parse(param));
 
-    //ASSERT_NO_THROW(serializedLength = msg.serialize(serialized));
-    //serialized.resize(serializedLength);
+    Session session(recordPool_);
+    session.setMonitor(true);
+    ASSERT_NO_THROW(session.processServerHello(serverHello));
 
-    //ASSERT_EQ(serialized, param);
+    ASSERT_NO_THROW(serializedLength = serverHello.serialize(serialized, session));
+    serialized.resize(serializedLength);
+
+    ASSERT_EQ(serialized, param);
 }
 
 // clang-format off

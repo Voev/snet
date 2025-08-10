@@ -134,6 +134,11 @@ public:
         debugKeys_ = debug;
     }
 
+    void setMonitor(const bool value)
+    {
+        monitor_ = value;
+    }
+
     /// @brief Fetch algorithms that are often used for operations on records.
     ///
     void fetchAlgorithms();
@@ -148,6 +153,11 @@ public:
     const Extensions& getServerExtensions() const noexcept
     {
         return serverExtensions_;
+    }
+
+    const Extensions& getEncryptedExtensions() const noexcept
+    {
+        return serverEncExtensions_;
     }
 
 private:
@@ -177,9 +187,11 @@ private:
     HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
+    Extensions serverEncExtensions_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
+    bool monitor_;
     uint8_t debugKeys_;
 };
 

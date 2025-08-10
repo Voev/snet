@@ -12,8 +12,8 @@ void ServerHello::parse(nonstd::span<const uint8_t> input)
     utils::DataReader reader("Server Hello", input);
 
     version = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_span_fixed<uint8_t>(32);
-    sessionID = reader.get_span<uint8_t>(1, 0, 32);
+    random = reader.get_span_fixed(32);
+    sessionID = reader.get_span(1, 0, 32);
     cipherSuite = reader.get_uint16_t();
     compMethod = reader.get_byte();
 

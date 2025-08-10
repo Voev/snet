@@ -14,7 +14,7 @@ void TLSv13Certificate::deserialize(nonstd::span<const uint8_t> buffer)
 {
     utils::DataReader reader("TLSv1.3 Certificate", buffer);
 
-    requestContext = reader.get_span<uint8_t>(1, 0, 255);
+    requestContext = reader.get_span(1, 0, 255);
 
     const size_t certEntriesLength = reader.get_uint24_t();
     ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
@@ -27,7 +27,7 @@ void TLSv13Certificate::deserialize(nonstd::span<const uint8_t> buffer)
         const auto length = reader.get_uint16_t();
         if (length > 0)
         {
-            entry.extensions = reader.get_span_fixed<uint8_t>(length);
+            entry.extensions = reader.get_span_fixed(length);
         }
 
         certList[certCount++] = std::move(entry);

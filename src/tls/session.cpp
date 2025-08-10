@@ -39,6 +39,7 @@ Session::Session(RecordPool& recordPool)
     , serverCipherCtx_(crypto::CreateCipherCtx())
     , cipherState_(0)
     , canDecrypt_(0)
+    , monitor_(false)
     , debugKeys_(0)
 {
 }
@@ -534,9 +535,12 @@ void Session::processClientHello(const ClientHello& clientHello)
         clientExtensions_.deserialize(Side::Client, clientHello.extensions);
     }
 
-    for (const auto& handler : *processor_)
+    if (processor_)
     {
-        handler->handleClientHello(clientHello, this);
+        for (const auto& handler : *processor_)
+        {
+            handler->handleClientHello(clientHello, this);
+        }
     }
 }
 
@@ -564,13 +568,15 @@ void Session::processServerHello(const ServerHello& serverHello)
     metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
     casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
 
-    recordLayer_.setVersion(metaInfo_.version);
-
-    fetchAlgorithms();
-
-    if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
+    if (!monitor_)
     {
-        generateTLS13KeyMaterial();
+        recordLayer_.setVersion(metaInfo_.version);
+        fetchAlgorithms();
+
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
+        {
+            generateTLS13KeyMaterial();
+        }
     }
 }
 
@@ -599,8 +605,8 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     casket::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
 
-    const auto cert_type_codes = reader.get_range<uint8_t>(1, 1, 255);
-    const auto algs = reader.get_span<uint8_t>(2, 2, 65534);
+    const auto cert_type_codes = reader.get_span(1, 1, 255);
+    const auto algs = reader.get_span(2, 2, 65534);
 
     casket::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
 
@@ -610,7 +616,7 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     while (reader.has_remaining())
     {
-        auto name_bits = reader.get_span<uint8_t>(2, 0, 65535);
+        auto name_bits = reader.get_span(2, 0, 65535);
     }
 
     /// @todo: TLSv1.3 fix it.
@@ -628,7 +634,7 @@ void Session::processCertificateVerify(const CertificateVerify& certVerify)
 
 void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
 {
-    serverExtensions_.deserialize(Side::Server, encryptedExtensions.extensions);
+    serverEncExtensions_.deserialize(Side::Server, encryptedExtensions.extensions);
 }
 
 void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
@@ -679,7 +685,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
     if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        const auto encryptedPreMaster = reader.get_span<uint8_t>(2, 0, 65535);
+        const auto encryptedPreMaster = reader.get_span(2, 0, 65535);
         reader.assert_done();
 
         crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, getServerInfo().getServerKey(), nullptr));
@@ -846,7 +852,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
         utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
         reader.get_uint32_t();
-        reader.get_span<uint8_t>(2, 0, 65535);
+        reader.get_span(2, 0, 65535);
         reader.assert_done();
 
         // RFC 5077: 3.3 (must be included in transcript hash)
@@ -914,7 +920,8 @@ void Session::fetchAlgorithms()
 
     if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
     {
-        hmacHashAlg_ = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+        hmacHashAlg_ =
+            crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
 
         if (metaInfo_.version != ProtocolVersion::SSLv3_0)
         {

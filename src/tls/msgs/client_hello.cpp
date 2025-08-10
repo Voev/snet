@@ -16,10 +16,10 @@ void ClientHello::parse(nonstd::span<const uint8_t> input)
 
     /// @todo: fuzzing: check bytes for correctness
     version = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_span_fixed<uint8_t>(32);
-    sessionID = reader.get_span<uint8_t>(1, 0, 32);
-    suites = reader.get_span<uint16_t>(2, 1, 32767);
-    compMethods = reader.get_span<uint8_t>(1, 1, 255);
+    random = reader.get_span_fixed(32);
+    sessionID = reader.get_span(1, 0, 32);
+    suites = reader.get_span(2, 1, 32767);
+    compMethods = reader.get_span(1, 1, 255);
 
     if (version == ProtocolVersion::SSLv3_0)
     {

@@ -12,7 +12,7 @@ struct ClientHello final
     ProtocolVersion version;
     nonstd::span<const uint8_t> random;
     nonstd::span<const uint8_t> sessionID;
-    nonstd::span<const uint16_t> suites;
+    nonstd::span<const uint8_t> suites; ///< Ciphersuite codes (interpreted as a pair of bytes in BE)
     nonstd::span<const uint8_t> compMethods;
     nonstd::span<const uint8_t> extensions;
 

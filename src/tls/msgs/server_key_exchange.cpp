@@ -10,9 +10,9 @@ namespace snet::tls
 
 void DhParams::deserialize(utils::DataReader& reader)
 {
-    prime = reader.get_span<uint8_t>(2, 1, 65535);
-    generator = reader.get_span<uint8_t>(2, 1, 65535);
-    publicValue = reader.get_span<uint8_t>(2, 1, 65535);
+    prime = reader.get_span(2, 1, 65535);
+    generator = reader.get_span(2, 1, 65535);
+    publicValue = reader.get_span(2, 1, 65535);
 }
 
 void EcdheParams::deserialize(utils::DataReader& reader)
@@ -22,7 +22,7 @@ void EcdheParams::deserialize(utils::DataReader& reader)
     curveID = GroupParams(reader.get_uint16_t());
     casket::ThrowIfFalse(curveID.isPureEccGroup(), "Invalid curve ID");
 
-    publicPoint = reader.get_span<uint8_t>(1, 1, 255);
+    publicPoint = reader.get_span(1, 1, 255);
 }
 
 void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
@@ -54,11 +54,11 @@ void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo&
         if (metaInfo.version == ProtocolVersion::TLSv1_2)
         {
             scheme = SignatureScheme(reader.get_uint16_t());   // algorithm
-            signature = reader.get_span<uint8_t>(2, 0, 65535); // signature
+            signature = reader.get_span(2, 0, 65535); // signature
         }
         else /// < TLSv1.2
         {
-            signature = reader.get_span<uint8_t>(2, 0, 65535); // signature
+            signature = reader.get_span(2, 0, 65535); // signature
         }
     }
 
