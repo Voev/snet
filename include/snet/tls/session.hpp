@@ -160,6 +160,11 @@ public:
         return serverEncExtensions_;
     }
 
+    Cert* getServerCert() const noexcept
+    {
+        return serverCert_.get();
+    }
+
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;

@@ -34,12 +34,18 @@ Certificate Certificate::deserialize(nonstd::span<const uint8_t> input, const Me
     return certificate;
 }
 
-
 size_t Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const
 {
-    (void)output;
     (void)session;
-    return 0;
+
+    if (std::holds_alternative<TLSv13Certificate>(message))
+    {
+        return std::get<TLSv13Certificate>(message).serialize(output);
+    }
+    else
+    {
+        return std::get<TLSv1Certificate>(message).serialize(output);
+    }
 }
 
 } // namespace snet::tls

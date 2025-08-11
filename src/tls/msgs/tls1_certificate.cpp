@@ -27,26 +27,30 @@ void TLSv1Certificate::deserialize(nonstd::span<const uint8_t> buffer)
     reader.assert_done();
 }
 
-size_t TLSv1Certificate::serialize(nonstd::span<uint8_t> buffer) const
+size_t TLSv1Certificate::serialize(nonstd::span<uint8_t> output) const
 {
     size_t totalLength{0};
 
-    auto header = buffer.subspan(totalLength);
+    auto header = output;
     auto entries = header.subspan(3);
     totalLength += 3;
 
-    //uint32_t offset;
+    uint32_t certSize;
     uint32_t entriesLength{0};
-    /*for (size_t i = 0; i < certs.size(); ++i)
+    for (size_t i = 0; i < certCount; ++i)
     {
-        offset = append_length_and_value(entries, certs[i].data(), certs[i].size(), 3);
-        entries = entries.subspan(offset);
-        entriesLength += offset;
+        auto certData = entries.subspan(3);
+        uint8_t* ptr = certData.data();
 
-        offset = certExts[i].serialize(side, entries);
-        entries = entries.subspan(offset);
-        entriesLength += offset;
-    }*/
+        certSize = i2d_X509(certList[i].cert, &ptr);
+
+        entries[0] = casket::get_byte<1>(certSize);
+        entries[1] = casket::get_byte<2>(certSize);
+        entries[2] = casket::get_byte<3>(certSize);
+        
+        entries = entries.subspan(certSize);
+        entriesLength += certSize + 3;
+    }
 
     header[0] = casket::get_byte<1>(entriesLength);
     header[1] = casket::get_byte<2>(entriesLength);
