@@ -20,8 +20,8 @@ void TLSv1Certificate::deserialize(nonstd::span<const uint8_t> buffer)
     while (reader.has_remaining())
     {
         Entry entry;
-        entry.data = reader.get_span_length_and_value(3);
-        certList[certCount++] = std::move(entry);
+        entry.certData = reader.get_span_length_and_value(3);
+        entryList[entryCount++] = std::move(entry);
     }
 
     reader.assert_done();
@@ -37,12 +37,12 @@ size_t TLSv1Certificate::serialize(nonstd::span<uint8_t> output) const
 
     uint32_t certSize;
     uint32_t entriesLength{0};
-    for (size_t i = 0; i < certCount; ++i)
+    for (size_t i = 0; i < entryCount; ++i)
     {
         auto certData = entries.subspan(3);
         uint8_t* ptr = certData.data();
 
-        certSize = i2d_X509(certList[i].cert, &ptr);
+        certSize = i2d_X509(entryList[i].cert, &ptr);
 
         entries[0] = casket::get_byte<1>(certSize);
         entries[1] = casket::get_byte<2>(certSize);

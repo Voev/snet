@@ -564,12 +564,12 @@ void Session::processCertificate(const Certificate& certificate)
     if (std::holds_alternative<TLSv13Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv13Certificate>(certificate.message);
-        serverCert_ = crypto::CertFromMemory(message.certList[0].data);
+        serverCert_ = crypto::CertFromMemory(message.entryList[0].certData);
     }
     else if (std::holds_alternative<TLSv1Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv1Certificate>(certificate.message);
-        serverCert_ = crypto::CertFromMemory(message.certList[0].data);
+        serverCert_ = crypto::CertFromMemory(message.entryList[0].certData);
     }
 
     /// @todo verify certificate chain

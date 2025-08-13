@@ -12,7 +12,7 @@ struct TLSv1Certificate final
     static constexpr size_t kMaxCertChain{10};
     struct Entry final
     {
-        nonstd::span<const uint8_t> data;
+        nonstd::span<const uint8_t> certData;
         Cert* cert{nullptr};
     };
 
@@ -20,8 +20,8 @@ struct TLSv1Certificate final
 
     size_t serialize(nonstd::span<uint8_t> output) const;
 
-    std::array<Entry, kMaxCertChain> certList;
-    uint8_t certCount{0};
+    std::array<Entry, kMaxCertChain> entryList;
+    uint8_t entryCount{0};
 };
 
 } // namespace snet::tls
