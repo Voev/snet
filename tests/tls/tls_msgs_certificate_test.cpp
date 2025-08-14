@@ -42,6 +42,7 @@ TEST_P(CertificateSerializeTest, DeserializeSerialize)
     if (param.version == ProtocolVersion::TLSv1_3)
     {
         std::get<TLSv13Certificate>(certificate.message).entryList[0].cert = session.getServerCert();
+        /// @todo: set extensions
     }
     else
     {
