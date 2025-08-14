@@ -2,10 +2,13 @@
 /// @brief Declaration of the TLS record class.
 
 #pragma once
+#include <variant>
 #include <casket/nonstd/span.hpp>
-#include <snet/tls/version.hpp>
 #include <casket/utils/load_store.hpp>
 #include <casket/utils/exception.hpp>
+
+#include <snet/tls/version.hpp>
+#include <snet/tls/msgs/handshake_message.hpp>
 
 namespace snet::tls
 {
@@ -74,11 +77,27 @@ public:
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
+    size_t serializeHeader(nonstd::span<uint8_t> output);
+
+    void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+
+    inline HandshakeType getHandshakeType() const
+    {
+        return handshake_.type;
+    }
+
+    template <typename T>
+    const T& getHandshake() const
+    {
+        return std::get<T>(handshake_.message);
+    }
+
 private:
     RecordType type_;
     ProtocolVersion version_;
     std::array<uint8_t, MAX_CIPHERTEXT_SIZE> ciphertextBuffer_;
     std::array<uint8_t, MAX_PLAINTEXT_SIZE> plaintextBuffer_;
+    HandshakeMessage handshake_;
     size_t currentLength_;
     size_t expectedLength_;
     nonstd::span<const std::uint8_t> ciphertext_;

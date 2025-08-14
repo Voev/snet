@@ -1,40 +1,25 @@
 
 #pragma once
-#include <cstdint>
-#include <vector>
-#include <casket/nonstd/span.hpp>
-#include <snet/crypto/pointers.hpp>
-#include <snet/tls/extensions.hpp>
+#include <variant>
+#include <snet/tls/msgs/tls1_certificate.hpp>
+#include <snet/tls/msgs/tls13_certificate.hpp>
+#include <snet/tls/version.hpp>
+#include <snet/tls/meta_info.hpp>
 
 namespace snet::tls
 {
 
-class Certificate final
+class Session;
+
+struct Certificate final
 {
-public:
-    Certificate() = default;
+    std::variant<TLSv1Certificate, TLSv13Certificate> message;
 
-    ~Certificate() = default;
+    void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    void deserialize(const int8_t sideIndex, const ProtocolVersion& version, nonstd::span<const uint8_t> input);
+    static Certificate deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    size_t serialize(const int8_t sideIndex, const ProtocolVersion& version, nonstd::span<uint8_t> output) const;
-
-    Cert* getCert() const noexcept
-    {
-        return cert_.get();
-    }
-
-    const std::vector<uint8_t>& getRequestContext() const noexcept
-    {
-        return requestContext_;
-    }
-
-private:
-    std::vector<uint8_t> requestContext_;
-    crypto::CertPtr cert_;
-    crypto::CertStack1Ptr intermediateCerts_;
-    std::vector<Extensions> certExts_;
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 };
 
 } // namespace snet::tls

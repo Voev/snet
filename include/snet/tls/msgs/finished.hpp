@@ -1,31 +1,34 @@
 
 #pragma once
-#include <cstdint>
-#include <vector>
 #include <casket/nonstd/span.hpp>
-#include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
 
-class Finished final
+class Session;
+
+struct Finished final
 {
-public:
-    Finished() = default;
-
-    ~Finished() = default;
-
-    void deserialize(const ProtocolVersion& version, nonstd::span<const uint8_t> input);
-
-    size_t serialize(const ProtocolVersion& version, nonstd::span<uint8_t> output) const;
-
-    const std::vector<uint8_t>& getVerifyData() const noexcept
+    inline void parse(nonstd::span<const uint8_t> input)
     {
-        return verifyData_;
+        verifyData = input;
     }
 
-private:
-    std::vector<uint8_t> verifyData_;
+    static Finished deserialize(nonstd::span<const uint8_t> input)
+    {
+        Finished finished;
+        finished.parse(input);
+        return finished;
+    }
+
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const
+    {
+        (void)output;
+        (void)session;
+        return 0;
+    }
+
+    nonstd::span<const uint8_t> verifyData;
 };
 
 } // namespace snet::tls

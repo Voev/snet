@@ -19,7 +19,6 @@
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/record_processor.hpp>
-#include <snet/tls/handshake_msgs.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
@@ -102,21 +101,21 @@ public:
     /// @return The server information.
     const ServerInfo& getServerInfo() const noexcept;
 
-    void processClientHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processClientHello(const ClientHello& clientHello);
     
-    void processServerHello(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerHello(const ServerHello& serverHello);
     
-    void processEncryptedExtensions(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
     
     void processSessionTicket(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
-    void processCertificate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificate(const Certificate& certificate);
     
-    void processCertificateVerify(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificateVerify(const CertificateVerify& certVerify);
     
-    void processServerKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processServerKeyExchange(const ServerKeyExchange& keyExchange);
     
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     
@@ -124,7 +123,7 @@ public:
     
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
-    void processFinished(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processFinished(const int8_t sideIndex, const Finished& finished);
     
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
@@ -135,27 +134,53 @@ public:
         debugKeys_ = debug;
     }
 
+    void setMonitor(const bool value)
+    {
+        monitor_ = value;
+    }
+
     /// @brief Fetch algorithms that are often used for operations on records.
     ///
     void fetchAlgorithms();
 
     std::string_view getHashAlgorithm() const;
 
+    const Extensions& getClientExtensions() const noexcept
+    {
+        return clientExtensions_;
+    }
+
+    const Extensions& getServerExtensions() const noexcept
+    {
+        return serverExtensions_;
+    }
+
+    const Extensions& getEncryptedExtensions() const noexcept
+    {
+        return serverEncExtensions_;
+    }
+
+    Cert* getServerCert() const noexcept
+    {
+        return serverCert_.get();
+    }
+
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
     Record* readingRecord{nullptr};
-    HandshakeMessages handshake_;
     crypto::HashCtxPtr hashCtx_;
     crypto::HashPtr hmacHashAlg_; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::MacCtxPtr hmacCtx_; ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
+    crypto::CertPtr serverCert_;
     RecordProcessor processor_;
     ServerInfo serverInfo_;
-    ProtocolVersion version_;
-    const CipherSuite* cipherSuite_;
+    MetaInfo metaInfo_;
+    std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
+    std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> PMS_;
     std::vector<uint8_t> clientMacKey_;
@@ -165,9 +190,13 @@ private:
     std::vector<uint8_t> clientIV_;
     std::vector<uint8_t> serverIV_;
     HandshakeHash handshakeHash_;
+    Extensions clientExtensions_;
+    Extensions serverExtensions_;
+    Extensions serverEncExtensions_;
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
+    bool monitor_;
     uint8_t debugKeys_;
 };
 

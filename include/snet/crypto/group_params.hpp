@@ -67,44 +67,44 @@ public:
         return code_;
     }
 
-    constexpr uint16_t wire_code() const
+    constexpr uint16_t wireCode() const
     {
         return static_cast<uint16_t>(code_);
     }
 
-    constexpr bool is_x25519() const
+    constexpr bool isX25519() const
     {
         return code_ == GroupParams::Code::X25519;
     }
 
-    constexpr bool is_x448() const
+    constexpr bool isX448() const
     {
         return code_ == GroupParams::Code::X448;
     }
 
-    constexpr bool is_ecdh_named_curve() const
+    constexpr bool isEcdhNamedCurve() const
     {
         return code_ == GroupParams::Code::SECP256R1 || code_ == GroupParams::Code::SECP384R1 ||
                code_ == GroupParams::Code::SECP521R1 || code_ == GroupParams::Code::BRAINPOOL256R1 ||
                code_ == GroupParams::Code::BRAINPOOL384R1 || code_ == GroupParams::Code::BRAINPOOL512R1;
     }
 
-    constexpr bool is_in_ffdhe_range() const
+    constexpr bool isInFfdheRange() const
     {
         // See RFC 7919
-        return wire_code() >= 256 && wire_code() < 512;
+        return wireCode() >= 256 && wireCode() < 512;
     }
 
-    constexpr bool is_dh_named_group() const
+    constexpr bool isDhNamedGroup() const
     {
         return code_ == GroupParams::Code::FFDHE_2048 || code_ == GroupParams::Code::FFDHE_3072 ||
                code_ == GroupParams::Code::FFDHE_4096 || code_ == GroupParams::Code::FFDHE_6144 ||
                code_ == GroupParams::Code::FFDHE_8192;
     }
 
-    constexpr bool is_pure_ecc_group() const
+    constexpr bool isPureEccGroup() const
     {
-        return is_x25519() || is_x448() || is_ecdh_named_curve();
+        return isX25519() || isX448() || isEcdhNamedCurve();
     }
 
 private:

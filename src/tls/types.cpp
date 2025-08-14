@@ -24,41 +24,41 @@ std::string toString(const HandshakeType type)
 {
     switch (type)
     {
-    case HandshakeType::HelloRequest:
+    case HandshakeType::HelloRequestCode:
         return "HelloRequest";
-    case HandshakeType::ClientHello:
+    case HandshakeType::ClientHelloCode:
         return "ClientHello";
-    case HandshakeType::ServerHello:
+    case HandshakeType::ServerHelloCode:
         return "ServerHello";
-    case HandshakeType::HelloVerifyRequest:
+    case HandshakeType::HelloVerifyRequestCode:
         return "HelloVerifyRequest";
-    case HandshakeType::NewSessionTicket:
+    case HandshakeType::NewSessionTicketCode:
         return "NewSessionTicket";
-    case HandshakeType::EndOfEarlyData:
+    case HandshakeType::EndOfEarlyDataCode:
         return "EndOfEarlyData";
-    case HandshakeType::EncryptedExtensions:
+    case HandshakeType::EncryptedExtensionsCode:
         return "EncryptedExtensions";
-    case HandshakeType::Certificate:
+    case HandshakeType::CertificateCode:
         return "Certificate";
-    case HandshakeType::ServerKeyExchange:
+    case HandshakeType::ServerKeyExchangeCode:
         return "ServerKeyExchange";
-    case HandshakeType::CertificateRequest:
+    case HandshakeType::CertificateRequestCode:
         return "CertificateRequest";
-    case HandshakeType::ServerHelloDone:
+    case HandshakeType::ServerHelloDoneCode:
         return "ServerHelloDone";
-    case HandshakeType::CertificateVerify:
+    case HandshakeType::CertificateVerifyCode:
         return "CertificateVerify";
-    case HandshakeType::ClientKeyExchange:
+    case HandshakeType::ClientKeyExchangeCode:
         return "ClientKeyExchange";
-    case HandshakeType::Finished:
+    case HandshakeType::FinishedCode:
         return "Finished";
-    case HandshakeType::KeyUpdate:
+    case HandshakeType::KeyUpdateCode:
         return "KeyUpdate";
-    case HandshakeType::HelloRetryRequest:
+    case HandshakeType::HelloRetryRequestCode:
         return "HelloRetryRequest";
-    case HandshakeType::HandshakeCCS:
+    case HandshakeType::HandshakeCCSCode:
         return "HandshakeCCS";
-    case HandshakeType::None:
+    case HandshakeType::NoneCode:
         break;
     };
     return "None";

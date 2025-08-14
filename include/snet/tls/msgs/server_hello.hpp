@@ -1,34 +1,27 @@
 #pragma once
-#include <vector>
 #include <casket/nonstd/span.hpp>
-#include <casket/utils/noncopyable.hpp>
 #include <snet/tls/version.hpp>
-#include <snet/tls/extensions.hpp>
 
 namespace snet::tls
 {
 
-struct ServerHello final : public casket::NonCopyable
+class Session;
+
+struct ServerHello final
 {
-    ServerHello() = default;
+    ProtocolVersion version;
+    nonstd::span<const uint8_t> random;
+    nonstd::span<const uint8_t> sessionID;
+    uint16_t cipherSuite{0};
+    uint8_t compMethod{0};
+    nonstd::span<const uint8_t> extensions;
+    bool isHelloRetryRequest{false};
 
-    ~ServerHello() noexcept = default;
+    void parse(nonstd::span<const uint8_t> input);
 
-    ServerHello(ServerHello&& other) noexcept = default;
+    static ServerHello deserialize(nonstd::span<const uint8_t> input);
 
-    ServerHello& operator=(ServerHello&& other) noexcept = default;
-
-    void deserialize(nonstd::span<const uint8_t> message);
-
-    size_t serialize(nonstd::span<uint8_t> buffer) const;
-
-    ProtocolVersion legacyVersion;
-    std::vector<uint8_t> random;
-    std::vector<uint8_t> sessionID;
-    uint16_t cipherSuite;
-    uint8_t compMethod;
-    Extensions extensions;
-    bool isHelloRetryRequest;
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 };
 
 } // namespace snet::tls

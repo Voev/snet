@@ -1,36 +1,26 @@
 #pragma once
-#include <vector>
-#include <iostream>
-#include <snet/tls/version.hpp>
-#include <snet/tls/extensions.hpp>
 #include <casket/nonstd/span.hpp>
-#include <casket/utils/noncopyable.hpp>
+#include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
 
-struct ClientHello final : public casket::NonCopyable
+class Session;
+
+struct ClientHello final
 {
-    ClientHello() = default;
+    ProtocolVersion version;
+    nonstd::span<const uint8_t> random;
+    nonstd::span<const uint8_t> sessionID;
+    nonstd::span<const uint8_t> suites; ///< Ciphersuite codes (interpreted as a pair of bytes in BE)
+    nonstd::span<const uint8_t> compMethods;
+    nonstd::span<const uint8_t> extensions;
 
-    ~ClientHello() noexcept = default;
+    void parse(nonstd::span<const uint8_t> input);
 
-    ClientHello(ClientHello&& other) noexcept = default;
+    static ClientHello deserialize(nonstd::span<const uint8_t> input);
 
-    ClientHello& operator=(ClientHello&& other) noexcept = default;
-
-    void deserialize(nonstd::span<const uint8_t> message);
-
-    size_t serialize(nonstd::span<uint8_t> buffer) const;
-
-    void print(std::ostream& os) const;
-
-    ProtocolVersion legacyVersion;
-    std::vector<uint8_t> random;
-    std::vector<uint8_t> sessionID;
-    std::vector<uint16_t> suites;
-    std::vector<uint8_t> compMethods;
-    Extensions extensions;
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 };
 
 } // namespace snet::tls

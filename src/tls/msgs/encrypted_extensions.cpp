@@ -1,18 +1,25 @@
 #include <snet/tls/msgs/encrypted_extensions.hpp>
-#include <snet/utils/data_reader.hpp>
-#include <snet/utils/data_writer.hpp>
+#include <snet/tls/session.hpp>
 
 namespace snet::tls
 {
 
-void EncryptedExtensions::deserialize(nonstd::span<const uint8_t> buffer)
+void EncryptedExtensions::parse(nonstd::span<const uint8_t> input)
 {
-    extensions.deserialize(Side::Server, buffer);
+    extensions = input;
 }
 
-size_t EncryptedExtensions::serialize(nonstd::span<uint8_t> buffer) const
+EncryptedExtensions EncryptedExtensions::deserialize(nonstd::span<const uint8_t> input)
 {
-    return extensions.serialize(Side::Server, buffer);
+    EncryptedExtensions encryptedExtensions;
+    encryptedExtensions.parse(input);
+    return encryptedExtensions;
+}
+
+size_t EncryptedExtensions::serialize(nonstd::span<uint8_t> output, const Session& session) const
+{
+    const auto& extensions = session.getEncryptedExtensions();
+    return extensions.serialize(Side::Server, output);
 }
 
 } // namespace snet::tls

@@ -1,43 +1,56 @@
 #pragma once
-#include <vector>
+#include <variant>
 #include <casket/nonstd/span.hpp>
-#include <casket/utils/noncopyable.hpp>
 #include <snet/tls/version.hpp>
-#include <snet/tls/extensions.hpp>
+#include <snet/tls/meta_info.hpp>
 
 #include <snet/crypto/group_params.hpp>
 #include <snet/crypto/signature_scheme.hpp>
 
+#include <snet/utils/data_reader.hpp>
+
+
 namespace snet::tls
 {
 
-class ServerKeyExchange final : public casket::NonCopyable
+class Session;
+
+struct DhParams final
 {
-public:
-    ServerKeyExchange() = default;
+    void deserialize(utils::DataReader& reader);
 
-    ~ServerKeyExchange() noexcept = default;
+    size_t serialize(nonstd::span<uint8_t> output);
 
-    ServerKeyExchange(ServerKeyExchange&& other) noexcept = default;
+    nonstd::span<const uint8_t> prime;
+    nonstd::span<const uint8_t> generator;
+    nonstd::span<const uint8_t> publicValue;
+};
 
-    ServerKeyExchange& operator=(ServerKeyExchange&& other) noexcept = default;
+struct EcdheParams final
+{
+    void deserialize(utils::DataReader& reader);
 
-    void deserialize(nonstd::span<const uint8_t> input, const int kex, const int auth,
-                     const ProtocolVersion& version);
+    size_t serialize(nonstd::span<uint8_t> output);
 
-    size_t serialize(nonstd::span<uint8_t> buffer) const;
+    uint8_t curveType{0};
+    crypto::GroupParams curveID;
+    nonstd::span<const uint8_t> publicPoint;
+};
 
-    const crypto::SignatureScheme& getScheme() const noexcept;
+struct ServerKeyExchange final
+{
+    using Params = std::variant<DhParams, EcdheParams>;
 
-    const std::vector<uint8_t>& getParams() const noexcept;
+    void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    const std::vector<uint8_t>& getSignature() const noexcept;
+    static ServerKeyExchange deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-private:
-    crypto::KeyPtr serverPublicKey_;
-    std::vector<uint8_t> params_;
-    std::vector<uint8_t> signature_;
-    crypto::SignatureScheme scheme_;
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
+
+    Params params;
+    nonstd::span<const uint8_t> data;
+    crypto::SignatureScheme scheme;
+    nonstd::span<const uint8_t> signature;
 };
 
 } // namespace snet::tls

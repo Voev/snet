@@ -67,33 +67,13 @@ struct Options
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<tls::Session>>;
 
-class SnifferHandler final : public tls::IRecordHandler
-{
-public:
-    explicit SnifferHandler(tls::SecretNodeManager& secretNodeManager)
-        : secretNodeManager_(secretNodeManager)
-    {
-    }
-
-    void handleClientHello(const tls::ClientHello& clientHello, tls::Session* session) override
-    {
-        auto secrets = secretNodeManager_.getSecretNode(clientHello.random);
-        if (secrets.has_value())
-        {
-            session->setSecrets(secrets.value());
-        }
-    }
-
-    tls::SecretNodeManager& secretNodeManager_;
-};
-
 struct SnifferManager
 {
     SnifferManager()
         : recordPool(1024)
         , proc(std::make_shared<tls::RecordHandlers>())
     {
-        proc->push_back(std::make_shared<SnifferHandler>(secretManager));
+        proc->push_back(std::make_shared<tls::SnifferHandler>(secretManager));
         proc->push_back(std::make_shared<tls::RecordPrinter>());
     }
 

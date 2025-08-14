@@ -1,4 +1,5 @@
 #include <snet/tls/msgs/tls13_certificate.hpp>
+
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
@@ -9,45 +10,68 @@ using namespace casket;
 namespace snet::tls
 {
 
-void TLSv13Certificate::deserialize(Side side, nonstd::span<const uint8_t> buffer)
+void TLSv13Certificate::deserialize(nonstd::span<const uint8_t> buffer)
 {
     utils::DataReader reader("TLSv1.3 Certificate", buffer);
 
-    requestContext = reader.get_range<uint8_t>(1, 0, 255);
+    requestContext = reader.get_span(1, 0, 255);
 
     const size_t certEntriesLength = reader.get_uint24_t();
     ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
 
     while (reader.has_remaining())
     {
-        certs.emplace_back(reader.get_tls_length_value(3));
+        Entry entry;
+        entry.certData = reader.get_span_length_and_value(3);
 
-        const auto extensionsLength = reader.get_uint16_t();
-        certExts.emplace_back(Extensions(side, reader.get_span_fixed<uint8_t>(extensionsLength)));
+        const auto length = reader.peek_uint16_t();
+        entry.extsData = reader.get_span_fixed(2 + length);
+
+        entryList[entryCount++] = std::move(entry);
     }
 
     reader.assert_done();
 }
 
-size_t TLSv13Certificate::serialize(Side side, nonstd::span<uint8_t> buffer) const
+size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output) const
 {
-    size_t totalLength = 0;
+    size_t totalLength{0};
 
-    totalLength += append_length_and_value(buffer, requestContext.data(), requestContext.size(), 1);
+    totalLength += append_length_and_value(output, requestContext.data(), requestContext.size(), 1);
 
-    auto header = buffer.subspan(totalLength);
+    auto header = output.subspan(totalLength);
     auto entries = header.subspan(3);
     totalLength += 3;
 
     uint32_t offset;
     uint32_t entriesLength{0};
-    for (size_t i = 0; i < certs.size(); ++i)
+    for (size_t i = 0; i < entryCount; ++i)
     {
-        offset = append_length_and_value(entries, certs[i].data(), certs[i].size(), 3);
+        auto certData = entries.subspan(3);
+        uint8_t* ptr = certData.data();
+
+        offset = i2d_X509(entryList[i].cert, &ptr);
+
+        entries[0] = casket::get_byte<1>(offset);
+        entries[1] = casket::get_byte<2>(offset);
+        entries[2] = casket::get_byte<3>(offset);
+
+        offset += 3;
         entries = entries.subspan(offset);
         entriesLength += offset;
 
-        offset = certExts[i].serialize(side, entries);
+        if (entryList[i].extensions)
+        {
+            /// @todo: pay attention to side
+            offset = entryList[i].extensions->serialize(Side::Server, entries);
+        }
+        else
+        {
+            offset = 2;
+            entries[0] = 0x00;
+            entries[1] = 0x00;
+        }
+
         entries = entries.subspan(offset);
         entriesLength += offset;
     }
@@ -61,4 +85,4 @@ size_t TLSv13Certificate::serialize(Side side, nonstd::span<uint8_t> buffer) con
     return totalLength;
 }
 
-} // namespace snet::tls::msg
+} // namespace snet::tls
