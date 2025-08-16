@@ -58,7 +58,7 @@ TEST_F(CertBuilderTest, CreateSelfSignedCert)
     ASSERT_TRUE(CertName::isEqual(Cert::subjectName(cert), name));
     ASSERT_TRUE(CertName::isEqual(Cert::issuerName(cert), name));
     ASSERT_TRUE(AsymmKey::isEqual(key_, Cert::publicKey(cert)));
-    ASSERT_TRUE(X509_self_signed(cert, true));
+    ASSERT_TRUE(Cert::isSelfSigned(cert, true));
 }
 
 TEST_F(CertBuilderTest, CreateChildCert)
@@ -85,7 +85,7 @@ TEST_F(CertBuilderTest, CreateChildCert)
 
     X509CertPtr ca;
     ASSERT_NO_THROW(ca = caBuilder.build());
-    ASSERT_TRUE(X509_self_signed(ca, true));
+    ASSERT_TRUE(Cert::isSelfSigned(ca, true));
 
     auto childKey = RsaAsymmKey::generate(2048);
 
