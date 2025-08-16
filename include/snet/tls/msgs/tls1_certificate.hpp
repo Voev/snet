@@ -13,7 +13,7 @@ struct TLSv1Certificate final
     struct Entry final
     {
         nonstd::span<const uint8_t> certData;
-        Cert* cert{nullptr};
+        X509Cert* cert{nullptr};
     };
 
     void deserialize(nonstd::span<const uint8_t> input);

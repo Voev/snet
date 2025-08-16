@@ -10,7 +10,7 @@ namespace snet::crypto
 class CertNameBuilder final : casket::NonCopyable
 {
 public:
-    static CertNamePtr fromString(const std::string& DN);
+    static X509NamePtr fromString(const std::string& DN);
 
 public:
     CertNameBuilder();
@@ -21,15 +21,15 @@ public:
 
     CertNameBuilder& addEntry(const std::string& field, const std::string& value);
 
-    CertNamePtr build();
+    X509NamePtr build();
 
-    CertName* name()
+    X509Name* name()
     {
         return name_;
     }
 
 private:
-    CertNamePtr name_;
+    X509NamePtr name_;
 };
 
 } // namespace snet::crypto

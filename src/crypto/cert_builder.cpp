@@ -12,9 +12,11 @@
 
 using namespace snet;
 
-namespace {
+namespace
+{
 
-crypto::BigNumPtr randBigNum(size_t bits = 64) {
+crypto::BigNumPtr randBigNum(size_t bits = 64)
+{
     crypto::BigNumPtr ret(BN_new());
     crypto::ThrowIfTrue(ret == nullptr);
 
@@ -23,7 +25,8 @@ crypto::BigNumPtr randBigNum(size_t bits = 64) {
     return ret;
 }
 
-crypto::Asn1IntegerPtr convertToAsn1(const BigNum* num) {
+crypto::Asn1IntegerPtr convertToAsn1(const BigNum* num)
+{
     crypto::Asn1IntegerPtr ret(ASN1_INTEGER_new());
     crypto::ThrowIfTrue(ret == nullptr);
     crypto::ThrowIfFalse(BN_to_ASN1_INTEGER(num, ret));
@@ -32,19 +35,23 @@ crypto::Asn1IntegerPtr convertToAsn1(const BigNum* num) {
 
 } // namespace
 
-namespace snet::crypto {
+namespace snet::crypto
+{
 
-struct CertBuilder::Impl {
-    CertPtr cert;
-    CertV3Ctx ctx;
+struct CertBuilder::Impl
+{
+    X509CertPtr cert;
+    X509V3Ctx ctx;
     KeyPtr signingKey;
-    CertPtr issuerCert;
+    X509CertPtr issuerCert;
 
-    Impl() {
+    Impl()
+    {
         reset();
     }
 
-    void reset() {
+    void reset()
+    {
         cert.reset(X509_new());
         crypto::ThrowIfTrue(cert == nullptr);
 
@@ -57,115 +64,137 @@ struct CertBuilder::Impl {
 };
 
 CertBuilder::CertBuilder()
-    : impl_(std::make_unique<CertBuilder::Impl>()) {
+    : impl_(std::make_unique<CertBuilder::Impl>())
+{
 }
 
-CertBuilder::~CertBuilder() noexcept {
+CertBuilder::~CertBuilder() noexcept
+{
 }
 
-void CertBuilder::reset() {
+void CertBuilder::reset()
+{
     impl_->reset();
 }
 
-CertBuilder& CertBuilder::setVersion(CertVersion version) {
+CertBuilder& CertBuilder::setVersion(CertVersion version)
+{
     crypto::ThrowIfFalse(X509_set_version(impl_->cert, static_cast<long>(version)));
     return *this;
 }
 
-CertBuilder& CertBuilder::setSubjectName(const CertName* name) {
+CertBuilder& CertBuilder::setSubjectName(const X509Name* name)
+{
     crypto::ThrowIfFalse(X509_set_subject_name(impl_->cert, name));
     return *this;
 }
 
-CertBuilder& CertBuilder::setSubjectName(const std::string& name) {
+CertBuilder& CertBuilder::setSubjectName(const std::string& name)
+{
     auto decodedName = CertNameBuilder::fromString(name);
     return setSubjectName(decodedName);
 }
 
-CertBuilder& CertBuilder::setIssuerName(const CertName* name) {
+CertBuilder& CertBuilder::setIssuerName(const X509Name* name)
+{
     crypto::ThrowIfFalse(X509_set_issuer_name(impl_->cert, name));
     return *this;
 }
 
-CertBuilder& CertBuilder::setIssuerName(const std::string& name) {
+CertBuilder& CertBuilder::setIssuerName(const std::string& name)
+{
     auto decodedName = CertNameBuilder::fromString(name);
     return setIssuerName(decodedName);
 }
 
-CertBuilder& CertBuilder::setPublicKey(Key* subjectPublicKey) {
+CertBuilder& CertBuilder::setPublicKey(Key* subjectPublicKey)
+{
     crypto::ThrowIfFalse(X509_set_pubkey(impl_->cert, subjectPublicKey));
     return *this;
 }
 
-CertBuilder& CertBuilder::setSerialNumber(const Asn1Integer* serialNumber) {
+CertBuilder& CertBuilder::setSerialNumber(const Asn1Integer* serialNumber)
+{
     crypto::ThrowIfFalse(X509_set_serialNumber(impl_->cert, const_cast<Asn1Integer*>(serialNumber)));
     return *this;
 }
 
-CertBuilder& CertBuilder::setSerialNumber(const BigNum* serialNumber) {
+CertBuilder& CertBuilder::setSerialNumber(const BigNum* serialNumber)
+{
     crypto::ThrowIfFalse(BN_to_ASN1_INTEGER(serialNumber, X509_get_serialNumber(impl_->cert)));
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotBefore(const Asn1Time* time) {
+CertBuilder& CertBuilder::setNotBefore(const Asn1Time* time)
+{
     crypto::ThrowIfFalse(X509_set1_notBefore(impl_->cert, time));
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotBefore(std::chrono::seconds offsetSec) {
+CertBuilder& CertBuilder::setNotBefore(std::chrono::seconds offsetSec)
+{
     crypto::ThrowIfFalse(X509_time_adj(X509_getm_notBefore(impl_->cert), offsetSec.count(), nullptr));
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotBefore(nonstd::chrono_years offsetYears) {
+CertBuilder& CertBuilder::setNotBefore(nonstd::chrono_years offsetYears)
+{
     return setNotBefore(std::chrono::duration_cast<std::chrono::seconds>(offsetYears));
 }
 
-CertBuilder& CertBuilder::setNotAfter(const Asn1Time* time) {
+CertBuilder& CertBuilder::setNotAfter(const Asn1Time* time)
+{
     crypto::ThrowIfFalse(X509_set1_notAfter(impl_->cert, time));
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotAfter(std::chrono::seconds offsetSec) {
+CertBuilder& CertBuilder::setNotAfter(std::chrono::seconds offsetSec)
+{
     crypto::ThrowIfFalse(X509_time_adj(X509_getm_notAfter(impl_->cert), offsetSec.count(), nullptr));
     return *this;
 }
 
-CertBuilder& CertBuilder::setNotAfter(nonstd::chrono_years offsetYears) {
+CertBuilder& CertBuilder::setNotAfter(nonstd::chrono_years offsetYears)
+{
     return setNotAfter(std::chrono::duration_cast<std::chrono::seconds>(offsetYears));
 }
 
-CertBuilder& CertBuilder::addExtension(CertExt* ext) {
+CertBuilder& CertBuilder::addExtension(X509Ext* ext)
+{
     crypto::ThrowIfFalse(X509_add_ext(impl_->cert, ext, -1));
     return *this;
 }
 
-CertBuilder& CertBuilder::addExtension(int extNid, std::string_view value) {
-    CertExtPtr ext(X509V3_EXT_conf_nid(nullptr, &impl_->ctx, extNid, value.data()));
+CertBuilder& CertBuilder::addExtension(int extNid, std::string_view value)
+{
+    X509ExtPtr ext(X509V3_EXT_conf_nid(nullptr, &impl_->ctx, extNid, value.data()));
     crypto::ThrowIfTrue(ext == nullptr);
     return addExtension(ext);
 }
 
-CertBuilder& CertBuilder::addExtension(std::string_view name, std::string_view value) {
-    CertExtPtr ext(X509V3_EXT_conf(nullptr, &impl_->ctx, name.data(), value.data()));
+CertBuilder& CertBuilder::addExtension(std::string_view name, std::string_view value)
+{
+    X509ExtPtr ext(X509V3_EXT_conf(nullptr, &impl_->ctx, name.data(), value.data()));
     crypto::ThrowIfTrue(ext == nullptr);
     return addExtension(ext);
 }
 
-CertBuilder& CertBuilder::signedBy(Key* issuerPrivateKey, Cert* issuerCert) {
+CertBuilder& CertBuilder::signedBy(Key* issuerPrivateKey, X509Cert* issuerCert)
+{
     OPENSSL_assert(0 < X509_check_private_key(issuerCert, issuerPrivateKey));
 
     crypto::ThrowIfFalse(EVP_PKEY_up_ref(issuerPrivateKey));
     impl_->signingKey = KeyPtr(issuerPrivateKey);
 
     crypto::ThrowIfFalse(X509_up_ref(issuerCert));
-    impl_->issuerCert = CertPtr(issuerCert);
+    impl_->issuerCert = X509CertPtr(issuerCert);
 
     X509V3_set_ctx(&impl_->ctx, impl_->issuerCert, impl_->cert, nullptr, nullptr, X509V3_CTX_REPLACE);
     return *this;
 }
 
-CertBuilder& CertBuilder::selfSigned(Key* subjectPrivateKey) {
+CertBuilder& CertBuilder::selfSigned(Key* subjectPrivateKey)
+{
     crypto::ThrowIfFalse(EVP_PKEY_up_ref(subjectPrivateKey));
     impl_->signingKey = KeyPtr(subjectPrivateKey);
 
@@ -173,11 +202,13 @@ CertBuilder& CertBuilder::selfSigned(Key* subjectPrivateKey) {
     return *this;
 }
 
-CertPtr CertBuilder::build() {
+X509CertPtr CertBuilder::build()
+{
     crypto::ThrowIfTrue(impl_->signingKey == nullptr, "signing key not specified");
 
-    auto serial = cert::serialNumber(impl_->cert);
-    if (BN_is_zero(serial)) {
+    auto serial = Cert::serialNumber(impl_->cert);
+    if (BN_is_zero(serial))
+    {
         auto n = ::randBigNum();
         auto s = ::convertToAsn1(n);
         setSerialNumber(s);

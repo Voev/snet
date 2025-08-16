@@ -17,10 +17,10 @@ public:
 
     CertVerifier& clearFlag(VerifyFlag flag);
 
-    std::error_code verify(Cert* cert) noexcept;
+    std::error_code verify(X509Cert* cert) noexcept;
 
 private:
-    CertStoreCtxPtr ctx_;
+    X509StoreCtxPtr ctx_;
 };
 
 } // namespace snet::crypto

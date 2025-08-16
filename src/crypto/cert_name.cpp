@@ -2,17 +2,27 @@
 #include <openssl/x509.h>
 #include <snet/crypto/cert_name.hpp>
 
-namespace snet::crypto::name {
+namespace snet::crypto
+{
 
-bool isEqual(const CertName* op1, const CertName* op2) {
-    return 0 == X509_NAME_cmp(op1, op2);
+X509NamePtr CertName::deepCopy(const X509Name* name)
+{
+    return X509NamePtr{X509_NAME_dup(name)};
 }
 
-static nonstd::span<uint8_t> viewEntryValue(const CertName* name, const int nid) {
+bool CertName::isEqual(const X509Name* a, const X509Name* b)
+{
+    return (0 == X509_NAME_cmp(a, b));
+}
+
+static nonstd::span<uint8_t> viewEntryValue(const X509Name* name, const int nid)
+{
     auto loc = X509_NAME_get_index_by_NID(name, nid, -1);
-    if (loc >= 0) {
+    if (loc >= 0)
+    {
         auto entry = X509_NAME_get_entry(name, loc);
-        if (entry) {
+        if (entry)
+        {
             auto value = X509_NAME_ENTRY_get_data(entry);
             return nonstd::span(value->data, value->length);
         }
@@ -20,11 +30,14 @@ static nonstd::span<uint8_t> viewEntryValue(const CertName* name, const int nid)
     return nonstd::span<uint8_t>();
 }
 
-std::string serialNumber(const CertName* name) {
+std::string CertName::serialNumber(const X509Name* name)
+{
     auto entry = viewEntryValue(name, NID_serialNumber);
     if (entry.empty())
+    {
         return std::string();
+    }
     return std::string(reinterpret_cast<char*>(entry.data()), entry.size_bytes());
 }
 
-} // namespace snet::crypto::name
+} // namespace snet::crypto

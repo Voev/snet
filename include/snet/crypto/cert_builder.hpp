@@ -21,11 +21,11 @@ public:
 
     CertBuilder& setVersion(CertVersion version);
 
-    CertBuilder& setSubjectName(const CertName* name);
+    CertBuilder& setSubjectName(const X509Name* name);
 
     CertBuilder& setSubjectName(const std::string& name);
 
-    CertBuilder& setIssuerName(const CertName* name);
+    CertBuilder& setIssuerName(const X509Name* name);
 
     CertBuilder& setIssuerName(const std::string& name);
 
@@ -47,17 +47,17 @@ public:
 
     CertBuilder& setNotAfter(nonstd::chrono_years offsetYears);
 
-    CertBuilder& addExtension(CertExt* ext);
+    CertBuilder& addExtension(X509Ext* ext);
 
     CertBuilder& addExtension(int extNid, std::string_view value);
 
     CertBuilder& addExtension(std::string_view name, std::string_view value);
 
-    CertBuilder& signedBy(Key* issuerPrivateKey, Cert* issuerCert);
+    CertBuilder& signedBy(Key* issuerPrivateKey, X509Cert* issuerCert);
 
     CertBuilder& selfSigned(Key* subjectPrivateKey);
 
-    CertPtr build();
+    X509CertPtr build();
 
 private:
     struct Impl;

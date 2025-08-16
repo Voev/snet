@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <snet/tls.hpp>
 
-#include <snet/crypto/asymm_keygen.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
 #include <snet/crypto/cert_authority.hpp>
 
 using namespace snet::crypto;
@@ -48,7 +48,7 @@ class HandshakeServerTest : public testing::Test
 {
 public:
     HandshakeServerTest()
-        : ca_("CN=Test Root CA")
+        : ca_(RsaAsymmKey::generate(2048), "CN=Test Root CA")
     {
     }
 
@@ -56,7 +56,7 @@ public:
 
     void SetUp() override
     {
-        auto serverKey = akey::rsa::generate(2048);
+        auto serverKey = RsaAsymmKey::generate(2048);
         auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
 
         ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
@@ -105,14 +105,14 @@ class HandshakeTest : public testing::Test
 {
 public:
     HandshakeTest()
-        : ca_("CN=Test Root CA")
+        : ca_(RsaAsymmKey::generate(2048), "CN=Test Root CA")
     {
     }
     ~HandshakeTest() = default;
 
     void SetUp() override
     {
-        auto serverKey = akey::rsa::generate(2048);
+        auto serverKey = RsaAsymmKey::generate(2048);
         auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
 
         ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
@@ -225,7 +225,7 @@ class HandshakeProcessTest : public testing::TestWithParam<HandshakeProcessTestP
 {
 public:
     HandshakeProcessTest()
-        : ca_("CN=Test Root CA")
+        : ca_(RsaAsymmKey::generate(2048), "CN=Test Root CA")
     {
     }
 
@@ -236,7 +236,7 @@ public:
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
 
-        auto serverKey = akey::rsa::generate(2048);
+        auto serverKey = RsaAsymmKey::generate(2048);
         auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
 
         ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));

@@ -10,10 +10,10 @@
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/error_code.hpp>
 
-namespace snet::crypto::akey
+namespace snet::crypto
 {
 
-KeyPtr shallowCopy(Key* key)
+KeyPtr AsymmKey::shallowCopy(Key* key)
 {
     if (key)
     {
@@ -23,27 +23,27 @@ KeyPtr shallowCopy(Key* key)
     return nullptr;
 }
 
-KeyPtr deepCopy(Key* key)
+KeyPtr AsymmKey::deepCopy(Key* key)
 {
     return KeyPtr{EVP_PKEY_dup(key)};
 }
 
-bool isAlgorithm(const Key* key, std::string_view alg)
+bool AsymmKey::isAlgorithm(const Key* key, std::string_view alg)
 {
     return EVP_PKEY_is_a(key, alg.data());
 }
 
-bool isEqual(const Key* a, const Key* b)
+bool AsymmKey::isEqual(const Key* a, const Key* b)
 {
     return 0 < EVP_PKEY_eq(a, b);
 }
 
-KeyPtr fromStorage(KeyType keyType, const std::string& uri)
+KeyPtr AsymmKey::fromStorage(KeyType keyType, const std::string& uri)
 {
     return fromStorage(keyType, uri, UI_OpenSSL(), nullptr);
 }
 
-KeyPtr fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth, void* data)
+KeyPtr AsymmKey::fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth, void* data)
 {
     using LoadFn = Key* (*)(const StoreInfo*);
 
@@ -78,12 +78,12 @@ KeyPtr fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth
     return result;
 }
 
-KeyPtr fromFile(KeyType keyType, const std::filesystem::path& path)
+KeyPtr AsymmKey::fromFile(KeyType keyType, const std::filesystem::path& path)
 {
     return fromStorage(keyType, "file:" + std::filesystem::absolute(path).string());
 }
 
-KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding)
+KeyPtr AsymmKey::fromBio(KeyType keyType, Bio* in, Encoding inEncoding)
 {
     KeyPtr result;
 
@@ -131,7 +131,7 @@ KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding)
     return result;
 }
 
-void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
+void AsymmKey::toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
 {
     int ret{0};
 
@@ -176,12 +176,7 @@ void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
     }
 }
 
-} // namespace snet::crypto::akey
-
-namespace snet::crypto
-{
-
-std::vector<uint8_t> GetEncodedPublicKey(const Key* key)
+std::vector<uint8_t> getEncodedPublicKey(const Key* key)
 {
     size_t size{0};
 
@@ -194,7 +189,7 @@ std::vector<uint8_t> GetEncodedPublicKey(const Key* key)
     return publicKey;
 }
 
-void SetEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value)
+void AsymmKey::setEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value)
 {
     ThrowIfFalse(0 < EVP_PKEY_set1_encoded_public_key(key, value.data(), value.size_bytes()));
 }

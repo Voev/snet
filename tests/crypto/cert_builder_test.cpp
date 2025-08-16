@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <snet/crypto/asymm_key.hpp>
-#include <snet/crypto/asymm_keygen.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_name.hpp>
 #include <snet/crypto/cert_builder.hpp>
@@ -13,13 +13,16 @@ using namespace snet;
 using namespace snet::crypto;
 using namespace std::chrono_literals;
 
-class CertBuilderTest : public testing::Test {
+class CertBuilderTest : public testing::Test
+{
 public:
-    void SetUp() override {
-        ASSERT_NO_THROW(key_ = akey::rsa::generate(2048));
+    void SetUp() override
+    {
+        ASSERT_NO_THROW(key_ = RsaAsymmKey::generate(2048));
     }
 
-    void TearDown() override {
+    void TearDown() override
+    {
         key_.reset();
     }
 
@@ -27,8 +30,9 @@ protected:
     KeyPtr key_;
 };
 
-TEST_F(CertBuilderTest, CreateSelfSignedCert) {
-    CertNamePtr name;
+TEST_F(CertBuilderTest, CreateSelfSignedCert)
+{
+    X509NamePtr name;
     ASSERT_NO_THROW(name = CertNameBuilder::fromString("CN=Test Root CA"));
 
     CertBuilder builder;
@@ -47,18 +51,19 @@ TEST_F(CertBuilderTest, CreateSelfSignedCert) {
             .addExtension(NID_key_usage, "critical,cRLSign,keyCertSign")
     );
     // clang-format on
-    CertPtr cert;
+    X509CertPtr cert;
     ASSERT_NO_THROW(cert = builder.build());
 
-    ASSERT_EQ(cert::version(cert), CertVersion::V3);
-    ASSERT_TRUE(name::isEqual(cert::subjectName(cert), name));
-    ASSERT_TRUE(name::isEqual(cert::issuerName(cert), name));
-    ASSERT_TRUE(akey::isEqual(key_, cert::publicKey(cert)));
+    ASSERT_EQ(Cert::version(cert), CertVersion::V3);
+    ASSERT_TRUE(CertName::isEqual(Cert::subjectName(cert), name));
+    ASSERT_TRUE(CertName::isEqual(Cert::issuerName(cert), name));
+    ASSERT_TRUE(AsymmKey::isEqual(key_, Cert::publicKey(cert)));
     ASSERT_TRUE(X509_self_signed(cert, true));
 }
 
-TEST_F(CertBuilderTest, CreateChildCert) {
-    CertNamePtr name;
+TEST_F(CertBuilderTest, CreateChildCert)
+{
+    X509NamePtr name;
     ASSERT_NO_THROW(name = CertNameBuilder::fromString("CN=Test Root CA"));
 
     CertBuilder caBuilder;
@@ -78,11 +83,11 @@ TEST_F(CertBuilderTest, CreateChildCert) {
     );
     // clang-format on
 
-    CertPtr ca;
+    X509CertPtr ca;
     ASSERT_NO_THROW(ca = caBuilder.build());
     ASSERT_TRUE(X509_self_signed(ca, true));
 
-    auto childKey = akey::rsa::generate(2048);
+    auto childKey = RsaAsymmKey::generate(2048);
 
     CertBuilder childBuilder;
     // clang-format off
@@ -100,7 +105,7 @@ TEST_F(CertBuilderTest, CreateChildCert) {
     );
     // clang-format on
 
-    CertPtr child;
+    X509CertPtr child;
     ASSERT_NO_THROW(child = childBuilder.build());
 
     CertManager manager;

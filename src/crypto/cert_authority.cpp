@@ -6,13 +6,11 @@
 #include <snet/crypto/cert_builder.hpp>
 #include <snet/crypto/cert_name_builder.hpp>
 
-#include <snet/crypto/asymm_keygen.hpp>
-
 namespace snet::crypto
 {
 
-CertAuthority::CertAuthority(const std::string& name)
-    : key_(akey::rsa::generate(2048))
+CertAuthority::CertAuthority(KeyPtr key, const std::string& name)
+    : key_(std::move(key))
     , cert_(generateCert(key_.get(), key_.get(), nullptr, name))
 {
 }
@@ -26,18 +24,17 @@ Key* CertAuthority::getKey() const
     return key_.get();
 }
 
-Cert* CertAuthority::getCert() const
+X509Cert* CertAuthority::getCert() const
 {
     return cert_.get();
 }
 
-CertPtr CertAuthority::sign(const std::string& name, Key* publicKey)
+X509CertPtr CertAuthority::sign(const std::string& name, Key* publicKey)
 {
     return generateCert(publicKey, key_.get(), cert_.get(), name);
 }
 
-CertPtr CertAuthority::generateCert(Key* subjectKey, Key* issuerKey, Cert* issuerCert,
-                                    const std::string& dn)
+X509CertPtr CertAuthority::generateCert(Key* subjectKey, Key* issuerKey, X509Cert* issuerCert, const std::string& dn)
 {
     CertBuilder certBuilder;
 

@@ -14,7 +14,6 @@
 #include <snet/tls/extensions.hpp>
 #include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/record.hpp>
-#include <snet/tls/server_info.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_layer.hpp>
@@ -93,13 +92,11 @@ public:
     /// @param pms The premaster secret to set.
     void setPremasterSecret(std::vector<std::uint8_t> pms);
 
-    /// @brief Sets the server information for the session.
-    /// @param serverInfo The server information to set.
-    void setServerInfo(const ServerInfo& serverInfo);
-
-    /// @brief Gets the server information of the session.
-    /// @return The server information.
-    const ServerInfo& getServerInfo() const noexcept;
+    /// @brief Sets the server private key for the session.
+    ///
+    /// @param[in] key Server private key.
+    ///
+    void setServerKey(Key* key);
 
     void processClientHello(const ClientHello& clientHello);
     
@@ -160,7 +157,7 @@ public:
         return serverEncExtensions_;
     }
 
-    Cert* getServerCert() const noexcept
+    X509Cert* getServerCert() const noexcept
     {
         return serverCert_.get();
     }
@@ -175,9 +172,9 @@ private:
     crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
-    crypto::CertPtr serverCert_;
+    crypto::X509CertPtr serverCert_;
+    crypto::KeyPtr serverKey_;
     RecordProcessor processor_;
-    ServerInfo serverInfo_;
     MetaInfo metaInfo_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;

@@ -1,5 +1,7 @@
 #include <snet/tls/msgs/tls1_certificate.hpp>
 
+#include <snet/crypto/cert.hpp>
+
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
@@ -35,14 +37,14 @@ size_t TLSv1Certificate::serialize(nonstd::span<uint8_t> output) const
     auto entries = header.subspan(3);
     totalLength += 3;
 
-    uint32_t certSize;
+    int32_t certSize;
     uint32_t entriesLength{0};
     for (size_t i = 0; i < entryCount; ++i)
     {
         auto certData = entries.subspan(3);
-        uint8_t* ptr = certData.data();
 
-        certSize = i2d_X509(entryList[i].cert, &ptr);
+        certSize = crypto::Cert::toBuffer(entryList[i].cert, certData);
+        ThrowIfTrue(certSize < 0, "Certificate serialization error");
 
         entries[0] = casket::get_byte<1>(certSize);
         entries[1] = casket::get_byte<2>(certSize);

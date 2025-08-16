@@ -15,9 +15,9 @@ public:
 
     CertManager& useDefaultPaths();
 
-    CertManager& addCA(Cert* cert);
+    CertManager& addCA(X509Cert* cert);
 
-    CertManager& addCRL(Crl* crl);
+    CertManager& addCRL(X509Crl* crl);
 
     CertManager& loadFile(const std::filesystem::path& path);
 
@@ -43,10 +43,10 @@ public:
         return *this;
     }
 
-    CertStore* certStore();
+    X509Store* certStore();
 
 private:
-    CertStorePtr store_;
+    X509StorePtr store_;
 };
 
 } // namespace snet::crypto

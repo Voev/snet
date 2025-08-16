@@ -12,28 +12,22 @@ using namespace snet;
 namespace snet::crypto
 {
 
-CertForger::CertForger(Key* caKey, Cert* caCert)
-    : privateKey_(akey::rsa::generate(2048))
-    , caKey_(akey::shallowCopy(caKey))
-    , caCert_(cert::shallowCopy(caCert))
+CertForger::CertForger(Key* caKey, X509Cert* caCert)
+    : caKey_(AsymmKey::shallowCopy(caKey))
+    , caCert_(Cert::shallowCopy(caCert))
 {
 }
 
-KeyPtr CertForger::getForgedKey()
-{
-    return akey::shallowCopy(privateKey_);
-}
-
-CertPtr CertForger::resign(Cert* originCert)
+X509CertPtr CertForger::resign(Key* forgedKey, X509Cert* originCert)
 {
     casket::ThrowIfFalse(originCert != nullptr, "Invalid origin certificate");
 
     CertBuilder builder;
     builder.signedBy(caKey_, caCert_);
-    builder.setPublicKey(privateKey_);
+    builder.setPublicKey(forgedKey);
 
-    builder.setIssuerName(cert::issuerName(originCert));
-    builder.setSubjectName(cert::subjectName(originCert));
+    builder.setIssuerName(X509_get_issuer_name(originCert));
+    builder.setSubjectName(X509_get_subject_name(originCert));
     builder.setNotBefore(X509_get0_notBefore(originCert));
     builder.setNotAfter(X509_get0_notAfter(originCert));
 

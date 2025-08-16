@@ -10,6 +10,7 @@
 
 #include <snet/utils/print_hex.hpp>
 
+#include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cipher_context.hpp>
@@ -21,7 +22,6 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/prf.hpp>
-#include <snet/tls/server_info.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
@@ -490,16 +490,9 @@ void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
     PMS_ = std::move(pms);
 }
 
-void Session::setServerInfo(const ServerInfo& serverInfo)
+void Session::setServerKey(Key* key)
 {
-    serverInfo_.setHostname(serverInfo.getHostname());
-    serverInfo_.setIPAddress(serverInfo.getIPAddress());
-    serverInfo_.setServerKey(serverInfo.getServerKey());
-}
-
-const ServerInfo& Session::getServerInfo() const noexcept
-{
-    return serverInfo_;
+    serverKey_ = crypto::AsymmKey::shallowCopy(key);
 }
 
 void Session::processClientHello(const ClientHello& clientHello)
@@ -564,12 +557,12 @@ void Session::processCertificate(const Certificate& certificate)
     if (std::holds_alternative<TLSv13Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv13Certificate>(certificate.message);
-        serverCert_ = crypto::CertFromMemory(message.entryList[0].certData);
+        serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
     }
     else if (std::holds_alternative<TLSv1Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv1Certificate>(certificate.message);
-        serverCert_ = crypto::CertFromMemory(message.entryList[0].certData);
+        serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
     }
 
     /// @todo verify certificate chain
@@ -656,7 +649,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 
     handshakeHash_.update(message);
 
-    if (!getServerInfo().getServerKey())
+    if (!serverKey_)
     {
         return;
     }
@@ -667,7 +660,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         const auto encryptedPreMaster = reader.get_span(2, 0, 65535);
         reader.assert_done();
 
-        crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, getServerInfo().getServerKey(), nullptr));
+        crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, serverKey_, nullptr));
         crypto::ThrowIfFalse(ctx != nullptr);
 
         crypto::ThrowIfFalse(0 < EVP_PKEY_decrypt_init(ctx));

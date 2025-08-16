@@ -24,14 +24,14 @@ CertManager& CertManager::useDefaultPaths()
     return *this;
 }
 
-CertManager& CertManager::addCA(Cert* cert)
+CertManager& CertManager::addCA(X509Cert* cert)
 {
     casket::ThrowIfTrue(cert == nullptr, "invalid argument");
     crypto::ThrowIfFalse(0 < X509_STORE_add_cert(store_, cert));
     return *this;
 }
 
-CertManager& CertManager::addCRL(Crl* crl)
+CertManager& CertManager::addCRL(X509Crl* crl)
 {
     casket::ThrowIfTrue(crl == nullptr, "invalid argument");
     crypto::ThrowIfFalse(0 < X509_STORE_add_crl(store_, crl));
@@ -61,7 +61,7 @@ CertManager& CertManager::loadStore(std::string_view uri)
     return *this;
 }
 
-CertStore* CertManager::certStore()
+X509Store* CertManager::certStore()
 {
     return store_.get();
 }
