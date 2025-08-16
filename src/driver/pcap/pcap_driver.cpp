@@ -95,7 +95,7 @@ struct Pcap::Impl
     }
 
     /* Configuration */
-    io::PacketPool<io::RawPacket> pool;
+    io::PacketPool<layers::Packet> pool;
     std::string device;
     std::string filter_string;
     unsigned snaplen;
@@ -367,14 +367,14 @@ int Pcap::getSnaplen() const
     return impl_->snaplen;
 }
 
-io::LinkLayerType Pcap::getDataLinkType() const
+layers::LinkLayerType Pcap::getDataLinkType() const
 {
     if (impl_->handle)
-        return static_cast<io::LinkLayerType>(pcap_datalink(impl_->handle));
-    return io::LINKTYPE_NULL;
+        return static_cast<layers::LinkLayerType>(pcap_datalink(impl_->handle));
+    return layers::LINKTYPE_NULL;
 }
 
-RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
+RecvStatus Pcap::receivePacket(layers::Packet** pPacket)
 {
     RecvStatus rstat{RecvStatus::Ok};
     struct pcap_pkthdr* pcaphdr;
@@ -469,12 +469,12 @@ RecvStatus Pcap::receivePacket(io::RawPacket** pRawPacket)
         impl_->stats.packets_received++;
     }
 
-    *pRawPacket = rawPacket;
+    *pPacket = rawPacket;
 
     return rstat;
 }
 
-Status Pcap::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
+Status Pcap::finalizePacket(layers::Packet* rawPacket, Verdict verdict)
 {
     impl_->stats.verdicts[verdict]++;
     rawPacket->clear();

@@ -16,7 +16,7 @@ using namespace casket;
 #define SEQ_GT(a, b) ((int32_t)((a) - (b)) > 0)
 #define SEQ_GEQ(a, b) ((int32_t)((a) - (b)) >= 0)
 
-namespace snet::tcp
+namespace snet::layers
 {
 
 static timeval
@@ -82,7 +82,7 @@ TcpReassembly::TcpReassembly(OnTcpMessageReady onMessageReadyCallback, void* use
     m_EnableBaseBufferClearCondition = config.enableBaseBufferClearCondition;
 }
 
-TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& tcpData)
+TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 {
     // automatic cleanup
     if (m_RemoveConnInfo == true)
@@ -97,9 +97,9 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     // calculate packet's source and dest IP address
     ip::IPAddress srcIP, dstIP;
 
-    if (tcpData.isPacketOfType(layers::IP))
+    if (packet->isPacketOfType(layers::IP))
     {
-        const layers::IPLayer* ipLayer = tcpData.getLayerOfType<layers::IPLayer>();
+        const layers::IPLayer* ipLayer = packet->getLayerOfType<layers::IPLayer>();
         srcIP = ipLayer->getSrcIPAddress();
         dstIP = ipLayer->getDstIPAddress();
     }
@@ -108,7 +108,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
 
     // Ignore non-TCP packets
     layers::TcpLayer* tcpLayer =
-        tcpData.getLayerOfType<layers::TcpLayer>(true); // lookup in reverse order
+        packet->getLayerOfType<layers::TcpLayer>(true); // lookup in reverse order
     if (tcpLayer == nullptr)
     {
         return NonTcpPacket;
@@ -134,10 +134,10 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
     TcpReassemblyData* tcpReassemblyData = nullptr;
 
     // calculate flow key for this packet
-    uint32_t flowKey = layers::hash5Tuple(&tcpData);
+    uint32_t flowKey = layers::hash5Tuple(packet);
 
     // time stamp for this packet
-    auto currTime = timespecToTimePoint(tcpData.getRawPacket()->getPacketTimeStamp());
+    auto currTime = timespecToTimePoint(packet->getTimeStamp());
 
     // find the connection in the connection map
     ConnectionList::iterator iter = m_ConnectionList.find(flowKey);
@@ -506,12 +506,6 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(layers::Packet& 
 
         return status;
     }
-}
-
-TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(io::RawPacket* tcpRawData)
-{
-    layers::Packet parsedPacket(tcpRawData, false);
-    return reassemblePacket(parsedPacket);
 }
 
 static std::string prepareMissingDataMessage(uint32_t missingDataLen)

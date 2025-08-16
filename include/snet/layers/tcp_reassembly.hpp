@@ -108,7 +108,7 @@
  *
  */
 
-namespace snet::tcp
+namespace snet::layers
 {
 
 /**
@@ -496,18 +496,6 @@ public:
             TcpReassemblyConfiguration());
 
     /**
-     * The most important method of this class which gets a packet from the user
-     * and processes it. If this packet opens a new connection, ends a
-     * connection or contains new data on an existing connection, the relevant
-     * callback will be called (TcpReassembly#OnTcpMessageReady,
-     * TcpReassembly#OnTcpConnectionStart, TcpReassembly#OnTcpConnectionEnd)
-     * @param[in] tcpData A reference to the packet to process
-     * @return A enum of `TcpReassembly::ReassemblyStatus`, indicating status of
-     * TCP reassembly
-     */
-    ReassemblyStatus reassemblePacket(layers::Packet& tcpData);
-
-    /**
      * The most important method of this class which gets a raw packet from the
      * user and processes it. If this packet opens a new connection, ends a
      * connection or contains new data on an existing connection, the relevant
@@ -517,7 +505,7 @@ public:
      * @return A enum of `TcpReassembly::ReassemblyStatus`, indicating status of
      * TCP reassembly
      */
-    ReassemblyStatus reassemblePacket(io::RawPacket* tcpRawData);
+    ReassemblyStatus reassemblePacket(Packet* packet);
 
     /**
      * Close a connection manually. If the connection doesn't exist or already

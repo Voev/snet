@@ -85,7 +85,7 @@ struct SnifferManager
     io::Controller controller;
 };
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData, void* userCookie)
 {
     auto mgr = static_cast<SnifferManager*>(userCookie);
 
@@ -203,16 +203,16 @@ public:
         driver->start();
         std::cout << "Start processing: '" << options_.input << "'..." << std::endl;
 
-        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
+        layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
         RecvStatus status{RecvStatus::Ok};
-        io::RawPacket* rawPacket{nullptr};
+        layers::Packet* packet{nullptr};
         do
         {
-            status = driver->receivePacket(&rawPacket);
-            if (rawPacket)
+            status = driver->receivePacket(&packet);
+            if (packet)
             {
-                tcpReassembly.reassemblePacket(rawPacket);
-                driver->finalizePacket(rawPacket, Verdict::Pass);
+                tcpReassembly.reassemblePacket(packet);
+                driver->finalizePacket(packet, Verdict::Pass);
             }
         } while (status == RecvStatus::Ok);
 

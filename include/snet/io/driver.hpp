@@ -6,7 +6,10 @@
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver_config.hpp>
-#include <snet/io/raw_packet.hpp>
+
+#include <snet/layers/link_type.hpp>
+#include <snet/layers/packet.hpp>
+
 
 namespace snet::io
 {
@@ -36,11 +39,11 @@ public:
 
     virtual int getSnaplen() const = 0;
 
-    virtual io::LinkLayerType getDataLinkType() const = 0;
+    virtual layers::LinkLayerType getDataLinkType() const = 0;
 
-    virtual RecvStatus receivePacket(RawPacket** rawPacket) = 0;
+    virtual RecvStatus receivePacket(layers::Packet** rawPacket) = 0;
 
-    virtual Status finalizePacket(RawPacket* rawPacket, Verdict verdict) = 0;
+    virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
 
     virtual Status getMsgPoolInfo(PacketPoolInfo* info) = 0;
 };

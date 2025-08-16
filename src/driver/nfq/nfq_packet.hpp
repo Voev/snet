@@ -1,19 +1,19 @@
 #pragma once
 #include <linux/netfilter.h>
-#include <snet/io/raw_packet.hpp>
+#include <snet/layers/packet.hpp>
 
 namespace snet::driver
 {
 
-class NfqRawPacket final : public io::RawPacket
+class NfqPacket final : public layers::Packet
 {
 public:
-    NfqRawPacket()
-        : RawPacket(nullptr, 0, timeval{}, false)
+    NfqPacket()
+        : layers::Packet(nullptr, 0, timeval{}, false)
     {
     }
 
-    ~NfqRawPacket() noexcept
+    ~NfqPacket() noexcept
     {
         delete[] buffer;
     }

@@ -1,12 +1,30 @@
 # Sources
 file(GLOB_RECURSE SOURCES *.cpp)
 
-# Static library target
-add_library(snet_nfq SHARED ${SOURCES})
+# Target name
+set(TARGET_NAME snet_nfq)
 
-# Find and link pcap library using pkg-config
+# Static library target
+add_library(${TARGET_NAME} SHARED ${SOURCES})
+
+# Find and link nfqueue library using pkg-config
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBNETFILTER_QUEUE REQUIRED libnetfilter_queue)
 
-target_link_libraries(snet_nfq PRIVATE ${LIBNETFILTER_QUEUE_INCLUDE_DIRS})
-target_link_libraries(snet_nfq snet_io snet_socket ${LIBNETFILTER_QUEUE_LIBRARIES})
+# Include directories
+target_include_directories(
+    ${TARGET_NAME}
+        PRIVATE
+            ${LIBNETFILTER_QUEUE_INCLUDE_DIRS}
+)
+
+# Link dependencies
+target_link_libraries(
+    ${TARGET_NAME}
+        PRIVATE
+            snet_io
+            snet_layers
+            snet_socket
+            casket
+            ${LIBNETFILTER_QUEUE_LIBRARIES}
+)

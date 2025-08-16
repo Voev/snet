@@ -28,7 +28,7 @@ public:
     size_t decryptedRecordCount{0};
 };
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData, void* userCookie)
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData, void* userCookie)
 {
     auto* test = static_cast<DecryptByKeylog*>(userCookie);
 
@@ -89,14 +89,15 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 void DecryptByKeylog::execute()
 {
     RecvStatus status{RecvStatus::Ok};
-    snet::io::RawPacket* rawPacket{nullptr};
+    snet::layers::Packet* packet{nullptr};
     do
     {
-        status = driver_->receivePacket(&rawPacket);
-        if (rawPacket)
+        status = driver_->receivePacket(&packet);
+        if (packet)
         {
-            reassembler_.reassemblePacket(rawPacket);
-            driver_->finalizePacket(rawPacket, Verdict::Pass);
+            packet->parsePacket(layers::TCP);
+            reassembler_.reassemblePacket(packet);
+            driver_->finalizePacket(packet, Verdict::Pass);
         }
     } while (status == RecvStatus::Ok);
 
