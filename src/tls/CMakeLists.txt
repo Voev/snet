@@ -11,7 +11,6 @@ add_library(snet_tls STATIC ${SOURCES})
 target_link_libraries(snet_tls
     PUBLIC
         snet_crypto
-        snet_ip
         OpenSSL::SSL
     PRIVATE
         casket

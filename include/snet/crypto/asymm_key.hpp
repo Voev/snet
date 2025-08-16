@@ -8,32 +8,30 @@
 namespace snet::crypto
 {
 
-namespace akey
+class AsymmKey
 {
+public:
+    static KeyPtr shallowCopy(Key* key);
 
-KeyPtr shallowCopy(Key* key);
+    static KeyPtr deepCopy(Key* key);
 
-KeyPtr deepCopy(Key* key);
+    static bool isAlgorithm(const Key* key, std::string_view alg);
 
-bool isAlgorithm(const Key* key, std::string_view alg);
+    static bool isEqual(const Key* a, const Key* b);
 
-bool isEqual(const Key* a, const Key* b);
+    static KeyPtr fromStorage(KeyType keyType, const std::string& uri);
 
-KeyPtr fromStorage(KeyType keyType, const std::string& uri);
+    static KeyPtr fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth, void* data);
 
-KeyPtr fromStorage(KeyType keyType, const std::string& uri, const UiMethod* meth,
-                              void* data);
+    static KeyPtr fromFile(KeyType keyType, const std::filesystem::path& path);
 
-KeyPtr fromFile(KeyType keyType, const std::filesystem::path& path);
+    static KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding);
 
-KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding);
+    static void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding = Encoding::PEM);
 
-void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding = Encoding::PEM);
+    static std::vector<uint8_t> getEncodedPublicKey(const Key* key);
 
-}
+    static void setEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value);
+};
 
-std::vector<uint8_t> GetEncodedPublicKey(const Key* key);
-
-void SetEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value);
-
-} // namespace snet::crypto::akey
+} // namespace snet::crypto

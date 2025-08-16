@@ -6,6 +6,7 @@
 #include <openssl/err.h>
 
 #include <snet/crypto/cert.hpp>
+#include <snet/crypto/cert_name.hpp>
 #include <snet/crypto/store_loader.hpp>
 
 #include <snet/crypto/exception.hpp>
@@ -18,7 +19,6 @@ namespace
 
 time_t asn1TimeToEpoch(const Asn1Integer* asn1Time)
 {
-
     std::tm tmTime;
     std::memset(&tmTime, 0, sizeof(tmTime));
     snet::crypto::ThrowIfFalse(ASN1_TIME_to_tm(asn1Time, &tmTime));
@@ -34,32 +34,38 @@ time_t asn1TimeToEpoch(const Asn1Integer* asn1Time)
 
 } // namespace
 
-namespace snet::crypto::cert
+namespace snet::crypto
 {
 
-CertPtr shallowCopy(Cert* cert)
+X509CertPtr Cert::shallowCopy(X509Cert* cert)
 {
     if (cert)
     {
         crypto::ThrowIfFalse(0 < X509_up_ref(cert));
-        return CertPtr{cert};
+        return X509CertPtr{cert};
     }
     return nullptr;
 }
 
-CertPtr deepCopy(Cert* cert)
+X509CertPtr Cert::deepCopy(X509Cert* cert)
 {
-    return CertPtr(X509_dup(cert));
+    return X509CertPtr{X509_dup(cert)};
 }
 
-bool isEqual(const Cert* op1, const Cert* op2)
+bool Cert::isEqual(const X509Cert* a, const X509Cert* b)
 {
-    int res = X509_cmp(op1, op2);
+    int res = X509_cmp(a, b);
     crypto::ThrowIfTrue(res == -2, "X509_cmp returned error");
     return res == 0;
 }
 
-CertVersion version(Cert* cert)
+
+bool Cert::isSelfSigned(X509Cert* cert, bool verifySignature) noexcept
+{
+    return X509_self_signed(cert, verifySignature);
+}
+
+CertVersion Cert::version(X509Cert* cert)
 {
     long value = X509_get_version(cert);
     switch (value)
@@ -74,29 +80,29 @@ CertVersion version(Cert* cert)
     }
 }
 
-CertNamePtr subjectName(Cert* cert)
+X509NamePtr Cert::subjectName(X509Cert* cert)
 {
     auto name = X509_get_subject_name(cert);
     crypto::ThrowIfTrue(name == nullptr);
 
-    auto result = X509_NAME_dup(name);
+    auto result = CertName::deepCopy(name);
     crypto::ThrowIfTrue(result == nullptr);
 
-    return CertNamePtr{result};
+    return result;
 }
 
-CertNamePtr issuerName(Cert* cert)
+X509NamePtr Cert::issuerName(X509Cert* cert)
 {
     auto name = X509_get_issuer_name(cert);
     crypto::ThrowIfTrue(name == nullptr);
 
-    auto result = X509_NAME_dup(name);
+    auto result = CertName::deepCopy(name);
     crypto::ThrowIfTrue(result == nullptr);
 
-    return CertNamePtr{result};
+    return result;
 }
 
-BigNumPtr serialNumber(Cert* cert)
+BigNumPtr Cert::serialNumber(X509Cert* cert)
 {
     Asn1Integer* sn = X509_get_serialNumber(cert);
     crypto::ThrowIfTrue(sn == nullptr);
@@ -106,7 +112,7 @@ BigNumPtr serialNumber(Cert* cert)
     return result;
 }
 
-KeyPtr publicKey(Cert* cert)
+KeyPtr Cert::publicKey(X509Cert* cert)
 {
     auto result = X509_get_pubkey(cert);
     crypto::ThrowIfTrue(result == nullptr);
@@ -114,7 +120,7 @@ KeyPtr publicKey(Cert* cert)
     return KeyPtr{result};
 }
 
-std::time_t notBefore(Cert* cert)
+std::time_t Cert::notBefore(X509Cert* cert)
 {
     const Asn1Time* asn1Time = X509_get0_notBefore(cert);
     crypto::ThrowIfTrue(asn1Time == nullptr);
@@ -122,7 +128,7 @@ std::time_t notBefore(Cert* cert)
     return asn1TimeToEpoch(asn1Time);
 }
 
-std::time_t notAfter(Cert* cert)
+std::time_t Cert::notAfter(X509Cert* cert)
 {
     const Asn1Time* asn1Time = X509_get0_notAfter(cert);
     crypto::ThrowIfTrue(asn1Time == nullptr);
@@ -130,24 +136,24 @@ std::time_t notAfter(Cert* cert)
     return asn1TimeToEpoch(asn1Time);
 }
 
-CertPtr fromStorage(std::string_view uri)
+X509CertPtr Cert::fromStorage(std::string_view uri)
 {
     auto storeLoader = StoreLoader(uri, nullptr, nullptr);
     auto storeInfo = storeLoader.load(OSSL_STORE_INFO_CERT);
-    auto result = CertPtr{OSSL_STORE_INFO_get1_CERT(storeInfo)};
+    auto result = X509CertPtr{OSSL_STORE_INFO_get1_CERT(storeInfo)};
     crypto::ThrowIfTrue(result == nullptr);
 
     return result;
 }
 
-CertPtr fromFile(const std::filesystem::path& path)
+X509CertPtr Cert::fromFile(const std::filesystem::path& path)
 {
     return fromStorage("file:" + std::filesystem::absolute(path).string());
 }
 
-CertPtr fromBio(Bio* bio, Encoding encoding)
+X509CertPtr Cert::fromBio(Bio* bio, Encoding encoding)
 {
-    CertPtr result;
+    X509CertPtr result;
 
     switch (encoding)
     {
@@ -178,7 +184,7 @@ CertPtr fromBio(Bio* bio, Encoding encoding)
     return result;
 }
 
-void toBio(Cert* cert, Bio* bio, Encoding encoding)
+void Cert::toBio(X509Cert* cert, Bio* bio, Encoding encoding)
 {
     int ret{0};
 
@@ -209,15 +215,17 @@ void toBio(Cert* cert, Bio* bio, Encoding encoding)
     }
 }
 
-} // namespace snet::crypto::cert
-
-namespace snet::crypto
+X509CertPtr Cert::fromBuffer(nonstd::span<const uint8_t> input)
 {
+    const unsigned char* ptr = input.data();
+    return X509CertPtr{d2i_X509(nullptr, &ptr, static_cast<long>(input.size_bytes()))};
+}
 
-CertPtr CertFromMemory(nonstd::span<const uint8_t> memory)
+int Cert::toBuffer(const X509Cert* cert, nonstd::span<uint8_t> output)
 {
-    const unsigned char* ptr = memory.data();
-    return CertPtr{d2i_X509(nullptr, &ptr, static_cast<long>(memory.size_bytes()))};
+    unsigned char* ptr = output.data();
+    return i2d_X509(cert, &ptr);
+
 }
 
 } // namespace snet::crypto

@@ -22,23 +22,23 @@ namespace snet
 
 static bool bPrint{false};
 
-CrlPtr DownloadCRL(std::string_view uri)
+X509CrlPtr DownloadCRL(std::string_view uri)
 {
-    return CrlPtr(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
+    return X509CrlPtr(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
 }
 
-CertPtr DownloadCert(std::string_view uri)
+X509CertPtr DownloadCert(std::string_view uri)
 {
-    return CertPtr(X509_load_http(uri.data(), nullptr, nullptr, 0));
+    return X509CertPtr(X509_load_http(uri.data(), nullptr, nullptr, 0));
 }
 
 template <typename T>
-T* GetExtension(Cert* cert, int extensionNid)
+T* GetExtension(X509Cert* cert, int extensionNid)
 {
     return static_cast<T*>(X509_get_ext_d2i(cert, extensionNid, nullptr, nullptr));
 }
 
-static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const CertName* name)
+static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const X509Name* name)
 {
     CrlOwningStackPtr crls;
     try
@@ -46,7 +46,7 @@ static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const CertName* name)
         crls.reset(X509_STORE_CTX_get1_crls(ctx, name));
         if (!crls)
         {
-            Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
+            X509Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
             CrlDistPointsPtr crldp(GetExtension<CrlDistPoints>(cert, NID_crl_distribution_points));
             if (!crldp)
             {
@@ -148,28 +148,28 @@ int VerifyCallback(int ret, X509_STORE_CTX* ctx)
     if (cert)
     {
         BIO_printf(out, "Serial Number: ");
-        BN_print(out, cert::serialNumber(cert));
+        BN_print(out, Cert::serialNumber(cert));
         BIO_printf(out, "\nSubject: ");
-        X509_NAME_print_ex(out, cert::subjectName(cert), 1,
+        X509_NAME_print_ex(out, Cert::subjectName(cert), 1,
                            ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_SPLUS_SPC);
         BIO_printf(out, "\nIssuer: ");
-        X509_NAME_print_ex(out, cert::issuerName(cert), 1,
+        X509_NAME_print_ex(out, Cert::issuerName(cert), 1,
                            ASN1_STRFLGS_UTF8_CONVERT | XN_FLAG_SEP_SPLUS_SPC);
 
         std::tm* localTime;
         char buffer[80];
 
-        auto notBefore = cert::notBefore(cert);
+        auto notBefore = Cert::notBefore(cert);
         localTime = std::localtime(&notBefore);
         std::strftime(buffer, sizeof(buffer), "%d-%m-%Y %H:%M:%S", localTime);
         BIO_printf(out, "\nNot Before: %s", buffer);
 
-        auto notAfter = cert::notAfter(cert);
+        auto notAfter = Cert::notAfter(cert);
         localTime = std::localtime(&notAfter);
         std::strftime(buffer, sizeof(buffer), "%d-%m-%Y %H:%M:%S", localTime);
         BIO_printf(out, "\nNot After: %s\n", buffer);
 
-        EVP_PKEY_print_public(out, cert::publicKey(cert), 0, nullptr);
+        EVP_PKEY_print_public(out, Cert::publicKey(cert), 0, nullptr);
 
         auto error = verify::MakeErrorCode(static_cast<verify::Error>(X509_STORE_CTX_get_error(ctx)));
         BIO_printf(out, "Status: %s\n", error.message().c_str());
@@ -257,7 +257,7 @@ public:
             verifier.setFlag(VerifyFlag::CrlCheck);
         }
 
-        auto cert = cert::fromStorage(options_.certPath);
+        auto cert = Cert::fromStorage(options_.certPath);
         verifier.verify(cert);
     }
 

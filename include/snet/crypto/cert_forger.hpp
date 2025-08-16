@@ -8,7 +8,7 @@ namespace snet::crypto
 struct CertForger final : public casket::NonCopyable
 {
 public:
-    CertForger(Key* caKey, Cert* caCert);
+    CertForger(Key* caKey, X509Cert* caCert);
 
     ~CertForger() = default;
 
@@ -16,14 +16,11 @@ public:
 
     CertForger& operator=(CertForger&&) = default;
 
-    KeyPtr getForgedKey();
-
-    CertPtr resign(Cert* originCert);
+    X509CertPtr resign(Key* forgedKey, X509Cert* originCert);
 
 private:
-    KeyPtr privateKey_;
     KeyPtr caKey_;
-    CertPtr caCert_;
+    X509CertPtr caCert_;
 };
 
 } // namespace snet::crypto

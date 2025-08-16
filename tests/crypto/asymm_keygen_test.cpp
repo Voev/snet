@@ -5,40 +5,13 @@
 
 using namespace snet::crypto;
 
-TEST(AsymmKeyGenerationTest, GenerateRSAKey)
-{
-    size_t keySize = 2048;
-    KeyPtr rsaKey;
-    ASSERT_NO_THROW(rsaKey = akey::rsa::generate(keySize));
-    ASSERT_NE(rsaKey, nullptr);
-    EXPECT_TRUE(akey::isAlgorithm(rsaKey, "RSA"));
-}
-
-TEST(AsymmKeyGenerationTest, GenerateRSAKeyWithDifferentSizes)
-{
-    size_t keySizes[] = {1024, 2048, 4096};
-    KeyPtr rsaKey;
-    for (size_t keySize : keySizes)
-    {
-        ASSERT_NO_THROW(rsaKey = akey::rsa::generate(keySize));
-        ASSERT_NE(rsaKey, nullptr);
-        EXPECT_TRUE(akey::isAlgorithm(rsaKey, "RSA"));
-    }
-}
-
-TEST(AsymmKeyGenerationTest, GenerateRSAKeyInvalidSize)
-{
-    size_t keySize = 511;
-    ASSERT_THROW(auto rsaKey = akey::rsa::generate(keySize), CryptoException);
-}
-
 TEST(AsymmKeyGenerationTest, GenerateECKey)
 {
     std::string groupName = "prime256v1";
     KeyPtr ecKey;
     ASSERT_NO_THROW(ecKey = akey::ec::generate(groupName));
     ASSERT_NE(ecKey, nullptr);
-    EXPECT_TRUE(akey::isAlgorithm(ecKey, "EC"));
+    EXPECT_TRUE(AsymmKey::isAlgorithm(ecKey, "EC"));
 }
 
 TEST(AsymmKeyGenerationTest, GenerateECKeyWithDifferentCurves)
@@ -49,7 +22,7 @@ TEST(AsymmKeyGenerationTest, GenerateECKeyWithDifferentCurves)
     {
         ASSERT_NO_THROW(ecKey = akey::ec::generate(groupName));
         ASSERT_NE(ecKey, nullptr);
-        EXPECT_TRUE(akey::isAlgorithm(ecKey, "EC"));
+        EXPECT_TRUE(AsymmKey::isAlgorithm(ecKey, "EC"));
     }
 }
 

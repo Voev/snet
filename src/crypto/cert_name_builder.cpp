@@ -22,7 +22,7 @@ CertNameBuilder& CertNameBuilder::addEntry(const std::string& field, const std::
     return *this;
 }
 
-CertNamePtr CertNameBuilder::build()
+X509NamePtr CertNameBuilder::build()
 {
     auto result = std::move(name_);
     reset();
@@ -35,7 +35,7 @@ void CertNameBuilder::reset()
     crypto::ThrowIfTrue(name_ == nullptr);
 }
 
-CertNamePtr CertNameBuilder::fromString(const std::string& DN)
+X509NamePtr CertNameBuilder::fromString(const std::string& DN)
 {
     casket::ThrowIfTrue(DN.empty(), "DN can't be empty");
 
@@ -52,7 +52,7 @@ CertNamePtr CertNameBuilder::fromString(const std::string& DN)
         builder.addEntry(parts[0], parts[1]);
     }
 
-    return CertNamePtr(builder.build());
+    return X509NamePtr(builder.build());
 }
 
 } // namespace snet::crypto

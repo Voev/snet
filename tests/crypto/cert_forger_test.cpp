@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <snet/crypto/asymm_keygen.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_forger.hpp>
 #include <snet/crypto/cert_name.hpp>
@@ -8,36 +8,44 @@
 
 using namespace snet::crypto;
 
-class CertForgerTest : public ::testing::Test {
+class CertForgerTest : public ::testing::Test
+{
 protected:
     CertForgerTest()
-        : ca_("CN=Test Root CA") {
+        : ca_(RsaAsymmKey::generate(2048), "CN=Test Root CA")
+    {
     }
 
     ~CertForgerTest() = default;
 
-    void SetUp() override {
-        auto originalKey = akey::rsa::generate(2048);
+    void SetUp() override
+    {
+        auto originalKey = RsaAsymmKey::generate(2048);
         originalCert_ = ca_.sign("CN=Test Server", originalKey);
     }
 
-    void TearDown() override {
+    void TearDown() override
+    {
     }
 
 protected:
     CertAuthority ca_;
-    CertPtr originalCert_;
+    X509CertPtr originalCert_;
 };
 
-TEST_F(CertForgerTest, ResignCertificate) {
-    CertPtr resignedCert;
+TEST_F(CertForgerTest, ResignCertificate)
+{
+    X509CertPtr resignedCert;
     CertForger certForger(ca_.getKey(), ca_.getCert());
 
-    ASSERT_NO_THROW(resignedCert = certForger.resign(originalCert_));
+    KeyPtr forgedKey;
+
+    ASSERT_NO_THROW(forgedKey = RsaAsymmKey::generate(2048));
+    ASSERT_NO_THROW(resignedCert = certForger.resign(forgedKey, originalCert_));
     ASSERT_NE(resignedCert, nullptr);
 
-    ASSERT_TRUE(name::isEqual(cert::subjectName(resignedCert), cert::subjectName(originalCert_)));
-    ASSERT_TRUE(name::isEqual(cert::issuerName(resignedCert), cert::issuerName(originalCert_)));
+    ASSERT_TRUE(CertName::isEqual(Cert::subjectName(resignedCert), Cert::subjectName(originalCert_)));
+    ASSERT_TRUE(CertName::isEqual(Cert::issuerName(resignedCert), Cert::issuerName(originalCert_)));
 
     CertManager store;
     ASSERT_NO_THROW(store.addCA(ca_.getCert()));

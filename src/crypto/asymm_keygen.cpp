@@ -27,20 +27,6 @@ static crypto::KeyPtr generateWithParams(OSSL_LIB_CTX* libctx, const char* name,
 namespace snet::crypto::akey
 {
 
-namespace rsa
-{
-
-KeyPtr generate(size_t bits, OSSL_LIB_CTX* libctx, const char* propq)
-{
-    OSSL_PARAM params[] = {OSSL_PARAM_END, OSSL_PARAM_END};
-
-    params[0] = OSSL_PARAM_construct_size_t(OSSL_PKEY_PARAM_RSA_BITS, &bits);
-
-    return ::generateWithParams(libctx, "RSA", propq, params);
-}
-
-} // namespace rsa
-
 namespace ec
 {
 

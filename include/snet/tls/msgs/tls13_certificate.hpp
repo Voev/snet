@@ -15,7 +15,7 @@ struct TLSv13Certificate final
     {
         nonstd::span<const uint8_t> certData;
         nonstd::span<const uint8_t> extsData;
-        Cert* cert{nullptr};
+        X509Cert* cert{nullptr};
         Extensions* extensions{nullptr};
     };
 

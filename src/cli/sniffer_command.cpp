@@ -79,8 +79,8 @@ struct SnifferManager
 
     tls::RecordPool recordPool;
     tls::RecordProcessor proc;
-    tls::ServerInfo serverInfo;
     tls::SecretNodeManager secretManager;
+    crypto::KeyPtr serverKey;
     SessionManager sessions;
     io::Controller controller;
 };
@@ -197,8 +197,7 @@ public:
 
         if (!options_.serverKeyPath.empty())
         {
-            auto serverKey = crypto::akey::fromStorage(KeyType::Private, options_.serverKeyPath);
-            manager.serverInfo.setServerKey(serverKey);
+            manager.serverKey = crypto::AsymmKey::fromStorage(KeyType::Private, options_.serverKeyPath);
         }
 
         driver->start();
