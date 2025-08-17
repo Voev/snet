@@ -17,6 +17,11 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
+KeyShareEntry::KeyShareEntry(const crypto::GroupParams groupParams)
+    : groupParams_(groupParams)
+{
+}
+
 void KeyShareEntry::setGroup(const GroupParams groupParams) noexcept
 {
     groupParams_ = groupParams;
@@ -70,6 +75,216 @@ size_t KeyShareEntry::serialize(nonstd::span<uint8_t> output) const
 
     return size;
 }
+
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// ClientKeyShare
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+KeyShareClientHello::KeyShareClientHello(nonstd::span<const uint8_t> input)
+{
+    deserialize(input);
+}
+
+KeyShareClientHello::KeyShareClientHello(const std::vector<crypto::GroupParams>& supported)
+{
+    for (const auto group : supported)
+    {
+        clientKeyShares_.emplace_back(group);
+    }
+}
+
+void KeyShareClientHello::retryOffer(const crypto::GroupParams toOffer)
+{
+    clientKeyShares_.clear();
+    clientKeyShares_.emplace_back(toOffer);
+}
+
+std::vector<crypto::GroupParams> KeyShareClientHello::offeredGroups() const
+{
+    std::vector<crypto::GroupParams> offered_groups;
+    offered_groups.reserve(clientKeyShares_.size());
+    for (const auto& share : clientKeyShares_)
+    {
+        offered_groups.push_back(share.getGroup());
+    }
+    return offered_groups;
+}
+
+crypto::GroupParams KeyShareClientHello::selectedGroup() const
+{
+    throw std::invalid_argument("Client Hello Key Share does not select a group");
+}
+
+void KeyShareClientHello::setPublicKey(const size_t idx, const Key* key)
+{
+    clientKeyShares_[idx].setPublicKey(key);
+}
+
+crypto::KeyPtr KeyShareClientHello::getPublicKey(const size_t idx)
+{
+    return clientKeyShares_[idx].getPublicKey();
+}
+
+bool KeyShareClientHello::empty() const
+{
+    // RFC 8446 4.2.8
+    //    Clients MAY send an empty client_shares vector in order to request
+    //    group selection from the server, at the cost of an additional round
+    //    trip [...].
+    return false;
+}
+
+static inline bool CheckUnique(nonstd::span<const KeyShareEntry> entries, const KeyShareEntry& checkedEntry)
+{
+    return std::find_if(entries.begin(), entries.end(), [&](const auto& entry)
+                        { return entry.getGroup() == checkedEntry.getGroup(); }) == entries.end();
+}
+
+void KeyShareClientHello::deserialize(nonstd::span<const uint8_t> input)
+{
+    utils::DataReader reader("ClientHello KeyShare", input);
+
+    const auto length = reader.get_uint16_t();
+    casket::ThrowIfTrue(reader.remaining_bytes() != length, "Invalid key share length");
+
+    while (reader.has_remaining())
+    {
+        KeyShareEntry newEntry;
+        newEntry.deserialize(reader);
+
+        // RFC 8446 4.2.8
+        //    Clients MUST NOT offer multiple KeyShareEntry values for the same
+        //    group. [...]
+        //    Servers MAY check for violations of these rules and abort the
+        //    handshake with an "illegal_parameter" alert if one is violated.
+
+        casket::ThrowIfFalse(CheckUnique(clientKeyShares_, newEntry),
+                             "Received multiple key share entries for the same group");
+
+        clientKeyShares_.emplace_back(std::move(newEntry));
+    }
+
+    reader.assert_done();
+}
+
+size_t KeyShareClientHello::serialize(nonstd::span<uint8_t> output) const
+{
+    casket::ThrowIfTrue(output.size_bytes() < 2, "buffer too small");
+
+    auto data = output.subspan(2);
+    uint16_t totalBytes = 0;
+
+    for (const auto& share : clientKeyShares_)
+    {
+        auto shareBytes = share.serialize(data);
+        data = data.subspan(shareBytes);
+        totalBytes += shareBytes;
+    }
+
+    output[0] = casket::get_byte<0>(totalBytes);
+    output[1] = casket::get_byte<1>(totalBytes);
+    totalBytes += 2;
+
+    return totalBytes;
+}
+
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// KeyShare ServerHello
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+KeyShareServerHello::KeyShareServerHello(crypto::GroupParams group, const Key* serverKey)
+{
+    serverKeyShare_.setGroup(group);
+    serverKeyShare_.setPublicKey(serverKey);
+}
+
+void KeyShareServerHello::setPublicKey(const Key* key)
+{
+    serverKeyShare_.setPublicKey(key);
+}
+
+crypto::KeyPtr KeyShareServerHello::getPublicKey(size_t)
+{
+    return serverKeyShare_.getPublicKey();
+}
+
+std::vector<crypto::GroupParams> KeyShareServerHello::offeredGroups() const
+{
+    return {selectedGroup()};
+}
+
+crypto::GroupParams KeyShareServerHello::selectedGroup() const
+{
+    return serverKeyShare_.getGroup();
+}
+
+bool KeyShareServerHello::empty() const
+{
+    return serverKeyShare_.empty();
+}
+
+void KeyShareServerHello::deserialize(nonstd::span<const uint8_t> input)
+{
+    utils::DataReader reader("ServerHello KeyShare", input);
+    serverKeyShare_.deserialize(reader);
+    reader.assert_done();
+}
+
+size_t KeyShareServerHello::serialize(nonstd::span<uint8_t> output) const
+{
+    return serverKeyShare_.serialize(output);
+}
+
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// KeyShare HRR
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+KeyShareHelloRetryRequest::KeyShareHelloRetryRequest(crypto::GroupParams selectedGroup)
+    : selectedGroup_(selectedGroup)
+{
+}
+
+crypto::GroupParams KeyShareHelloRetryRequest::selectedGroup() const
+{
+    return selectedGroup_;
+}
+
+std::vector<crypto::GroupParams> KeyShareHelloRetryRequest::offeredGroups() const
+{
+    throw std::logic_error("Hello Retry Request never offers any key exchange groups");
+}
+
+bool KeyShareHelloRetryRequest::empty() const
+{
+    return (selectedGroup_ == crypto::GroupParams::NONE);
+}
+
+void KeyShareHelloRetryRequest::deserialize(nonstd::span<const uint8_t> input)
+{
+    utils::DataReader reader("HRR KeyShare", input);
+
+    constexpr auto size = sizeof(uint16_t);
+
+    if (reader.remaining_bytes() != size)
+    {
+        throw casket::RuntimeError("Size of KeyShare extension in HelloRetryRequest must be {} bytes", size);
+    }
+
+    selectedGroup_ = static_cast<crypto::GroupParams>(reader.get_uint16_t());
+    reader.assert_done();
+}
+
+size_t KeyShareHelloRetryRequest::serialize(nonstd::span<uint8_t> output) const
+{
+    auto code = selectedGroup_.wireCode();
+    output[0] = casket::get_byte<0>(code);
+    output[1] = casket::get_byte<1>(code);
+    return 2;
+}
+
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// KeyShare
+/// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 KeyShare::KeyShare(nonstd::span<const uint8_t> input, HandshakeType messageType)
 {
