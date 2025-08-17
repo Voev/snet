@@ -504,7 +504,7 @@ void Session::processClientHello(const ClientHello& clientHello)
 
     if (metaInfo_.version != ProtocolVersion::SSLv3_0)
     {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions);
+        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
     }
 
     if (processor_)
@@ -523,7 +523,7 @@ void Session::processServerHello(const ServerHello& serverHello)
 
     if (!serverHello.extensions.empty())
     {
-        serverExtensions_.deserialize(Side::Server, serverHello.extensions);
+        serverExtensions_.deserialize(Side::Server, serverHello.extensions, HandshakeType::ServerHelloCode);
 
         if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
         {
@@ -606,7 +606,8 @@ void Session::processCertificateVerify(const CertificateVerify& certVerify)
 
 void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
 {
-    serverEncExtensions_.deserialize(Side::Server, encryptedExtensions.extensions);
+    serverEncExtensions_.deserialize(Side::Server, encryptedExtensions.extensions,
+                                     HandshakeType::EncryptedExtensionsCode);
 }
 
 void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
@@ -815,7 +816,7 @@ void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<con
 
         // extensions
         Extensions exts;
-        exts.deserialize(tls::Side::Server, reader.get_span_remaining());
+        exts.deserialize(tls::Side::Server, reader.get_span_remaining(), HandshakeType::NewSessionTicketCode);
 
         // reader.assert_done();
     }

@@ -22,6 +22,7 @@
 #include <snet/tls/exts/reneg_extension.hpp>
 #include <snet/tls/exts/server_name_indication.hpp>
 #include <snet/tls/exts/supported_versions.hpp>
+#include <snet/tls/exts/key_share.hpp>
 #include <snet/tls/exts/unknown_extension.hpp>
 
 namespace snet::tls {
@@ -98,7 +99,7 @@ public:
     /// @param reader The data reader.
     /// @param from The side (client or server).
     /// @param messageType The handshake type.
-    void deserialize(Side side, nonstd::span<const uint8_t> input);
+    void deserialize(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType);
 
     /// @brief Checks if the extensions contain any types other than the allowed ones.
     /// @param allowedExtensions The allowed extension types.
@@ -157,8 +158,8 @@ public:
     /// @brief Constructor with data reader, side, and handshake type.
     /// @param side The side (client or server).
     /// @param reader The data reader.
-    Extensions(Side side, nonstd::span<const uint8_t> input) {
-        deserialize(side, input);
+    Extensions(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType) {
+        deserialize(side, input, handshakeType);
     }
 
     size_t serialize(Side whoami, nonstd::span<uint8_t> buffer) const;

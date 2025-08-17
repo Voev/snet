@@ -7,7 +7,8 @@ using namespace casket;
 namespace snet::tls
 {
 
-std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, ExtensionCode code, const Side side)
+std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, ExtensionCode code, const Side side,
+                                         const HandshakeType handshakeType)
 {
     switch (code)
     {
@@ -35,8 +36,11 @@ std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, Exte
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(side, input);
 
-    //case ExtensionCode::SafeRenegotiation:
-    //    return std::make_unique<RenegotiationExtension>(side, input);
+        // case ExtensionCode::SafeRenegotiation:
+        //     return std::make_unique<RenegotiationExtension>(side, input);
+
+    case ExtensionCode::KeyShare:
+        return std::make_unique<KeyShare>(input, handshakeType);
 
     default:
         break;
@@ -56,7 +60,7 @@ void Extensions::add(std::unique_ptr<Extension> extn)
     extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input)
+void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType)
 {
     utils::DataReader reader("Extensions", input);
 
@@ -72,9 +76,9 @@ void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input)
         if (extensionSize > 0)
         {
             extensionData = reader.get_span_fixed(extensionSize);
-            
         }
-        add(makeExtension(extensionData, static_cast<ExtensionCode>(extensionCode), side));
+
+        add(makeExtension(extensionData, static_cast<ExtensionCode>(extensionCode), side, handshakeType));
     }
     reader.assert_done();
 }
@@ -129,7 +133,6 @@ std::set<ExtensionCode> Extensions::extensionTypes() const
     return offers;
 }
 
-
 size_t Extensions::serialize(Side whoami, nonstd::span<uint8_t> buffer) const
 {
     ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
@@ -148,7 +151,7 @@ size_t Extensions::serialize(Side whoami, nonstd::span<uint8_t> buffer) const
         auto extensionBody = data.subspan(4);
 
         uint16_t extensionType = static_cast<uint16_t>(extension->type());
-        uint16_t extensionLength= extension->serialize(whoami, extensionBody);
+        uint16_t extensionLength = extension->serialize(whoami, extensionBody);
 
         data[0] = casket::get_byte<0>(extensionType);
         data[1] = casket::get_byte<1>(extensionType);
