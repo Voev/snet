@@ -20,11 +20,15 @@ struct GroupParamInfo
     const char* groupName{nullptr};
 };
 
+// clang-format off
 static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
-    {GroupParams::Code::SECP256R1, {"EC", SN_secp256k1}}, {GroupParams::Code::SECP384R1, {"EC", SN_secp384r1}},
-    {GroupParams::Code::SECP521R1, {"EC", SN_secp521r1}}, {GroupParams::Code::X25519, {"X25519", nullptr}},
+    {GroupParams::Code::SECP256R1, {"EC", SN_secp256k1}},
+    {GroupParams::Code::SECP384R1, {"EC", SN_secp384r1}},
+    {GroupParams::Code::SECP521R1, {"EC", SN_secp521r1}},
+    {GroupParams::Code::X25519, {"X25519", nullptr}},
     {GroupParams::Code::X448, {"X448", nullptr}},
 };
+// clang-format on
 
 /*
 static const OSSL_PARAM param_group_list[][10] = {
@@ -76,6 +80,20 @@ static const OSSL_PARAM param_group_list[][10] = {
     TLS_GROUP_ENTRY("ffdhe6144", "ffdhe6144", "DH", 33),
     TLS_GROUP_ENTRY("ffdhe8192", "ffdhe8192", "DH", 34),
 */
+
+const std::vector<GroupParams>& GroupParams::getSupported()
+{
+    static std::vector<GroupParams> gSupportedGroups =
+    {
+        GroupParams(GroupParams::Code::SECP256R1),
+        GroupParams(GroupParams::Code::SECP384R1),
+        GroupParams(GroupParams::Code::SECP521R1),
+        GroupParams(GroupParams::Code::X25519),
+        GroupParams(GroupParams::Code::X448),
+    };
+    return gSupportedGroups;
+}
+
 const char* GroupParams::toString() const
 {
     switch (code_)
@@ -113,28 +131,7 @@ const char* GroupParams::toString() const
     }
 }
 
-KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams)
-{
-    auto param = gGroupParams.find(groupParams.code());
-    if (param == gGroupParams.end())
-    {
-        return nullptr;
-    }
-
-    auto ctx = CryptoManager::getInstance().createKeyContext(param->second.algorithm);
-    ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
-
-    if (groupParams.isEcdhNamedCurve())
-    {
-        ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
-    }
-
-    Key* pkey{nullptr};
-    ThrowIfFalse(0 < EVP_PKEY_generate(ctx, &pkey));
-    return KeyPtr{pkey};
-}
-
-KeyPtr GenerateGroupParams(const GroupParams groupParams)
+KeyPtr GroupParams::generateParams(const GroupParams groupParams)
 {
     auto param = gGroupParams.find(groupParams.code());
     casket::ThrowIfTrue(param == gGroupParams.end(), "Unsupported group parameters");
@@ -150,6 +147,54 @@ KeyPtr GenerateGroupParams(const GroupParams groupParams)
     Key* params{nullptr};
     ThrowIfFalse(0 < EVP_PKEY_paramgen(ctx, &params));
     return KeyPtr{params};
+}
+
+KeyPtr GroupParams::generateKeyByParams(const GroupParams groupParams)
+{
+    auto param = gGroupParams.find(groupParams.code());
+    casket::ThrowIfTrue(param == gGroupParams.end(), "Unsupported group parameters");
+
+    auto ctx = CryptoManager::getInstance().createKeyContext(param->second.algorithm);
+    ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
+
+    if (groupParams.isEcdhNamedCurve())
+    {
+        ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+    }
+
+    Key* pkey{nullptr};
+    ThrowIfFalse(0 < EVP_PKEY_keygen(ctx, &pkey));
+    return KeyPtr{pkey};
+}
+
+KeyPtr GroupParams::generateKeyByParams(Key* params)
+{
+    Key* pkey{nullptr};
+    auto ctx = CryptoManager::getInstance().createKeyContext(params);
+    ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
+    ThrowIfFalse(0 < EVP_PKEY_keygen(ctx, &pkey));
+    return KeyPtr{pkey};
+}
+
+std::vector<uint8_t> GroupParams::deriveSecret(Key* privateKey, Key* publicKey, bool isTLSv3)
+{
+    size_t secretLength{0};
+
+    auto ctx = CryptoManager::getInstance().createKeyContext(privateKey);
+    crypto::ThrowIfFalse(0 < EVP_PKEY_derive_init(ctx));
+    crypto::ThrowIfFalse(0 < EVP_PKEY_derive_set_peer(ctx, publicKey));
+    crypto::ThrowIfFalse(0 < EVP_PKEY_derive(ctx, nullptr, &secretLength));
+    
+    if (isTLSv3 && EVP_PKEY_is_a(privateKey, "DH"))
+    {
+        crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_dh_pad(ctx, 1));
+    }
+    
+    std::vector<uint8_t> secret(secretLength);
+    crypto::ThrowIfFalse(0 < EVP_PKEY_derive(ctx, secret.data(), &secretLength));
+
+    secret.resize(secretLength);
+    return secret;
 }
 
 } // namespace snet::crypto

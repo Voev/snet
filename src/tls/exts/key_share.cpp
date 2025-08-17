@@ -41,7 +41,7 @@ void KeyShareEntry::setPublicKey(const Key* key)
 
 KeyPtr KeyShareEntry::getPublicKey() const
 {
-    KeyPtr publicKey(GenerateGroupParams(groupParams_));
+    KeyPtr publicKey = GroupParams::generateParams(groupParams_);
     AsymmKey::setEncodedPublicKey(publicKey, keyExchange_);
     return publicKey;
 }
