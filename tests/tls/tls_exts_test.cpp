@@ -119,7 +119,7 @@ TEST_F(ExtensionsTest, DeserializeCreatesCorrectExtensions)
         0x03, 0x04  // TLS 1.3
     };
 
-    Extensions exts(Side::Client, data);
+    Extensions exts(Side::Client, data, HandshakeType::ClientHelloCode);
     EXPECT_EQ(1, exts.size());
     EXPECT_TRUE(exts.has<SupportedVersions>());
 

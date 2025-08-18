@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 #include <snet/crypto/pointers.hpp>
 
 namespace snet::crypto
@@ -107,12 +108,18 @@ public:
         return isX25519() || isX448() || isEcdhNamedCurve();
     }
 
+    static const std::vector<GroupParams>& getSupported();
+
+    static crypto::KeyPtr generateParams(const GroupParams groupParams);
+
+    static crypto::KeyPtr generateKeyByParams(const GroupParams groupParams);
+
+    static crypto::KeyPtr generateKeyByParams(Key* params);
+
+    static std::vector<uint8_t> deriveSecret(Key* privateKey, Key* publicKey, bool isTLSv3);
+
 private:
     Code code_;
 };
-
-crypto::KeyPtr GenerateKeyByGroupParams(const GroupParams groupParams);
-
-crypto::KeyPtr GenerateGroupParams(const GroupParams groupParams);
 
 } // namespace snet::tls

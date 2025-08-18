@@ -176,7 +176,7 @@ void AsymmKey::toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
     }
 }
 
-std::vector<uint8_t> getEncodedPublicKey(const Key* key)
+std::vector<uint8_t> AsymmKey::getEncodedPublicKey(const Key* key)
 {
     size_t size{0};
 

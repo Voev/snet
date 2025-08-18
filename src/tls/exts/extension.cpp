@@ -25,6 +25,8 @@ const char* ExtensionCodeToString(const ExtensionCode code)
         return "SupportedVersions";
     case ExtensionCode::SafeRenegotiation:
         return "SafeRenegotiation";
+    case ExtensionCode::KeyShare:
+        return "KeyShare";
     default:
         return "UnknownExtension";
     }

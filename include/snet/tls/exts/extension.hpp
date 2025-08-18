@@ -19,6 +19,7 @@ enum class ExtensionCode : uint16_t
     ExtendedMasterSecret = 23,        ///< Extended Master Secret extension.
     RecordSizeLimit = 28,             ///< Record Size Limit extension.
     SupportedVersions = 43,           ///< Supported Versions extension.
+    KeyShare = 51,                    ///< Key share extension.
     SafeRenegotiation = 65281,        ///< Safe Renegotiation extension.
 };
 
