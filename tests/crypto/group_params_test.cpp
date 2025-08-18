@@ -6,7 +6,25 @@
 using namespace snet::crypto;
 using namespace testing;
 
-class GroupParamsGenerationTest : public TestWithParam<GroupParams>
+using GenerationTestParam = GroupParams;
+using DeriveTestParam = std::tuple<GroupParams, bool>;
+
+static std::string GenerationTestName(const TestParamInfo<GenerationTestParam>& info)
+{
+    return info.param.toString();
+}
+
+static std::string DeriveTestName(const TestParamInfo<DeriveTestParam>& info)
+{
+    std::string name;
+
+    name = std::get<0>(info.param).toString();
+    name += "_";
+    name += std::get<1>(info.param) ? "TLSv1_3" : "NotTLSv1_3";
+    return name;
+}
+
+class GroupParamsGenerationTest : public TestWithParam<GenerationTestParam>
 {
 };
 
@@ -25,10 +43,8 @@ TEST_P(GroupParamsGenerationTest, GenerateParamsThenKey)
     ASSERT_NO_THROW(params = GroupParams::generateKeyByParams(params));
 }
 
-INSTANTIATE_TEST_SUITE_P(EC, GroupParamsGenerationTest, ValuesIn(GroupParams::getSupported()));
+INSTANTIATE_TEST_SUITE_P(ECDH, GroupParamsGenerationTest, ValuesIn(GroupParams::getSupported()), GenerationTestName);
 
-
-using DeriveTestParam = std::tuple<GroupParams, bool>;
 class GroupParamsDeriveTest : public TestWithParam<DeriveTestParam>
 {
 };
@@ -37,7 +53,7 @@ TEST_P(GroupParamsDeriveTest, DeriveSharedKey)
 {
     KeyPtr clientKey;
     KeyPtr serverKey;
-    
+
     const auto& params = GetParam();
 
     ASSERT_NO_THROW(clientKey = GroupParams::generateKeyByParams(std::get<0>(params)));
@@ -51,4 +67,4 @@ TEST_P(GroupParamsDeriveTest, DeriveSharedKey)
     ASSERT_EQ(sharedKeyA, sharedKeyB);
 }
 
-INSTANTIATE_TEST_SUITE_P(EC, GroupParamsDeriveTest, Combine(ValuesIn(GroupParams::getSupported()), Bool()));
+INSTANTIATE_TEST_SUITE_P(ECDH, GroupParamsDeriveTest, Combine(ValuesIn(GroupParams::getSupported()), Bool()), DeriveTestName);

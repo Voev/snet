@@ -22,74 +22,34 @@ struct GroupParamInfo
 
 // clang-format off
 static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
-    {GroupParams::Code::SECP256R1, {"EC", SN_secp256k1}},
-    {GroupParams::Code::SECP384R1, {"EC", SN_secp384r1}},
-    {GroupParams::Code::SECP521R1, {"EC", SN_secp521r1}},
-    {GroupParams::Code::X25519, {"X25519", nullptr}},
-    {GroupParams::Code::X448, {"X448", nullptr}},
+    {GroupParams::SECP256R1, {"EC", SN_secp256k1}},
+    {GroupParams::SECP384R1, {"EC", SN_secp384r1}},
+    {GroupParams::SECP521R1, {"EC", SN_secp521r1}},
+    {GroupParams::BRAINPOOL256R1, {"EC", SN_brainpoolP256r1}},
+    {GroupParams::BRAINPOOL384R1, {"EC", SN_brainpoolP384r1}},
+    {GroupParams::BRAINPOOL512R1, {"EC", SN_brainpoolP512r1}},
+    {GroupParams::X25519, {"X25519", nullptr}},
+    {GroupParams::X448, {"X448", nullptr}},
+    {GroupParams::FFDHE_2048, {"DH", SN_ffdhe2048}},
+    {GroupParams::FFDHE_3072, {"DH", SN_ffdhe3072}},
+    {GroupParams::FFDHE_4096, {"DH", SN_ffdhe4096}},
+    {GroupParams::FFDHE_6144, {"DH", SN_ffdhe6144}},
+    {GroupParams::FFDHE_8192, {"DH", SN_ffdhe8192}},
 };
 // clang-format on
-
-/*
-static const OSSL_PARAM param_group_list[][10] = {
-    TLS_GROUP_ENTRY("K-163", "sect163k1", "EC", 0),
-    TLS_GROUP_ENTRY("sect163r1", "sect163r1", "EC", 1),
-    TLS_GROUP_ENTRY("B-163", "sect163r2", "EC", 2),
-    TLS_GROUP_ENTRY("sect193r1", "sect193r1", "EC", 3),
-    TLS_GROUP_ENTRY("sect193r2", "sect193r2", "EC", 4),
-    TLS_GROUP_ENTRY("K-233", "sect233k1", "EC", 5),
-    TLS_GROUP_ENTRY("B-233", "sect233r1", "EC", 6),
-    TLS_GROUP_ENTRY("sect239k1", "sect239k1", "EC", 7),
-    TLS_GROUP_ENTRY("sect283k1", "sect283k1", "EC", 8),
-    TLS_GROUP_ENTRY("K-283", "sect283k1", "EC", 8),
-    TLS_GROUP_ENTRY("sect283r1", "sect283r1", "EC", 9),
-    TLS_GROUP_ENTRY("B-283", "sect283r1", "EC", 9),
-    TLS_GROUP_ENTRY("sect409k1", "sect409k1", "EC", 10),
-    TLS_GROUP_ENTRY("K-409", "sect409k1", "EC", 10),
-    TLS_GROUP_ENTRY("B-409", "sect409r1", "EC", 11),
-    TLS_GROUP_ENTRY("K-571", "sect571k1", "EC", 12),
-    TLS_GROUP_ENTRY("B-571", "sect571r1", "EC", 13),
-
-    TLS_GROUP_ENTRY("secp160k1", "secp160k1", "EC", 14),
-    TLS_GROUP_ENTRY("secp160r1", "secp160r1", "EC", 15),
-    TLS_GROUP_ENTRY("secp160r2", "secp160r2", "EC", 16),
-    TLS_GROUP_ENTRY("secp192k1", "secp192k1", "EC", 17),
-    TLS_GROUP_ENTRY("secp192r1", "prime192v1", "EC", 18),
-    TLS_GROUP_ENTRY("P-192", "prime192v1", "EC", 18),
-    TLS_GROUP_ENTRY("secp224k1", "secp224k1", "EC", 19),
-    TLS_GROUP_ENTRY("secp224r1", "secp224r1", "EC", 20),
-    TLS_GROUP_ENTRY("P-224", "secp224r1", "EC", 20),
-    TLS_GROUP_ENTRY("secp256k1", "secp256k1", "EC", 21),
-    TLS_GROUP_ENTRY("secp256r1", "prime256v1", "EC", 22),
-    TLS_GROUP_ENTRY("P-256", "prime256v1", "EC", 22),
-    TLS_GROUP_ENTRY("secp384r1", "secp384r1", "EC", 23),
-    TLS_GROUP_ENTRY("P-384", "secp384r1", "EC", 23),
-    TLS_GROUP_ENTRY("secp521r1", "secp521r1", "EC", 24),
-    TLS_GROUP_ENTRY("P-521", "secp521r1", "EC", 24),
-
-    TLS_GROUP_ENTRY("brainpoolP256r1", "brainpoolP256r1", "EC", 25),
-    TLS_GROUP_ENTRY("brainpoolP384r1", "brainpoolP384r1", "EC", 26),
-    TLS_GROUP_ENTRY("brainpoolP512r1", "brainpoolP512r1", "EC", 27),
-
-    TLS_GROUP_ENTRY("x25519", "X25519", "X25519", 28),
-    TLS_GROUP_ENTRY("x448", "X448", "X448", 29),
-
-    TLS_GROUP_ENTRY("ffdhe2048", "ffdhe2048", "DH", 30),
-    TLS_GROUP_ENTRY("ffdhe3072", "ffdhe3072", "DH", 31),
-    TLS_GROUP_ENTRY("ffdhe4096", "ffdhe4096", "DH", 32),
-    TLS_GROUP_ENTRY("ffdhe6144", "ffdhe6144", "DH", 33),
-    TLS_GROUP_ENTRY("ffdhe8192", "ffdhe8192", "DH", 34),
-*/
 
 const std::vector<GroupParams>& GroupParams::getSupported()
 {
     static std::vector<GroupParams> gSupportedGroups =
     {
-        GroupParams(GroupParams::Code::SECP256R1),
-        GroupParams(GroupParams::Code::SECP384R1),
-        GroupParams(GroupParams::Code::SECP521R1),
-        GroupParams(GroupParams::Code::X25519),
-        GroupParams(GroupParams::Code::X448),
+        GroupParams(GroupParams::SECP256R1),
+        GroupParams(GroupParams::SECP384R1),
+        GroupParams(GroupParams::SECP521R1),
+        GroupParams(GroupParams::BRAINPOOL256R1),
+        GroupParams(GroupParams::BRAINPOOL384R1),
+        GroupParams(GroupParams::BRAINPOOL512R1),
+        GroupParams(GroupParams::X25519),
+        GroupParams(GroupParams::X448),
     };
     return gSupportedGroups;
 }
