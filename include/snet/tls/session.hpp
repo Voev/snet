@@ -104,7 +104,7 @@ public:
     
     void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
     
-    void processSessionTicket(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processNewSessionTicket(const NewSessionTicket& sessionTicket);
     
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
     

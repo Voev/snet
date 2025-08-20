@@ -8,6 +8,7 @@
 #include <snet/tls/msgs/certificate.hpp>
 #include <snet/tls/msgs/certificate_verify.hpp>
 #include <snet/tls/msgs/finished.hpp>
+#include <snet/tls/msgs/new_session_ticket.hpp>
 
 namespace snet::tls
 {
@@ -17,7 +18,7 @@ class Session;
 struct HandshakeMessage final
 {
     using MessageType = std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, Certificate,
-                                     CertificateVerify, Finished>;
+                                     CertificateVerify, Finished, NewSessionTicket>;
 
     HandshakeMessage()
         : message(ClientHello())
