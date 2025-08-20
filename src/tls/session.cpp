@@ -233,7 +233,14 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         }
         case HandshakeType::NewSessionTicketCode:
         {
-            processSessionTicket(sideIndex, data);
+            casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
+            processNewSessionTicket(record->getHandshake<NewSessionTicket>());
+
+            if (metaInfo_.version < ProtocolVersion::TLSv1_3)
+            {
+                // RFC 5077: 3.3 (must be included in transcript hash)
+                handshakeHash_.update(data);
+            }
             break;
         }
         case HandshakeType::KeyUpdateCode:
@@ -798,43 +805,9 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     }
 }
 
-void Session::processSessionTicket(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
 {
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
-    {
-        utils::DataReader reader("TLSv1.3 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-        // ticket_lifetime_hint
-        reader.get_uint32_t();
-        // ticket_age_add
-        reader.get_uint32_t();
-        // ticket nonce
-        reader.get_tls_length_value(1);
-        // ticket
-        reader.get_tls_length_value(2);
-
-        // extensions
-        Extensions exts;
-        exts.deserialize(tls::Side::Server, reader.get_span_remaining(), HandshakeType::NewSessionTicketCode);
-
-        // reader.assert_done();
-    }
-    else if (metaInfo_.version == ProtocolVersion::TLSv1_2)
-    {
-        utils::DataReader reader("TLSv1.2 New Session Ticket", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        casket::ThrowIfTrue(reader.remaining_bytes() < 6, "Session ticket message too short to be valid");
-        reader.get_uint32_t();
-        reader.get_span(2, 0, 65535);
-        reader.assert_done();
-
-        // RFC 5077: 3.3 (must be included in transcript hash)
-        handshakeHash_.update(message);
-    }
-    else
-    {
-        handshakeHash_.update(message);
-    }
+    (void)sessionTicket;
 }
 
 void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)

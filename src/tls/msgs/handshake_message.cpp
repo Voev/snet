@@ -54,7 +54,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         /// @todo: support it.
         break;
     case HandshakeType::NewSessionTicketCode:
-        /// @todo: support it.
+        message = NewSessionTicket::deserialize(payload, metaInfo);
         break;
     default:
         throw casket::RuntimeError("Unknown handshake message type");

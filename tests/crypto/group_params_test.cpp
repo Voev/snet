@@ -43,7 +43,7 @@ TEST_P(GroupParamsGenerationTest, GenerateParamsThenKey)
     ASSERT_NO_THROW(params = GroupParams::generateKeyByParams(params));
 }
 
-INSTANTIATE_TEST_SUITE_P(ECDH, GroupParamsGenerationTest, ValuesIn(GroupParams::getSupported()), GenerationTestName);
+INSTANTIATE_TEST_SUITE_P(EC, GroupParamsGenerationTest, ValuesIn(GroupParams::getSupported()), GenerationTestName);
 
 class GroupParamsDeriveTest : public TestWithParam<DeriveTestParam>
 {

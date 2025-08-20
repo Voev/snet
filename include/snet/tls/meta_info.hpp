@@ -11,4 +11,4 @@ struct MetaInfo final
     const CipherSuite* cipherSuite{nullptr};
 };
 
-} // 
+} // namespace snet::tls
