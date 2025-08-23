@@ -1,7 +1,7 @@
 #pragma once
 
 #include <snet/layers/packet.hpp>
-#include <snet/ip/ip_address.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 #include <snet/utils/pointer_vector.hpp>
 #include <unordered_map>
 #include <chrono>
@@ -118,9 +118,9 @@ namespace snet::layers
 struct ConnectionData
 {
     /** Source IP address */
-    ip::IPAddress srcIP;
+    IPAddress srcIP;
     /** Destination IP address */
-    ip::IPAddress dstIP;
+    IPAddress dstIP;
     /** Source TCP/UDP port */
     uint16_t srcPort;
     /** Destination TCP/UDP port */
@@ -576,7 +576,7 @@ private:
 
     struct TcpOneSideData
     {
-        ip::IPAddress srcIP;
+        IPAddress srcIP;
         uint16_t srcPort;
         uint32_t sequence;
         utils::PointerVector<TcpFragment> tcpFragmentList;

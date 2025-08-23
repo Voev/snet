@@ -1,6 +1,6 @@
-#include <snet/ip/ip_address.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 
-namespace snet::ip
+namespace snet::layers
 {
 
 IPAddress::IPAddress(Type type) noexcept
@@ -167,4 +167,4 @@ std::optional<IPAddress> IPAddress::fromString(const char* str)
     return std::nullopt;
 }
 
-} // namespace snet::ip
+} // namespace snet::layers

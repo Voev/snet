@@ -1,6 +1,6 @@
 #pragma once
 #include <sstream>
-#include <snet/ip/ip_address.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 #include <snet/socket/types.hpp>
 
 namespace snet::socket
@@ -17,7 +17,7 @@ public:
     Endpoint(int family, std::uint16_t port) noexcept;
 
     // Construct an Endpoint using an address and port number.
-    Endpoint(const ip::IPAddress& addr, std::uint16_t port) noexcept;
+    Endpoint(const layers::IPAddress& addr, std::uint16_t port) noexcept;
 
     // Copy constructor.
     Endpoint(const Endpoint& other) noexcept;
@@ -46,10 +46,10 @@ public:
     void port(std::uint16_t port) noexcept;
 
     // Get the IP address associated with the Endpoint.
-    ip::IPAddress address() const noexcept;
+    layers::IPAddress address() const noexcept;
 
     // Set the IP address associated with the Endpoint.
-    void address(const ip::IPAddress& addr) noexcept;
+    void address(const layers::IPAddress& addr) noexcept;
 
     // Compare two Endpoints for equality.
     bool operator==(const Endpoint& rhs) const noexcept;
@@ -72,13 +72,13 @@ private:
     } data_;
 };
 
-} // namespace snet::ip
+} // namespace snet::layers
 
 template <> struct std::hash<snet::socket::Endpoint>
 {
     std::size_t operator()(const snet::socket::Endpoint& ep) const noexcept
     {
-        std::size_t hash1 = std::hash<snet::ip::IPAddress>()(ep.address());
+        std::size_t hash1 = std::hash<snet::layers::IPAddress>()(ep.address());
         std::size_t hash2 = std::hash<std::uint16_t>()(ep.port());
         return hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
     }

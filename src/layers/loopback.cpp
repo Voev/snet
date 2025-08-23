@@ -1,8 +1,8 @@
 #include <string.h>
 #include <snet/layers/eth_layer.hpp>
 #include <snet/layers/loopback.hpp>
-#include <snet/layers/ipv4_layer.hpp>
-#include <snet/layers/ipv6_layer.hpp>
+#include <snet/layers/l3/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
 namespace snet::layers

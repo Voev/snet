@@ -1,7 +1,7 @@
 #pragma once
 
 #include <snet/layers/packet.hpp>
-#include <snet/ip/ip_address.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 
 namespace snet::layers
 {
@@ -42,9 +42,9 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize);
  * @return The checksum result
  */
 uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
-                                  ip::IPAddress::Type ipAddrType,
-                                  uint8_t protocolType, ip::IPAddress srcIPAddress,
-                                  ip::IPAddress dstIPAddress);
+                                  IPAddress::Type ipAddrType,
+                                  uint8_t protocolType, IPAddress srcIPAddress,
+                                  IPAddress dstIPAddress);
 
 /**
  * Computes Fowler-Noll-Vo (FNV-1) 32bit hash function on an array of byte

@@ -11,9 +11,9 @@ add_executable(${TEST_NAME} ${SOURCES})
 target_link_libraries(${TEST_NAME}
     PRIVATE
         snet_layers
-        snet_ip
         casket
-        GTest::GTest)
+        GTest::GTest
+)
 
 # Discover tests
 gtest_discover_tests(

@@ -1,8 +1,8 @@
 #pragma once
-#include <snet/ip/ipv4_address.hpp>
-#include <snet/ip/ipv6_address.hpp>
+#include <snet/layers/l3/ipv4_address.hpp>
+#include <snet/layers/l3/ipv6_address.hpp>
 
-namespace snet::ip
+namespace snet::layers
 {
 
 class IPAddress final
@@ -67,21 +67,20 @@ private:
     IPv6Address ipv6_;
 };
 
-} // namespace snet::ip
+} // namespace snet::layers
 
-inline std::ostream& operator<<(std::ostream& os, const snet::ip::IPAddress& addr)
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::IPAddress& addr)
 {
     os << addr.toString();
     return os;
 }
 
 template <>
-struct std::hash<snet::ip::IPAddress>
+struct std::hash<snet::layers::IPAddress>
 {
-    std::size_t operator()(const snet::ip::IPAddress& addr) const noexcept
+    std::size_t operator()(const snet::layers::IPAddress& addr) const noexcept
     {
-        return addr.isIPv4()
-                   ? std::hash<snet::ip::IPv4Address>()(addr.toIPv4())
-                   : std::hash<snet::ip::IPv6Address>()(addr.toIPv6());
+        return addr.isIPv4() ? std::hash<snet::layers::IPv4Address>()(addr.toIPv4())
+                             : std::hash<snet::layers::IPv6Address>()(addr.toIPv6());
     }
 };

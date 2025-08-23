@@ -1,9 +1,11 @@
 #pragma once
 #include <cstdint>
 
-namespace snet::net {
+namespace snet::layers
+{
 
-enum IPProto : std::uint8_t {
+enum IPProto : uint8_t
+{
     IP = 0,
     HOPOPTS = 0,
     ICMPV4 = 1,
@@ -33,4 +35,4 @@ enum IPProto : std::uint8_t {
     PROTO_NOT_SET = 255,
 };
 
-} // namespace snet::net
+} // namespace snet::layers

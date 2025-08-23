@@ -7,10 +7,10 @@
 #include <string>
 #include <string_view>
 
-namespace snet::ip
+namespace snet::layers
 {
 
 typedef in_addr InAddrType;
 typedef in6_addr In6AddrType;
 
-} // namespace snet::ip
+} // namespace snet::layers

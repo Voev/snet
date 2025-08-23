@@ -2,16 +2,19 @@
 #include <cstdint>
 #include <vector>
 #include <casket/utils/endianness.hpp>
-#include <snet/ip/ipv4_address.hpp>
+#include <snet/layers/l3/ipv4_address.hpp>
 
-namespace snet::ip {
+namespace snet::layers
+{
 
-class IPv4Header {
+class IPv4Header
+{
 public:
     /**
      * Type used to represent the different IP flags.
      */
-    enum Flags {
+    enum Flags
+    {
         FLAG_RESERVED = 4,
         DONT_FRAGMENT = 2,
         MORE_FRAGMENTS = 1
@@ -50,7 +53,8 @@ public:
      *
      * \return The number of dwords the header occupies in an uin8_t.
      */
-    uint8_t headerLen() const {
+    uint8_t headerLen() const
+    {
         return header_.ihl;
     }
 
@@ -59,7 +63,8 @@ public:
      *
      * \return The this IP PDU's type of service.
      */
-    uint8_t tos() const {
+    uint8_t tos() const
+    {
         return header_.tos;
     }
 
@@ -68,7 +73,8 @@ public:
      *
      * \return The total length of this IP PDU.
      */
-    uint16_t totalLen() const {
+    uint16_t totalLen() const
+    {
         return casket::be_to_host(header_.tot_len);
     }
 
@@ -77,7 +83,8 @@ public:
      *
      * \return The id for this IP PDU.
      */
-    uint16_t id() const {
+    uint16_t id() const
+    {
         return casket::be_to_host(header_.id);
     }
 
@@ -96,7 +103,8 @@ public:
      *
      * \return The fragment offset, measured in units of 8 byte blocks
      */
-    uint16_t fragmentOffset() const {
+    uint16_t fragmentOffset() const
+    {
         return casket::be_to_host(header_.frag_off) & 0x1fff;
     }
 
@@ -105,7 +113,8 @@ public:
      *
      * \return The IP flags field
      */
-    Flags flags() const {
+    Flags flags() const
+    {
         return static_cast<Flags>(casket::be_to_host(header_.frag_off) >> 13);
     }
 
@@ -114,7 +123,8 @@ public:
      *
      * \return The time to live for this IP PDU.
      */
-    uint8_t ttl() const {
+    uint8_t ttl() const
+    {
         return header_.ttl;
     }
 
@@ -123,7 +133,8 @@ public:
      *
      * \return The protocol for this IP PDU.
      */
-    uint8_t protocol() const {
+    uint8_t protocol() const
+    {
         return header_.protocol;
     }
 
@@ -132,7 +143,8 @@ public:
      *
      * \return The checksum for this IP PDU.
      */
-    uint16_t checksum() const {
+    uint16_t checksum() const
+    {
         return casket::be_to_host(header_.check);
     }
 
@@ -141,7 +153,8 @@ public:
      *
      * \return The source address for this IP PDU.
      */
-    IPv4Address srcAddr() const {
+    IPv4Address srcAddr() const
+    {
         return IPv4Address(header_.saddr);
     }
 
@@ -149,7 +162,8 @@ public:
      * \brief Getter for the destination address field.
      * \return The destination address for this IP PDU.
      */
-    IPv4Address dstAddr() const {
+    IPv4Address dstAddr() const
+    {
         return IPv4Address(header_.daddr);
     }
 
@@ -157,7 +171,8 @@ public:
      * \brief Getter for the version field.
      * \return The version for this IP PDU.
      */
-    uint8_t version() const {
+    uint8_t version() const
+    {
         return header_.version;
     }
 
@@ -249,8 +264,8 @@ public:
     void dstAddr(const IPv4Address& ip);
 
 private:
-
-    struct ipv4_header {
+    struct ipv4_header
+    {
 #if SNET_IS_LITTLE_ENDIAN
         uint8_t ihl : 4, version : 4;
 #else
@@ -270,4 +285,4 @@ private:
     ipv4_header header_;
 };
 
-} // namespace snet::net
+} // namespace snet::layers

@@ -1,9 +1,9 @@
 #pragma once
-#include <snet/ip/ip_address.hpp>
-
 #include <snet/layers/layer.hpp>
-#include <snet/layers/ip_layer.hpp>
-#include <snet/layers/ipv6_exts.hpp>
+
+#include <snet/layers/l3/ip_address.hpp>
+#include <snet/layers/l3/ip_layer.hpp>
+#include <snet/layers/l3/ipv6_exts.hpp>
 
 namespace snet::layers
 {
@@ -71,7 +71,7 @@ public:
      * @param[in] srcIP Source IPv6 address
      * @param[in] dstIP Destination IPv6 address
      */
-    IPv6Layer(const ip::IPv6Address& srcIP, const ip::IPv6Address& dstIP);
+    IPv6Layer(const IPv6Address& srcIP, const IPv6Address& dstIP);
 
     /**
      * A copy constructor that copies the entire header from the other IPv6Layer
@@ -107,39 +107,36 @@ public:
      * IPAddress can be used for both IPv4 and IPv6 addresses
      * @return An IPAddress containing the source address
      */
-    ip::IPAddress getSrcIPAddress() const override
+    IPAddress getSrcIPAddress() const override
     {
         return getSrcIPv6Address();
     }
 
     /**
-     * Get the source IP address in the form of ip::IPv6Address
-     * @return An ip::IPv6Address containing the source address
+     * Get the source IP address in the form of IPv6Address
+     * @return An IPv6Address containing the source address
      */
-    ip::IPv6Address getSrcIPv6Address() const
+    IPv6Address getSrcIPv6Address() const
     {
-        return ip::IPv6Address(
-            {getIPv6Header()->ipSrc, ip::IPv6Address::kBytesCount});
+        return IPv6Address({getIPv6Header()->ipSrc, IPv6Address::kBytesCount});
     }
 
     /**
      * Set the source IP address
      * @param[in] ipAddr The IP address to set
      */
-    void setSrcIPv6Address(const ip::IPv6Address& ipAddr)
+    void setSrcIPv6Address(const IPv6Address& ipAddr)
     {
-        std::copy(ipAddr.begin(), ipAddr.end(),
-                  std::begin(getIPv6Header()->ipSrc));
+        std::copy(ipAddr.begin(), ipAddr.end(), std::begin(getIPv6Header()->ipSrc));
     }
 
     /**
      * Set the dest IP address
      * @param[in] ipAddr The IP address to set
      */
-    void setDstIPv6Address(const ip::IPv6Address& ipAddr)
+    void setDstIPv6Address(const IPv6Address& ipAddr)
     {
-        std::copy(ipAddr.begin(), ipAddr.end(),
-                  std::begin(getIPv6Header()->ipDst));
+        std::copy(ipAddr.begin(), ipAddr.end(), std::begin(getIPv6Header()->ipDst));
     }
 
     /**
@@ -148,19 +145,18 @@ public:
      * because IPAddress can be used for both IPv4 and IPv6 addresses
      * @return An IPAddress containing the destination address
      */
-    ip::IPAddress getDstIPAddress() const override
+    IPAddress getDstIPAddress() const override
     {
         return getDstIPv6Address();
     }
 
     /**
-     * Get the destination IP address in the form of ip::IPv6Address
-     * @return An ip::IPv6Address containing the destination address
+     * Get the destination IP address in the form of IPv6Address
+     * @return An IPv6Address containing the destination address
      */
-    ip::IPv6Address getDstIPv6Address() const
+    IPv6Address getDstIPv6Address() const
     {
-        return ip::IPv6Address(
-            {getIPv6Header()->ipDst, ip::IPv6Address::kBytesCount});
+        return IPv6Address({getIPv6Header()->ipDst, IPv6Address::kBytesCount});
     }
 
     /**
@@ -268,8 +264,7 @@ template <class TIPv6Extension>
 TIPv6Extension* IPv6Layer::getExtensionOfType() const
 {
     IPv6Extension* curExt = m_FirstExtension;
-    while (curExt != nullptr &&
-           dynamic_cast<TIPv6Extension*>(curExt) == nullptr)
+    while (curExt != nullptr && dynamic_cast<TIPv6Extension*>(curExt) == nullptr)
         curExt = curExt->getNextHeader();
 
     return static_cast<TIPv6Extension*>(curExt);
@@ -284,16 +279,13 @@ TIPv6Extension* IPv6Layer::addExtension(const TIPv6Extension& extensionHeader)
         return nullptr;
     }
 
-    TIPv6Extension* newHeader =
-        new TIPv6Extension(this, static_cast<size_t>(offsetToAddHeader));
+    TIPv6Extension* newHeader = new TIPv6Extension(this, static_cast<size_t>(offsetToAddHeader));
     (*newHeader) = extensionHeader;
 
     if (m_FirstExtension != nullptr)
     {
-        newHeader->getBaseHeader()->nextHeader =
-            m_LastExtension->getBaseHeader()->nextHeader;
-        m_LastExtension->getBaseHeader()->nextHeader =
-            newHeader->getExtensionType();
+        newHeader->getBaseHeader()->nextHeader = m_LastExtension->getBaseHeader()->nextHeader;
+        m_LastExtension->getBaseHeader()->nextHeader = newHeader->getExtensionType();
         m_LastExtension->setNextHeader(newHeader);
         m_LastExtension = newHeader;
     }

@@ -2,8 +2,10 @@
 #include <casket/utils/endianness.hpp>
 
 #include <snet/layers/checksums.hpp>
-#include <snet/layers/ipv4_layer.hpp>
-#include <snet/layers/ipv6_layer.hpp>
+
+#include <snet/layers/l3/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
+
 #include <snet/layers/tcp_layer.hpp>
 
 using namespace casket;
@@ -57,15 +59,15 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
     return host_to_be(result);
 }
 
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddress::Type ipAddrType,
-                                  uint8_t protocolType, ip::IPAddress srcIPAddress, ip::IPAddress dstIPAddress)
+uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::Type ipAddrType,
+                                  uint8_t protocolType, IPAddress srcIPAddress, IPAddress dstIPAddress)
 {
     uint16_t checksumRes = 0;
     ScalarBuffer<uint16_t> vec[2];
     vec[0].buffer = (uint16_t*)dataPtr;
     vec[0].len = dataLen;
 
-    if (ipAddrType == ip::IPAddress::IPv4)
+    if (ipAddrType == IPAddress::IPv4)
     {
         uint32_t srcIP = srcIPAddress.toIPv4().toUint();
         uint32_t dstIP = dstIPAddress.toIPv4().toUint();
@@ -80,7 +82,7 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, ip::IPAddres
         vec[1].len = 12;
         checksumRes = computeChecksum(vec, 2);
     }
-    else if (ipAddrType == ip::IPAddress::IPv6)
+    else if (ipAddrType == IPAddress::IPv6)
     {
         std::array<uint16_t, 18> pseudoHeader{};
         auto srcIP = srcIPAddress.toIPv6();

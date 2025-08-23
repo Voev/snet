@@ -1,8 +1,8 @@
 #include <sstream>
 
-#include <snet/layers/ipv6_exts.hpp>
-#include <snet/layers/ipv6_layer.hpp>
-#include <snet/layers/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_exts.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
+#include <snet/layers/l3/ipv4_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 
 #include <casket/utils/endianness.hpp>
@@ -234,15 +234,15 @@ size_t IPv6RoutingHeader::getRoutingAdditionalDataLength() const
     return (size_t)result;
 }
 
-ip::IPv6Address IPv6RoutingHeader::getRoutingAdditionalDataAsIPv6Address(size_t offset) const
+IPv6Address IPv6RoutingHeader::getRoutingAdditionalDataAsIPv6Address(size_t offset) const
 {
 
     /*size_t routingAddDataLen = getRoutingAdditionalDataLength();
     if (routingAddDataLen - offset >= 16)
-        return ip::IPv6Address({getRoutingAdditionalData() + offset});
+        return IPv6Address({getRoutingAdditionalData() + offset});
     */
     (void)offset;
-    return ip::IPv6Address();
+    return IPv6Address();
 }
 
 // ========================

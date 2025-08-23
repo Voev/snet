@@ -6,8 +6,8 @@
 
 #include <snet/layers/checksums.hpp>
 #include <snet/layers/tcp_layer.hpp>
-#include <snet/layers/ipv4_layer.hpp>
-#include <snet/layers/ipv6_layer.hpp>
+#include <snet/layers/l3/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
 
@@ -251,20 +251,20 @@ uint16_t TcpLayer::calculateChecksum(const bool writeResultToPacket)
 
         if (m_PrevLayer->getProtocol() == IPv4)
         {
-            const ip::IPv4Address srcIP = static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
-            const ip::IPv4Address dstIP = static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
+            const IPv4Address srcIP = static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
+            const IPv4Address dstIP = static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
 
             checksumRes =
                 snet::layers::computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                                                       ip::IPAddress::IPv4, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+                                                       IPAddress::IPv4, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
         else if (m_PrevLayer->getProtocol() == IPv6)
         {
-            const ip::IPv6Address srcIP = static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
-            const ip::IPv6Address dstIP = static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
+            const IPv6Address srcIP = static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
+            const IPv6Address dstIP = static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
 
             checksumRes = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                                                   ip::IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+                                                   IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
         }
     }
 

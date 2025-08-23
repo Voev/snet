@@ -1,10 +1,10 @@
 #pragma once
 #include <vector>
 
-#include <snet/ip/ip_address.hpp>
-
-#include <snet/layers/layer.hpp>
 #include <snet/layers/tlv.hpp>
+#include <snet/layers/layer.hpp>
+
+#include <snet/layers/l3/ip_address.hpp>
 
 namespace snet::layers
 {
@@ -553,9 +553,9 @@ public:
      * @return The IPv6 address stored in the additional routing data buffer
      * from the offset defined by the user. If offset is out-of-bounds of the
      * extension of doesn't have 16 bytes (== the length of IPv6 address) until
-     * the end of the buffer - ip::IPv6Address#Zero is returned
+     * the end of the buffer - IPv6Address#Zero is returned
      */
-    ip::IPv6Address getRoutingAdditionalDataAsIPv6Address(size_t offset = 0) const;
+    IPv6Address getRoutingAdditionalDataAsIPv6Address(size_t offset = 0) const;
 
 private:
     IPv6RoutingHeader(IDataContainer* dataContainer, size_t offset)

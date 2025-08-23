@@ -2,7 +2,7 @@
 #include <cstring>
 #include <limits>
 
-#include <snet/ip/ipv4_address.hpp>
+#include <snet/layers/l3/ipv4_address.hpp>
 
 #include <casket/utils/endianness.hpp>
 #include <casket/utils/error_code.hpp>
@@ -10,7 +10,7 @@
 
 using namespace casket;
 
-namespace snet::ip
+namespace snet::layers
 {
 
 IPv4Address::IPv4Address() noexcept
@@ -185,4 +185,4 @@ std::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
     return IPv4Address(addr);
 }
 
-} // namespace snet::ip
+} // namespace snet::layers

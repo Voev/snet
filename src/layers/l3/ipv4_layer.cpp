@@ -5,8 +5,8 @@
 #include <casket/utils/endianness.hpp>
 
 #include <snet/layers/checksums.hpp>
-#include <snet/layers/ipv4_layer.hpp>
-#include <snet/layers/ipv6_layer.hpp>
+#include <snet/layers/l3/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
@@ -22,7 +22,7 @@ namespace snet::layers
 /// IPv4OptionBuilder
 /// ~~~~~~~~~~~~~~~~~
 
-IPv4OptionBuilder::IPv4OptionBuilder(IPv4OptionTypes optionType, const std::vector<ip::IPv4Address>& ipList)
+IPv4OptionBuilder::IPv4OptionBuilder(IPv4OptionTypes optionType, const std::vector<IPv4Address>& ipList)
 {
     m_RecType = (uint8_t)optionType;
     m_RecValueLen = ipList.size() * sizeof(uint32_t) + sizeof(uint8_t);
@@ -219,7 +219,7 @@ IPv4Layer::IPv4Layer(uint8_t* data, size_t dataLen, Layer* prevLayer, Packet* pa
     initLayerInPacket(true);
 }
 
-IPv4Layer::IPv4Layer(const ip::IPv4Address& srcIP, const ip::IPv4Address& dstIP)
+IPv4Layer::IPv4Layer(const IPv4Address& srcIP, const IPv4Address& dstIP)
 {
     initLayer();
     iphdr* ipHdr = getIPv4Header();

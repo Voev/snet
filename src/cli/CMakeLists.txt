@@ -14,9 +14,7 @@ target_link_libraries(${EXECUTABLE_TARGET}
     snet_tls
     snet_event
     snet_layers
-    snet_ip
     snet_io
-    snet_pcap
     snet_socket
     ${PCAP_LIBRARY}
     Threads::Threads

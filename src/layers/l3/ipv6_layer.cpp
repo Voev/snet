@@ -1,8 +1,8 @@
 #include <string.h>
 #include <stdexcept>
 
-#include <snet/layers/ipv6_layer.hpp>
-#include <snet/layers/ipv4_layer.hpp>
+#include <snet/layers/l3/ipv6_layer.hpp>
+#include <snet/layers/l3/ipv4_layer.hpp>
 #include <snet/layers/tcp_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
@@ -43,7 +43,7 @@ IPv6Layer::IPv6Layer()
     initLayer();
 }
 
-IPv6Layer::IPv6Layer(const ip::IPv6Address& srcIP, const ip::IPv6Address& dstIP)
+IPv6Layer::IPv6Layer(const IPv6Address& srcIP, const IPv6Address& dstIP)
 {
     initLayer();
     ip6_hdr* ipHdr = getIPv6Header();

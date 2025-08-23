@@ -1,7 +1,7 @@
 #pragma once
-#include <snet/ip/types.hpp>
+#include <snet/layers/l3/types.hpp>
 
-namespace snet::ip
+namespace snet::layers
 {
 
 class IPv6Address final
@@ -67,21 +67,21 @@ private:
     In6AddrType addr_;
 };
 
-} // namespace snet::ip
+} // namespace snet::layers
 
-inline std::ostream& operator<<(std::ostream& os, const snet::ip::IPv6Address& addr)
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::IPv6Address& addr)
 {
     os << addr.toString();
     return os;
 }
 
 template <>
-struct std::hash<snet::ip::IPv6Address>
+struct std::hash<snet::layers::IPv6Address>
 {
-    std::size_t operator()(const snet::ip::IPv6Address& addr) const noexcept
+    std::size_t operator()(const snet::layers::IPv6Address& addr) const noexcept
     {
-        std::size_t output = snet::ip::IPv6Address::kBytesCount;
-        snet::ip::IPv6Address::const_iterator iter = addr.begin();
+        std::size_t output = snet::layers::IPv6Address::kBytesCount;
+        snet::layers::IPv6Address::const_iterator iter = addr.begin();
         for (; iter != addr.end(); ++iter)
         {
             output ^= *iter + 0x9e3779b9 + (output << 6) + (output >> 2);

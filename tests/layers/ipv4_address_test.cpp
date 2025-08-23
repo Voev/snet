@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include <snet/ip/ipv4_address.hpp>
+#include <snet/layers/l3/ipv4_address.hpp>
 
-using namespace snet::ip;
+using namespace snet::layers;
 
 std::string testIP("192.168.0.225");
 
@@ -96,18 +96,14 @@ TEST(IPv4AddressTest, IsUnicast)
 
 TEST(IPv4AddressTest, Mask)
 {
-    EXPECT_EQ(IPv4Address("192.168.100.0"),
-              IPv4Address("192.168.100.1") & IPv4Address("255.255.255.0"));
-    EXPECT_EQ(IPv4Address("192.128.0.0"),
-              IPv4Address("192.255.1.2") & IPv4Address("255.128.0.0"));
+    EXPECT_EQ(IPv4Address("192.168.100.0"), IPv4Address("192.168.100.1") & IPv4Address("255.255.255.0"));
+    EXPECT_EQ(IPv4Address("192.128.0.0"), IPv4Address("192.255.1.2") & IPv4Address("255.128.0.0"));
 }
 
 TEST(IPv4AddressTest, OrMask)
 {
-    EXPECT_EQ(IPv4Address("255.255.255.1"),
-              IPv4Address("192.168.100.1") | IPv4Address("255.255.255.0"));
-    EXPECT_EQ(IPv4Address("255.255.1.2"),
-              IPv4Address("192.255.1.2") | IPv4Address("255.128.0.0"));
+    EXPECT_EQ(IPv4Address("255.255.255.1"), IPv4Address("192.168.100.1") | IPv4Address("255.255.255.0"));
+    EXPECT_EQ(IPv4Address("255.255.1.2"), IPv4Address("192.255.1.2") | IPv4Address("255.128.0.0"));
 }
 
 TEST(IPv4AddressTest, NotMask)
@@ -115,4 +111,3 @@ TEST(IPv4AddressTest, NotMask)
     EXPECT_EQ(IPv4Address("0.0.0.255"), ~IPv4Address("255.255.255.0"));
     EXPECT_EQ(IPv4Address("0.127.255.255"), ~IPv4Address("255.128.0.0"));
 }
-
