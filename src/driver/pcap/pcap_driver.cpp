@@ -460,7 +460,7 @@ RecvStatus Pcap::receivePacket(layers::Packet** pPacket)
 
     int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
 
-    if (!rawPacket->setRawData(data, caplen, ts, getDataLinkType()))
+    if (!rawPacket->setRawData({data, (size_t)caplen}, ts, getDataLinkType(), -1))
     {
         rstat = RecvStatus::Error;
     }

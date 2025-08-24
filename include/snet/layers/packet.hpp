@@ -4,6 +4,7 @@
 #include <sys/time.h>
 #include <stddef.h>
 #include <vector>
+#include <casket/nonstd/span.hpp>
 
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/protocol.hpp>
@@ -31,28 +32,25 @@ private:
 
     bool m_CanReallocateData{false};
     bool m_DeleteRawDataAtDestructor{false};
-    bool m_RawPacketSet{false};
 
 public:
     Packet();
 
     virtual ~Packet() noexcept;
 
-    Packet(const uint8_t* pRawData, int rawDataLen, timeval timestamp, bool deleteRawDataAtDestructor,
+    Packet(nonstd::span<const uint8_t> data, timeval timestamp, bool deleteRawDataAtDestructor,
            LinkLayerType layerType = LINKTYPE_ETHERNET);
 
-    Packet(const uint8_t* pRawData, int rawDataLen, timespec timestamp, bool deleteRawDataAtDestructor,
+    Packet(nonstd::span<const uint8_t> data, timespec timestamp, bool deleteRawDataAtDestructor,
            LinkLayerType layerType = LINKTYPE_ETHERNET);
 
     Packet(size_t maxPacketLen);
 
-    Packet(uint8_t* buffer, size_t bufferSize);
+    Packet(nonstd::span<uint8_t> buffer);
 
-    Packet(const Packet& other);
+    Packet(const Packet& other) = delete;
 
-    Packet& operator=(const Packet& other);
-
-    Packet* clone() const;
+    Packet& operator=(const Packet& other) = delete;
 
     void clear();
 
@@ -64,10 +62,10 @@ public:
 
     virtual bool reallocateData(size_t newBufferLength);
 
-    virtual bool setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp,
-                            LinkLayerType layerType = LINKTYPE_ETHERNET, int frameLength = -1);
+    virtual bool setRawData(nonstd::span<const uint8_t> data, timeval timestamp,
+                            LinkLayerType layerType, int frameLength);
 
-    virtual bool setRawData(const uint8_t* pRawData, int rawDataLen, timespec timestamp, LinkLayerType layerType,
+    virtual bool setRawData(nonstd::span<const uint8_t> data, timespec timestamp, LinkLayerType layerType,
                             int frameLength);
 
     virtual bool setPacketTimeStamp(timeval timestamp);
@@ -78,11 +76,6 @@ public:
     {
         return m_TimeStamp;
     }
-
-    void parsePacket(ProtocolTypeFamily parseUntil = UnknownProtocol,
-                     OsiModelLayer parseUntilLayer = OsiModelLayerUnknown);
-
-    void copyDataFrom(const Packet& other, bool allocateData);
 
     const uint8_t* getData() const
     {
@@ -98,6 +91,9 @@ public:
     {
         return m_RawDataLen;
     }
+
+    void parsePacket(ProtocolTypeFamily parseUntil = UnknownProtocol,
+                     OsiModelLayer parseUntilLayer = OsiModelLayerUnknown);
 
     /**
      * Get a pointer to the first (lowest) layer in the packet
@@ -303,7 +299,6 @@ public:
     static bool isLinkTypeValid(int linkTypeValue);
 
 private:
-    void copyDataFrom(const Packet& other);
 
     void destructPacketData();
 

@@ -258,7 +258,7 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
         pktlen = framelen;
     }
 
-    rawPacket->setRawData((uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen, tv, layers::LINKTYPE_RAW, framelen);
+    rawPacket->setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, tv, layers::LINKTYPE_RAW, framelen);
 
     return true;
 }

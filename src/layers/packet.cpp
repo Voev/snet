@@ -30,20 +30,20 @@ Packet::~Packet() noexcept
     }
 }
 
-Packet::Packet(const uint8_t* pRawData, int rawDataLen, timeval timestamp, bool deleteRawDataAtDestructor,
+Packet::Packet(nonstd::span<const uint8_t> data, timeval timestamp, bool deleteRawDataAtDestructor,
                LinkLayerType layerType)
     : m_DeleteRawDataAtDestructor(deleteRawDataAtDestructor)
 {
     timespec nsec_time = {};
     TIMEVAL_TO_TIMESPEC(&timestamp, &nsec_time);
-    setRawData(pRawData, rawDataLen, nsec_time, layerType, -1);
+    setRawData(data, nsec_time, layerType, -1);
 }
 
-Packet::Packet(const uint8_t* pRawData, int rawDataLen, timespec timestamp, bool deleteRawDataAtDestructor,
+Packet::Packet(nonstd::span<const uint8_t> data, timespec timestamp, bool deleteRawDataAtDestructor,
                LinkLayerType layerType)
     : m_DeleteRawDataAtDestructor(deleteRawDataAtDestructor)
 {
-    setRawData(pRawData, rawDataLen, timestamp, layerType, -1);
+    setRawData(data, timestamp, layerType, -1);
 }
 
 Packet::Packet(size_t maxPacketLen)
@@ -56,17 +56,16 @@ Packet::Packet(size_t maxPacketLen)
     uint8_t* data = new uint8_t[maxPacketLen];
     memset(data, 0, maxPacketLen);
 
-    setRawData(data, 0, time, LINKTYPE_ETHERNET, -1);
+    setRawData({data, 0}, time, LINKTYPE_ETHERNET, -1);
 }
 
-Packet::Packet(uint8_t* buffer, size_t bufferSize)
-    : m_MaxPacketLen(bufferSize)
+Packet::Packet(nonstd::span<uint8_t> buffer)
+    : m_MaxPacketLen(buffer.size())
 {
     timeval time;
     gettimeofday(&time, nullptr);
-    memset(buffer, 0, bufferSize);
 
-    setRawData(buffer, 0, time, LINKTYPE_ETHERNET, -1);
+    setRawData(buffer, time, LINKTYPE_ETHERNET, -1);
 }
 
 void Packet::parsePacket(ProtocolTypeFamily parseUntil, OsiModelLayer parseUntilLayer)
@@ -114,79 +113,64 @@ void Packet::parsePacket(ProtocolTypeFamily parseUntil, OsiModelLayer parseUntil
     }
 }
 
-Packet::Packet(const Packet& other)
-{
-    m_RawData = nullptr;
-    copyDataFrom(other, true);
-}
-
-Packet& Packet::operator=(const Packet& other)
-{
-    if (this != &other)
-    {
-        if (m_RawData != nullptr)
-            delete[] m_RawData;
-
-        m_RawPacketSet = false;
-
-        copyDataFrom(other, true);
-    }
-
-    return *this;
-}
-
-Packet* Packet::clone() const
-{
-    return new Packet(*this);
-}
-
-void Packet::copyDataFrom(const Packet& other, bool allocateData)
-{
-    if (!other.m_RawPacketSet)
-        return;
-
-    m_TimeStamp = other.m_TimeStamp;
-
-    if (allocateData)
-    {
-        m_DeleteRawDataAtDestructor = true;
-        m_RawData = new uint8_t[other.m_RawDataLen];
-        m_RawDataLen = other.m_RawDataLen;
-    }
-
-    memcpy(m_RawData, other.m_RawData, other.m_RawDataLen);
-    m_LinkLayerType = other.m_LinkLayerType;
-    m_FrameLength = other.m_FrameLength;
-    m_RawPacketSet = true;
-}
-
-bool Packet::setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp, LinkLayerType layerType,
-                        int frameLength)
+bool Packet::setRawData(nonstd::span<const uint8_t> data, timeval timestamp, LinkLayerType layerType, int frameLength)
 {
     timespec nsec_time;
     TIMEVAL_TO_TIMESPEC(&timestamp, &nsec_time);
-    return setRawData(pRawData, rawDataLen, nsec_time, layerType, frameLength);
+    return setRawData(data, nsec_time, layerType, frameLength);
 }
 
-bool Packet::setRawData(const uint8_t* pRawData, int rawDataLen, timespec timestamp, LinkLayerType layerType,
-                        int frameLength)
+bool Packet::setRawData(nonstd::span<const uint8_t> data, timespec timestamp, LinkLayerType layerType, int frameLength)
 {
+    if (data.empty() && data.data() == nullptr)
+    {
+        error("Cannot set null data to packet");
+        return false;
+    }
+
     if (frameLength == -1)
     {
-        frameLength = rawDataLen;
+        frameLength = data.size();
+    }
+    else if (frameLength < static_cast<int>(data.size()))
+    {
+        error("Frame length {} cannot be smaller than data size {}", frameLength, data.size());
+        return false;
+    }
+
+    if (m_DeleteRawDataAtDestructor && m_RawData)
+    {
+        delete[] m_RawData;
+        m_RawData = nullptr;
     }
 
     m_FrameLength = frameLength;
-    if (m_RawData && m_DeleteRawDataAtDestructor)
+
+    if (m_DeleteRawDataAtDestructor)
     {
-        delete[] m_RawData;
+        try
+        {
+            m_RawData = new uint8_t[data.size()];
+            std::copy(data.begin(), data.end(), m_RawData);
+            m_RawDataLen = data.size();
+        }
+        catch (const std::bad_alloc&)
+        {
+            error("Failed to allocate memory for packet data of size {}", data.size());
+            m_RawData = nullptr;
+            m_RawDataLen = 0;
+            return false;
+        }
+    }
+    else
+    {
+        m_RawData = const_cast<uint8_t*>(data.data());
+        m_RawDataLen = data.size();
     }
 
-    m_RawData = (uint8_t*)pRawData;
-    m_RawDataLen = rawDataLen;
     m_TimeStamp = timestamp;
-    m_RawPacketSet = true;
     m_LinkLayerType = layerType;
+
     return true;
 }
 
@@ -198,7 +182,6 @@ void Packet::clear()
     m_RawData = nullptr;
     m_RawDataLen = 0;
     m_FrameLength = 0;
-    m_RawPacketSet = false;
 }
 
 void Packet::appendData(const uint8_t* dataToAppend, size_t dataToAppendLen)
@@ -292,24 +275,6 @@ void Packet::destructPacketData()
         if (curLayer->m_IsAllocatedInPacket)
             delete curLayer;
         curLayer = nextLayer;
-    }
-}
-
-
-void Packet::copyDataFrom(const Packet& other)
-{
-    m_MaxPacketLen = other.m_MaxPacketLen;
-    m_FirstLayer = createFirstLayer(getLinkLayerType());
-    m_LastLayer = m_FirstLayer;
-    m_CanReallocateData = true;
-    Layer* curLayer = m_FirstLayer;
-    while (curLayer != nullptr)
-    {
-        curLayer->parseNextLayer();
-        curLayer->m_IsAllocatedInPacket = true;
-        curLayer = curLayer->getNextLayer();
-        if (curLayer != nullptr)
-            m_LastLayer = curLayer;
     }
 }
 

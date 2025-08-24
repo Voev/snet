@@ -9,7 +9,7 @@ class NfqPacket final : public layers::Packet
 {
 public:
     NfqPacket()
-        : layers::Packet(nullptr, 0, timeval{}, false)
+        : layers::Packet()
     {
     }
 
