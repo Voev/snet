@@ -2,7 +2,7 @@
 #include "decrypt_by_keylog_test.hpp"
 
 #include <snet/tls.hpp>
-#include <snet/layers/tcp_reassembly.hpp>
+#include <snet/layers/l4/tcp_reassembly.hpp>
 
 #include <casket/utils/string.hpp>
 #include <casket/utils/to_number.hpp>

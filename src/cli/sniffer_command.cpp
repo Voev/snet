@@ -8,7 +8,7 @@
 #include <snet/utils/print_hex.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
-#include <snet/layers/tcp_reassembly.hpp>
+#include <snet/layers/l4/tcp_reassembly.hpp>
 
 #include <snet/io.hpp>
 

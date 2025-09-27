@@ -7,13 +7,14 @@
 #include <casket/log/log_manager.hpp>
 
 #include <snet/layers/packet.hpp>
-#include <snet/layers/eth_layer.hpp>
-#include <snet/layers/loopback.hpp>
+#include <snet/layers/l2/eth_layer.hpp>
+#include <snet/layers/l2/loopback.hpp>
 #include <snet/layers/l3/ipv4_layer.hpp>
 #include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
 using namespace casket;
+
 
 namespace snet::layers
 {

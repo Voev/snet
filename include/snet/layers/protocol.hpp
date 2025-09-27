@@ -1,7 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-namespace snet::layers {
+namespace snet::layers
+{
 /**
  * @typedef ProtocolType
  */
@@ -346,7 +347,8 @@ const ProtocolType WireGuard = 56;
 /**
  * An enum representing OSI model layers
  */
-enum OsiModelLayer {
+enum OsiModelLayer
+{
     /** Physical layer (layer 1) */
     OsiModelPhysicalLayer = 1,
     /** Data link layer (layer 2) */

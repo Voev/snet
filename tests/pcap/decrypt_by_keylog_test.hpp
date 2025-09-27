@@ -3,7 +3,7 @@
 #include <vector>
 
 #include <snet/tls.hpp>
-#include <snet/layers/tcp_reassembly.hpp>
+#include <snet/layers/l4/tcp_reassembly.hpp>
 
 #include <snet/config_parser/config_parser.hpp>
 #include "pcap_test.hpp"

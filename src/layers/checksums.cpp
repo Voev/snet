@@ -6,7 +6,7 @@
 #include <snet/layers/l3/ipv4_layer.hpp>
 #include <snet/layers/l3/ipv6_layer.hpp>
 
-#include <snet/layers/tcp_layer.hpp>
+#include <snet/layers/l4/tcp_layer.hpp>
 
 using namespace casket;
 

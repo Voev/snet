@@ -1,19 +1,16 @@
 #include <string.h>
-#include <snet/layers/eth_layer.hpp>
-#include <snet/layers/loopback.hpp>
+#include <snet/layers/l2/eth_layer.hpp>
+#include <snet/layers/l2/loopback.hpp>
 #include <snet/layers/l3/ipv4_layer.hpp>
 #include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
-namespace snet::layers
-{
-
-#define BSWAP16(x) (((x) >> 8) | ((x) << 8))
-#define BSWAP32(x)                                                             \
-    (((x) >> 24) | (((x)&0x00FF0000) >> 8) | (((x)&0x0000FF00) << 8) |         \
-     ((x) << 24))
+#include <casket/utils/byteswap.hpp>
 
 #define IEEE_802_3_MAX_LEN 0x5dc
+
+namespace snet::layers
+{
 
 NullLoopbackLayer::NullLoopbackLayer(uint32_t family)
 {
@@ -37,12 +34,12 @@ uint32_t NullLoopbackLayer::getFamily() const
         }
         else
         {
-            family = BSWAP32(family);
+            family = bswap_32(family);
         }
     }
     else if ((family & 0x000000FF) == 0 && (family & 0x0000FF00) < 0x00000600)
     {
-        family = BSWAP16(family & 0xFFFF);
+        family = bswap_16(family & 0xFFFF);
     }
 
     return family;
@@ -61,10 +58,10 @@ void NullLoopbackLayer::parseNextLayer()
     uint32_t family = getFamily();
     if (family > IEEE_802_3_MAX_LEN)
     {
-        uint16_t ethType = (uint16_t)family;
+        auto ethType = static_cast<EtherType>(family);
         switch (ethType)
         {
-        case SNET_ETHERTYPE_IP:
+        case EtherType::IP:
             m_NextLayer =
                 IPv4Layer::isDataValid(payload, payloadLen)
                     ? static_cast<Layer*>(
@@ -72,7 +69,7 @@ void NullLoopbackLayer::parseNextLayer()
                     : static_cast<Layer*>(new PayloadLayer(payload, payloadLen,
                                                            this, m_Packet));
             return;
-        case SNET_ETHERTYPE_IPV6:
+        case EtherType::IPV6:
             m_NextLayer =
                 IPv6Layer::isDataValid(payload, payloadLen)
                     ? static_cast<Layer*>(
