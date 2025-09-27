@@ -36,15 +36,6 @@ timePointToTimeval(const std::chrono::time_point<std::chrono::high_resolution_cl
     return out;
 }
 
-static std::chrono::time_point<std::chrono::high_resolution_clock>
-timespecToTimePoint(const timespec& in)
-{
-    auto duration = std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
-        std::chrono::seconds(in.tv_sec) + std::chrono::nanoseconds(in.tv_nsec));
-
-    return std::chrono::time_point<std::chrono::high_resolution_clock>(duration);
-}
-
 void ConnectionData::setStartTime(
     const std::chrono::time_point<std::chrono::high_resolution_clock>& startTimeValue)
 {
@@ -137,7 +128,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     uint32_t flowKey = layers::hash5Tuple(packet);
 
     // time stamp for this packet
-    auto currTime = timespecToTimePoint(packet->getTimeStamp());
+    auto currTime = packet->getTimestamp().toTimePoint();
 
     // find the connection in the connection map
     ConnectionList::iterator iter = m_ConnectionList.find(flowKey);

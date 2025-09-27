@@ -9,6 +9,7 @@
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/protocol.hpp>
 #include <snet/layers/layer.hpp>
+#include <snet/layers/timestamp.hpp>
 
 namespace snet::layers
 {
@@ -18,7 +19,7 @@ class Packet
     friend class Layer;
 
 private:
-    timespec m_TimeStamp;
+    Timestamp timestamp_;
 
     uint8_t* m_RawData{nullptr};
     Layer* m_FirstLayer{nullptr};
@@ -38,10 +39,7 @@ public:
 
     virtual ~Packet() noexcept;
 
-    Packet(nonstd::span<const uint8_t> data, timeval timestamp, bool deleteRawDataAtDestructor,
-           LinkLayerType layerType = LINKTYPE_ETHERNET);
-
-    Packet(nonstd::span<const uint8_t> data, timespec timestamp, bool deleteRawDataAtDestructor,
+    Packet(nonstd::span<const uint8_t> data, bool deleteRawDataAtDestructor,
            LinkLayerType layerType = LINKTYPE_ETHERNET);
 
     Packet(size_t maxPacketLen);
@@ -62,19 +60,16 @@ public:
 
     virtual bool reallocateData(size_t newBufferLength);
 
-    virtual bool setRawData(nonstd::span<const uint8_t> data, timeval timestamp,
-                            LinkLayerType layerType, int frameLength);
+    virtual bool setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength);
 
-    virtual bool setRawData(nonstd::span<const uint8_t> data, timespec timestamp, LinkLayerType layerType,
-                            int frameLength);
-
-    virtual bool setPacketTimeStamp(timeval timestamp);
-
-    virtual bool setPacketTimeStamp(timespec timestamp);
-
-    timespec getTimeStamp() const
+    void setTimestamp(Timestamp timestamp)
     {
-        return m_TimeStamp;
+        timestamp_ = std::move(timestamp);
+    }
+
+    Timestamp getTimestamp() const
+    {
+        return timestamp_;
     }
 
     const uint8_t* getData() const
@@ -111,108 +106,6 @@ public:
     Layer* getLastLayer() const
     {
         return m_LastLayer;
-    }
-
-    /**
-     * Add a new layer as the last layer in the packet. This method gets a pointer to the new layer as a parameter
-     * and attaches it to the packet. Notice after calling this method the input layer is attached to the packet so
-     * every change you make in it affect the packet; Also it cannot be attached to other packets
-     * @param[in] newLayer A pointer to the new layer to be added to the packet
-     * @param[in] ownInPacket If true, Packet fully owns newLayer, including memory deletion upon destruct.  Default
-     * is false.
-     * @return True if everything went well or false otherwise (an appropriate error log message will be printed in
-     * such cases)
-     */
-    bool addLayer(Layer* newLayer, bool ownInPacket = false)
-    {
-        return insertLayer(m_LastLayer, newLayer, ownInPacket);
-    }
-
-    /**
-     * Insert a new layer after an existing layer in the packet. This method gets a pointer to the new layer as a
-     * parameter and attaches it to the packet. Notice after calling this method the input layer is attached to the
-     * packet so every change you make in it affect the packet; Also it cannot be attached to other packets
-     * @param[in] prevLayer A pointer to an existing layer in the packet which the new layer should followed by. If
-     * this layer isn't attached to a packet and error will be printed to log and false will be returned
-     * @param[in] newLayer A pointer to the new layer to be added to the packet
-     * @param[in] ownInPacket If true, Packet fully owns newLayer, including memory deletion upon destruct.  Default
-     * is false.
-     * @return True if everything went well or false otherwise (an appropriate error log message will be printed in
-     * such cases)
-     */
-    bool insertLayer(Layer* prevLayer, Layer* newLayer, bool ownInPacket = false);
-
-    /**
-     * Remove an existing layer from the packet. The layer to removed is identified by its type (protocol). If the
-     * packet has multiple layers of the same type in the packet the user may specify the index of the layer to
-     * remove (the default index is 0 - remove the first layer of this type). If the layer was allocated during
-     * packet creation it will be deleted and any pointer to it will get invalid. However if the layer was allocated
-     * by the user and manually added to the packet it will simply get detached from the packet, meaning the pointer
-     * to it will stay valid and its data (that was removed from the packet) will be copied back to the layer. In
-     * that case it's the user's responsibility to delete the layer instance
-     * @param[in] layerType The layer type (protocol) to remove
-     * @param[in] index If there are multiple layers of the same type, indicate which instance to remove. The
-     * default value is 0, meaning remove the first layer of this type
-     * @return True if everything went well or false otherwise (an appropriate error log message will be printed in
-     * such cases)
-     */
-    bool removeLayer(ProtocolType layerType, int index = 0);
-
-    /**
-     * Remove the first layer in the packet. The layer will be deleted if it was allocated during packet creation,
-     * or detached if was allocated outside of the packet. Please refer to removeLayer() to get more info
-     * @return True if layer removed successfully, or false if removing the layer failed or if there are no layers
-     * in the packet. In any case of failure an appropriate error log message will be printed
-     */
-    bool removeFirstLayer();
-
-    /**
-     * Remove the last layer in the packet. The layer will be deleted if it was allocated during packet creation, or
-     * detached if was allocated outside of the packet. Please refer to removeLayer() to get more info
-     * @return True if layer removed successfully, or false if removing the layer failed or if there are no layers
-     * in the packet. In any case of failure an appropriate error log message will be printed
-     */
-    bool removeLastLayer();
-
-    /**
-     * Remove all layers that come after a certain layer. All layers removed will be deleted if they were allocated
-     * during packet creation or detached if were allocated outside of the packet, please refer to removeLayer() to
-     * get more info
-     * @param[in] layer A pointer to the layer to begin removing from. Please note this layer will not be removed,
-     * only the layers that come after it will be removed. Also, if removal of one layer failed, the method will
-     * return immediately and the following layers won't be deleted
-     * @return True if all layers were removed successfully, or false if failed to remove at least one layer. In any
-     * case of failure an appropriate error log message will be printed
-     */
-    bool removeAllLayersAfter(Layer* layer);
-
-    /**
-     * Detach a layer from the packet. Detaching means the layer instance will not be deleted, but rather separated
-     * from the packet - e.g it will be removed from the layer chain of the packet and its data will be copied from
-     * the packet buffer into an internal layer buffer. After a layer is detached, it can be added into another
-     * packet (but it's impossible to attach a layer to multiple packets in the same time). After layer is detached,
-     * it's the user's responsibility to delete it when it's not needed anymore
-     * @param[in] layerType The layer type (protocol) to detach from the packet
-     * @param[in] index If there are multiple layers of the same type, indicate which instance to detach. The
-     * default value is 0, meaning detach the first layer of this type
-     * @return A pointer to the detached layer or nullptr if detaching process failed. In any case of failure an
-     * appropriate error log message will be printed
-     */
-    Layer* detachLayer(ProtocolType layerType, int index = 0);
-
-    /**
-     * Detach a layer from the packet. Detaching means the layer instance will not be deleted, but rather separated
-     * from the packet - e.g it will be removed from the layer chain of the packet and its data will be copied from
-     * the packet buffer into an internal layer buffer. After a layer is detached, it can be added into another
-     * packet (but it's impossible to attach a layer to multiple packets at the same time). After layer is detached,
-     * it's the user's responsibility to delete it when it's not needed anymore
-     * @param[in] layer A pointer to the layer to detach
-     * @return True if the layer was detached successfully, or false if something went wrong. In any case of failure
-     * an appropriate error log message will be printed
-     */
-    bool detachLayer(Layer* layer)
-    {
-        return removeLayer(layer, false);
     }
 
     /**
@@ -286,7 +179,7 @@ public:
      * @return A string containing most relevant data from all layers (looks like the packet description in
      * Wireshark)
      */
-    std::string toString(bool timeAsLocalTime = true) const;
+    std::string toString() const;
 
     /**
      * Similar to toString(), but instead of one string it outputs a list of strings, one string for every layer
@@ -294,12 +187,11 @@ public:
      * @param[in] timeAsLocalTime Print time as local time or GMT. Default (true value) is local time, for GMT set
      * to false
      */
-    void toStringList(std::vector<std::string>& result, bool timeAsLocalTime = true) const;
+    void toStringList(std::vector<std::string>& result) const;
 
     static bool isLinkTypeValid(int linkTypeValue);
 
 private:
-
     void destructPacketData();
 
     bool extendLayer(Layer* layer, int offsetInLayer, size_t numOfBytesToExtend);
@@ -307,9 +199,7 @@ private:
 
     void reallocateRawData(size_t newSize);
 
-    bool removeLayer(Layer* layer, bool tryToDelete);
-
-    std::string printPacketInfo(bool timeAsLocalTime) const;
+    std::string printPacketInfo() const;
 
     Layer* createFirstLayer(layers::LinkLayerType linkType);
 

@@ -17,6 +17,7 @@
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace casket;
+using namespace snet::layers;
 
 namespace snet::driver
 {
@@ -458,9 +459,11 @@ RecvStatus Pcap::receivePacket(layers::Packet** pPacket)
     ts.tv_sec = pcaphdr->ts.tv_sec;
     ts.tv_usec = pcaphdr->ts.tv_usec;
 
+    rawPacket->setTimestamp(Timestamp(ts));
+
     int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
 
-    if (!rawPacket->setRawData({data, (size_t)caplen}, ts, getDataLinkType(), -1))
+    if (!rawPacket->setRawData({data, (size_t)caplen}, getDataLinkType(), -1))
     {
         rstat = RecvStatus::Error;
     }

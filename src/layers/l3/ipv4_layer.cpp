@@ -265,12 +265,12 @@ void IPv4Layer::parseNextLayer()
 
     switch (ipHdr->protocol)
     {
-    case PACKETPP_IPPROTO_TCP:
+    case IPProto::TCP:
         m_NextLayer = TcpLayer::isDataValid(payload, payloadLen)
                           ? static_cast<Layer*>(new TcpLayer(payload, payloadLen, this, m_Packet))
                           : static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
         break;
-    case PACKETPP_IPPROTO_IPV6:
+    case IPProto::IPV6:
         m_NextLayer = IPv6Layer::isDataValid(payload, payloadLen)
                           ? static_cast<Layer*>(new IPv6Layer(payload, payloadLen, this, m_Packet))
                           : static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
@@ -292,26 +292,26 @@ void IPv4Layer::computeCalculateFields()
         switch (m_NextLayer->getProtocol())
         {
         case TCP:
-            ipHdr->protocol = PACKETPP_IPPROTO_TCP;
+            ipHdr->protocol = IPProto::TCP;
             break;
         case UDP:
-            ipHdr->protocol = PACKETPP_IPPROTO_UDP;
+            ipHdr->protocol = IPProto::UDP;
             break;
         case ICMP:
-            ipHdr->protocol = PACKETPP_IPPROTO_ICMP;
+            ipHdr->protocol = IPProto::ICMPV4;
             break;
         case GREv0:
         case GREv1:
-            ipHdr->protocol = PACKETPP_IPPROTO_GRE;
+            ipHdr->protocol = IPProto::GRE;
             break;
         case IGMPv1:
         case IGMPv2:
         case IGMPv3:
-            ipHdr->protocol = PACKETPP_IPPROTO_IGMP;
+            ipHdr->protocol = IPProto::IGMP;
             break;
         case VRRPv2:
         case VRRPv3:
-            ipHdr->protocol = PACKETPP_IPPROTO_VRRP;
+            ipHdr->protocol = IPProto::VRRP;
             break;
         default:
             break;

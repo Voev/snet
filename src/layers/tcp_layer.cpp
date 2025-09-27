@@ -10,7 +10,6 @@
 #include <snet/layers/l3/ipv6_layer.hpp>
 #include <snet/layers/payload_layer.hpp>
 
-
 using namespace casket;
 
 namespace snet::layers
@@ -254,17 +253,16 @@ uint16_t TcpLayer::calculateChecksum(const bool writeResultToPacket)
             const IPv4Address srcIP = static_cast<IPv4Layer*>(m_PrevLayer)->getSrcIPv4Address();
             const IPv4Address dstIP = static_cast<IPv4Layer*>(m_PrevLayer)->getDstIPv4Address();
 
-            checksumRes =
-                snet::layers::computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                                                       IPAddress::IPv4, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+            checksumRes = snet::layers::computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
+                                                                 IPAddress::IPv4, IPProto::TCP, srcIP, dstIP);
         }
         else if (m_PrevLayer->getProtocol() == IPv6)
         {
             const IPv6Address srcIP = static_cast<IPv6Layer*>(m_PrevLayer)->getSrcIPv6Address();
             const IPv6Address dstIP = static_cast<IPv6Layer*>(m_PrevLayer)->getDstIPv6Address();
 
-            checksumRes = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(),
-                                                   IPAddress::IPv6, PACKETPP_IPPROTO_TCP, srcIP, dstIP);
+            checksumRes = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcpHdr), getDataLen(), IPAddress::IPv6,
+                                                   IPProto::TCP, srcIP, dstIP);
         }
     }
 

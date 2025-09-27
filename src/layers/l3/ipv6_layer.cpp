@@ -90,27 +90,27 @@ void IPv6Layer::parseExtensions()
 
         switch (nextHdr)
         {
-        case PACKETPP_IPPROTO_FRAGMENT:
+        case IPProto::FRAGMENT:
         {
             newExt = new IPv6FragmentationHeader(this, offset);
             break;
         }
-        case PACKETPP_IPPROTO_HOPOPTS:
+        case IPProto::HOPOPTS:
         {
             newExt = new IPv6HopByHopHeader(this, offset);
             break;
         }
-        case PACKETPP_IPPROTO_DSTOPTS:
+        case IPProto::DSTOPTS:
         {
             newExt = new IPv6DestinationHeader(this, offset);
             break;
         }
-        case PACKETPP_IPPROTO_ROUTING:
+        case IPProto::ROUTING:
         {
             newExt = new IPv6RoutingHeader(this, offset);
             break;
         }
-        case PACKETPP_IPPROTO_AH:
+        case IPProto::AUTH:
         {
             newExt = new IPv6AuthenticationHeader(this, offset);
             break;
@@ -220,7 +220,7 @@ void IPv6Layer::parseNextLayer()
 
     switch (nextHdr)
     {
-    case PACKETPP_IPPROTO_TCP:
+    case IPProto::TCP:
         m_NextLayer =
             TcpLayer::isDataValid(payload, payloadLen)
                 ? static_cast<Layer*>(new TcpLayer(payload, payloadLen, this, m_Packet))
@@ -244,23 +244,23 @@ void IPv6Layer::computeCalculateFields()
         switch (m_NextLayer->getProtocol())
         {
         case TCP:
-            nextHeader = PACKETPP_IPPROTO_TCP;
+            nextHeader = IPProto::TCP;
             break;
         case UDP:
-            nextHeader = PACKETPP_IPPROTO_UDP;
+            nextHeader = IPProto::UDP;
             break;
         case ICMP:
-            nextHeader = PACKETPP_IPPROTO_ICMP;
+            nextHeader = IPProto::ICMPV4;
             break;
         case ICMPv6:
-            nextHeader = PACKETPP_IPPROTO_ICMPV6;
+            nextHeader = IPProto::ICMPV6;
             break;
         case GREv0:
         case GREv1:
-            nextHeader = PACKETPP_IPPROTO_GRE;
+            nextHeader = IPProto::GRE;
             break;
         case VRRPv3:
-            nextHeader = PACKETPP_IPPROTO_VRRP;
+            nextHeader = IPProto::VRRP;
             break;
         default:
             break;

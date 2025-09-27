@@ -20,6 +20,7 @@
 
 using namespace casket;
 using namespace snet::socket;
+using namespace snet::layers;
 
 static constexpr std::size_t kDefaultPoolSize{16};
 static constexpr std::size_t kDefaultQueueMaxLength{16};
@@ -244,9 +245,6 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
     rawPacket->mh = nlh;
     rawPacket->ph = (nfqnl_msg_packet_hdr*)AttrGetPayload(attr[NFQA_PACKET_HDR]);
 
-    timeval tv{};
-    gettimeofday(&tv, nullptr);
-
     size_t pktlen;
     size_t framelen = AttrGetPayloadLen(attr[NFQA_PAYLOAD]);
     if (attr[NFQA_CAP_LEN])
@@ -258,8 +256,8 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
         pktlen = framelen;
     }
 
-    rawPacket->setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, tv, layers::LINKTYPE_RAW, framelen);
-
+    rawPacket->setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW, framelen);
+    rawPacket->setTimestamp(Timestamp::currentTime());
     return true;
 }
 
