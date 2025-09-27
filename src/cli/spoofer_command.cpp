@@ -47,7 +47,7 @@ struct Spoofy
 
 using SessionManager = std::unordered_map<uint32_t, std::shared_ptr<Spoofy>>;
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const tcp::TcpStreamData& tcpData,
+void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData,
                                    void* userCookie)
 {
     auto manager = static_cast<SessionManager*>(userCookie);
@@ -120,50 +120,49 @@ public:
         io::Controller controller;
         auto driver = controller.load(drv);
 
-        tcp::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
+        layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
         driver->configure(config);
 
         driver->start();
         std::cout << "Starting reading '" << options_.input << "'..." << std::endl;
 
         RecvStatus status{RecvStatus::Ok};
-        io::RawPacket* rawPacket{nullptr};
+        layers::Packet* packet{nullptr};
         do
         {
-            status = driver->receivePacket(&rawPacket);
-            if (rawPacket)
+            status = driver->receivePacket(&packet);
+            if (packet)
             {
-                layers::Packet parsedPacket(rawPacket, false);
-                auto status = tcpReassembly.reassemblePacket(parsedPacket);
-                if (status == tcp::TcpReassembly::TcpMessageHandled)
+                auto status = tcpReassembly.reassemblePacket(packet);
+                if (status == layers::TcpReassembly::TcpMessageHandled)
                 {
                     std::cout << "--handled--" << std::endl;
 
-                    utils::printHex(std::cout, nonstd::span{rawPacket->getRawData(),
-                                                         (size_t)rawPacket->getRawDataLen()});
+                    utils::printHex(std::cout, nonstd::span{packet->getData(),
+                                                         (size_t)packet->getDataLen()});
                     std::cout << "----" << std::endl;
-                    auto p = parsedPacket.getLayerOfType<layers::PayloadLayer>(true);
+                    auto p = packet->getLayerOfType<layers::PayloadLayer>(true);
                     if (p)
                     {
                         p->getData()[0] = 0xDE;
 
-                        auto ip = parsedPacket.getLayerOfType<layers::IPv4Layer>(true);
+                        auto ip = packet->getLayerOfType<layers::IPv4Layer>(true);
                         ip->computeCalculateFields();
 
-                        auto tcp = parsedPacket.getLayerOfType<layers::TcpLayer>(true);
+                        auto tcp = packet->getLayerOfType<layers::TcpLayer>(true);
                         tcp->computeCalculateFields();
 
-                        driver->finalizePacket(rawPacket, Verdict::Replace);
+                        driver->finalizePacket(packet, Verdict::Replace);
 
                         std::cout << "--replaced--" << std::endl;
 
-                        utils::printHex(std::cout, nonstd::span{rawPacket->getRawData(),
-                                                             (size_t)rawPacket->getRawDataLen()});
+                        utils::printHex(std::cout, nonstd::span{packet->getData(),
+                                                             (size_t)packet->getDataLen()});
                         std::cout << "----" << std::endl;
                     }
                     else
                     {
-                        driver->finalizePacket(rawPacket, Verdict::Pass);
+                        driver->finalizePacket(packet, Verdict::Pass);
                     }
                 }
                 /*
@@ -174,7 +173,7 @@ public:
                 */
                 else
                 {
-                    driver->finalizePacket(rawPacket, Verdict::Block);
+                    driver->finalizePacket(packet, Verdict::Block);
                 }
             }
         } while (status == RecvStatus::Ok);

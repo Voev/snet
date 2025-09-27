@@ -20,6 +20,7 @@
 
 using namespace casket;
 using namespace snet::socket;
+using namespace snet::layers;
 
 static constexpr std::size_t kDefaultPoolSize{16};
 static constexpr std::size_t kDefaultQueueMaxLength{16};
@@ -34,8 +35,7 @@ inline constexpr size_t align_length(size_t len, size_t alignment = 4) noexcept
 
 inline bool MessageIsOk(const nlmsghdr* nlh, int len)
 {
-    return len >= (int)sizeof(nlmsghdr) && nlh->nlmsg_len >= sizeof(nlmsghdr) &&
-           (int)nlh->nlmsg_len <= len;
+    return len >= (int)sizeof(nlmsghdr) && nlh->nlmsg_len >= sizeof(nlmsghdr) && (int)nlh->nlmsg_len <= len;
 }
 
 inline nlmsghdr* MessageNext(const nlmsghdr* nlh, int* len)
@@ -76,8 +76,7 @@ inline uint32_t AttrGetUint32(const nlattr* attr)
 
 inline bool AttrIsOk(const nlattr* attr, int len)
 {
-    return len >= (int)sizeof(nlattr) && attr->nla_len >= sizeof(nlattr) &&
-           (int)attr->nla_len <= len;
+    return len >= (int)sizeof(nlattr) && attr->nla_len >= sizeof(nlattr) && (int)attr->nla_len <= len;
 }
 
 inline nlattr* AttrNext(const nlattr* attr)
@@ -147,8 +146,8 @@ static inline nlmsghdr* SetCfgParams(uint8_t* buf, uint8_t mode, int range, int 
     return nlh;
 }
 
-static inline nlmsghdr* SetVerdict(uint8_t* buf, unsigned int id, unsigned int queueNumber,
-                                   int verdict, uint32_t packetLength, uint8_t* packet)
+static inline nlmsghdr* SetVerdict(uint8_t* buf, unsigned int id, unsigned int queueNumber, int verdict,
+                                   uint32_t packetLength, uint8_t* packet)
 {
     nlmsghdr* nlh = CreateNetfilterHeader(buf, NFQNL_MSG_VERDICT, queueNumber);
     nfqnl_msg_verdict_hdr verdictHeader;
@@ -229,7 +228,7 @@ static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* dat
     return ret;
 }
 
-static bool ProcessMessage(const nlmsghdr* nlh, NfqRawPacket* rawPacket)
+static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
 {
     nlattr* attr[NFQA_MAX + 1] = {};
 
@@ -246,9 +245,6 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqRawPacket* rawPacket)
     rawPacket->mh = nlh;
     rawPacket->ph = (nfqnl_msg_packet_hdr*)AttrGetPayload(attr[NFQA_PACKET_HDR]);
 
-    timeval tv{};
-    gettimeofday(&tv, nullptr);
-
     size_t pktlen;
     size_t framelen = AttrGetPayloadLen(attr[NFQA_PAYLOAD]);
     if (attr[NFQA_CAP_LEN])
@@ -260,14 +256,13 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqRawPacket* rawPacket)
         pktlen = framelen;
     }
 
-    rawPacket->setRawData((uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen, tv,
-                          io::LINKTYPE_RAW, framelen);
-
+    rawPacket->setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW, framelen);
+    rawPacket->setTimestamp(Timestamp::currentTime());
     return true;
 }
 
-int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid,
-                    NfqRawPacket* rawPacket, std::error_code& ec)
+int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, NfqPacket* rawPacket,
+                    std::error_code& ec)
 {
     const nlmsghdr* nlh = static_cast<const nlmsghdr*>(buffer);
     int len = numbytes;
@@ -413,7 +408,7 @@ struct NfQueue::Impl
         }
     }
 
-    io::PacketPool<NfqRawPacket> pool;
+    io::PacketPool<NfqPacket> pool;
     uint8_t* buffer;
     size_t buffersize;
     socket::SocketType socket;
@@ -481,11 +476,9 @@ Status NfQueue::configure(const io::Config& config)
     }
 
     unsigned int socket_rcvbuf_size = impl_->queueMaxLength * impl_->snaplen;
-    if (setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size,
-                   sizeof(socket_rcvbuf_size)) == -1)
+    if (setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size, sizeof(socket_rcvbuf_size)) == -1)
     {
-        setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size,
-                   sizeof(socket_rcvbuf_size));
+        setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size, sizeof(socket_rcvbuf_size));
     }
 
     impl_->bindAddress(0, 0, ec);
@@ -563,12 +556,12 @@ Status NfQueue::stop()
     return Status::Success;
 }
 
-io::LinkLayerType NfQueue::getDataLinkType() const
+layers::LinkLayerType NfQueue::getDataLinkType() const
 {
-    return io::LINKTYPE_RAW;
+    return layers::LINKTYPE_RAW;
 }
 
-RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
+RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
 {
     RecvStatus rstat{RecvStatus::Ok};
     std::error_code ec;
@@ -584,7 +577,7 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
         return RecvStatus::Interrupted;
     }
 
-    NfqRawPacket* rawPacket = impl_->pool.acquirePacket();
+    NfqPacket* rawPacket = impl_->pool.acquirePacket();
     if (!rawPacket)
     {
         return RecvStatus::Error;
@@ -603,8 +596,7 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
             {
                 continue;
             }
-            else if (ec == std::errc::resource_unavailable_try_again ||
-                     ec == std::errc::operation_would_block)
+            else if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block)
             {
                 rstat = RecvStatus::Interrupted;
             }
@@ -639,17 +631,16 @@ RecvStatus NfQueue::receivePacket(io::RawPacket** pRawPacket)
     return rstat;
 }
 
-Status NfQueue::finalizePacket(io::RawPacket* rawPacket, Verdict verdict)
+Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
     std::error_code ec;
-    uint32_t plen = (verdict == Verdict::Replace) ? rawPacket->getRawDataLen() : 0;
-    int nfq_verdict =
-        (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
+    uint32_t plen = (verdict == Verdict::Replace) ? packet->getDataLen() : 0;
+    int nfq_verdict = (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
 
-    auto nlPacket = dynamic_cast<NfqRawPacket*>(rawPacket);
+    auto nlPacket = dynamic_cast<NfqPacket*>(packet);
 
-    nlmsghdr* nlh = SetVerdict(impl_->buffer, ntohl(nlPacket->ph->packet_id), impl_->queueNumber,
-                               nfq_verdict, plen, const_cast<uint8_t*>(rawPacket->getRawData()));
+    nlmsghdr* nlh = SetVerdict(impl_->buffer, ntohl(nlPacket->ph->packet_id), impl_->queueNumber, nfq_verdict, plen,
+                               const_cast<uint8_t*>(packet->getData()));
 
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
@@ -676,7 +667,7 @@ const char* NfQueue::getName() const
     return "nf_queue";
 }
 
-Status NfQueue::getStats(Stats *stats)
+Status NfQueue::getStats(Stats* stats)
 {
     /* There is no distinction between packets received by the hardware and those we saw. */
     impl_->stats.hw_packets_received = impl_->stats.packets_received;

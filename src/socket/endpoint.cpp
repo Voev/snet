@@ -3,6 +3,7 @@
 #include <casket/utils/endianness.hpp>
 
 using namespace casket;
+using namespace snet::layers;
 
 namespace snet::socket
 {
@@ -48,7 +49,7 @@ Endpoint::Endpoint(int family, std::uint16_t port) noexcept
     }
 }
 
-Endpoint::Endpoint(const ip::IPAddress& addr, std::uint16_t port) noexcept
+Endpoint::Endpoint(const IPAddress& addr, std::uint16_t port) noexcept
 {
     if (addr.isIPv4())
     {
@@ -134,21 +135,21 @@ void Endpoint::port(std::uint16_t port) noexcept
     }
 }
 
-ip::IPAddress Endpoint::address() const noexcept
+IPAddress Endpoint::address() const noexcept
 {
     if (isIPv4())
     {
-        return ip::IPv4Address(be_to_host(data_.v4.sin_addr.s_addr));
+        return IPv4Address(be_to_host(data_.v4.sin_addr.s_addr));
     }
     else
     {
-        std::array<uint8_t, ip::IPv6Address::kBytesCount> ip;
-        std::copy_n(data_.v6.sin6_addr.s6_addr, ip::IPv6Address::kBytesCount, ip.begin());
-        return ip::IPv6Address(ip);
+        std::array<uint8_t, IPv6Address::kBytesCount> ip;
+        std::copy_n(data_.v6.sin6_addr.s6_addr, IPv6Address::kBytesCount, ip.begin());
+        return IPv6Address(ip);
     }
 }
 
-void Endpoint::address(const ip::IPAddress& addr) noexcept
+void Endpoint::address(const IPAddress& addr) noexcept
 {
     Endpoint tmp(addr, port());
     data_ = tmp.data_;

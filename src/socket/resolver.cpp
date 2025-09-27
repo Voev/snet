@@ -16,7 +16,7 @@
 #include <casket/utils/exception.hpp>
 #include <casket/utils/to_number.hpp>
 
-using namespace snet::ip;
+using namespace snet::layers;
 using namespace casket;
 
 namespace snet::socket

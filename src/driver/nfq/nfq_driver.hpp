@@ -21,15 +21,15 @@ public:
 
     Status interrupt() override;
 
-    RecvStatus receivePacket(io::RawPacket** packet) override;
+    RecvStatus receivePacket(layers::Packet** packet) override;
 
     Status inject(const uint8_t* data, uint32_t data_len) override;
 
-    Status finalizePacket(io::RawPacket* rawPacket, Verdict verdict) override;
+    Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
 
     int getSnaplen() const override;
-    
-    io::LinkLayerType getDataLinkType() const override;
+
+    layers::LinkLayerType getDataLinkType() const override;
     
     Status getMsgPoolInfo(PacketPoolInfo* info) override;
 

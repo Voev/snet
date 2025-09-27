@@ -1,6 +1,6 @@
 #pragma once
 #include <string.h>
-#include <snet/ip/ip_address.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 #include <snet/layers/layer.hpp>
 
 namespace snet::layers
@@ -453,7 +453,7 @@ protected:
 
     TLVRecordBuilder(uint32_t recType, uint32_t recValue);
 
-    TLVRecordBuilder(uint32_t recType, const ip::IPv4Address& recValue);
+    TLVRecordBuilder(uint32_t recType, const IPv4Address& recValue);
 
     TLVRecordBuilder(uint32_t recType, const std::string& recValue,
                      bool valueIsHexString = false);

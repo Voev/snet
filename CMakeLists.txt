@@ -23,6 +23,9 @@ include(FindPackages)
 include(Sanitizers)
 include(CodeCoverage)
 
+# Enable -fPIC
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Set submodules path
 set(SUBMODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/modules")
 add_subdirectory(${SUBMODULE_PATH}/casket)
