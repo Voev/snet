@@ -21,7 +21,7 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
     SerializeTestParam serialized(param.size());
-    size_t serializedLength;
+    size_t serializedLength = 0;
 
     ServerHello serverHello;
     ASSERT_NO_THROW(serverHello.parse(param));

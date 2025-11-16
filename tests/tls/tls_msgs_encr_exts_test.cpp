@@ -21,7 +21,7 @@ TEST_P(EncryptedExtensionsTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
     SerializeTestParam serialized(param.size());
-    size_t serializedLength;
+    size_t serializedLength = 0;
 
     EncryptedExtensions encryptedExtensions;
     ASSERT_NO_THROW(encryptedExtensions.parse(param));
