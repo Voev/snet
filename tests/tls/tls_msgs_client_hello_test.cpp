@@ -21,7 +21,7 @@ TEST_P(ClientHelloSerializeTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
     SerializeTestParam serialized(param.size());
-    size_t serializedLength;
+    size_t serializedLength = 0;
 
     ClientHello clientHello;
     ASSERT_NO_THROW(clientHello = ClientHello::deserialize(param));

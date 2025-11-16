@@ -28,7 +28,7 @@ TEST_P(CertificateSerializeTest, DeserializeSerialize)
 {
     SerializeTestParam param = GetParam();
     std::vector<uint8_t> serialized(param.cert.size());
-    size_t serializedLength;
+    size_t serializedLength = 0;
 
     MetaInfo metaInfo{};
     metaInfo.version = param.version;
