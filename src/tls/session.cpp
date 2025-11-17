@@ -891,7 +891,6 @@ void Session::fetchAlgorithms()
 #else
             hmacCtx_.reset(HMAC_CTX_new());
             crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
-            crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx_, nullptr, 0, hmacHashAlg_, nullptr));
 #endif
         }
     }

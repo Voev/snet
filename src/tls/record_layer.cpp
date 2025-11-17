@@ -126,12 +126,12 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         if (mode == EVP_CIPH_GCM_MODE)
         {
             out = out.subspan(EVP_GCM_TLS_EXPLICIT_IV_LEN);
-            len -= EVP_GCM_TLS_EXPLICIT_IV_LEN + tagLength;
+            len = in.size() - EVP_GCM_TLS_EXPLICIT_IV_LEN - tagLength;
         }
         else if (EVP_CIPHER_CTX_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
         {
             out = out.subspan(EVP_CCM_TLS_EXPLICIT_IV_LEN);
-            len -= EVP_CCM_TLS_EXPLICIT_IV_LEN + tagLength;
+            len = in.size() - EVP_CCM_TLS_EXPLICIT_IV_LEN - tagLength;
         }
 
         decryptedContent = {out.data(), static_cast<size_t>(len)};
@@ -162,7 +162,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
                 auto iv = in.subspan(0, blockSize);
                 auto content = in.subspan(iv.size(), in.size() - iv.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, seq, macKey, iv, content, mac);
+                tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, iv, content, mac);
 
                 outSize -= blockSize;
                 decryptedContent = {out.data() + iv.size(), outSize};
@@ -170,7 +170,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             else
             {
                 auto content = in.subspan(0, in.size() - mac.size());
-                tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
                 decryptedContent = {out.data(), outSize};
             }
         }
@@ -192,7 +192,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
-                tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
+                tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
 
                 outSize -= blockSize;
             }
@@ -206,7 +206,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
                 }
                 else
                 {
-                    tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
+                    tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
                 }
             }
             decryptedContent = {out.data(), outSize};
@@ -227,7 +227,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         }
         else
         {
-            tls1CheckMac(hmacCtx, rt, seq, macKey, {}, content, mac);
+            tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
         }
 
         decryptedContent = {out.data(), in.size() - mac.size()};
@@ -236,7 +236,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
     return decryptedContent;
 }
 
-void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
+void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
                                nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> content,
                                nonstd::span<const uint8_t> expectedMac)
 {
@@ -267,7 +267,7 @@ void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t 
 
 #else
 
-    crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx, macKey.data(), macKey.size(), nullptr, nullptr));
+    crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx, macKey.data(), macKey.size(), hmacHash, nullptr));
     crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, meta.data(), meta.size()));
 
     if (!iv.empty())
