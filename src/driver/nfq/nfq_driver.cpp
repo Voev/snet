@@ -506,15 +506,13 @@ Status NfQueue::configure(const io::Config& config)
     SetAttribute(nlh, NFQA_CFG_QUEUE_MAXLEN, sizeof(value), &value);
 
     value = htonl(NFQA_CFG_F_GSO);
-    SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
-    SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
-
     if (impl_->failOpen)
     {
-        value = htonl(NFQA_CFG_F_FAIL_OPEN);
-        SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
-        SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
+        value |= htonl(NFQA_CFG_F_FAIL_OPEN);
     }
+
+    SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
+    SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
 
     impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
     return Status::Success;
