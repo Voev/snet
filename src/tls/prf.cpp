@@ -123,8 +123,6 @@ static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0
 void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {
-    static constexpr size_t maxHkdfLabelSize =
-        sizeof(uint16_t) + 2 * sizeof(uint8_t) + kMaxFullLabelSize + EVP_MAX_MD_SIZE;
 
     ThrowIfFalse(labelPrefix.size() + label.size() <= kMaxFullLabelSize, "label too large");
     ThrowIfFalse(data.size() <= EVP_MAX_MD_SIZE, "context too large");
@@ -157,6 +155,8 @@ void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
 
 #else
+    static constexpr size_t maxHkdfLabelSize =
+        sizeof(uint16_t) + 2 * sizeof(uint8_t) + kMaxFullLabelSize + EVP_MAX_MD_SIZE;
 
     std::array<uint8_t, maxHkdfLabelSize> hkdfLabel;
     uint8_t* ptr = hkdfLabel.data();
@@ -180,7 +180,7 @@ void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, 
     *ptr++ = static_cast<uint8_t>(data.size());
 
     // context
-    if(!data.empty())
+    if (!data.empty())
     {
         memcpy(ptr, data.data(), data.size());
         ptr += data.size();

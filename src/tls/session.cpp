@@ -23,6 +23,10 @@
 #include <snet/tls/prf.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+#include <openssl/core_names.h>
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
 {
     return casket::format("[{}{}{}]", color, text, casket::resetColor);

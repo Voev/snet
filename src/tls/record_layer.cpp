@@ -133,6 +133,10 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             out = out.subspan(EVP_CCM_TLS_EXPLICIT_IV_LEN);
             len = in.size() - EVP_CCM_TLS_EXPLICIT_IV_LEN - tagLength;
         }
+        else
+        {
+            len = in.size() - tagLength;
+        }
 
         decryptedContent = {out.data(), static_cast<size_t>(len)};
     }
@@ -251,7 +255,9 @@ void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const Reco
     meta[12] = casket::get_byte<1>(s);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    crypto::ThrowIfFalse(0 < EVP_MAC_init(hmacCtx, macKey_.data(), macKey_.size(), nullptr));
+    (void)hmacHash;
+
+    crypto::ThrowIfFalse(0 < EVP_MAC_init(hmacCtx, macKey.data(), macKey.size(), nullptr));
     crypto::ThrowIfFalse(0 < EVP_MAC_update(hmacCtx, meta.data(), meta.size()));
 
     if (!iv.empty())

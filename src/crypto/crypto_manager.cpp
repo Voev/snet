@@ -26,11 +26,13 @@ CryptoManager::CryptoManager()
 {
 }
 
-#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+#else
 
 CryptoManager::CryptoManager()
 {
 }
+
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
 CryptoManager& CryptoManager::getInstance()
 {
