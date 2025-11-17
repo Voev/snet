@@ -16,7 +16,7 @@ TEST_P(RsaAsymmKeyGenerationTest, GenerateRSAKey)
     KeyPtr rsaKey;
     ASSERT_NO_THROW(rsaKey = RsaAsymmKey::generate(keySize));
     ASSERT_NE(rsaKey, nullptr);
-    EXPECT_TRUE(AsymmKey::isAlgorithm(rsaKey, "RSA"));
+    EXPECT_TRUE(AsymmKey::isAlgorithm(rsaKey, "rsaEncryption"));
 }
 
 INSTANTIATE_TEST_CASE_P(RSA, RsaAsymmKeyGenerationTest, Values(1024, 2048, 4096));
