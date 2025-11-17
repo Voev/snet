@@ -1,12 +1,18 @@
 #include <cassert>
+#include <cstring>
+
 #include <casket/log/log_manager.hpp>
 #include <casket/utils/exception.hpp>
 #include <casket/utils/load_store.hpp>
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 #include <openssl/core_names.h>
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
+#include <snet/crypto/cipher_context.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/hash_traits.hpp>
 
@@ -131,7 +137,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         decryptedContent = {out.data(), static_cast<size_t>(len)};
     }
     /* Block cipher */
-    else if (EVP_CIPHER_CTX_get_block_size(cipherCtx) > 1)
+    else if (crypto::GetBlockLength(cipherCtx) > 1)
     {
         auto outSize = in.size();
 
@@ -151,7 +157,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
             if (version_ >= ProtocolVersion::TLSv1_1)
             {
-                uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipherCtx);
+                uint32_t blockSize = crypto::GetBlockLength(cipherCtx);
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto iv = in.subspan(0, blockSize);
@@ -182,7 +188,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
             if (version_ >= ProtocolVersion::TLSv1_1)
             {
-                uint32_t blockSize = EVP_CIPHER_CTX_get_block_size(cipherCtx);
+                uint32_t blockSize = crypto::GetBlockLength(cipherCtx);
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
@@ -207,7 +213,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         }
     }
     /* Stream cipher */
-    else if (EVP_CIPHER_CTX_get_block_size(cipherCtx) == 1)
+    else if (crypto::GetBlockLength(cipherCtx) == 1)
     {
         crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), iv.data(), 0));
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), in.data(), in.size()));
@@ -244,7 +250,8 @@ void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t 
     meta[11] = casket::get_byte<0>(s);
     meta[12] = casket::get_byte<1>(s);
 
-    crypto::ThrowIfFalse(0 < EVP_MAC_init(hmacCtx, macKey.data(), macKey.size(), nullptr));
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    crypto::ThrowIfFalse(0 < EVP_MAC_init(hmacCtx, macKey_.data(), macKey_.size(), nullptr));
     crypto::ThrowIfFalse(0 < EVP_MAC_update(hmacCtx, meta.data(), meta.size()));
 
     if (!iv.empty())
@@ -258,6 +265,24 @@ void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t 
     size_t actualMacSize = actualMac.size();
     crypto::ThrowIfFalse(0 < EVP_MAC_final(hmacCtx, actualMac.data(), &actualMacSize, actualMacSize));
 
+#else
+
+    crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx, macKey.data(), macKey.size(), nullptr, nullptr));
+    crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, meta.data(), meta.size()));
+
+    if (!iv.empty())
+    {
+        crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, iv.data(), iv.size()));
+    }
+
+    crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, content.data(), content.size()));
+
+    std::array<uint8_t, EVP_MAX_MD_SIZE> actualMac;
+    unsigned int actualMacSize = actualMac.size();
+    crypto::ThrowIfFalse(0 < HMAC_Final(hmacCtx, actualMac.data(), &actualMacSize));
+
+#endif
+
     casket::ThrowIfFalse(expectedMac.size() == actualMacSize &&
                              std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
                          "Bad record MAC");
@@ -267,7 +292,7 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
                                nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
                                nonstd::span<const uint8_t> expectedMac)
 {
-    int pad_ct = EVP_MD_is_a(hmacHash, "SHA1") > 0 ? 40 : 48;
+    int pad_ct = crypto::HashTraits::isAlgorithm(hmacHash, "SHA1") ? 40 : 48;
 
     crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, hmacHash));
     crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, macKey.data(), macKey.size()));
@@ -361,7 +386,7 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
         nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
     }
 
-    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    if (crypto::GetCipherMode(cipherCtx) == EVP_CIPH_CCM_MODE)
     {
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, nullptr));
@@ -394,7 +419,7 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
         encryptedRecordLength += tagLength_;
     }
 
-    if (EVP_CIPHER_CTX_get_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    if (crypto::GetCipherMode(cipherCtx) == EVP_CIPH_CCM_MODE)
     {
         crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
     }

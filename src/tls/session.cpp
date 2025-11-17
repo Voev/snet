@@ -1,7 +1,6 @@
 #include <cassert>
 #include <limits>
 #include <memory>
-#include <openssl/core_names.h>
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
@@ -370,7 +369,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
     else
     {
-        auto macSize = EVP_MD_get_size(hmacHashAlg_);
+        auto macSize = EVP_MD_size(hmacHashAlg_);
 
         crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
@@ -630,11 +629,17 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         if (scheme.isSet())
         {
             fetchedHash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
             hash = fetchedHash.get();
+#else
+            hash = fetchedHash;
+#endif
         }
         else
         {
             hash = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
+            crypto::InitHash(hashCtx_, hash);
         }
 
         crypto::InitHash(hashCtx_, hash);
@@ -662,13 +667,13 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         return;
     }
 
-    if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
+    /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         const auto encryptedPreMaster = reader.get_span(2, 0, 65535);
         reader.assert_done();
 
-        crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, serverKey_, nullptr));
+        auto ctx = crypto::CryptoManager::getInstance().createKeyContext(serverKey_);
         crypto::ThrowIfFalse(ctx != nullptr);
 
         crypto::ThrowIfFalse(0 < EVP_PKEY_decrypt_init(ctx));
@@ -690,7 +695,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         pms.resize(size);
 
         setPremasterSecret(std::move(pms));
-    }
+    }*/
 }
 
 void Session::processFinished(const std::int8_t sideIndex, const Finished& finished)
@@ -710,7 +715,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             const auto digestName = EVP_MD_name(digest);
 
             crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
-            size_t keySize = EVP_MD_get_size(digest);
+            size_t keySize = EVP_MD_size(digest);
 
             DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
@@ -854,7 +859,7 @@ void Session::fetchAlgorithms()
     if (!casket::iequals(cipherName, "UNDEF"))
     {
         cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
-        isAEAD = CipherIsAEAD(cipherAlg_);
+        isAEAD = crypto::CipherIsAEAD(cipherAlg_);
 
         if (isAEAD)
         {
@@ -871,6 +876,7 @@ void Session::fetchAlgorithms()
 
         if (metaInfo_.version != ProtocolVersion::SSLv3_0)
         {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
             OSSL_PARAM params[2];
             params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
                                                          const_cast<char*>(crypto::GetHashName(hmacHashAlg_)), 0);
@@ -882,6 +888,11 @@ void Session::fetchAlgorithms()
             crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
 
             crypto::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(hmacCtx_, params));
+#else
+            hmacCtx_.reset(HMAC_CTX_new());
+            crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
+            crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx_, nullptr, 0, hmacHashAlg_, nullptr));
+#endif
         }
     }
 }

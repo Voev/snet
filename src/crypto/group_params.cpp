@@ -1,9 +1,9 @@
 #include <unordered_map>
 #include <openssl/evp.h>
-#include <openssl/core_names.h>
 
 #include <casket/utils/exception.hpp>
 
+#include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/group_params.hpp>
 #include <snet/crypto/pointers.hpp>
@@ -101,7 +101,11 @@ KeyPtr GroupParams::generateParams(const GroupParams groupParams)
 
     if (groupParams.isEcdhNamedCurve())
     {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+#else
+        ThrowIfFalse(0 < EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, OBJ_sn2nid(param->second.groupName)));
+#endif
     }
 
     Key* params{nullptr};
@@ -119,7 +123,11 @@ KeyPtr GroupParams::generateKeyByParams(const GroupParams groupParams)
 
     if (groupParams.isEcdhNamedCurve())
     {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+#else
+        ThrowIfFalse(0 < EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, OBJ_sn2nid(param->second.groupName)));
+#endif
     }
 
     Key* pkey{nullptr};
@@ -145,7 +153,7 @@ std::vector<uint8_t> GroupParams::deriveSecret(Key* privateKey, Key* publicKey, 
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive_set_peer(ctx, publicKey));
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive(ctx, nullptr, &secretLength));
     
-    if (isTLSv3 && EVP_PKEY_is_a(privateKey, "DH"))
+    if (isTLSv3 && AsymmKey::isAlgorithm(privateKey, "DH"))
     {
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_dh_pad(ctx, 1));
     }

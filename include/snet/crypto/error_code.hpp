@@ -102,8 +102,10 @@ enum class Error
     OCSPCertUnknown = X509_V_ERR_OCSP_CERT_UNKNOWN,
     UnsupportedSignatureAlgorithm = X509_V_ERR_UNSUPPORTED_SIGNATURE_ALGORITHM,
     SignatureAlgorithmMismatch = X509_V_ERR_SIGNATURE_ALGORITHM_MISMATCH,
-    SignatureAlgInconsistency = X509_V_ERR_SIGNATURE_ALGORITHM_INCONSISTENCY,
     InvalidCA = X509_V_ERR_INVALID_CA,
+    ExplicitECParams = X509_V_ERR_EC_KEY_EXPLICIT_PARAMS,
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    SignatureAlgInconsistency = X509_V_ERR_SIGNATURE_ALGORITHM_INCONSISTENCY,
     PathLengthInvalidForNonCA = X509_V_ERR_PATHLEN_INVALID_FOR_NON_CA,
     PathLengthWithoutKUkeyCertSign = X509_V_ERR_PATHLEN_WITHOUT_KU_KEY_CERT_SIGN,
     KUkeyCertSignInvalidForNonCA = X509_V_ERR_KU_KEY_CERT_SIGN_INVALID_FOR_NON_CA,
@@ -118,11 +120,9 @@ enum class Error
     SubjectKeyIDCritical = X509_V_ERR_SUBJECT_KEY_IDENTIFIER_CRITICAL,
     CACertMissingKeyUsage = X509_V_ERR_CA_CERT_MISSING_KEY_USAGE,
     ExtensionsRequireV3 = X509_V_ERR_EXTENSIONS_REQUIRE_VERSION_3,
-    ExplicitECParams = X509_V_ERR_EC_KEY_EXPLICIT_PARAMS
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 };
 
 std::error_code MakeErrorCode(Error e);
 
 } // namespace snet::crypto::verify
-
-

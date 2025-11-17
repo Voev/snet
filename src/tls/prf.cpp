@@ -8,12 +8,15 @@
 
 #include <snet/tls/prf.hpp>
 #include <snet/tls/types.hpp>
-#include <snet/tls/cipher_suite_manager.hpp>
 
 #include <casket/utils/load_store.hpp>
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
+#else
+#include <openssl/evp.h>
+#endif
 
 using namespace snet::crypto;
 
@@ -29,7 +32,7 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
     unsigned int n, saltSize;
 
     auto md5 = crypto::CryptoManager::getInstance().fetchDigest("MD5");
-    const auto md5Length = EVP_MD_get_size(md5);
+    const auto md5Length = EVP_MD_size(md5);
 
     auto sha1 = crypto::CryptoManager::getInstance().fetchDigest("SHA1");
 
@@ -77,6 +80,7 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
              nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto kdf = crypto::CryptoManager::getInstance().fetchKdf("TLS1-PRF");
     crypto::ThrowIfTrue(kdf == nullptr);
 
@@ -97,13 +101,38 @@ void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view 
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+#else
+    auto digest = CryptoManager::getInstance().fetchDigest(algorithm);
+    KeyCtxPtr pctx(EVP_PKEY_CTX_new_id(EVP_PKEY_TLS1_PRF, nullptr));
+    ThrowIfFalse(pctx, "failed to create key context (TLS1_PRF)");
+    ThrowIfFalse(0 < EVP_PKEY_derive_init(pctx));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set_tls1_prf_md(pctx, digest));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set1_tls1_prf_secret(pctx, secret.data(), static_cast<int>(secret.size())));
+    ThrowIfFalse(0 < EVP_PKEY_derive_init(pctx));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_add1_tls1_prf_seed(pctx, label.data(), static_cast<int>(label.size())));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_add1_tls1_prf_seed(pctx, clientRandom.data(), static_cast<int>(clientRandom.size())));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_add1_tls1_prf_seed(pctx, serverRandom.data(), static_cast<int>(serverRandom.size())));
+    size_t outLength = out.size();
+    ThrowIfFalse(0 < EVP_PKEY_derive(pctx, out.data(), &outLength));
+#endif
 }
+
+static constexpr size_t kMaxFullLabelSize = 255;
+static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0x33, 0x20};
 
 void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {
+    static constexpr size_t maxHkdfLabelSize =
+        sizeof(uint16_t) + 2 * sizeof(uint8_t) + kMaxFullLabelSize + EVP_MAX_MD_SIZE;
+
+    ThrowIfFalse(labelPrefix.size() + label.size() <= kMaxFullLabelSize, "label too large");
+    ThrowIfFalse(data.size() <= EVP_MAX_MD_SIZE, "context too large");
+    ThrowIfFalse(out.size() <= std::numeric_limits<uint16_t>::max(), "invalid length");
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
     static int mode{EVP_KDF_HKDF_MODE_EXPAND_ONLY};
-    static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0x33, 0x20};
 
     auto kdf = crypto::CryptoManager::getInstance().fetchKdf(OSSL_KDF_NAME_TLS1_3_KDF);
 
@@ -126,6 +155,53 @@ void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, 
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+
+#else
+
+    std::array<uint8_t, maxHkdfLabelSize> hkdfLabel;
+    uint8_t* ptr = hkdfLabel.data();
+
+    // length (2 bytes)
+    const auto len = static_cast<uint16_t>(out.size());
+    *ptr++ = casket::get_byte<0>(len);
+    *ptr++ = casket::get_byte<1>(len);
+
+    // label length (1 byte)
+    const size_t labelSize = labelPrefix.size() + label.size();
+    *ptr++ = static_cast<uint8_t>(labelSize);
+
+    // prefix + label
+    std::memcpy(ptr, labelPrefix.data(), labelPrefix.size());
+    ptr += labelPrefix.size();
+    std::memcpy(ptr, label.data(), label.size());
+    ptr += label.size();
+
+    // context length (1 byte)
+    *ptr++ = static_cast<uint8_t>(data.size());
+
+    // context
+    if(!data.empty())
+    {
+        memcpy(ptr, data.data(), data.size());
+        ptr += data.size();
+    }
+
+    const size_t hkdfLabelSize = ptr - hkdfLabel.data();
+
+    auto digest = CryptoManager::getInstance().fetchDigest(algorithm);
+    KeyCtxPtr pctx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr));
+    ThrowIfFalse(pctx, "failed to create key context (HKDF)");
+
+    ThrowIfFalse(0 < EVP_PKEY_derive_init(pctx));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXPAND_ONLY));
+
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set_hkdf_md(pctx, digest));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set1_hkdf_key(pctx, secret.data(), static_cast<int>(secret.size())));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_add1_hkdf_info(pctx, hkdfLabel.data(), static_cast<int>(hkdfLabelSize)));
+
+    size_t outlen = out.size_bytes();
+    ThrowIfFalse(0 < EVP_PKEY_derive(pctx, out.data(), &outlen));
+#endif
 }
 
 void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)

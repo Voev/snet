@@ -22,6 +22,8 @@ namespace snet
 
 static bool bPrint{false};
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
 X509CrlPtr DownloadCRL(std::string_view uri)
 {
     return X509CrlPtr(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
@@ -136,6 +138,8 @@ static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
     return 1;
 }
 
+#endif
+
 int VerifyCallback(int ret, X509_STORE_CTX* ctx)
 {
     auto cert = X509_STORE_CTX_get_current_cert(ctx);
@@ -243,9 +247,11 @@ public:
         bPrint = parser_.isUsed("print");
 
         CertManager manager;
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         manager.loadStore(options_.caStorePath);
         manager.setLookupCRLs(LookupCRLs);
         manager.setGetIssuer(GetIssuer);
+#endif
         manager.setVerifyCallback(VerifyCallback);
 
         CertVerifier verifier(manager);

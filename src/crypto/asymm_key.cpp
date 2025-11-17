@@ -2,13 +2,18 @@
 #include <openssl/store.h>
 #include <openssl/ui.h>
 #include <openssl/err.h>
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 #include <openssl/core_names.h>
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/store_loader.hpp>
 
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/error_code.hpp>
+
+#include <snet/utils/finally.hpp>
 
 namespace snet::crypto
 {
@@ -23,19 +28,23 @@ KeyPtr AsymmKey::shallowCopy(Key* key)
     return nullptr;
 }
 
-KeyPtr AsymmKey::deepCopy(Key* key)
-{
-    return KeyPtr{EVP_PKEY_dup(key)};
-}
-
 bool AsymmKey::isAlgorithm(const Key* key, std::string_view alg)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     return EVP_PKEY_is_a(key, alg.data());
+#else  // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    const auto nid = OBJ_sn2nid(alg.data());
+    return EVP_PKEY_base_id(key) == nid;
+#endif // !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
 }
 
 bool AsymmKey::isEqual(const Key* a, const Key* b)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     return 0 < EVP_PKEY_eq(a, b);
+#else  // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    return 0 < EVP_PKEY_cmp(a, b);
+#endif //!(OPENSSL_VERSION_NUMBER >= 0x30000000L)
 }
 
 KeyPtr AsymmKey::fromStorage(KeyType keyType, const std::string& uri)
@@ -59,11 +68,13 @@ KeyPtr AsymmKey::fromStorage(KeyType keyType, const std::string& uri, const UiMe
     }
     break;
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     case KeyType::Public:
     {
         loadType = OSSL_STORE_INFO_PUBKEY;
         loadFn = &OSSL_STORE_INFO_get1_PUBKEY;
     }
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     break;
 
     default:
@@ -178,6 +189,7 @@ void AsymmKey::toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding)
 
 std::vector<uint8_t> AsymmKey::getEncodedPublicKey(const Key* key)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     size_t size{0};
 
     ThrowIfFalse(0 < EVP_PKEY_get_octet_string_param(key, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, nullptr, 0, &size));
@@ -187,11 +199,26 @@ std::vector<uint8_t> AsymmKey::getEncodedPublicKey(const Key* key)
     ThrowIfFalse(0 < EVP_PKEY_get_octet_string_param(key, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, publicKey.data(),
                                                      publicKey.size(), nullptr));
     return publicKey;
+#else  // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    unsigned char* buffer{nullptr};
+    size_t length;
+
+    length = EVP_PKEY_get1_tls_encodedpoint(const_cast<Key*>(key), &buffer);
+    ThrowIfFalse(buffer != nullptr);
+
+    auto _ = Finally([&buffer]() { OPENSSL_free(buffer); });
+
+    return std::vector<uint8_t>(buffer, buffer + length);
+#endif // !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
 }
 
 void AsymmKey::setEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     ThrowIfFalse(0 < EVP_PKEY_set1_encoded_public_key(key, value.data(), value.size_bytes()));
+#else  // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    ThrowIfFalse(0 < EVP_PKEY_set1_tls_encodedpoint(key, value.data(), value.size_bytes()));
+#endif // !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
 }
 
 } // namespace snet::crypto

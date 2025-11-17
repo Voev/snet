@@ -53,4 +53,17 @@ inline const char* GetHashName(const Hash* hash) noexcept
     return EVP_MD_name(hash);
 }
 
+class HashTraits
+{
+public:
+    static inline bool isAlgorithm(const Hash* hash, std::string_view alg)
+    {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+        return EVP_MD_is_a(hash, alg.data());
+#else
+        return (EVP_MD_nid(hash) == OBJ_sn2nid(alg.data()));
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    }
+};
+
 } // namespace snet::crypto
