@@ -17,10 +17,10 @@
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/secure_array.hpp>
+#include <snet/crypto/prf.hpp>
 
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
-#include <snet/tls/prf.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
@@ -307,7 +307,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
-        Secret masterSecret(48);
+        crypto::Secret masterSecret(48);
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
@@ -435,16 +435,16 @@ void Session::generateTLS13KeyMaterial()
     serverEncKey_.resize(keySize);
     serverIV_.resize(12);
 
-    DeriveKey(digestName, shts, serverEncKey_);
-    DeriveIV(digestName, shts, serverIV_);
+    crypto::DeriveKey(digestName, shts, serverEncKey_);
+    crypto::DeriveIV(digestName, shts, serverIV_);
 
     const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
 
     clientEncKey_.resize(keySize);
     clientIV_.resize(12);
 
-    DeriveKey(digestName, chts, clientEncKey_);
-    DeriveIV(digestName, chts, clientIV_);
+    crypto::DeriveKey(digestName, chts, clientEncKey_);
+    crypto::DeriveIV(digestName, chts, clientIV_);
 
     if (debugKeys_)
     {
@@ -472,19 +472,19 @@ std::string_view Session::getHashAlgorithm() const
     return digest;
 }
 
-void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+void Session::PRF(const crypto::Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
     casket::ThrowIfFalse(metaInfo_.version <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
     if (metaInfo_.version == tls::ProtocolVersion::SSLv3_0)
     {
-        ssl3Prf(secret, rnd1, rnd2, out);
+        crypto::ssl3Prf(secret, rnd1, rnd2, out);
     }
     else
     {
         auto algorithm = getHashAlgorithm();
-        tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
+        crypto::tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -723,7 +723,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
             size_t keySize = EVP_MD_size(digest);
 
-            DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+            crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
 
@@ -756,8 +756,8 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-            tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
-                    actual);
+            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+                            actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -783,8 +783,8 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             clientIV_.resize(12);
 
-            DeriveKey(digestName, secret, clientEncKey_);
-            DeriveIV(digestName, secret, clientIV_);
+            crypto::DeriveKey(digestName, secret, clientEncKey_);
+            crypto::DeriveIV(digestName, secret, clientIV_);
 
             seqnum_.resetClientSequence();
 
@@ -802,8 +802,8 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             serverIV_.resize(12);
 
-            DeriveKey(digestName, secret, serverEncKey_);
-            DeriveIV(digestName, secret, serverIV_);
+            crypto::DeriveKey(digestName, secret, serverEncKey_);
+            crypto::DeriveIV(digestName, secret, serverIV_);
 
             seqnum_.resetServerSequence();
 
@@ -830,25 +830,25 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 
     if (sideIndex == 0)
     {
-        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
         clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         clientIV_.resize(12);
 
-        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
-        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
+        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
+        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
 
         seqnum_.resetClientSequence();
     }
     else
     {
-        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
 
         serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         serverIV_.resize(12);
 
-        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
-        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
+        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
+        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
 
         seqnum_.resetServerSequence();
     }

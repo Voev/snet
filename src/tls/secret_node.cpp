@@ -13,7 +13,7 @@ SecretNode::~SecretNode() noexcept
 {
 }
 
-void SecretNode::setSecret(const Type type, const Secret& secret)
+void SecretNode::setSecret(const Type type, const crypto::Secret& secret)
 {
     casket::ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
 
@@ -21,7 +21,7 @@ void SecretNode::setSecret(const Type type, const Secret& secret)
     std::copy(secret.begin(), secret.end(), secrets_[type].begin());
 }
 
-const Secret& SecretNode::getSecret(const Type type) const
+const crypto::Secret& SecretNode::getSecret(const Type type) const
 {
     casket::ThrowIfFalse(type >= MasterSecret && type < SecretTypesCount, "invalid secret type");
 

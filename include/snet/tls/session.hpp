@@ -66,7 +66,7 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+    void PRF(const crypto::Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
     /// @brief Generates key material for the session.

@@ -19,7 +19,8 @@ void SecretNodeManager::addSecrets(const ClientRandom& clientRandom, SecretNode&
     container_.insert(std::make_pair(clientRandom, std::move(secretNode)));
 }
 
-std::optional<Secret> SecretNodeManager::findSecret(const ClientRandom& clientRandom, const SecretNode::Type type)
+std::optional<crypto::Secret> SecretNodeManager::findSecret(const ClientRandom& clientRandom,
+                                                            const SecretNode::Type type)
 {
     auto found = container_.find(clientRandom);
     if (found != container_.end())

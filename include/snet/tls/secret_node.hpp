@@ -6,12 +6,11 @@
 #include <vector>
 #include <cstdint>
 #include <casket/nonstd/span.hpp>
+#include <snet/crypto/secret.hpp>
 #include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
-
-using Secret = std::vector<uint8_t>;
 
 /// @brief Class representing a secret node.
 class SecretNode final
@@ -54,12 +53,12 @@ public:
     /// @brief Sets a secret of a specific type.
     /// @param type The type of the secret.
     /// @param secret The secret to set.
-    void setSecret(const Type type, const Secret& secret);
+    void setSecret(const Type type, const crypto::Secret& secret);
 
     /// @brief Gets a secret of a specific type.
     /// @param type The type of the secret.
     /// @return The secret of the specified type.
-    const Secret& getSecret(const Type type) const;
+    const crypto::Secret& getSecret(const Type type) const;
 
     /// @brief Checks if the secret node is valid for a specific protocol version.
     /// @param version The protocol version.
@@ -69,7 +68,7 @@ public:
     nonstd::span<uint8_t> get(const Type type);
 
 private:
-    std::array<Secret, SecretTypesCount> secrets_;
+    std::array<crypto::Secret, SecretTypesCount> secrets_;
 };
 
 } // namespace snet::tls

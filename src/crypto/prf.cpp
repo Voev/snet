@@ -5,9 +5,7 @@
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/crypto_manager.hpp>
-
-#include <snet/tls/prf.hpp>
-#include <snet/tls/types.hpp>
+#include <snet/crypto/prf.hpp>
 
 #include <casket/utils/load_store.hpp>
 
@@ -18,9 +16,7 @@
 #include <openssl/evp.h>
 #endif
 
-using namespace snet::crypto;
-
-namespace snet::tls
+namespace snet::crypto
 {
 
 void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,

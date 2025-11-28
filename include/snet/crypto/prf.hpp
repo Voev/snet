@@ -6,9 +6,9 @@
 #include <cstdint>
 #include <vector>
 #include <casket/nonstd/span.hpp>
-#include <snet/tls/secret_node.hpp>
+#include <snet/crypto/secret.hpp>
 
-namespace snet::tls
+namespace snet::crypto
 {
 
 /// @brief SSL 3.0 Pseudo-Random Function (PRF).
@@ -43,4 +43,4 @@ void DeriveIV(std::string_view algorithm, nonstd::span<const uint8_t> secret, no
 
 void UpdateTrafficSecret(std::string_view algorithm, nonstd::span<uint8_t> secret);
 
-} // namespace snet::tls
+} // namespace snet::crypto
