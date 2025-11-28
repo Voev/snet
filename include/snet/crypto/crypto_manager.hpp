@@ -26,9 +26,9 @@ public:
 
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-    crypto::HashPtr fetchDigest(std::string_view algorithm);
+    crypto::HashAlg fetchDigest(std::string_view algorithm);
 
-    crypto::CipherPtr fetchCipher(std::string_view algorithm);
+    crypto::CipherAlg fetchCipher(std::string_view algorithm);
 
     KeyCtxPtr createKeyContext(std::string_view algorithm);
 

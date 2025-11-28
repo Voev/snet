@@ -41,7 +41,7 @@ public:
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
-    
+
     void preprocessRecord(const int8_t sideIndex, Record* record);
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
@@ -66,8 +66,8 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1, nonstd::span<const uint8_t> rnd2,
-             nonstd::span<uint8_t> out);
+    void PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+             nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
@@ -99,33 +99,33 @@ public:
     void setServerKey(Key* key);
 
     void processClientHello(const ClientHello& clientHello);
-    
+
     void processServerHello(const ServerHello& serverHello);
-    
+
     void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
-    
+
     void processNewSessionTicket(const NewSessionTicket& sessionTicket);
-    
+
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-    
+
     void processCertificate(const Certificate& certificate);
-    
+
     void processCertificateVerify(const CertificateVerify& certVerify);
-    
+
     void processServerKeyExchange(const ServerKeyExchange& keyExchange);
-    
+
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-    
+
     void processServerHelloDone(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-    
+
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processFinished(const int8_t sideIndex, const Finished& finished);
-    
+
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-    
+
     void setDebugKeys(const bool debug)
     {
         debugKeys_ = debug;
@@ -165,11 +165,11 @@ public:
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
-    Record* readingRecord{nullptr};
-    crypto::HashCtxPtr hashCtx_;
-    crypto::HashPtr hmacHashAlg_; ///< Fetched hash algorithm by cipher suite used in HMAC
-    crypto::MacCtxPtr hmacCtx_; ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
-    crypto::CipherPtr cipherAlg_; ///< Fetched cipher algorithm by cipher suite
+    Record* readingRecord = nullptr;
+    crypto::HashCtxPtr hashCtx_ ;
+    crypto::HashAlg hmacHashAlg_ = nullptr; ///< Fetched hash algorithm by cipher suite used in HMAC
+    crypto::CipherAlg cipherAlg_ = nullptr; ///< Fetched cipher algorithm by cipher suite
+    crypto::MacCtxPtr hmacCtx_;   ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
     crypto::X509CertPtr serverCert_;

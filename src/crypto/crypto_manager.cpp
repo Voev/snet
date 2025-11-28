@@ -62,7 +62,7 @@ KdfPtr CryptoManager::fetchKdf(std::string_view algorithm)
 
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-HashPtr CryptoManager::fetchDigest(std::string_view algorithm)
+HashAlg CryptoManager::fetchDigest(std::string_view algorithm)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto digest = HashPtr(EVP_MD_fetch(impl_->libctx, algorithm.data(), nullptr));
@@ -73,7 +73,7 @@ HashPtr CryptoManager::fetchDigest(std::string_view algorithm)
     return digest;
 }
 
-CipherPtr CryptoManager::fetchCipher(std::string_view algorithm)
+CipherAlg CryptoManager::fetchCipher(std::string_view algorithm)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto cipher = CipherPtr(EVP_CIPHER_fetch(impl_->libctx, algorithm.data(), nullptr));

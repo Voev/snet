@@ -51,6 +51,9 @@ void Session::reset() noexcept
 {
     recordLayer_.reset();
 
+    hmacHashAlg_ = nullptr;
+    cipherAlg_ = nullptr;
+
     ResetCipherCtx(clientCipherCtx_);
     ResetCipherCtx(serverCipherCtx_);
     ResetHashCtx(hashCtx_);
@@ -627,7 +630,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
         const Hash* hash;
-        crypto::HashPtr fetchedHash;
+        crypto::HashAlg fetchedHash;
 
         auto scheme = keyExchange.scheme;
         if (scheme.isSet())
@@ -642,8 +645,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         }
         else
         {
-            hash = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            crypto::InitHash(hashCtx_, hash);
+            hash = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
         crypto::InitHash(hashCtx_, hash);
