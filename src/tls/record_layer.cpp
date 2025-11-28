@@ -19,6 +19,7 @@
 #include <snet/tls/record_layer.hpp>
 
 using namespace casket;
+using namespace snet::crypto;
 
 namespace snet::tls
 {
@@ -147,7 +148,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
         if (encryptThenMAC_)
         {
-            auto mac = in.subspan(in.size() - crypto::GetHashSize(hmacHash));
+            auto mac = in.subspan(in.size() - HashTraits::getSize(hmacHash));
 
             outSize -= mac.size();
             auto cipherText = in.subspan(0, outSize);
@@ -187,7 +188,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             uint8_t paddingLength = out[outSize - 1];
             outSize -= (paddingLength + 1);
 
-            auto mac = nonstd::span(out.begin() + outSize - crypto::GetHashSize(hmacHash), out.begin() + outSize);
+            auto mac = nonstd::span(out.begin() + outSize - HashTraits::getSize(hmacHash), out.begin() + outSize);
             outSize -= mac.size();
 
             if (version_ >= ProtocolVersion::TLSv1_1)
@@ -222,8 +223,8 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), iv.data(), 0));
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), in.data(), in.size()));
 
-        auto content = nonstd::span(out.begin(), out.end() - crypto::GetHashSize(hmacHash));
-        auto mac = nonstd::span(out.end() - crypto::GetHashSize(hmacHash), out.end());
+        auto content = nonstd::span(out.begin(), out.end() - HashTraits::getSize(hmacHash));
+        auto mac = nonstd::span(out.end() - HashTraits::getSize(hmacHash), out.end());
 
         if (version_ == ProtocolVersion::SSLv3_0)
         {
@@ -298,14 +299,14 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
                                nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
                                nonstd::span<const uint8_t> expectedMac)
 {
-    int pad_ct = crypto::HashTraits::isAlgorithm(hmacHash, "SHA1") ? 40 : 48;
+    size_t paddingSize = crypto::HashTraits::isAlgorithm(hmacHash, "SHA1") ? 40 : 48;
 
-    crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, hmacHash));
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, macKey.data(), macKey.size()));
+    HashTraits::initHash(ctx, hmacHash);
+    HashTraits::updateHash(ctx, macKey);
 
-    uint8_t buf[64];
-    memset(buf, 0x36, pad_ct);
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, pad_ct));
+    uint8_t padding[64];
+    memset(padding, 0x36, paddingSize);
+    HashTraits::updateHash(ctx, {padding, paddingSize});
 
     std::array<uint8_t, 11> meta;
     casket::store_be(seq, meta.data());
@@ -315,22 +316,21 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
     meta[9] = casket::get_byte<0>(s);
     meta[10] = casket::get_byte<1>(s);
 
-    std::array<uint8_t, EVP_MAX_MD_SIZE> actualMac;
-    unsigned int actualMacSize = actualMac.size();
+    std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
 
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, meta.data(), meta.size()));
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, content.data(), content.size()));
-    crypto::ThrowIfFalse(0 < EVP_DigestFinal(ctx, actualMac.data(), &actualMacSize));
+    HashTraits::updateHash(ctx, meta);
+    HashTraits::updateHash(ctx, content);
+    auto preActualMac = HashTraits::finalHash(ctx, buffer);
 
-    crypto::ThrowIfFalse(0 < EVP_DigestInit(ctx, hmacHash));
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, macKey.data(), macKey.size()));
+    HashTraits::initHash(ctx, hmacHash);
+    HashTraits::updateHash(ctx, macKey);
 
-    memset(buf, 0x5c, pad_ct);
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buf, pad_ct));
-    crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, actualMac.data(), actualMacSize));
-    crypto::ThrowIfFalse(0 < EVP_DigestFinal(ctx, actualMac.data(), &actualMacSize));
+    memset(padding, 0x5c, paddingSize);
+    HashTraits::updateHash(ctx, {padding, paddingSize});
+    HashTraits::updateHash(ctx, preActualMac);
+    auto actualMac = HashTraits::finalHash(ctx, buffer);
 
-    casket::ThrowIfFalse(expectedMac.size() == actualMacSize &&
+    casket::ThrowIfFalse(expectedMac.size() == actualMac.size() &&
                              std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
                          "Bad record MAC");
 }

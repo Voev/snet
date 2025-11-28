@@ -27,6 +27,8 @@
 #include <openssl/core_names.h>
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
+using namespace snet::crypto;
+
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
 {
     return casket::format("[{}{}{}]", color, text, casket::resetColor);
@@ -37,7 +39,7 @@ namespace snet::tls
 
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
-    , hashCtx_(crypto::CreateHashCtx())
+    , hashCtx_(HashTraits::createContext())
     , clientCipherCtx_(crypto::CreateCipherCtx())
     , serverCipherCtx_(crypto::CreateCipherCtx())
     , cipherState_(0)
@@ -56,7 +58,7 @@ void Session::reset() noexcept
 
     ResetCipherCtx(clientCipherCtx_);
     ResetCipherCtx(serverCipherCtx_);
-    ResetHashCtx(hashCtx_);
+    HashTraits::resetContext(hashCtx_);
 }
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
@@ -376,7 +378,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
     else
     {
-        auto macSize = EVP_MD_size(hmacHashAlg_);
+        auto macSize = HashTraits::getSize(hmacHashAlg_);
 
         crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
@@ -429,7 +431,7 @@ void Session::generateTLS13KeyMaterial()
     auto keySize = CipherSuiteGetKeySize(metaInfo_.cipherSuite);
 
     const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    const auto digestName = EVP_MD_name(digest);
+    const auto digestName = HashTraits::getName(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
     serverEncKey_.resize(keySize);
@@ -464,7 +466,7 @@ std::string_view Session::getHashAlgorithm() const
 {
     assert(metaInfo_.version <= ProtocolVersion::TLSv1_2);
 
-    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+    std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
     if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
         return CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite);
@@ -648,12 +650,12 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
             hash = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
-        crypto::InitHash(hashCtx_, hash);
-        crypto::UpdateHash(hashCtx_, clientRandom_);
-        crypto::UpdateHash(hashCtx_, serverRandom_);
-        crypto::UpdateHash(hashCtx_, keyExchange.data);
+        HashTraits::initHash(hashCtx_, hash);
+        HashTraits::updateHash(hashCtx_, clientRandom_);
+        HashTraits::updateHash(hashCtx_, serverRandom_);
+        HashTraits::updateHash(hashCtx_, keyExchange.data);
 
-        auto digest = crypto::FinalHash(hashCtx_, buffer);
+        auto digest = HashTraits::finalHash(hashCtx_, buffer);
         auto publicKey = X509_get0_pubkey(serverCert_);
 
         crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
@@ -718,10 +720,10 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         {
 
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = EVP_MD_name(digest);
+            const auto digestName = HashTraits::getName(digest);
 
             crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
-            size_t keySize = EVP_MD_size(digest);
+            size_t keySize = HashTraits::getSize(digest);
 
             crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
@@ -777,7 +779,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         if (sideIndex == 0)
         {
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = EVP_MD_name(digest);
+            const auto digestName = HashTraits::getName(digest);
             const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
             clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
@@ -796,7 +798,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         }
         else
         {
-            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+            std::string_view digestName = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
             const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
             serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
@@ -826,7 +828,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     (void)message;
 
     const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    std::string_view digestName = EVP_MD_name(digest);
+    std::string_view digestName = HashTraits::getName(digest);
 
     if (sideIndex == 0)
     {
@@ -885,7 +887,7 @@ void Session::fetchAlgorithms()
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
             OSSL_PARAM params[2];
             params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
-                                                         const_cast<char*>(crypto::GetHashName(hmacHashAlg_)), 0);
+                                                         const_cast<char*>(HashTraits::getName(hmacHashAlg_)), 0);
             params[1] = OSSL_PARAM_construct_end();
 
             auto mac = crypto::CryptoManager::getInstance().fetchMac("HMAC");

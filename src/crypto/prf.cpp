@@ -5,6 +5,7 @@
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/crypto_manager.hpp>
+#include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/prf.hpp>
 
 #include <casket/utils/load_store.hpp>
@@ -28,11 +29,11 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
     unsigned int n, saltSize;
 
     auto md5 = crypto::CryptoManager::getInstance().fetchDigest("MD5");
-    const auto md5Length = EVP_MD_size(md5);
+    const auto md5Length = HashTraits::getSize(md5);
 
     auto sha1 = crypto::CryptoManager::getInstance().fetchDigest("SHA1");
 
-    HashCtxPtr ctx(EVP_MD_CTX_new());
+    HashCtxPtr ctx = HashTraits::createContext();
     crypto::ThrowIfTrue(ctx == nullptr);
 
     saltSize = 0;
@@ -45,16 +46,16 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
         std::memset(salt, ch, saltSize);
         ch++;
 
-        crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, sha1, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, salt, saltSize));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, clientRandom.data(), clientRandom.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, serverRandom.data(), serverRandom.size()));
+        HashTraits::initHash(ctx, sha1);
+        HashTraits::updateHash(ctx, {salt, saltSize});
+        HashTraits::updateHash(ctx, secret);
+        HashTraits::updateHash(ctx, clientRandom);
+        HashTraits::updateHash(ctx, serverRandom);
         crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
 
-        crypto::ThrowIfFalse(0 < EVP_DigestInit_ex(ctx, md5, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, secret.data(), secret.size()));
-        crypto::ThrowIfFalse(0 < EVP_DigestUpdate(ctx, buffer, n));
+        HashTraits::initHash(ctx, md5);
+        HashTraits::updateHash(ctx, secret);
+        HashTraits::updateHash(ctx, {buffer, n});
 
         if (i + md5Length > out.size())
         {

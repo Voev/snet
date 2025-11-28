@@ -12,7 +12,7 @@ class HandshakeHashTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        hashCtx = CreateHashCtx();
+        hashCtx = HashTraits::createContext();
     }
 
     void TearDown() override
