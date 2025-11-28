@@ -5,16 +5,13 @@
 #include <casket/utils/exception.hpp>
 #include <casket/utils/load_store.hpp>
 
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-#include <openssl/core_names.h>
-#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
 #include <snet/crypto/cipher_context.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/hash_traits.hpp>
+#include <snet/crypto/hmac_traits.hpp>
 
 #include <snet/tls/record_layer.hpp>
 
@@ -255,42 +252,20 @@ void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const Reco
     meta[11] = casket::get_byte<0>(s);
     meta[12] = casket::get_byte<1>(s);
 
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    (void)hmacHash;
-
-    crypto::ThrowIfFalse(0 < EVP_MAC_init(hmacCtx, macKey.data(), macKey.size(), nullptr));
-    crypto::ThrowIfFalse(0 < EVP_MAC_update(hmacCtx, meta.data(), meta.size()));
+    HmacTraits::initHmac(hmacCtx, hmacHash, macKey);
+    HmacTraits::updateHmac(hmacCtx, meta);
 
     if (!iv.empty())
     {
-        crypto::ThrowIfFalse(0 < EVP_MAC_update(hmacCtx, iv.data(), iv.size()));
+        HmacTraits::updateHmac(hmacCtx, iv);
     }
 
-    crypto::ThrowIfFalse(0 < EVP_MAC_update(hmacCtx, content.data(), content.size()));
+    HmacTraits::updateHmac(hmacCtx, content);
 
-    std::array<uint8_t, EVP_MAX_MD_SIZE> actualMac;
-    size_t actualMacSize = actualMac.size();
-    crypto::ThrowIfFalse(0 < EVP_MAC_final(hmacCtx, actualMac.data(), &actualMacSize, actualMacSize));
+    std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+    auto actualMac = HmacTraits::finalHmac(hmacCtx, buffer);
 
-#else
-
-    crypto::ThrowIfFalse(0 < HMAC_Init_ex(hmacCtx, macKey.data(), macKey.size(), hmacHash, nullptr));
-    crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, meta.data(), meta.size()));
-
-    if (!iv.empty())
-    {
-        crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, iv.data(), iv.size()));
-    }
-
-    crypto::ThrowIfFalse(0 < HMAC_Update(hmacCtx, content.data(), content.size()));
-
-    std::array<uint8_t, EVP_MAX_MD_SIZE> actualMac;
-    unsigned int actualMacSize = actualMac.size();
-    crypto::ThrowIfFalse(0 < HMAC_Final(hmacCtx, actualMac.data(), &actualMacSize));
-
-#endif
-
-    casket::ThrowIfFalse(expectedMac.size() == actualMacSize &&
+    casket::ThrowIfFalse(expectedMac.size() == actualMac.size() &&
                              std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
                          "Bad record MAC");
 }

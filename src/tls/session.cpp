@@ -14,6 +14,7 @@
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cipher_context.hpp>
 #include <snet/crypto/hash_traits.hpp>
+#include <snet/crypto/hmac_traits.hpp>
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/secure_array.hpp>
@@ -22,10 +23,6 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
-
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-#include <openssl/core_names.h>
-#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
 using namespace snet::crypto;
 
@@ -647,7 +644,8 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         }
         else
         {
-            hash = crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+            hash =
+                crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
         HashTraits::initHash(hashCtx_, hash);
@@ -758,8 +756,8 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
-                            actual);
+            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash,
+                            {}, actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -879,27 +877,11 @@ void Session::fetchAlgorithms()
 
     if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
     {
-        hmacHashAlg_ =
-            crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+        hmacHashAlg_ = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
 
         if (metaInfo_.version != ProtocolVersion::SSLv3_0)
         {
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-            OSSL_PARAM params[2];
-            params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
-                                                         const_cast<char*>(HashTraits::getName(hmacHashAlg_)), 0);
-            params[1] = OSSL_PARAM_construct_end();
-
-            auto mac = crypto::CryptoManager::getInstance().fetchMac("HMAC");
-
-            hmacCtx_.reset(EVP_MAC_CTX_new(mac));
-            crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
-
-            crypto::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(hmacCtx_, params));
-#else
-            hmacCtx_.reset(HMAC_CTX_new());
-            crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
-#endif
+            hmacCtx_ = HmacTraits::createContext();
         }
     }
 }
