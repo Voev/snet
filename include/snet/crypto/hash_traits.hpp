@@ -57,6 +57,11 @@ public:
         ThrowIfFalse(0 < EVP_DigestUpdate(ctx, message.data(), message.size()));
     }
 
+    static inline void copyState(HashCtx* dst, const HashCtx* src)
+    {
+        ThrowIfFalse(0 < EVP_MD_CTX_copy_ex(dst, src));
+    }
+
     static inline nonstd::span<uint8_t> finalHash(HashCtx* ctx, nonstd::span<uint8_t> buffer)
     {
         ThrowIfTrue(buffer.size() < static_cast<size_t>(EVP_MD_CTX_size(ctx)), "buffer too small");

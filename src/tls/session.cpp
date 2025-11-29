@@ -176,14 +176,17 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerHello(record->getHandshake<ServerHello>());
-            handshakeHash_.commit(data);
+            auto hash = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
+            handshakeHash_.init(hash);
+            handshakeHash_.update();
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::EncryptedExtensionsCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             processEncryptedExtensions(record->getHandshake<EncryptedExtensions>());
-            handshakeHash_.commit(data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ServerHelloDoneCode:
@@ -191,26 +194,27 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             reader.assert_done();
-            handshakeHash_.commit(data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ServerKeyExchangeCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerKeyExchange(record->getHandshake<ServerKeyExchange>());
-            handshakeHash_.commit(data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::ClientKeyExchangeCode:
         {
             processClientKeyExchange(sideIndex, data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::CertificateCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processCertificate(record->getHandshake<Certificate>());
-            handshakeHash_.commit(data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::CertificateRequestCode:
@@ -219,20 +223,16 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             processCertificateVerify(record->getHandshake<CertificateVerify>());
-            handshakeHash_.commit(data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::FinishedCode:
         {
             processFinished(sideIndex, record->getHandshake<Finished>());
 
-            if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+            if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
             {
-                handshakeHash_.commit(data);
-            }
-            else if (sideIndex == 0)
-            {
-                handshakeHash_.commit(data);
+                handshakeHash_.update(data);
             }
             break;
         }
@@ -244,7 +244,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             if (metaInfo_.version < ProtocolVersion::TLSv1_3)
             {
                 // RFC 5077: 3.3 (must be included in transcript hash)
-                handshakeHash_.commit(data);
+                handshakeHash_.update(data);
             }
             break;
         }
@@ -309,10 +309,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         crypto::Secret masterSecret(48);
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
-            const auto algorithm = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto sessionHash = handshakeHash_.final(hashCtx_, algorithm);
-
-            PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
+            PRF(PMS_, "extended master secret", handshakeHash_.final(hashCtx_), {}, masterSecret);
         }
         else
         {
@@ -460,8 +457,6 @@ void Session::generateTLS13KeyMaterial()
 
 std::string_view Session::getHashAlgorithm() const
 {
-    assert(metaInfo_.version <= ProtocolVersion::TLSv1_2);
-
     std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
     if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
@@ -606,7 +601,7 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
 
     reader.assert_done();
 
-    handshakeHash_.commit(message);
+    handshakeHash_.update(message);
 }
 
 void Session::processCertificateVerify(const CertificateVerify& certVerify)
@@ -657,7 +652,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 
     /// @todo: deserialize
 
-    handshakeHash_.commit(message);
+    (void)message;
 
     if (!serverKey_)
     {
@@ -720,7 +715,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 
             std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
             size_t length = actual.size();
-            const auto transcriptHash = handshakeHash_.final(hashCtx_, digest);
+            const auto transcriptHash = handshakeHash_.final(hashCtx_);
 
             crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
             crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
@@ -738,15 +733,11 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
         if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
         {
-            std::string_view algorithm = getHashAlgorithm();
-            auto fetchedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
-
-            const auto transcriptHash = handshakeHash_.final(hashCtx_, fetchedAlg);
-            const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
-
+            const auto transcriptHash = handshakeHash_.final(hashCtx_);
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash,
-                            {}, actual);
+
+            PRF(secrets_.getSecret(SecretNode::MasterSecret), (sideIndex == 0 ? "client finished" : "server finished"),
+                transcriptHash, {}, actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
