@@ -8,8 +8,8 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
-#include <snet/crypto/cipher_context.hpp>
 #include <snet/crypto/exception.hpp>
+#include <snet/crypto/cipher_traits.hpp>
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/hmac_traits.hpp>
 
@@ -71,7 +71,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
     if (aead_)
     {
         std::array<uint8_t, TLS12_AEAD_AAD_SIZE> aad;
-        const auto mode = EVP_CIPHER_CTX_mode(cipherCtx);
+        const auto mode = CipherTraits::getMode(cipherCtx);
 
         if (mode == EVP_CIPH_GCM_MODE)
         {
@@ -126,7 +126,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             out = out.subspan(EVP_GCM_TLS_EXPLICIT_IV_LEN);
             len = in.size() - EVP_GCM_TLS_EXPLICIT_IV_LEN - tagLength;
         }
-        else if (EVP_CIPHER_CTX_mode(cipherCtx) == EVP_CIPH_CCM_MODE)
+        else if (mode == EVP_CIPH_CCM_MODE)
         {
             out = out.subspan(EVP_CCM_TLS_EXPLICIT_IV_LEN);
             len = in.size() - EVP_CCM_TLS_EXPLICIT_IV_LEN - tagLength;
@@ -139,7 +139,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         decryptedContent = {out.data(), static_cast<size_t>(len)};
     }
     /* Block cipher */
-    else if (crypto::GetBlockLength(cipherCtx) > 1)
+    else if (CipherTraits::getBlockLength(cipherCtx) > 1)
     {
         auto outSize = in.size();
 
@@ -159,7 +159,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
             if (version_ >= ProtocolVersion::TLSv1_1)
             {
-                uint32_t blockSize = crypto::GetBlockLength(cipherCtx);
+                uint32_t blockSize = CipherTraits::getBlockLength(cipherCtx);
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto iv = in.subspan(0, blockSize);
@@ -190,7 +190,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
 
             if (version_ >= ProtocolVersion::TLSv1_1)
             {
-                uint32_t blockSize = crypto::GetBlockLength(cipherCtx);
+                uint32_t blockSize = CipherTraits::getBlockLength(cipherCtx);
                 casket::ThrowIfFalse(blockSize <= outSize, "Block size greater than Plaintext!");
 
                 auto content = nonstd::span(out.begin() + blockSize, out.begin() + outSize);
@@ -215,7 +215,7 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         }
     }
     /* Stream cipher */
-    else if (crypto::GetBlockLength(cipherCtx) == 1)
+    else if (CipherTraits::getBlockLength(cipherCtx) == 1)
     {
         crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), iv.data(), 0));
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), in.data(), in.size()));
@@ -367,7 +367,7 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
         nonce[TLS13_AEAD_NONCE_SIZE - 1 - i] ^= ((seq >> (i * 8)) & 0xFF);
     }
 
-    if (crypto::GetCipherMode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    if (CipherTraits::getMode(cipherCtx) == EVP_CIPH_CCM_MODE)
     {
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, nullptr));
@@ -400,7 +400,7 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
         encryptedRecordLength += tagLength_;
     }
 
-    if (crypto::GetCipherMode(cipherCtx) == EVP_CIPH_CCM_MODE)
+    if (CipherTraits::getMode(cipherCtx) == EVP_CIPH_CCM_MODE)
     {
         crypto::ThrowIfFalse(0 < EVP_CipherUpdate(cipherCtx, nullptr, &updateLength, nullptr, dataLength));
     }

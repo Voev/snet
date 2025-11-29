@@ -12,7 +12,7 @@
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/cert.hpp>
-#include <snet/crypto/cipher_context.hpp>
+#include <snet/crypto/cipher_traits.hpp>
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/hmac_traits.hpp>
 #include <snet/crypto/signature.hpp>
@@ -37,8 +37,8 @@ namespace snet::tls
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , hashCtx_(HashTraits::createContext())
-    , clientCipherCtx_(crypto::CreateCipherCtx())
-    , serverCipherCtx_(crypto::CreateCipherCtx())
+    , clientCipherCtx_(CipherTraits::createContext())
+    , serverCipherCtx_(CipherTraits::createContext())
     , cipherState_(0)
     , canDecrypt_(0)
     , monitor_(false)
@@ -53,8 +53,8 @@ void Session::reset() noexcept
     hmacHashAlg_ = nullptr;
     cipherAlg_ = nullptr;
 
-    ResetCipherCtx(clientCipherCtx_);
-    ResetCipherCtx(serverCipherCtx_);
+    CipherTraits::resetContext(clientCipherCtx_);
+    CipherTraits::resetContext(serverCipherCtx_);
     HashTraits::resetContext(hashCtx_);
 }
 
@@ -333,8 +333,8 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         return;
     }
 
-    size_t keySize = crypto::GetKeyLength(cipherAlg_);
-    size_t ivSize = crypto::GetIVLengthWithinKeyBlock(cipherAlg_);
+    size_t keySize = CipherTraits::getKeyLength(cipherAlg_);
+    size_t ivSize = CipherTraits::getIVLengthWithinKeyBlock(cipherAlg_);
 
     if (CipherSuiteIsAEAD(metaInfo_.cipherSuite))
     {
@@ -856,8 +856,8 @@ void Session::fetchAlgorithms()
     auto cipherName = CipherSuiteGetCipherName(metaInfo_.cipherSuite);
     if (!casket::iequals(cipherName, "UNDEF"))
     {
-        cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
-        isAEAD = crypto::CipherIsAEAD(cipherAlg_);
+        cipherAlg_ = CryptoManager::getInstance().fetchCipher(cipherName);
+        isAEAD = CipherTraits::isAEAD(cipherAlg_);
 
         if (isAEAD)
         {
