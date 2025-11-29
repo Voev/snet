@@ -6,6 +6,7 @@
 #include <vector>
 #include <string_view>
 #include <snet/crypto/typedefs.hpp>
+#include <snet/crypto/hash_traits.hpp>
 
 namespace snet::tls
 {
@@ -14,30 +15,51 @@ namespace snet::tls
 class HandshakeHash final
 {
 public:
-    /// @brief Default constructor.
-    HandshakeHash();
+    HandshakeHash() = default;
 
-    /// @brief Destructor.
-    ~HandshakeHash() noexcept;
+    ~HandshakeHash() noexcept = default;
 
-    /// @brief Updates the handshake hash with input data.
-    /// @param in The input data to update the hash with.
-    void update(nonstd::span<const uint8_t> in);
+    inline void commit(nonstd::span<const uint8_t> in)
+    {
+        std::copy(in.begin(), in.end(), std::back_inserter(messages_));
+    }
 
-    /// @brief Finalizes the handshake hash and returns the result.
-    /// @param algorithm The hash algorithm to use.
-    /// @return The final hash value.
-    nonstd::span<uint8_t> final(HashCtx* hashCtx, const Hash* hashAlg, nonstd::span<uint8_t> buffer) const;
+    inline void init(HashCtx* context, const Hash* algorithm)
+    {
+        crypto::HashTraits::initHash(context, algorithm);
+    }
 
-    /// @brief Gets the contents of the handshake messages.
-    /// @return The contents of the handshake messages.
-    const std::vector<uint8_t>& getContents() const;
+    inline void update(HashCtx* context)
+    {
+        crypto::HashTraits::updateHash(context, messages_);
+        messages_.clear();
+    }
 
-    /// @brief Resets the handshake hash.
-    void reset();
+    inline void update(HashCtx* context, nonstd::span<const uint8_t> message)
+    {
+        crypto::HashTraits::updateHash(context, message);
+    }
+
+    inline nonstd::span<uint8_t> final(HashCtx* hashCtx)
+    {
+        return crypto::HashTraits::finalHash(hashCtx, digest_);
+    }
+
+    nonstd::span<uint8_t> final(HashCtx* hashCtx, const Hash* hashAlg)
+    {
+        crypto::HashTraits::initHash(hashCtx, hashAlg);
+        crypto::HashTraits::updateHash(hashCtx, messages_);
+        return crypto::HashTraits::finalHash(hashCtx, digest_);
+    }
+
+    void reset() noexcept
+    {
+        messages_.clear();
+    }
 
 private:
     std::vector<uint8_t> messages_;
+    std::array<uint8_t, EVP_MAX_MD_SIZE> digest_;
 };
 
 } // namespace snet::tls
