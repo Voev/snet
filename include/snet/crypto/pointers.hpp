@@ -10,6 +10,7 @@
 #include <openssl/safestack.h>
 
 #include <openssl/kdf.h>
+#include <openssl/hmac.h>
 
 #include <snet/crypto/typedefs.hpp>
 #include <snet/utils/custom_unique_ptr.hpp>
@@ -90,17 +91,6 @@ DEFINE_CUSTOM_UNIQUE_PTR(X509StoreCtxPtr, X509StoreCtx, X509_STORE_CTX_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR(StoreInfoPtr, StoreInfo, OSSL_STORE_INFO_free);
 
-DEFINE_CUSTOM_UNIQUE_PTR(KeyPtr, Key, EVP_PKEY_free);
-DEFINE_CUSTOM_UNIQUE_PTR(KeyCtxPtr, KeyCtx, EVP_PKEY_CTX_free);
-DEFINE_CUSTOM_UNIQUE_PTR(HashPtr, Hash, EVP_MD_free);
-DEFINE_CUSTOM_UNIQUE_PTR(HashCtxPtr, HashCtx, EVP_MD_CTX_free);
-DEFINE_CUSTOM_UNIQUE_PTR(CipherPtr, Cipher, EVP_CIPHER_free);
-DEFINE_CUSTOM_UNIQUE_PTR(CipherCtxPtr, CipherCtx, EVP_CIPHER_CTX_free);
-DEFINE_CUSTOM_UNIQUE_PTR(KdfPtr, Kdf, EVP_KDF_free);
-DEFINE_CUSTOM_UNIQUE_PTR(KdfCtxPtr, KdfCtx, EVP_KDF_CTX_free);
-DEFINE_CUSTOM_UNIQUE_PTR(MacPtr, Mac, EVP_MAC_free);
-DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, EVP_MAC_CTX_free);
-
 DEFINE_CUSTOM_UNIQUE_PTR(CrlDistPointsPtr, CrlDistPoints, CRL_DIST_POINTS_free);
 DEFINE_CUSTOM_UNIQUE_PTR(AuthInfoAccessPtr, AuthInfoAccess, AUTHORITY_INFO_ACCESS_free);
 
@@ -113,5 +103,37 @@ DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CertExtOwningStackPtr, CertExtStack,
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CrlStackPtr, CrlStack, CrlStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(CrlOwningStackPtr, CrlStack, CrlOwningStackDeleter);
 DEFINE_CUSTOM_UNIQUE_PTR_WITH_DELETER(StoreCtxPtr, StoreCtx, StoreCtxDeleter);
+
+DEFINE_CUSTOM_UNIQUE_PTR(KeyPtr, Key, EVP_PKEY_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KeyCtxPtr, KeyCtx, EVP_PKEY_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(HashCtxPtr, HashCtx, EVP_MD_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CipherCtxPtr, CipherCtx, EVP_CIPHER_CTX_free);
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
+DEFINE_CUSTOM_UNIQUE_PTR(HashPtr, Hash, EVP_MD_free);
+DEFINE_CUSTOM_UNIQUE_PTR(CipherPtr, Cipher, EVP_CIPHER_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KdfPtr, Kdf, EVP_KDF_free);
+DEFINE_CUSTOM_UNIQUE_PTR(MacPtr, Mac, EVP_MAC_free);
+DEFINE_CUSTOM_UNIQUE_PTR(KdfCtxPtr, KdfCtx, EVP_KDF_CTX_free);
+DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, EVP_MAC_CTX_free);
+
+#else // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
+DEFINE_CUSTOM_UNIQUE_PTR(MacCtxPtr, MacCtx, HMAC_CTX_free);
+
+#endif // !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
+using CipherAlg = CipherPtr;
+using HashAlg = HashPtr;
+
+#else // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
+using CipherAlg = const Cipher*;
+using HashAlg = const Hash*;
+
+#endif // !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
 } // namespace snet::crypto

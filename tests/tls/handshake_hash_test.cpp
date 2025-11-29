@@ -12,7 +12,7 @@ class HandshakeHashTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        hashCtx = CreateHashCtx();
+        hashCtx = HashTraits::createContext();
     }
 
     void TearDown() override
@@ -40,7 +40,7 @@ TEST_F(HandshakeHashTest, FinalMethod)
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
     hash.update(data);
 
-    auto hashAlg = CryptoManager::getInstance().fetchDigest("SHA-256");
+    auto hashAlg = CryptoManager::getInstance().fetchDigest(SN_sha256);
 
     std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
     auto result = hash.final(hashCtx, hashAlg, buffer);
@@ -76,7 +76,7 @@ TEST_F(HandshakeHashTest, MultipleUpdates)
 
 TEST_F(HandshakeHashTest, FinalMethodEmptyInput)
 {
-    auto hashAlg = CryptoManager::getInstance().fetchDigest("SHA-256");
+    auto hashAlg = CryptoManager::getInstance().fetchDigest(SN_sha256);
 
     std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
     auto result = hash.final(hashCtx, hashAlg, buffer);

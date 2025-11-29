@@ -81,9 +81,9 @@ public:
                          nonstd::span<const uint8_t> iv);
 
 private:
-    void tls1CheckMac(MacCtx* hmacCtx, RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
-                      nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> content,
-                      nonstd::span<const uint8_t> mac);
+    void tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
+                      nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                      nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac);
 
     void ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,

@@ -21,11 +21,11 @@ public:
 
     CertBuilder& setVersion(CertVersion version);
 
-    CertBuilder& setSubjectName(const X509Name* name);
+    CertBuilder& setSubjectName(OSSL_CONST_COMPAT X509Name* name);
 
     CertBuilder& setSubjectName(const std::string& name);
 
-    CertBuilder& setIssuerName(const X509Name* name);
+    CertBuilder& setIssuerName(OSSL_CONST_COMPAT X509Name* name);
 
     CertBuilder& setIssuerName(const std::string& name);
 

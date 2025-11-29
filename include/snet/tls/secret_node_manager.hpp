@@ -31,7 +31,7 @@ public:
     /// @param clientRandom The client's random value.
     /// @param type The type of the secret.
     /// @return An optional containing the secret if found, otherwise std::nullopt.
-    std::optional<Secret> findSecret(const ClientRandom& clientRandom, const SecretNode::Type type);
+    std::optional<crypto::Secret> findSecret(const ClientRandom& clientRandom, const SecretNode::Type type);
 
     /// @brief Gets a secret node by client random.
     /// @param clientRandom The client's random value.

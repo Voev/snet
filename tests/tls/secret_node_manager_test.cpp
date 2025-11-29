@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <snet/tls/secret_node_manager.hpp>
 
+using namespace snet::crypto;
 using namespace snet::tls;
 
 namespace

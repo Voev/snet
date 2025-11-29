@@ -83,7 +83,7 @@ CertBuilder& CertBuilder::setVersion(CertVersion version)
     return *this;
 }
 
-CertBuilder& CertBuilder::setSubjectName(const X509Name* name)
+CertBuilder& CertBuilder::setSubjectName(OSSL_CONST_COMPAT X509Name* name)
 {
     crypto::ThrowIfFalse(X509_set_subject_name(impl_->cert, name));
     return *this;
@@ -95,7 +95,7 @@ CertBuilder& CertBuilder::setSubjectName(const std::string& name)
     return setSubjectName(decodedName);
 }
 
-CertBuilder& CertBuilder::setIssuerName(const X509Name* name)
+CertBuilder& CertBuilder::setIssuerName(OSSL_CONST_COMPAT X509Name* name)
 {
     crypto::ThrowIfFalse(X509_set_issuer_name(impl_->cert, name));
     return *this;

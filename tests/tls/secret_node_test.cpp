@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <snet/tls/secret_node.hpp>
 
+using namespace snet::crypto;
 using namespace snet::tls;
 
 class SecretNodeTest : public ::testing::Test

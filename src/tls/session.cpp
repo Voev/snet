@@ -1,7 +1,6 @@
 #include <cassert>
 #include <limits>
 #include <memory>
-#include <openssl/core_names.h>
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
@@ -13,16 +12,19 @@
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/cert.hpp>
-#include <snet/crypto/cipher_context.hpp>
+#include <snet/crypto/cipher_traits.hpp>
 #include <snet/crypto/hash_traits.hpp>
+#include <snet/crypto/hmac_traits.hpp>
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/secure_array.hpp>
+#include <snet/crypto/prf.hpp>
 
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
-#include <snet/tls/prf.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
+
+using namespace snet::crypto;
 
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
 {
@@ -34,9 +36,9 @@ namespace snet::tls
 
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
-    , hashCtx_(crypto::CreateHashCtx())
-    , clientCipherCtx_(crypto::CreateCipherCtx())
-    , serverCipherCtx_(crypto::CreateCipherCtx())
+    , hashCtx_(HashTraits::createContext())
+    , clientCipherCtx_(CipherTraits::createContext())
+    , serverCipherCtx_(CipherTraits::createContext())
     , cipherState_(0)
     , canDecrypt_(0)
     , monitor_(false)
@@ -48,9 +50,12 @@ void Session::reset() noexcept
 {
     recordLayer_.reset();
 
-    ResetCipherCtx(clientCipherCtx_);
-    ResetCipherCtx(serverCipherCtx_);
-    ResetHashCtx(hashCtx_);
+    hmacHashAlg_ = nullptr;
+    cipherAlg_ = nullptr;
+
+    CipherTraits::resetContext(clientCipherCtx_);
+    CipherTraits::resetContext(serverCipherCtx_);
+    HashTraits::resetContext(hashCtx_);
 }
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
@@ -301,7 +306,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (secrets_.getSecret(SecretNode::MasterSecret).empty())
     {
-        Secret masterSecret(48);
+        crypto::Secret masterSecret(48);
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
@@ -328,8 +333,8 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         return;
     }
 
-    size_t keySize = crypto::GetKeyLength(cipherAlg_);
-    size_t ivSize = crypto::GetIVLengthWithinKeyBlock(cipherAlg_);
+    size_t keySize = CipherTraits::getKeyLength(cipherAlg_);
+    size_t ivSize = CipherTraits::getIVLengthWithinKeyBlock(cipherAlg_);
 
     if (CipherSuiteIsAEAD(metaInfo_.cipherSuite))
     {
@@ -370,7 +375,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
     else
     {
-        auto macSize = EVP_MD_get_size(hmacHashAlg_);
+        auto macSize = HashTraits::getSize(hmacHashAlg_);
 
         crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
@@ -423,22 +428,22 @@ void Session::generateTLS13KeyMaterial()
     auto keySize = CipherSuiteGetKeySize(metaInfo_.cipherSuite);
 
     const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    const auto digestName = EVP_MD_name(digest);
+    const auto digestName = HashTraits::getName(digest);
     const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
 
     serverEncKey_.resize(keySize);
     serverIV_.resize(12);
 
-    DeriveKey(digestName, shts, serverEncKey_);
-    DeriveIV(digestName, shts, serverIV_);
+    crypto::DeriveKey(digestName, shts, serverEncKey_);
+    crypto::DeriveIV(digestName, shts, serverIV_);
 
     const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
 
     clientEncKey_.resize(keySize);
     clientIV_.resize(12);
 
-    DeriveKey(digestName, chts, clientEncKey_);
-    DeriveIV(digestName, chts, clientIV_);
+    crypto::DeriveKey(digestName, chts, clientEncKey_);
+    crypto::DeriveIV(digestName, chts, clientIV_);
 
     if (debugKeys_)
     {
@@ -458,7 +463,7 @@ std::string_view Session::getHashAlgorithm() const
 {
     assert(metaInfo_.version <= ProtocolVersion::TLSv1_2);
 
-    std::string_view digest = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+    std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
     if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
         return CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite);
@@ -466,19 +471,19 @@ std::string_view Session::getHashAlgorithm() const
     return digest;
 }
 
-void Session::PRF(const Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+void Session::PRF(const crypto::Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
     casket::ThrowIfFalse(metaInfo_.version <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
 
     if (metaInfo_.version == tls::ProtocolVersion::SSLv3_0)
     {
-        ssl3Prf(secret, rnd1, rnd2, out);
+        crypto::ssl3Prf(secret, rnd1, rnd2, out);
     }
     else
     {
         auto algorithm = getHashAlgorithm();
-        tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
+        crypto::tls1Prf(algorithm, secret, usage, rnd1, rnd2, out);
     }
 }
 
@@ -623,26 +628,24 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     if (!keyExchange.signature.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        const Hash* hash;
-        crypto::HashPtr fetchedHash;
+        crypto::HashAlg hash;
 
         auto scheme = keyExchange.scheme;
         if (scheme.isSet())
         {
-            fetchedHash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
-            hash = fetchedHash.get();
+            hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
         }
         else
         {
-            hash = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
+            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
-        crypto::InitHash(hashCtx_, hash);
-        crypto::UpdateHash(hashCtx_, clientRandom_);
-        crypto::UpdateHash(hashCtx_, serverRandom_);
-        crypto::UpdateHash(hashCtx_, keyExchange.data);
+        HashTraits::initHash(hashCtx_, hash);
+        HashTraits::updateHash(hashCtx_, clientRandom_);
+        HashTraits::updateHash(hashCtx_, serverRandom_);
+        HashTraits::updateHash(hashCtx_, keyExchange.data);
 
-        auto digest = crypto::FinalHash(hashCtx_, buffer);
+        auto digest = HashTraits::finalHash(hashCtx_, buffer);
         auto publicKey = X509_get0_pubkey(serverCert_);
 
         crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
@@ -662,13 +665,13 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         return;
     }
 
-    if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
+    /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
         utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
         const auto encryptedPreMaster = reader.get_span(2, 0, 65535);
         reader.assert_done();
 
-        crypto::KeyCtxPtr ctx(EVP_PKEY_CTX_new_from_pkey(nullptr, serverKey_, nullptr));
+        auto ctx = crypto::CryptoManager::getInstance().createKeyContext(serverKey_);
         crypto::ThrowIfFalse(ctx != nullptr);
 
         crypto::ThrowIfFalse(0 < EVP_PKEY_decrypt_init(ctx));
@@ -690,7 +693,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
         pms.resize(size);
 
         setPremasterSecret(std::move(pms));
-    }
+    }*/
 }
 
 void Session::processFinished(const std::int8_t sideIndex, const Finished& finished)
@@ -707,12 +710,12 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         {
 
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = EVP_MD_name(digest);
+            const auto digestName = HashTraits::getName(digest);
 
             crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
-            size_t keySize = EVP_MD_get_size(digest);
+            size_t keySize = HashTraits::getSize(digest);
 
-            DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+            crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
 
@@ -745,8 +748,8 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-            tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
-                    actual);
+            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash,
+                            {}, actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -766,14 +769,14 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         if (sideIndex == 0)
         {
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = EVP_MD_name(digest);
+            const auto digestName = HashTraits::getName(digest);
             const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
             clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             clientIV_.resize(12);
 
-            DeriveKey(digestName, secret, clientEncKey_);
-            DeriveIV(digestName, secret, clientIV_);
+            crypto::DeriveKey(digestName, secret, clientEncKey_);
+            crypto::DeriveIV(digestName, secret, clientIV_);
 
             seqnum_.resetClientSequence();
 
@@ -785,14 +788,14 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         }
         else
         {
-            std::string_view digestName = EVP_MD_name(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+            std::string_view digestName = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
             const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
             serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
             serverIV_.resize(12);
 
-            DeriveKey(digestName, secret, serverEncKey_);
-            DeriveIV(digestName, secret, serverIV_);
+            crypto::DeriveKey(digestName, secret, serverEncKey_);
+            crypto::DeriveIV(digestName, secret, serverIV_);
 
             seqnum_.resetServerSequence();
 
@@ -815,29 +818,29 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     (void)message;
 
     const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    std::string_view digestName = EVP_MD_name(digest);
+    std::string_view digestName = HashTraits::getName(digest);
 
     if (sideIndex == 0)
     {
-        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
 
         clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         clientIV_.resize(12);
 
-        DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
-        DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
+        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
+        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
 
         seqnum_.resetClientSequence();
     }
     else
     {
-        UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
 
         serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
         serverIV_.resize(12);
 
-        DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
-        DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
+        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
+        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
 
         seqnum_.resetServerSequence();
     }
@@ -853,8 +856,8 @@ void Session::fetchAlgorithms()
     auto cipherName = CipherSuiteGetCipherName(metaInfo_.cipherSuite);
     if (!casket::iequals(cipherName, "UNDEF"))
     {
-        cipherAlg_ = crypto::CryptoManager::getInstance().fetchCipher(cipherName);
-        isAEAD = CipherIsAEAD(cipherAlg_);
+        cipherAlg_ = CryptoManager::getInstance().fetchCipher(cipherName);
+        isAEAD = CipherTraits::isAEAD(cipherAlg_);
 
         if (isAEAD)
         {
@@ -866,22 +869,11 @@ void Session::fetchAlgorithms()
 
     if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
     {
-        hmacHashAlg_ =
-            crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+        hmacHashAlg_ = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
 
         if (metaInfo_.version != ProtocolVersion::SSLv3_0)
         {
-            OSSL_PARAM params[2];
-            params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
-                                                         const_cast<char*>(crypto::GetHashName(hmacHashAlg_)), 0);
-            params[1] = OSSL_PARAM_construct_end();
-
-            auto mac = crypto::CryptoManager::getInstance().fetchMac("HMAC");
-
-            hmacCtx_.reset(EVP_MAC_CTX_new(mac));
-            crypto::ThrowIfTrue(hmacCtx_ == nullptr, "failed to create HMAC context");
-
-            crypto::ThrowIfFalse(0 < EVP_MAC_CTX_set_params(hmacCtx_, params));
+            hmacCtx_ = HmacTraits::createContext();
         }
     }
 }

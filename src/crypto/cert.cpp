@@ -60,10 +60,10 @@ bool Cert::isEqual(const X509Cert* a, const X509Cert* b)
 }
 
 
-bool Cert::isSelfSigned(X509Cert* cert, bool verifySignature) noexcept
+/*bool Cert::isSelfSigned(X509Cert* cert, bool verifySignature) noexcept
 {
     return X509_self_signed(cert, verifySignature);
-}
+}*/
 
 CertVersion Cert::version(X509Cert* cert)
 {
@@ -221,7 +221,7 @@ X509CertPtr Cert::fromBuffer(nonstd::span<const uint8_t> input)
     return X509CertPtr{d2i_X509(nullptr, &ptr, static_cast<long>(input.size_bytes()))};
 }
 
-int Cert::toBuffer(const X509Cert* cert, nonstd::span<uint8_t> output)
+int Cert::toBuffer(OSSL_CONST_COMPAT X509Cert* cert, nonstd::span<uint8_t> output)
 {
     unsigned char* ptr = output.data();
     return i2d_X509(cert, &ptr);

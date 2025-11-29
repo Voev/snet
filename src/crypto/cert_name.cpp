@@ -5,7 +5,7 @@
 namespace snet::crypto
 {
 
-X509NamePtr CertName::deepCopy(const X509Name* name)
+X509NamePtr CertName::deepCopy(OSSL_CONST_COMPAT X509Name* name)
 {
     return X509NamePtr{X509_NAME_dup(name)};
 }
@@ -15,7 +15,7 @@ bool CertName::isEqual(const X509Name* a, const X509Name* b)
     return (0 == X509_NAME_cmp(a, b));
 }
 
-static nonstd::span<uint8_t> viewEntryValue(const X509Name* name, const int nid)
+static nonstd::span<uint8_t> viewEntryValue(OSSL_CONST_COMPAT X509Name* name, const int nid)
 {
     auto loc = X509_NAME_get_index_by_NID(name, nid, -1);
     if (loc >= 0)
@@ -30,7 +30,7 @@ static nonstd::span<uint8_t> viewEntryValue(const X509Name* name, const int nid)
     return nonstd::span<uint8_t>();
 }
 
-std::string CertName::serialNumber(const X509Name* name)
+std::string CertName::serialNumber(OSSL_CONST_COMPAT X509Name* name)
 {
     auto entry = viewEntryValue(name, NID_serialNumber);
     if (entry.empty())

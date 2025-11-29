@@ -1,9 +1,9 @@
 #include <unordered_map>
 #include <openssl/evp.h>
-#include <openssl/core_names.h>
 
 #include <casket/utils/exception.hpp>
 
+#include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/group_params.hpp>
 #include <snet/crypto/pointers.hpp>
@@ -21,6 +21,7 @@ struct GroupParamInfo
 };
 
 // clang-format off
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
     {GroupParams::SECP256R1, {"EC", SN_secp256k1}},
     {GroupParams::SECP384R1, {"EC", SN_secp384r1}},
@@ -36,20 +37,32 @@ static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
     {GroupParams::FFDHE_6144, {"DH", SN_ffdhe6144}},
     {GroupParams::FFDHE_8192, {"DH", SN_ffdhe8192}},
 };
+#else
+static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
+    {GroupParams::SECP256R1, {SN_X9_62_id_ecPublicKey, SN_secp256k1}},
+    {GroupParams::SECP384R1, {SN_X9_62_id_ecPublicKey, SN_secp384r1}},
+    {GroupParams::SECP521R1, {SN_X9_62_id_ecPublicKey, SN_secp521r1}},
+    {GroupParams::BRAINPOOL256R1, {SN_X9_62_id_ecPublicKey, SN_brainpoolP256r1}},
+    {GroupParams::BRAINPOOL384R1, {SN_X9_62_id_ecPublicKey, SN_brainpoolP384r1}},
+    {GroupParams::BRAINPOOL512R1, {SN_X9_62_id_ecPublicKey, SN_brainpoolP512r1}},
+    {GroupParams::X25519, {SN_X25519, nullptr}},
+    {GroupParams::X448, {SN_X448, nullptr}},
+    {GroupParams::FFDHE_2048, {LN_dhKeyAgreement, SN_ffdhe2048}},
+    {GroupParams::FFDHE_3072, {LN_dhKeyAgreement, SN_ffdhe3072}},
+    {GroupParams::FFDHE_4096, {LN_dhKeyAgreement, SN_ffdhe4096}},
+    {GroupParams::FFDHE_6144, {LN_dhKeyAgreement, SN_ffdhe6144}},
+    {GroupParams::FFDHE_8192, {LN_dhKeyAgreement, SN_ffdhe8192}},
+};
+#endif
 // clang-format on
 
 const std::vector<GroupParams>& GroupParams::getSupported()
 {
-    static std::vector<GroupParams> gSupportedGroups =
-    {
-        GroupParams(GroupParams::SECP256R1),
-        GroupParams(GroupParams::SECP384R1),
-        GroupParams(GroupParams::SECP521R1),
-        GroupParams(GroupParams::BRAINPOOL256R1),
-        GroupParams(GroupParams::BRAINPOOL384R1),
-        GroupParams(GroupParams::BRAINPOOL512R1),
-        GroupParams(GroupParams::X25519),
-        GroupParams(GroupParams::X448),
+    static std::vector<GroupParams> gSupportedGroups = {
+        GroupParams(GroupParams::SECP256R1),      GroupParams(GroupParams::SECP384R1),
+        GroupParams(GroupParams::SECP521R1),      GroupParams(GroupParams::BRAINPOOL256R1),
+        GroupParams(GroupParams::BRAINPOOL384R1), GroupParams(GroupParams::BRAINPOOL512R1),
+        //GroupParams(GroupParams::X25519),         GroupParams(GroupParams::X448),
     };
     return gSupportedGroups;
 }
@@ -101,7 +114,11 @@ KeyPtr GroupParams::generateParams(const GroupParams groupParams)
 
     if (groupParams.isEcdhNamedCurve())
     {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+#else
+        ThrowIfFalse(0 < EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, OBJ_sn2nid(param->second.groupName)));
+#endif
     }
 
     Key* params{nullptr};
@@ -119,7 +136,11 @@ KeyPtr GroupParams::generateKeyByParams(const GroupParams groupParams)
 
     if (groupParams.isEcdhNamedCurve())
     {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         ThrowIfFalse(0 < EVP_PKEY_CTX_set_group_name(ctx, param->second.groupName));
+#else
+        ThrowIfFalse(0 < EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, OBJ_sn2nid(param->second.groupName)));
+#endif
     }
 
     Key* pkey{nullptr};
@@ -144,12 +165,12 @@ std::vector<uint8_t> GroupParams::deriveSecret(Key* privateKey, Key* publicKey, 
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive_init(ctx));
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive_set_peer(ctx, publicKey));
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive(ctx, nullptr, &secretLength));
-    
-    if (isTLSv3 && EVP_PKEY_is_a(privateKey, "DH"))
+
+    if (isTLSv3 && AsymmKey::isAlgorithm(privateKey, "DH"))
     {
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_dh_pad(ctx, 1));
     }
-    
+
     std::vector<uint8_t> secret(secretLength);
     crypto::ThrowIfFalse(0 < EVP_PKEY_derive(ctx, secret.data(), &secretLength));
 

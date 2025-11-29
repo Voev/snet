@@ -42,7 +42,7 @@ CertManager& CertManager::loadFile(const std::filesystem::path& path)
 {
     fs::path caPath = fs::is_symlink(path) ? fs::read_symlink(path) : path;
     casket::ThrowIfFalse(fs::is_regular_file(caPath), "'" + path.string() + "' is not a file!");
-    crypto::ThrowIfFalse(0 < X509_STORE_load_file(store_, path.c_str()));
+    crypto::ThrowIfFalse(0 < X509_STORE_load_locations(store_, path.c_str(), nullptr));
     return *this;
 }
 
@@ -50,14 +50,18 @@ CertManager& CertManager::loadDirectory(const std::filesystem::path& path)
 {
     fs::path caDir = fs::is_symlink(path) ? fs::read_symlink(path) : path;
     casket::ThrowIfFalse(fs::is_directory(caDir), "'" + path.string() + "' is not a directory!");
-    crypto::ThrowIfFalse(0 < X509_STORE_load_path(store_, path.c_str()));
+    crypto::ThrowIfFalse(0 < X509_STORE_load_locations(store_, nullptr, path.c_str()));
     return *this;
 }
 
 CertManager& CertManager::loadStore(std::string_view uri)
 {
     casket::ThrowIfTrue(uri.empty(), "URI is empty");
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     crypto::ThrowIfFalse(0 < X509_STORE_load_store(store_, uri.data()));
+#else
+    throw casket::RuntimeError("Not implemented");
+#endif
     return *this;
 }
 

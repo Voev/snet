@@ -1,6 +1,12 @@
 #pragma once
 #include <openssl/x509_vfy.h>
 
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+#define OSSL_CONST_COMPAT const
+#else
+#define OSSL_CONST_COMPAT
+#endif
+
 enum class CertVersion
 {
     V1 = 0, ///< X509v1
@@ -51,15 +57,10 @@ using Key = struct evp_pkey_st;
 using KeyCtx = struct evp_pkey_ctx_st;
 using Cipher = struct evp_cipher_st;
 using CipherCtx = struct evp_cipher_ctx_st;
-using Kdf = struct evp_kdf_st;
-using KdfCtx = struct evp_kdf_ctx_st;
-using Mac = struct evp_mac_st;
-using MacCtx = struct evp_mac_ctx_st;
 
 using StoreCtx = struct ossl_store_ctx_st;
 using StoreInfo = struct ossl_store_info_st;
 using UiMethod = struct ui_method_st;
-using LibContext = struct ossl_lib_ctx_st;
 
 using CrlDistPoints = STACK_OF(DIST_POINT);
 using AuthInfoAccess = STACK_OF(ACCESS_DESCRIPTION);
@@ -67,3 +68,13 @@ using AuthInfoAccess = STACK_OF(ACCESS_DESCRIPTION);
 using CertStack = STACK_OF(X509);
 using CertExtStack = STACK_OF(X509_EXTENSION);
 using CrlStack = STACK_OF(X509_CRL);
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+using Kdf = struct evp_kdf_st;
+using KdfCtx = struct evp_kdf_ctx_st;
+using Mac = struct evp_mac_st;
+using MacCtx = struct evp_mac_ctx_st;
+using LibContext = struct ossl_lib_ctx_st;
+#else
+using MacCtx = struct hmac_ctx_st;
+#endif

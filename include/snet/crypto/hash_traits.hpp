@@ -8,49 +8,62 @@
 namespace snet::crypto
 {
 
-inline HashCtxPtr CreateHashCtx()
+class HashTraits
 {
-    auto ctx = HashCtxPtr{EVP_MD_CTX_new()};
-    ThrowIfTrue(ctx == nullptr, "bad alloc");
-    return ctx;
-}
+public:
+    static inline bool isAlgorithm(const Hash* hash, std::string_view alg)
+    {
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+        return EVP_MD_is_a(hash, alg.data());
+#else
+        return (EVP_MD_nid(hash) == OBJ_sn2nid(alg.data()));
+#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    }
 
-inline void ResetHashCtx(HashCtx* ctx) noexcept
-{
-    EVP_MD_CTX_reset(ctx);
-}
+    static inline size_t getSize(const Hash* hash) noexcept
+    {
+        return EVP_MD_size(hash);
+    }
 
-inline void InitHash(HashCtx* ctx, const Hash* algorithm)
-{
-    ThrowIfFalse(0 < EVP_DigestInit(ctx, algorithm));
-}
+    static inline size_t getSize(const HashCtx* hashCtx) noexcept
+    {
+        return EVP_MD_CTX_size(hashCtx);
+    }
 
-inline void UpdateHash(HashCtx* ctx, nonstd::span<const uint8_t> message)
-{
-    ThrowIfFalse(0 < EVP_DigestUpdate(ctx, message.data(), message.size()));
-}
+    static inline const char* getName(const Hash* hash) noexcept
+    {
+        return EVP_MD_name(hash);
+    }
 
-inline nonstd::span<uint8_t> FinalHash(HashCtx* ctx, nonstd::span<uint8_t> buffer)
-{
-    ThrowIfTrue(buffer.size() < static_cast<size_t>(EVP_MD_CTX_size(ctx)), "buffer too small");
-    unsigned int digestSize = buffer.size();
-    ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer.data(), &digestSize));
-    return {buffer.data(), digestSize};
-}
+    static inline HashCtxPtr createContext()
+    {
+        auto ctx = HashCtxPtr{EVP_MD_CTX_new()};
+        ThrowIfTrue(ctx == nullptr, "bad alloc");
+        return ctx;
+    }
 
-inline size_t GetHashSize(const Hash* hash) noexcept
-{
-    return EVP_MD_size(hash);
-}
+    static inline void resetContext(HashCtx* ctx) noexcept
+    {
+        EVP_MD_CTX_reset(ctx);
+    }
 
-inline size_t GetHashSize(const HashCtx* hashCtx) noexcept
-{
-    return EVP_MD_CTX_size(hashCtx);
-}
+    static inline void initHash(HashCtx* ctx, const Hash* algorithm)
+    {
+        ThrowIfFalse(0 < EVP_DigestInit(ctx, algorithm));
+    }
 
-inline const char* GetHashName(const Hash* hash) noexcept
-{
-    return EVP_MD_name(hash);
-}
+    static inline void updateHash(HashCtx* ctx, nonstd::span<const uint8_t> message)
+    {
+        ThrowIfFalse(0 < EVP_DigestUpdate(ctx, message.data(), message.size()));
+    }
+
+    static inline nonstd::span<uint8_t> finalHash(HashCtx* ctx, nonstd::span<uint8_t> buffer)
+    {
+        ThrowIfTrue(buffer.size() < static_cast<size_t>(EVP_MD_CTX_size(ctx)), "buffer too small");
+        unsigned int digestSize = buffer.size();
+        ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer.data(), &digestSize));
+        return {buffer.data(), digestSize};
+    }
+};
 
 } // namespace snet::crypto

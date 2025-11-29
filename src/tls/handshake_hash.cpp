@@ -4,6 +4,8 @@
 
 #include <snet/tls/handshake_hash.hpp>
 
+using namespace snet::crypto;
+
 namespace snet::tls
 {
 
@@ -18,9 +20,9 @@ void HandshakeHash::update(nonstd::span<const uint8_t> in)
 
 nonstd::span<uint8_t> HandshakeHash::final(HashCtx* hashCtx, const Hash* hashAlg, nonstd::span<uint8_t> buffer) const
 {
-    crypto::InitHash(hashCtx, hashAlg);
-    crypto::UpdateHash(hashCtx, messages_);
-    return crypto::FinalHash(hashCtx, buffer);
+    HashTraits::initHash(hashCtx, hashAlg);
+    HashTraits::updateHash(hashCtx, messages_);
+    return HashTraits::finalHash(hashCtx, buffer);
 }
 
 const std::vector<uint8_t>& HandshakeHash::getContents() const

@@ -36,7 +36,7 @@ struct CipherSuiteManager::Impl final
 {
 public:
     Impl()
-        : ctx(SSL_CTX_new_ex(nullptr, nullptr, TLS_method()))
+        : ctx(SSL_CTX_new(TLS_method()))
         , ssl(nullptr)
     {
         crypto::ThrowIfFalse(ctx != nullptr);

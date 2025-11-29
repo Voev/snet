@@ -17,7 +17,7 @@ public:
 
     static bool isEqual(const X509Cert* op1, const X509Cert* op2);
 
-    static bool isSelfSigned(X509Cert* cert, bool verifySignature) noexcept;
+    //static bool isSelfSigned(X509Cert* cert, bool verifySignature) noexcept;
 
     static CertVersion version(X509Cert* cert);
 
@@ -43,7 +43,7 @@ public:
 
     static X509CertPtr fromBuffer(nonstd::span<const uint8_t> input);
 
-    static int toBuffer(const X509Cert* cert, nonstd::span<uint8_t> output);
+    static int toBuffer(OSSL_CONST_COMPAT X509Cert* cert, nonstd::span<uint8_t> output);
 };
 
 } // namespace snet::crypto

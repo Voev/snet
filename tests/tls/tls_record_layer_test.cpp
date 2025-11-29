@@ -7,7 +7,7 @@
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/rand.hpp>
-#include <snet/crypto/cipher_context.hpp>
+#include <snet/crypto/cipher_traits.hpp>
 
 using namespace snet::crypto;
 using namespace snet::tls;
@@ -41,7 +41,7 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
 
     ASSERT_NE(cipherAlg, nullptr);
 
-    std::vector<uint8_t> key(GetKeyLength(cipherAlg));
+    std::vector<uint8_t> key(CipherTraits::getKeyLength(cipherAlg));
     std::vector<uint8_t> nonce(12);
     std::vector<uint8_t> plaintext(::get<RecordLayerFields::DataSize>(param));
 
@@ -51,7 +51,7 @@ TEST_P(RecordLayerTest, EncryptDecrypt)
 
     CipherCtxPtr ctx;
 
-    ASSERT_NO_THROW(ctx = CreateCipherCtx());
+    ASSERT_NO_THROW(ctx = CipherTraits::createContext());
     ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
     RecordLayer recordLayer;
