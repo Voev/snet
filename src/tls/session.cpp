@@ -628,24 +628,16 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     if (!keyExchange.signature.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        const Hash* hash;
-        crypto::HashAlg fetchedHash;
+        crypto::HashAlg hash;
 
         auto scheme = keyExchange.scheme;
         if (scheme.isSet())
         {
-            fetchedHash = crypto::CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
-
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-            hash = fetchedHash.get();
-#else
-            hash = fetchedHash;
-#endif
+            hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
         }
         else
         {
-            hash =
-                crypto::CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
         HashTraits::initHash(hashCtx_, hash);
