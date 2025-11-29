@@ -169,13 +169,16 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
             processClientHello(record->getHandshake<ClientHello>());
-            handshakeHash_.update(data);
+            handshakeHash_.commit(data);
             break;
         }
         case HandshakeType::ServerHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerHello(record->getHandshake<ServerHello>());
+            auto hash = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
+            handshakeHash_.init(hash);
+            handshakeHash_.update();
             handshakeHash_.update(data);
             break;
         }
@@ -204,6 +207,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         case HandshakeType::ClientKeyExchangeCode:
         {
             processClientKeyExchange(sideIndex, data);
+            handshakeHash_.update(data);
             break;
         }
         case HandshakeType::CertificateCode:
@@ -226,11 +230,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             processFinished(sideIndex, record->getHandshake<Finished>());
 
-            if (metaInfo_.version == ProtocolVersion::TLSv1_3)
-            {
-                handshakeHash_.update(data);
-            }
-            else if (sideIndex == 0)
+            if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
             {
                 handshakeHash_.update(data);
             }
@@ -309,11 +309,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         crypto::Secret masterSecret(48);
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
-            std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-            const auto sessionHash =
-                handshakeHash_.final(hashCtx_, CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite), digest);
-
-            PRF(PMS_, "extended master secret", sessionHash, {}, masterSecret);
+            PRF(PMS_, "extended master secret", handshakeHash_.final(hashCtx_), {}, masterSecret);
         }
         else
         {
@@ -461,8 +457,6 @@ void Session::generateTLS13KeyMaterial()
 
 std::string_view Session::getHashAlgorithm() const
 {
-    assert(metaInfo_.version <= ProtocolVersion::TLSv1_2);
-
     std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
     if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
@@ -658,7 +652,7 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 
     /// @todo: deserialize
 
-    handshakeHash_.update(message);
+    (void)message;
 
     if (!serverKey_)
     {
@@ -719,10 +713,9 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
 
-            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
             std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
             size_t length = actual.size();
-            const auto transcriptHash = handshakeHash_.final(hashCtx_, digest, buffer);
+            const auto transcriptHash = handshakeHash_.final(hashCtx_);
 
             crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
             crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
@@ -740,16 +733,11 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
         if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
         {
-            std::string_view algorithm = getHashAlgorithm();
-            auto fetchedAlg = crypto::CryptoManager::getInstance().fetchDigest(algorithm);
-
-            std::array<uint8_t, EVP_MAX_MD_SIZE> digest;
-            const auto transcriptHash = handshakeHash_.final(hashCtx_, fetchedAlg, digest);
-            const auto& key = secrets_.getSecret(SecretNode::MasterSecret);
-
+            const auto transcriptHash = handshakeHash_.final(hashCtx_);
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-            crypto::tls1Prf(algorithm, key, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash,
-                            {}, actual);
+
+            PRF(secrets_.getSecret(SecretNode::MasterSecret), (sideIndex == 0 ? "client finished" : "server finished"),
+                transcriptHash, {}, actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),

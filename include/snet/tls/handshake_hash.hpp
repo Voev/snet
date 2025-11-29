@@ -1,43 +1,60 @@
-/// @file
-/// @brief Declaration of the HandshakeHash class.
-
 #pragma once
-#include <casket/nonstd/span.hpp>
 #include <vector>
-#include <string_view>
-#include <snet/crypto/typedefs.hpp>
+#include <casket/nonstd/span.hpp>
+#include <snet/crypto/hash_traits.hpp>
 
 namespace snet::tls
 {
 
-/// @brief Class for handling handshake hash operations.
 class HandshakeHash final
 {
 public:
-    /// @brief Default constructor.
-    HandshakeHash();
+    HandshakeHash()
+        : context_(crypto::HashTraits::createContext())
+    {
+    }
 
-    /// @brief Destructor.
-    ~HandshakeHash() noexcept;
+    ~HandshakeHash() noexcept
+    {
+    }
 
-    /// @brief Updates the handshake hash with input data.
-    /// @param in The input data to update the hash with.
-    void update(nonstd::span<const uint8_t> in);
+    inline void commit(nonstd::span<const uint8_t> in)
+    {
+        std::copy(in.begin(), in.end(), std::back_inserter(messages_));
+    }
 
-    /// @brief Finalizes the handshake hash and returns the result.
-    /// @param algorithm The hash algorithm to use.
-    /// @return The final hash value.
-    nonstd::span<uint8_t> final(HashCtx* hashCtx, const Hash* hashAlg, nonstd::span<uint8_t> buffer) const;
+    inline void init(const Hash* algorithm)
+    {
+        crypto::HashTraits::initHash(context_, algorithm);
+    }
 
-    /// @brief Gets the contents of the handshake messages.
-    /// @return The contents of the handshake messages.
-    const std::vector<uint8_t>& getContents() const;
+    inline void update()
+    {
+        crypto::HashTraits::updateHash(context_, messages_);
+        messages_.clear();
+    }
 
-    /// @brief Resets the handshake hash.
-    void reset();
+    inline void update(nonstd::span<const uint8_t> message)
+    {
+        crypto::HashTraits::updateHash(context_, message);
+    }
+
+    inline nonstd::span<uint8_t> final(HashCtx* transitContext)
+    {
+        crypto::HashTraits::copyState(transitContext, context_);
+        return crypto::HashTraits::finalHash(transitContext, digest_);
+    }
+
+    void reset() noexcept
+    {
+        messages_.clear();
+        crypto::HashTraits::resetContext(context_);
+    }
 
 private:
     std::vector<uint8_t> messages_;
+    std::array<uint8_t, EVP_MAX_MD_SIZE> digest_;
+    crypto::HashCtxPtr context_;
 };
 
 } // namespace snet::tls
