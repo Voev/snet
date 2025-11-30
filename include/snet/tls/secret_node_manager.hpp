@@ -27,12 +27,6 @@ public:
     /// @param secretNode The secret node to add.
     void addSecrets(const ClientRandom& clientRandom, SecretNode&& secretNode);
 
-    /// @brief Finds a secret by client random and type.
-    /// @param clientRandom The client's random value.
-    /// @param type The type of the secret.
-    /// @return An optional containing the secret if found, otherwise std::nullopt.
-    std::optional<crypto::Secret> findSecret(const ClientRandom& clientRandom, const SecretNode::Type type);
-
     /// @brief Gets a secret node by client random.
     /// @param clientRandom The client's random value.
     /// @return An optional containing the secret node if found, otherwise std::nullopt.

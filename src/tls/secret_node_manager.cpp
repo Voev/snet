@@ -19,17 +19,6 @@ void SecretNodeManager::addSecrets(const ClientRandom& clientRandom, SecretNode&
     container_.insert(std::make_pair(clientRandom, std::move(secretNode)));
 }
 
-std::optional<crypto::Secret> SecretNodeManager::findSecret(const ClientRandom& clientRandom,
-                                                            const SecretNode::Type type)
-{
-    auto found = container_.find(clientRandom);
-    if (found != container_.end())
-    {
-        return found->second.getSecret(type);
-    }
-    return std::nullopt;
-}
-
 std::optional<SecretNode> SecretNodeManager::getSecretNode(const ClientRandom& clientRandom)
 {
     auto found = container_.find(clientRandom);
@@ -50,9 +39,6 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
 
     std::string line{};
     std::size_t lineno{};
-
-    SecretNode::Type type{};
-    SecretNode secrets{};
 
     while (std::getline(stream, line))
     {
@@ -80,48 +66,44 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
         auto params = casket::split(line, " ");
         casket::ThrowIfFalse(params.size() == 3, casket::format("invalid line #{}: {}", lineno, line));
 
+        auto clientRandom = casket::unhexlify(params[1]);
+        auto secret = casket::unhexlify(params[2]);
+
+        auto found = container_.find(clientRandom);
+        if (found == container_.end())
+        {
+            auto pair = container_.insert_or_assign(clientRandom, SecretNode());
+            found = pair.first;
+        }
+
         if (casket::iequals(params[0], "CLIENT_RANDOM"))
         {
-            type = SecretNode::MasterSecret;
+            found->second.masterSecret = std::move( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_EARLY_TRAFFIC_SECRET"))
         {
-            type = SecretNode::ClientEarlyTrafficSecret;
+            found->second.clientEarlyTrafficSecret = std::move( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_HANDSHAKE_TRAFFIC_SECRET"))
         {
-            type = SecretNode::ClientHandshakeTrafficSecret;
+            found->second.clientHndTrafficSecret = std::move( secret );
         }
         else if (casket::iequals(params[0], "SERVER_HANDSHAKE_TRAFFIC_SECRET"))
         {
-            type = SecretNode::ServerHandshakeTrafficSecret;
+            found->second.serverHndTrafficSecret = std::move( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_TRAFFIC_SECRET_0"))
         {
-            type = SecretNode::ClientTrafficSecret;
+            found->second.clientAppTrafficSecret = std::move( secret );
         }
         else if (casket::iequals(params[0], "SERVER_TRAFFIC_SECRET_0"))
         {
-            type = SecretNode::ServerTrafficSecret;
+            found->second.serverAppTrafficSecret = std::move( secret );
         }
         else
         {
             /* Unrecognized secret type */
             continue;
-        }
-
-        auto clientRandom = casket::unhexlify(params[1]);
-        auto secret = casket::unhexlify(params[2]);
-
-        auto found = container_.find(clientRandom);
-        if (found != container_.end())
-        {
-            found->second.setSecret(type, secret);
-        }
-        else
-        {
-            auto pair = container_.insert_or_assign(clientRandom, SecretNode());
-            pair.first->second.setSecret(type, secret);
         }
     }
 

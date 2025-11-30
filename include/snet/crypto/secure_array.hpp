@@ -1,12 +1,14 @@
 #pragma once
 #include <cstddef>
 #include <algorithm>
+#include <stdexcept>
 #include <openssl/crypto.h>
+#include <casket/nonstd/span.hpp>
 
 namespace snet::crypto
 {
 
-template <typename T, size_t N>
+template <typename T, size_t MaxN>
 class SecureArray final
 {
 public:
@@ -19,11 +21,114 @@ public:
     using iterator = T*;
     using const_iterator = const T*;
 
-    SecureArray() = default;
+    SecureArray()
+        : size_(0)
+    {
+    }
+
+    explicit SecureArray(size_type size)
+        : size_(size)
+    {
+        if (size > MaxN)
+        {
+            throw std::out_of_range("Requested size exceeds maximum capacity");
+        }
+    }
 
     ~SecureArray() noexcept
     {
-        OPENSSL_cleanse(data_, N);
+        clear_memory();
+    }
+
+    // Запрещаем копирование для безопасности
+    SecureArray(const SecureArray&) = delete;
+    SecureArray& operator=(const SecureArray&) = delete;
+
+    // Разрешаем перемещение
+    SecureArray(SecureArray&& other) noexcept
+        : size_(other.size_)
+    {
+        std::copy_n(other.data_, size_, data_);
+        other.size_ = 0;
+        OPENSSL_cleanse(other.data_, MaxN);
+    }
+
+    operator nonstd::span<T>() noexcept
+    {
+        return nonstd::span<T>(data_, size_);
+    }
+
+    operator nonstd::span<const T>() const noexcept
+    {
+        return nonstd::span<const T>(data_, size_);
+    }
+
+    SecureArray& operator=(SecureArray&& other) noexcept
+    {
+        if (this != &other)
+        {
+            clear_memory();
+            size_ = other.size_;
+            std::copy_n(other.data_, size_, data_);
+            other.size_ = 0;
+            OPENSSL_cleanse(other.data_, MaxN);
+        }
+        return *this;
+    }
+
+    template <typename InputIt>
+    void assign(InputIt first, InputIt last)
+    {
+        // Копируем и считаем одновременно
+        size_type count = 0;
+        T* dest = data_;
+
+        while (first != last && count < MaxN)
+        {
+            *dest++ = *first++;
+            ++count;
+        }
+
+        if (first != last) // Значит, не все элементы поместились
+        {
+            // Очищаем то, что успели скопировать
+            OPENSSL_cleanse(data_, count * sizeof(T));
+            throw std::out_of_range("Requested size exceeds maximum capacity");
+        }
+
+        // Очищаем хвост если уменьшили размер
+        if (count < size_)
+        {
+            OPENSSL_cleanse(data_ + count, (size_ - count) * sizeof(T));
+        }
+
+        size_ = count;
+    }
+
+    void assign(nonstd::span<const T> value)
+    {
+        assign(value.begin(), value.end());
+    }
+
+    void resize(size_type new_size)
+    {
+        if (new_size > MaxN)
+        {
+            throw std::out_of_range("Requested size exceeds maximum capacity");
+        }
+
+        // Если уменьшаем размер - очищаем освобождаемую память
+        if (new_size < size_)
+        {
+            OPENSSL_cleanse(data_ + new_size, size_ - new_size);
+        }
+        // Если увеличиваем размер - инициализируем нулями новую память
+        else if (new_size > size_)
+        {
+            std::fill_n(data_ + size_, new_size - size_, T{});
+        }
+
+        size_ = new_size;
     }
 
     reference operator[](size_type pos)
@@ -38,7 +143,7 @@ public:
 
     reference at(size_type pos)
     {
-        if (pos >= N)
+        if (pos >= size_)
         {
             throw std::out_of_range("Index out of range");
         }
@@ -47,7 +152,7 @@ public:
 
     const_reference at(size_type pos) const
     {
-        if (pos >= N)
+        if (pos >= size_)
         {
             throw std::out_of_range("Index out of range");
         }
@@ -56,26 +161,37 @@ public:
 
     reference front()
     {
+        if (size_ == 0)
+            throw std::out_of_range("Array is empty");
         return data_[0];
     }
+
     const_reference front() const
     {
+        if (size_ == 0)
+            throw std::out_of_range("Array is empty");
         return data_[0];
     }
 
     reference back()
     {
-        return data_[N - 1];
+        if (size_ == 0)
+            throw std::out_of_range("Array is empty");
+        return data_[size_ - 1];
     }
+
     const_reference back() const
     {
-        return data_[N - 1];
+        if (size_ == 0)
+            throw std::out_of_range("Array is empty");
+        return data_[size_ - 1];
     }
 
     T* data() noexcept
     {
         return data_;
     }
+
     const T* data() const noexcept
     {
         return data_;
@@ -85,10 +201,12 @@ public:
     {
         return data_;
     }
+
     const_iterator begin() const noexcept
     {
         return data_;
     }
+
     const_iterator cbegin() const noexcept
     {
         return data_;
@@ -96,34 +214,54 @@ public:
 
     iterator end() noexcept
     {
-        return data_ + N;
+        return data_ + size_;
     }
+
     const_iterator end() const noexcept
     {
-        return data_ + N;
+        return data_ + size_;
     }
+
     const_iterator cend() const noexcept
     {
-        return data_ + N;
+        return data_ + size_;
     }
 
-    constexpr size_type size() const noexcept
+    size_type size() const noexcept
     {
-        return N;
+        return size_;
     }
 
-    constexpr bool empty() const noexcept
+    size_type capacity() const noexcept
     {
-        return N == 0;
+        return MaxN;
+    }
+
+    bool empty() const noexcept
+    {
+        return size_ == 0;
     }
 
     void fill(const T& value)
     {
-        std::fill_n(data_, N, value);
+        std::fill_n(data_, size_, value);
+    }
+
+    void clear() noexcept
+    {
+        OPENSSL_cleanse(data_, size_);
+        size_ = 0;
     }
 
 private:
-    T data_[N];
+    void clear_memory() noexcept
+    {
+        OPENSSL_cleanse(data_, MaxN);
+        size_ = 0;
+    }
+
+    T data_[MaxN];
+    size_type size_;
 };
 
 } // namespace snet::crypto

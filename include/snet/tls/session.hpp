@@ -7,6 +7,7 @@
 #include <string>
 #include <cstddef>
 #include <casket/nonstd/span.hpp>
+#include <snet/crypto/secure_array.hpp>
 
 #include <snet/tls/alert.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -180,12 +181,12 @@ private:
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
     SecretNode secrets_;
     std::vector<uint8_t> PMS_;
-    std::vector<uint8_t> clientMacKey_;
-    std::vector<uint8_t> serverMacKey_;
-    std::vector<uint8_t> clientEncKey_;
-    std::vector<uint8_t> serverEncKey_;
-    std::vector<uint8_t> clientIV_;
-    std::vector<uint8_t> serverIV_;
+    crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> clientMacKey_;
+    crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> serverMacKey_;
+    crypto::SecureArray<uint8_t, EVP_MAX_KEY_LENGTH> clientEncKey_;
+    crypto::SecureArray<uint8_t, EVP_MAX_KEY_LENGTH> serverEncKey_;
+    crypto::SecureArray<uint8_t, EVP_MAX_IV_LENGTH> clientIV_;
+    crypto::SecureArray<uint8_t, EVP_MAX_IV_LENGTH> serverIV_;
     HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;

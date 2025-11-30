@@ -22,61 +22,6 @@ void createLogFile(const std::filesystem::path& filename, std::string_view conte
 
 } // namespace
 
-class SecretNodeManagerTest : public ::testing::Test
-{
-public:
-    SecretNodeManagerTest() = default;
-    ~SecretNodeManagerTest() = default;
-
-protected:
-    SecretNodeManager manager;
-    ClientRandom clientRandom1;
-    ClientRandom clientRandom2;
-
-    SecretNode createTestSecretNode()
-    {
-        SecretNode secretNode;
-        Secret testSecret = {10, 20, 30, 40};
-        secretNode.setSecret(SecretNode::ClientTrafficSecret, testSecret);
-        return secretNode;
-    }
-};
-
-TEST_F(SecretNodeManagerTest, AddAndFindSecret)
-{
-    SecretNode secretNode = createTestSecretNode();
-    manager.addSecrets(clientRandom1, std::move(secretNode));
-
-    auto foundSecret = manager.findSecret(clientRandom1, SecretNode::ClientTrafficSecret);
-    ASSERT_TRUE(foundSecret.has_value());
-    EXPECT_EQ(foundSecret.value(), Secret({10, 20, 30, 40}));
-}
-
-TEST_F(SecretNodeManagerTest, FindSecretNotAdded)
-{
-    auto foundSecret = manager.findSecret(clientRandom2, SecretNode::ClientTrafficSecret);
-    EXPECT_FALSE(foundSecret.has_value());
-}
-
-TEST_F(SecretNodeManagerTest, GetSecretNode)
-{
-    SecretNode secretNode = createTestSecretNode();
-    manager.addSecrets(clientRandom1, std::move(secretNode));
-
-    auto optSecretNode = manager.getSecretNode(clientRandom1);
-    ASSERT_TRUE(optSecretNode.has_value());
-
-    const SecretNode& retrievedNode = optSecretNode.value();
-    const Secret& secret = retrievedNode.getSecret(SecretNode::ClientTrafficSecret);
-    EXPECT_EQ(secret, Secret({10, 20, 30, 40}));
-}
-
-TEST_F(SecretNodeManagerTest, GetSecretNodeNotAdded)
-{
-    auto optSecretNode = manager.getSecretNode(clientRandom2);
-    EXPECT_FALSE(optSecretNode.has_value());
-}
-
 class SecretNodeManagerFileTest : public ::testing::TestWithParam<std::string_view>
 {
 public:

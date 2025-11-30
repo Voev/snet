@@ -304,23 +304,23 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         return;
     }
 
-    if (secrets_.getSecret(SecretNode::MasterSecret).empty())
+    if (secrets_.masterSecret.empty())
     {
-        crypto::Secret masterSecret(48);
+        secrets_.masterSecret.resize(48);
+
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
-            PRF(PMS_, "extended master secret", handshakeHash_.final(hashCtx_), {}, masterSecret);
+            PRF(PMS_, "extended master secret", handshakeHash_.final(hashCtx_), {}, secrets_.masterSecret);
         }
         else
         {
-            PRF(PMS_, "master secret", clientRandom_, serverRandom_, masterSecret);
+            PRF(PMS_, "master secret", clientRandom_, serverRandom_, secrets_.masterSecret);
         }
-        secrets_.setSecret(SecretNode::MasterSecret, masterSecret);
     }
 
     if (debugKeys_)
     {
-        utils::printHex(std::cout, secrets_.getSecret(SecretNode::MasterSecret), Colorize("MasterSecret"));
+        utils::printHex(std::cout, secrets_.masterSecret, Colorize("MasterSecret"));
     }
 
     if (!cipherAlg_)
@@ -332,21 +332,21 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     size_t keySize = CipherTraits::getKeyLength(cipherAlg_);
     size_t ivSize = CipherTraits::getIVLengthWithinKeyBlock(cipherAlg_);
 
-    if (CipherSuiteIsAEAD(metaInfo_.cipherSuite))
+    if (CipherTraits::isAEAD(cipherAlg_))
     {
         crypto::SecureArray<uint8_t, (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (keySize + ivSize) * 2;
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
+        PRF(secrets_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::DataReader reader("Key block (for AEAD)", keyBlock);
 
-        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
-        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
-        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
-        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
+        clientEncKey_.assign(reader.get_span_fixed(keySize));
+        serverEncKey_.assign(reader.get_span_fixed(keySize));
+        clientIV_.assign(reader.get_span_fixed(ivSize));
+        serverIV_.assign(reader.get_span_fixed(ivSize));
 
         reader.assert_done();
 
@@ -378,16 +378,16 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
 
-        PRF(secrets_.getSecret(SecretNode::MasterSecret), "key expansion", serverRandom_, clientRandom_, keyBlock);
+        PRF(secrets_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
         utils::DataReader reader("Key block (with MAC key)", keyBlock);
 
-        clientMacKey_ = reader.get_fixed<uint8_t>(macSize);
-        serverMacKey_ = reader.get_fixed<uint8_t>(macSize);
-        clientEncKey_ = reader.get_fixed<uint8_t>(keySize);
-        serverEncKey_ = reader.get_fixed<uint8_t>(keySize);
-        clientIV_ = reader.get_fixed<uint8_t>(ivSize);
-        serverIV_ = reader.get_fixed<uint8_t>(ivSize);
+        clientMacKey_.assign(reader.get_span_fixed(macSize));
+        serverMacKey_.assign(reader.get_span_fixed(macSize));
+        clientEncKey_.assign(reader.get_span_fixed(keySize));
+        serverEncKey_.assign(reader.get_span_fixed(keySize));
+        clientIV_.assign(reader.get_span_fixed(ivSize));
+        serverIV_.assign(reader.get_span_fixed(ivSize));
 
         reader.assert_done();
 
@@ -421,25 +421,13 @@ void Session::generateTLS13KeyMaterial()
         return;
     }
 
-    auto keySize = CipherSuiteGetKeySize(metaInfo_.cipherSuite);
+    const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
 
-    const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    const auto digestName = HashTraits::getName(digest);
-    const auto& shts = secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret);
+    crypto::DeriveKey(digestName, secrets_.clientHndTrafficSecret, clientEncKey_);
+    crypto::DeriveKey(digestName, secrets_.serverHndTrafficSecret, serverEncKey_);
 
-    serverEncKey_.resize(keySize);
-    serverIV_.resize(12);
-
-    crypto::DeriveKey(digestName, shts, serverEncKey_);
-    crypto::DeriveIV(digestName, shts, serverIV_);
-
-    const auto& chts = secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret);
-
-    clientEncKey_.resize(keySize);
-    clientIV_.resize(12);
-
-    crypto::DeriveKey(digestName, chts, clientEncKey_);
-    crypto::DeriveIV(digestName, chts, clientIV_);
+    crypto::DeriveIV(digestName, secrets_.clientHndTrafficSecret, clientIV_);
+    crypto::DeriveIV(digestName, secrets_.serverHndTrafficSecret, serverIV_);
 
     if (debugKeys_)
     {
@@ -698,11 +686,9 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
     case ProtocolVersion::TLSv1_3:
     {
-        const auto& secret = (sideIndex == 0 ? secrets_.getSecret(SecretNode::ClientHandshakeTrafficSecret)
-                                             : secrets_.getSecret(SecretNode::ServerHandshakeTrafficSecret));
+        const auto& secret = (sideIndex == 0 ? secrets_.clientHndTrafficSecret : secrets_.serverHndTrafficSecret);
         if (!secret.empty())
         {
-
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
             const auto digestName = HashTraits::getName(digest);
 
@@ -731,13 +717,13 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     case ProtocolVersion::TLSv1_1:
     case ProtocolVersion::TLSv1_0:
     {
-        if (!secrets_.getSecret(SecretNode::MasterSecret).empty())
+        if (!secrets_.masterSecret.empty())
         {
             const auto transcriptHash = handshakeHash_.final(hashCtx_);
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
-            PRF(secrets_.getSecret(SecretNode::MasterSecret), (sideIndex == 0 ? "client finished" : "server finished"),
-                transcriptHash, {}, actual);
+            PRF(secrets_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+                actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -758,13 +744,9 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         {
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
             const auto digestName = HashTraits::getName(digest);
-            const auto& secret = secrets_.getSecret(SecretNode::ClientTrafficSecret);
 
-            clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
-            clientIV_.resize(12);
-
-            crypto::DeriveKey(digestName, secret, clientEncKey_);
-            crypto::DeriveIV(digestName, secret, clientIV_);
+            crypto::DeriveKey(digestName, secrets_.clientAppTrafficSecret, clientEncKey_);
+            crypto::DeriveIV(digestName, secrets_.clientAppTrafficSecret, clientIV_);
 
             seqnum_.resetClientSequence();
 
@@ -777,13 +759,9 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         else
         {
             std::string_view digestName = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
-            const auto& secret = secrets_.getSecret(SecretNode::ServerTrafficSecret);
 
-            serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
-            serverIV_.resize(12);
-
-            crypto::DeriveKey(digestName, secret, serverEncKey_);
-            crypto::DeriveIV(digestName, secret, serverIV_);
+            crypto::DeriveKey(digestName, secrets_.serverAppTrafficSecret, serverEncKey_);
+            crypto::DeriveIV(digestName, secrets_.serverAppTrafficSecret, serverIV_);
 
             seqnum_.resetServerSequence();
 
@@ -803,32 +781,26 @@ void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
 
 void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
 {
-    (void)message;
+    /// @todo: handle requested and not requested mode
+    casket::ThrowIfFalse(message.subspan(TLS_HANDSHAKE_HEADER_SIZE).size_bytes() == 1, "invalid KeyUpdate message");
 
-    const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-    std::string_view digestName = HashTraits::getName(digest);
+    const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
 
     if (sideIndex == 0)
     {
-        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ClientTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.clientAppTrafficSecret);
 
-        clientEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
-        clientIV_.resize(12);
-
-        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientEncKey_);
-        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ClientTrafficSecret), clientIV_);
+        crypto::DeriveKey(digestName, secrets_.clientAppTrafficSecret, clientEncKey_);
+        crypto::DeriveIV(digestName, secrets_.clientAppTrafficSecret, clientIV_);
 
         seqnum_.resetClientSequence();
     }
     else
     {
-        crypto::UpdateTrafficSecret(digestName, secrets_.get(SecretNode::ServerTrafficSecret));
+        crypto::UpdateTrafficSecret(digestName, secrets_.serverAppTrafficSecret);
 
-        serverEncKey_.resize(CipherSuiteGetKeySize(metaInfo_.cipherSuite));
-        serverIV_.resize(12);
-
-        crypto::DeriveKey(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverEncKey_);
-        crypto::DeriveIV(digestName, secrets_.get(SecretNode::ServerTrafficSecret), serverIV_);
+        crypto::DeriveKey(digestName, secrets_.serverAppTrafficSecret, serverEncKey_);
+        crypto::DeriveIV(digestName, secrets_.serverAppTrafficSecret, serverIV_);
 
         seqnum_.resetServerSequence();
     }
@@ -837,11 +809,13 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
 void Session::fetchAlgorithms()
 {
     // Don't call for unknown protocol version and cipher suite
+
     assert(metaInfo_.version != ProtocolVersion());
     assert(metaInfo_.cipherSuite != nullptr);
 
     auto isAEAD = false;
     auto cipherName = CipherSuiteGetCipherName(metaInfo_.cipherSuite);
+
     if (!casket::iequals(cipherName, "UNDEF"))
     {
         cipherAlg_ = CryptoManager::getInstance().fetchCipher(cipherName);
@@ -853,9 +827,32 @@ void Session::fetchAlgorithms()
             recordLayer_.setTagLength(
                 CipherSuiteManager::getInstance().getTagLengthByID(CipherSuiteGetID(metaInfo_.cipherSuite)));
         }
+
+        /// Detect lengths for encryption keys and IV
+        if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+        {
+            auto keySize = CipherTraits::getKeyLength(cipherAlg_); // //CipherSuiteGetKeySize(metaInfo_.cipherSuite));
+            clientEncKey_.resize(keySize);
+            serverEncKey_.resize(keySize);
+
+            /// @todo: fix constant.
+            clientIV_.resize(12);
+            serverIV_.resize(12);
+        }
+        else
+        {
+            auto keySize = CipherTraits::getKeyLength(cipherAlg_);
+            clientEncKey_.resize(keySize);
+            serverEncKey_.resize(keySize);
+
+            auto ivSize = CipherTraits::getIVLengthWithinKeyBlock(cipherAlg_);
+            clientIV_.resize(ivSize);
+            serverIV_.resize(ivSize);
+        }
     }
 
-    if (!isAEAD) // TLSv1.3 uses only AEAD, so don't check for version
+    // TLSv1.3 uses only AEAD, so don't check for version
+    if (!isAEAD)
     {
         hmacHashAlg_ = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
 
