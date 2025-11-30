@@ -37,6 +37,7 @@ namespace snet::tls
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
     , hashCtx_(HashTraits::createContext())
+    , hmacCtx_(HmacTraits::createContext())
     , clientCipherCtx_(CipherTraits::createContext())
     , serverCipherCtx_(CipherTraits::createContext())
     , cipherState_(0)
@@ -306,6 +307,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (secrets_.masterSecret.empty())
     {
+        ThrowIfTrue(PMS_.empty(), "Premaster secret not setted");
         secrets_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
 
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
@@ -334,7 +336,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (CipherTraits::isAEAD(cipherAlg_))
     {
-        crypto::SecureArray<uint8_t, (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        crypto::SecureArray<uint8_t, (TLS_MAX_KEY_LENGTH + TLS_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (keySize + ivSize) * 2;
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
@@ -373,7 +375,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     {
         auto macSize = HashTraits::getSize(hmacHashAlg_);
 
-        crypto::SecureArray<uint8_t, (EVP_MAX_MD_SIZE + EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH) * 2> keyBlockBuffer;
+        crypto::SecureArray<uint8_t, (TLS_MAX_MAC_LENGTH + TLS_MAX_KEY_LENGTH + TLS_MAX_IV_LENGTH) * 2> keyBlockBuffer;
         size_t keyBlockSize = (macSize + keySize + ivSize) * 2;
 
         auto keyBlock = nonstd::span(keyBlockBuffer.data(), keyBlockSize);
@@ -697,14 +699,14 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
             const auto digestName = HashTraits::getName(digest);
 
-            crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> finishedKey;
+            crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> finishedKey;
             size_t keySize = HashTraits::getSize(digest);
 
             crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
 
-            std::array<uint8_t, EVP_MAX_MD_SIZE> actual;
+            std::array<uint8_t, TLS_MAX_MAC_LENGTH> actual;
             size_t length = actual.size();
             const auto transcriptHash = handshakeHash_.final(hashCtx_);
 
@@ -747,8 +749,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
         if (sideIndex == 0)
         {
-            const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = HashTraits::getName(digest);
+            const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
 
             crypto::DeriveKey(digestName, secrets_.clientAppTrafficSecret, clientEncKey_);
             crypto::DeriveIV(digestName, secrets_.clientAppTrafficSecret, clientIV_);
@@ -763,7 +764,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         }
         else
         {
-            std::string_view digestName = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+            const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
 
             crypto::DeriveKey(digestName, secrets_.serverAppTrafficSecret, serverEncKey_);
             crypto::DeriveIV(digestName, secrets_.serverAppTrafficSecret, serverIV_);
@@ -836,7 +837,7 @@ void Session::fetchAlgorithms()
         /// Detect lengths for encryption keys and IV
         if (metaInfo_.version == ProtocolVersion::TLSv1_3)
         {
-            auto keySize = CipherTraits::getKeyLength(cipherAlg_); // //CipherSuiteGetKeySize(metaInfo_.cipherSuite));
+            auto keySize = CipherTraits::getKeyLength(cipherAlg_); 
             clientEncKey_.resize(keySize);
             serverEncKey_.resize(keySize);
 
@@ -860,11 +861,6 @@ void Session::fetchAlgorithms()
     if (!isAEAD)
     {
         hmacHashAlg_ = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
-
-        if (metaInfo_.version != ProtocolVersion::SSLv3_0)
-        {
-            hmacCtx_ = HmacTraits::createContext();
-        }
     }
 }
 
