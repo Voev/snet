@@ -19,14 +19,14 @@ void SecretNodeManager::addSecrets(const ClientRandom& clientRandom, SecretNode&
     container_.insert(std::make_pair(clientRandom, std::move(secretNode)));
 }
 
-std::optional<SecretNode> SecretNodeManager::getSecretNode(const ClientRandom& clientRandom)
+const SecretNode* SecretNodeManager::getSecretNode(const ClientRandom& clientRandom)
 {
     auto found = container_.find(clientRandom);
     if (found != container_.end())
     {
-        return found->second;
+        return &found->second;
     }
-    return std::nullopt;
+    return nullptr;
 }
 
 void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
@@ -78,27 +78,27 @@ void SecretNodeManager::parseKeyLogFile(const std::filesystem::path& keylog)
 
         if (casket::iequals(params[0], "CLIENT_RANDOM"))
         {
-            found->second.masterSecret = std::move( secret );
+            found->second.masterSecret.assign( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_EARLY_TRAFFIC_SECRET"))
         {
-            found->second.clientEarlyTrafficSecret = std::move( secret );
+            found->second.clientEarlyTrafficSecret.assign( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_HANDSHAKE_TRAFFIC_SECRET"))
         {
-            found->second.clientHndTrafficSecret = std::move( secret );
+            found->second.clientHndTrafficSecret.assign( secret );
         }
         else if (casket::iequals(params[0], "SERVER_HANDSHAKE_TRAFFIC_SECRET"))
         {
-            found->second.serverHndTrafficSecret = std::move( secret );
+            found->second.serverHndTrafficSecret.assign( secret );
         }
         else if (casket::iequals(params[0], "CLIENT_TRAFFIC_SECRET_0"))
         {
-            found->second.clientAppTrafficSecret = std::move( secret );
+            found->second.clientAppTrafficSecret.assign( secret );
         }
         else if (casket::iequals(params[0], "SERVER_TRAFFIC_SECRET_0"))
         {
-            found->second.serverAppTrafficSecret = std::move( secret );
+            found->second.serverAppTrafficSecret.assign( secret );
         }
         else
         {

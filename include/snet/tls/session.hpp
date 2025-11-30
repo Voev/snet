@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 #include <cstddef>
-#include <casket/nonstd/span.hpp>
+
 #include <snet/crypto/secure_array.hpp>
 
 #include <snet/tls/alert.hpp>
@@ -67,7 +67,7 @@ public:
     /// @param rnd1 The first random value.
     /// @param rnd2 The second random value.
     /// @param out The output buffer for the key material.
-    void PRF(const crypto::Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+    void PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
     /// @brief Generates key material for the session.
@@ -87,7 +87,7 @@ public:
 
     /// @brief Sets the secrets for the session.
     /// @param secrets The secrets to set.
-    void setSecrets(SecretNode secrets);
+    void setSecrets(const SecretNode* secrets);
 
     /// @brief Sets the premaster secret for the session.
     /// @param pms The premaster secret to set.
@@ -177,16 +177,16 @@ private:
     crypto::KeyPtr serverKey_;
     RecordProcessor processor_;
     MetaInfo metaInfo_;
+    std::vector<uint8_t> PMS_;
+    SecretNode secrets_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
-    SecretNode secrets_;
-    std::vector<uint8_t> PMS_;
-    crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> clientMacKey_;
-    crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> serverMacKey_;
-    crypto::SecureArray<uint8_t, EVP_MAX_KEY_LENGTH> clientEncKey_;
-    crypto::SecureArray<uint8_t, EVP_MAX_KEY_LENGTH> serverEncKey_;
-    crypto::SecureArray<uint8_t, EVP_MAX_IV_LENGTH> clientIV_;
-    crypto::SecureArray<uint8_t, EVP_MAX_IV_LENGTH> serverIV_;
+    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> clientMacKey_;
+    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> serverMacKey_;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientEncKey_;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> serverEncKey_;
+    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> clientIV_;
+    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> serverIV_;
     HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;

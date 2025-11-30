@@ -306,7 +306,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
     if (secrets_.masterSecret.empty())
     {
-        secrets_.masterSecret.resize(48);
+        secrets_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
 
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
@@ -453,7 +453,7 @@ std::string_view Session::getHashAlgorithm() const
     return digest;
 }
 
-void Session::PRF(const crypto::Secret& secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+void Session::PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
     casket::ThrowIfFalse(metaInfo_.version <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");
@@ -474,9 +474,14 @@ const ProtocolVersion& Session::getVersion() const noexcept
     return metaInfo_.version;
 }
 
-void Session::setSecrets(SecretNode secrets)
+void Session::setSecrets(const SecretNode* secrets)
 {
-    secrets_ = std::move(secrets);
+    secrets_.masterSecret.assign(secrets->masterSecret);
+    secrets_.clientEarlyTrafficSecret.assign(secrets->clientEarlyTrafficSecret);
+    secrets_.clientHndTrafficSecret.assign(secrets->clientHndTrafficSecret);
+    secrets_.clientAppTrafficSecret.assign(secrets->clientAppTrafficSecret);
+    secrets_.serverHndTrafficSecret.assign(secrets->serverHndTrafficSecret);
+    secrets_.serverAppTrafficSecret.assign(secrets->serverAppTrafficSecret);
 }
 
 void Session::setPremasterSecret(std::vector<std::uint8_t> pms)

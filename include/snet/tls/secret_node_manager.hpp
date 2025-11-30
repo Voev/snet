@@ -3,7 +3,6 @@
 
 #pragma once
 #include <filesystem>
-#include <optional>
 #include <unordered_map>
 #include <snet/tls/client_random.hpp>
 #include <snet/tls/secret_node.hpp>
@@ -30,7 +29,7 @@ public:
     /// @brief Gets a secret node by client random.
     /// @param clientRandom The client's random value.
     /// @return An optional containing the secret node if found, otherwise std::nullopt.
-    std::optional<SecretNode> getSecretNode(const ClientRandom& clientRandom);
+    const SecretNode* getSecretNode(const ClientRandom& clientRandom);
 
     /// @brief Parses a key log file and adds the secrets to the manager.
     /// @param keylog The path to the key log file.
