@@ -8,7 +8,7 @@
 namespace snet::crypto
 {
 
-template <typename T, size_t MaxN>
+template <typename T, size_t N>
 class SecureArray final
 {
 public:
@@ -29,7 +29,7 @@ public:
     explicit SecureArray(size_type size)
         : size_(size)
     {
-        if (size > MaxN)
+        if (size > N)
         {
             throw std::out_of_range("Requested size exceeds maximum capacity");
         }
@@ -40,17 +40,15 @@ public:
         clear_memory();
     }
 
-    // Запрещаем копирование для безопасности
     SecureArray(const SecureArray&) = delete;
     SecureArray& operator=(const SecureArray&) = delete;
 
-    // Разрешаем перемещение
     SecureArray(SecureArray&& other) noexcept
         : size_(other.size_)
     {
         std::copy_n(other.data_, size_, data_);
         other.size_ = 0;
-        OPENSSL_cleanse(other.data_, MaxN);
+        OPENSSL_cleanse(other.data_, N);
     }
 
     operator nonstd::span<T>() noexcept
@@ -71,7 +69,7 @@ public:
             size_ = other.size_;
             std::copy_n(other.data_, size_, data_);
             other.size_ = 0;
-            OPENSSL_cleanse(other.data_, MaxN);
+            OPENSSL_cleanse(other.data_, N);
         }
         return *this;
     }
@@ -79,24 +77,21 @@ public:
     template <typename InputIt>
     void assign(InputIt first, InputIt last)
     {
-        // Копируем и считаем одновременно
         size_type count = 0;
         T* dest = data_;
 
-        while (first != last && count < MaxN)
+        while (first != last && count < N)
         {
             *dest++ = *first++;
             ++count;
         }
 
-        if (first != last) // Значит, не все элементы поместились
+        if (first != last)
         {
-            // Очищаем то, что успели скопировать
             OPENSSL_cleanse(data_, count * sizeof(T));
             throw std::out_of_range("Requested size exceeds maximum capacity");
         }
 
-        // Очищаем хвост если уменьшили размер
         if (count < size_)
         {
             OPENSSL_cleanse(data_ + count, (size_ - count) * sizeof(T));
@@ -110,25 +105,23 @@ public:
         assign(value.begin(), value.end());
     }
 
-    void resize(size_type new_size)
+    void resize(size_type newSize)
     {
-        if (new_size > MaxN)
+        if (newSize > N)
         {
             throw std::out_of_range("Requested size exceeds maximum capacity");
         }
 
-        // Если уменьшаем размер - очищаем освобождаемую память
-        if (new_size < size_)
+        if (newSize < size_)
         {
-            OPENSSL_cleanse(data_ + new_size, size_ - new_size);
+            OPENSSL_cleanse(data_ + newSize, size_ - newSize);
         }
-        // Если увеличиваем размер - инициализируем нулями новую память
-        else if (new_size > size_)
+        else if (newSize > size_)
         {
-            std::fill_n(data_ + size_, new_size - size_, T{});
+            std::fill_n(data_ + size_, newSize - size_, T{});
         }
 
-        size_ = new_size;
+        size_ = newSize;
     }
 
     reference operator[](size_type pos)
@@ -234,7 +227,7 @@ public:
 
     size_type capacity() const noexcept
     {
-        return MaxN;
+        return N;
     }
 
     bool empty() const noexcept
@@ -256,11 +249,11 @@ public:
 private:
     void clear_memory() noexcept
     {
-        OPENSSL_cleanse(data_, MaxN);
+        OPENSSL_cleanse(data_, N);
         size_ = 0;
     }
 
-    T data_[MaxN];
+    T data_[N];
     size_type size_;
 };
 

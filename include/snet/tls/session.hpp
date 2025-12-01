@@ -178,15 +178,9 @@ private:
     RecordProcessor processor_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;
-    SecretNode secrets_;
+    SecretNode keyInfo_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
-    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> clientMacKey_;
-    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> serverMacKey_;
-    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientEncKey_;
-    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> serverEncKey_;
-    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> clientIV_;
-    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> serverIV_;
     HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
@@ -194,7 +188,7 @@ private:
     SequenceNumbers seqnum_;
     uint8_t cipherState_;
     uint8_t canDecrypt_;
-    bool monitor_;
+    uint8_t monitor_;
     uint8_t debugKeys_;
 };
 
