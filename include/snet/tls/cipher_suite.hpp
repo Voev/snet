@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <snet/crypto/typedefs.hpp>
+#include <snet/crypto/hash_traits.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
 
@@ -37,6 +38,11 @@ inline std::string_view CipherSuiteGetHmacDigestName(const CipherSuite* suite) n
 inline const Hash* CipherSuiteGetHandshakeDigest(const CipherSuite* suite) noexcept
 {
     return SSL_CIPHER_get_handshake_digest(suite);
+}
+
+inline std::string_view CipherSuiteGetHandshakeDigestName(const CipherSuite* suite) noexcept
+{
+    return crypto::HashTraits::getName(CipherSuiteGetHandshakeDigest(suite));
 }
 
 inline int CipherSuiteGetKeyExchange(const CipherSuite* suite) noexcept

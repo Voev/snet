@@ -18,9 +18,9 @@ public:
     {
         ClientRandom random{clientHello.random.begin(), clientHello.random.end()};
         auto secrets = secretNodeManager_.getSecretNode(random);
-        if (secrets.has_value())
+        if (secrets)
         {
-            session->setSecrets(secrets.value());
+            session->setSecrets(secrets);
         }
     }
 

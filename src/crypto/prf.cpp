@@ -20,7 +20,7 @@
 namespace snet::crypto
 {
 
-void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
+void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out)
 {
     unsigned int ch = 'A';
@@ -73,7 +73,7 @@ void ssl3Prf(const Secret& secret, nonstd::span<const uint8_t> clientRandom, non
     }
 }
 
-void tls1Prf(std::string_view algorithm, const Secret& secret, std::string_view label,
+void tls1Prf(std::string_view algorithm, nonstd::span<const uint8_t> secret, std::string_view label,
              nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out)
 {

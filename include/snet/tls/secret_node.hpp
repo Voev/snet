@@ -2,73 +2,29 @@
 /// @brief Declaration of the SecretNode class.
 
 #pragma once
-#include <array>
-#include <vector>
-#include <cstdint>
-#include <casket/nonstd/span.hpp>
-#include <snet/crypto/secret.hpp>
+#include <snet/crypto/secure_array.hpp>
 #include <snet/tls/version.hpp>
 
 namespace snet::tls
 {
 
-/// @brief Class representing a secret node.
-class SecretNode final
+struct SecretNode
 {
-public:
-    /// @brief Enumeration of secret types.
-    enum Type
-    {
-        MasterSecret = 0,
-        ClientEarlyTrafficSecret,
-        ClientHandshakeTrafficSecret,
-        ServerHandshakeTrafficSecret,
-        ClientTrafficSecret,
-        ServerTrafficSecret,
-        SecretTypesCount
-    };
+    crypto::SecureArray<uint8_t, TLS_MASTER_SECRET_SIZE> masterSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientEarlyTrafficSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientHndTrafficSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientAppTrafficSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> serverHndTrafficSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> serverAppTrafficSecret;
 
-    /// @brief Default constructor.
-    SecretNode();
+    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> clientMacKey;
+    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> serverMacKey;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientEncKey;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> serverEncKey;
+    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> clientIV;
+    crypto::SecureArray<uint8_t, TLS_MAX_IV_LENGTH> serverIV;
 
-    /// @brief Destructor.
-    ~SecretNode() noexcept;
-
-    /// @brief Copy constructor.
-    /// @param other Constant reference to the secret node.
-    SecretNode(const SecretNode& other) = default;
-
-    /// @brief Move constructor.
-    /// @param other rvalue reference to the secret node.
-    SecretNode(SecretNode&& other) noexcept = default;
-
-    /// @brief Copy assignment operator.
-    /// @param other Constant reference to the secret node.
-    SecretNode& operator=(const SecretNode& other) = default;
-
-    /// @brief Move assignment operator.
-    /// @param other rvalue reference to the secret node.
-    SecretNode& operator=(SecretNode&& other) noexcept = default;
-
-    /// @brief Sets a secret of a specific type.
-    /// @param type The type of the secret.
-    /// @param secret The secret to set.
-    void setSecret(const Type type, const crypto::Secret& secret);
-
-    /// @brief Gets a secret of a specific type.
-    /// @param type The type of the secret.
-    /// @return The secret of the specified type.
-    const crypto::Secret& getSecret(const Type type) const;
-
-    /// @brief Checks if the secret node is valid for a specific protocol version.
-    /// @param version The protocol version.
-    /// @return True if the secret node is valid, false otherwise.
-    bool isValid(const ProtocolVersion version) const;
-
-    nonstd::span<uint8_t> get(const Type type);
-
-private:
-    std::array<crypto::Secret, SecretTypesCount> secrets_;
+    bool isValid(const ProtocolVersion version) const noexcept;
 };
 
 } // namespace snet::tls
