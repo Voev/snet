@@ -35,6 +35,9 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     case HandshakeType::CertificateCode:
         message = Certificate::deserialize(payload, metaInfo);
         break;
+    case HandshakeType::CertificateRequestCode:
+        /// @todo: support it.
+        break;
     case HandshakeType::CertificateVerifyCode:
         message = CertificateVerify::deserialize(payload);
         break;

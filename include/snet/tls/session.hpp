@@ -109,15 +109,13 @@ public:
 
     void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
-    void processCertificate(const Certificate& certificate);
+    void processCertificate(const int8_t sideIndex, const Certificate& certificate);
 
-    void processCertificateVerify(const CertificateVerify& certVerify);
+    void processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify);
 
     void processServerKeyExchange(const ServerKeyExchange& keyExchange);
 
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
-    void processServerHelloDone(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
@@ -173,6 +171,7 @@ private:
     crypto::MacCtxPtr hmacCtx_;   ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
+    crypto::X509CertPtr clientCert_;
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
     RecordProcessor processor_;

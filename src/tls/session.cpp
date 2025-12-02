@@ -24,6 +24,8 @@
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 
+#include <openssl/evp.h>
+
 using namespace snet::crypto;
 
 inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
@@ -213,17 +215,18 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         }
         case HandshakeType::CertificateCode:
         {
-            casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
-            processCertificate(record->getHandshake<Certificate>());
+            processCertificate(sideIndex, record->getHandshake<Certificate>());
             handshakeHash_.update(data);
             break;
         }
         case HandshakeType::CertificateRequestCode:
+        {
+            handshakeHash_.update(data);
             break;
+        }
         case HandshakeType::CertificateVerifyCode:
         {
-            casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-            processCertificateVerify(record->getHandshake<CertificateVerify>());
+            processCertificateVerify(sideIndex, record->getHandshake<CertificateVerify>());
             handshakeHash_.update(data);
             break;
         }
@@ -553,17 +556,31 @@ void Session::processServerHello(const ServerHello& serverHello)
     }
 }
 
-void Session::processCertificate(const Certificate& certificate)
+void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
 {
     if (std::holds_alternative<TLSv13Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv13Certificate>(certificate.message);
-        serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        if (sideIndex == 0)
+        {
+            clientCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        }
+        else
+        {
+            serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        }
     }
     else if (std::holds_alternative<TLSv1Certificate>(certificate.message))
     {
         const auto& message = std::get<TLSv1Certificate>(certificate.message);
-        serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        if (sideIndex == 0)
+        {
+            clientCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        }
+        else
+        {
+            serverCert_ = crypto::Cert::fromBuffer(message.entryList[0].certData);
+        }
     }
 
     /// @todo verify certificate chain
@@ -595,14 +612,83 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
     /// @todo: TLSv1.3 fix it.
 
     reader.assert_done();
-
-    handshakeHash_.update(message);
 }
 
-void Session::processCertificateVerify(const CertificateVerify& certVerify)
+/*
+ * Size of the to-be-signed TLS13 data, without the hash size itself:
+ * 64 bytes of value 32, 33 context bytes, 1 byte separator
+ */
+#define TLS13_TBS_START_SIZE 64
+#define TLS13_TBS_PREAMBLE_SIZE (TLS13_TBS_START_SIZE + 33 + 1)
+
+void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
-    (void)certVerify;
-    /// @todo: verify data.
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    {
+        auto transcriptHash = handshakeHash_.final(hashCtx_);
+
+        unsigned char tls13tbs[TLS13_TBS_START_SIZE];
+        /* ASCII: "TLS 1.3, server CertificateVerify" with 0x00, in hex for EBCDIC compatibility */
+        static const uint8_t serverContext[] = {0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x73, 0x65, 0x72,
+                                                0x76, 0x65, 0x72, 0x20, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63,
+                                                0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
+        /* ASCII: "TLS 1.3, client CertificateVerify" with 0x00, in hex for EBCDIC compatibility */
+        static const uint8_t clientContext[] = {0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x63, 0x6c, 0x69,
+                                                0x65, 0x6e, 0x74, 0x20, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63,
+                                                0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
+
+        auto hash = CryptoManager::getInstance().fetchDigest(certVerify.scheme.getHashAlgorithm());
+        std::fill_n(tls13tbs, TLS13_TBS_START_SIZE, 32);
+
+        if (sideIndex == 0)
+        {
+            KeyCtx* kctx{nullptr};
+            auto publicKey = Cert::publicKey(clientCert_);
+            Signature::verifyInit(hashCtx_, hash, publicKey, &kctx);
+            if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
+            {
+                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
+                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, RSA_PSS_SALTLEN_DIGEST));
+            }
+            Signature::verifyUpdate(hashCtx_, {tls13tbs, TLS13_TBS_START_SIZE});
+            Signature::verifyUpdate(hashCtx_, clientContext);
+        }
+        else
+        {
+            KeyCtx* kctx{nullptr};
+            auto publicKey = Cert::publicKey(serverCert_);
+            Signature::verifyInit(hashCtx_, hash, publicKey, &kctx);
+            if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
+            {
+                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
+                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, RSA_PSS_SALTLEN_DIGEST));
+            }
+            Signature::verifyUpdate(hashCtx_, {tls13tbs, TLS13_TBS_START_SIZE});
+            Signature::verifyUpdate(hashCtx_, serverContext);
+        }
+
+        Signature::verifyUpdate(hashCtx_, transcriptHash);
+        Signature::verifyFinal(hashCtx_, certVerify.signature);
+    }
+    else if (metaInfo_.version == ProtocolVersion::TLSv1_2)
+    {
+        casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
+
+        auto hash = CryptoManager::getInstance().fetchDigest(certVerify.scheme.getHashAlgorithm());
+
+        auto transcriptHash = handshakeHash_.final(hashCtx_);
+        auto publicKey = Cert::publicKey(clientCert_);
+
+        auto kctx = CryptoManager::getInstance().createKeyContext(publicKey);
+        crypto::ThrowIfFalse(0 < EVP_PKEY_verify_init(kctx));
+        if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
+        {
+            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
+            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, RSA_PSS_SALTLEN_DIGEST));
+        }
+        crypto::ThrowIfFalse(0 < EVP_PKEY_verify(kctx, certVerify.signature.data(), certVerify.signature.size(),
+                                                 transcriptHash.data(), transcriptHash.size()));
+    }
 }
 
 void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
@@ -635,7 +721,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         HashTraits::updateHash(hashCtx_, keyExchange.data);
 
         auto digest = HashTraits::finalHash(hashCtx_, buffer);
-        auto publicKey = X509_get0_pubkey(serverCert_);
+        auto publicKey = Cert::publicKey(serverCert_);
 
         crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
     }
@@ -837,7 +923,7 @@ void Session::fetchAlgorithms()
         /// Detect lengths for encryption keys and IV
         if (metaInfo_.version == ProtocolVersion::TLSv1_3)
         {
-            auto keySize = CipherTraits::getKeyLength(cipherAlg_); 
+            auto keySize = CipherTraits::getKeyLength(cipherAlg_);
             keyInfo_.clientEncKey.resize(keySize);
             keyInfo_.serverEncKey.resize(keySize);
 

@@ -57,7 +57,10 @@ public:
 
     void TearDown() override
     {
-        ASSERT_NO_THROW(test_->tearDown());
+        if (test_)
+        {
+            ASSERT_NO_THROW(test_->tearDown());
+        }
     }
 
     static std::unique_ptr<PcapTestImpl> makeTest(const TestParam&);
