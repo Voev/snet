@@ -637,8 +637,14 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
                                                 0x65, 0x6e, 0x74, 0x20, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63,
                                                 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
 
-        auto hash = CryptoManager::getInstance().fetchDigest(certVerify.scheme.getHashAlgorithm());
         std::fill_n(tls13tbs, TLS13_TBS_START_SIZE, 32);
+
+        HashAlg hash;
+        auto hashName = certVerify.scheme.getHashAlgorithm();
+        if (!casket::equals(hashName, "UNDEF"))
+        {
+            hash = CryptoManager::getInstance().fetchDigest(hashName);
+        }
 
         if (sideIndex == 0)
         {
@@ -674,14 +680,18 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
     {
         casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
 
-        auto hash = CryptoManager::getInstance().fetchDigest(certVerify.scheme.getHashAlgorithm());
-
         auto transcriptHash = handshakeHash_.final(hashCtx_);
         auto publicKey = Cert::publicKey(clientCert_);
-
+        
         auto kctx = CryptoManager::getInstance().createKeyContext(publicKey);
         crypto::ThrowIfFalse(0 < EVP_PKEY_verify_init(kctx));
-        crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_signature_md(kctx, hash));
+
+        auto hashName = certVerify.scheme.getHashAlgorithm();
+        if (!casket::equals(hashName, "UNDEF"))
+        {
+            auto hash = CryptoManager::getInstance().fetchDigest(hashName);
+            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_signature_md(kctx, hash));
+        }
 
         if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
         {
@@ -710,6 +720,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         auto scheme = keyExchange.scheme;
         if (scheme.isSet())
         {
+            /// @todo: check for Edwards
             hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
         }
         else
