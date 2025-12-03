@@ -681,6 +681,8 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
 
         auto kctx = CryptoManager::getInstance().createKeyContext(publicKey);
         crypto::ThrowIfFalse(0 < EVP_PKEY_verify_init(kctx));
+        crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_signature_md(kctx, hash));
+
         if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
         {
             crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
