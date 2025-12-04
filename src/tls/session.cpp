@@ -19,6 +19,7 @@
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/prf.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
 
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
@@ -661,13 +662,12 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         }
         else
         {
-            KeyCtx* kctx{nullptr};
+            KeyCtx* keyCtx{nullptr};
             auto publicKey = Cert::publicKey(serverCert_);
-            Signature::verifyInit(hashCtx_, hash, publicKey, &kctx);
+            Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
             if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
             {
-                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
-                crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, RSA_PSS_SALTLEN_DIGEST));
+                RsaAsymmKey::setPssSettings(keyCtx);
             }
             Signature::verifyUpdate(hashCtx_, {tls13tbs, TLS13_TBS_START_SIZE});
             Signature::verifyUpdate(hashCtx_, serverContext);
@@ -682,23 +682,23 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
 
         auto transcriptHash = handshakeHash_.final(hashCtx_);
         auto publicKey = Cert::publicKey(clientCert_);
-        
-        auto kctx = CryptoManager::getInstance().createKeyContext(publicKey);
-        crypto::ThrowIfFalse(0 < EVP_PKEY_verify_init(kctx));
+
+        auto keyCtx = CryptoManager::getInstance().createKeyContext(publicKey);
+        crypto::ThrowIfFalse(0 < EVP_PKEY_verify_init(keyCtx));
 
         auto hashName = certVerify.scheme.getHashAlgorithm();
         if (!casket::equals(hashName, "UNDEF"))
         {
             auto hash = CryptoManager::getInstance().fetchDigest(hashName);
-            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_signature_md(kctx, hash));
+            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_signature_md(keyCtx, hash));
         }
 
         if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
         {
-            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(kctx, RSA_PKCS1_PSS_PADDING));
-            crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_pss_saltlen(kctx, RSA_PSS_SALTLEN_DIGEST));
+            RsaAsymmKey::setPssSettings(keyCtx);
         }
-        crypto::ThrowIfFalse(0 < EVP_PKEY_verify(kctx, certVerify.signature.data(), certVerify.signature.size(),
+
+        crypto::ThrowIfFalse(0 < EVP_PKEY_verify(keyCtx, certVerify.signature.data(), certVerify.signature.size(),
                                                  transcriptHash.data(), transcriptHash.size()));
     }
 }
@@ -714,29 +714,47 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     /// RFC 4492: section-5.4
     if (!keyExchange.signature.empty())
     {
-        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
         crypto::HashAlg hash;
 
+        auto publicKey = Cert::publicKey(serverCert_);
         auto scheme = keyExchange.scheme;
+
+        /// version == TLS1.2
         if (scheme.isSet())
         {
-            /// @todo: check for Edwards
-            hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
+            /// In the case of Ed25519 and Ed448 hash algorithm is built into the signature algorithm.
+            if (scheme.getHashAlgorithm() != "UNDEF")
+            {
+                hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
+            }
+        }
+        else if(metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
+        {
+            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
         }
         else
         {
             hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
+        
 
-        HashTraits::initHash(hashCtx_, hash);
-        HashTraits::updateHash(hashCtx_, clientRandom_);
-        HashTraits::updateHash(hashCtx_, serverRandom_);
-        HashTraits::updateHash(hashCtx_, keyExchange.data);
+        std::vector<uint8_t> tbs;
+        tbs.reserve(2 * TLS_RANDOM_SIZE + keyExchange.data.size());
 
-        auto digest = HashTraits::finalHash(hashCtx_, buffer);
-        auto publicKey = Cert::publicKey(serverCert_);
+        tbs.insert(tbs.end(), clientRandom_.begin(), clientRandom_.end());
+        tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
+        tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
-        crypto::VerifyDigest(hashCtx_, hash, publicKey, digest, keyExchange.signature);
+        KeyCtx* keyCtx{nullptr};
+
+        Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
+
+        if (keyExchange.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
+        {
+            RsaAsymmKey::setPssSettings(keyCtx);
+        }
+
+        Signature::verify(hashCtx_, keyExchange.signature, tbs);
     }
 }
 
@@ -805,15 +823,14 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
 
-            std::array<uint8_t, TLS_MAX_MAC_LENGTH> actual;
-            size_t length = actual.size();
+            std::array<uint8_t, TLS_MAX_MAC_LENGTH> buffer;
             const auto transcriptHash = handshakeHash_.final(hashCtx_);
 
-            crypto::ThrowIfFalse(0 < EVP_DigestSignInit(hashCtx_, nullptr, digest, nullptr, hmacKey));
-            crypto::ThrowIfFalse(0 < EVP_DigestSignUpdate(hashCtx_, transcriptHash.data(), transcriptHash.size()));
-            crypto::ThrowIfFalse(0 < EVP_DigestSignFinal(hashCtx_, actual.data(), &length));
+            Signature::signInit(hashCtx_, digest, hmacKey);
+            Signature::signUpdate(hashCtx_, transcriptHash);
+            auto actual = Signature::signFinal(hashCtx_, buffer);
 
-            casket::ThrowIfFalse(finished.verifyData.size() == length &&
+            casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
                                  "Bad Finished MAC");
         }
