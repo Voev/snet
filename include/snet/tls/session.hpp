@@ -165,6 +165,7 @@ private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
     Record* readingRecord = nullptr;
+    std::vector<uint8_t> handshakeBuffer_;
     crypto::HashCtxPtr hashCtx_ ;
     crypto::HashAlg hmacHashAlg_ = nullptr; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::CipherAlg cipherAlg_ = nullptr; ///< Fetched cipher algorithm by cipher suite
