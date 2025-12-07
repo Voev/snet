@@ -8,6 +8,7 @@
 #include <cstddef>
 
 #include <snet/crypto/secure_array.hpp>
+#include <snet/crypto/signature_scheme.hpp>
 
 #include <snet/tls/alert.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -21,6 +22,7 @@
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/sequence_numbers.hpp>
+
 
 namespace snet::tls
 {
@@ -166,10 +168,10 @@ private:
     RecordLayer recordLayer_;
     Record* readingRecord = nullptr;
     std::vector<uint8_t> handshakeBuffer_;
-    crypto::HashCtxPtr hashCtx_ ;
+    crypto::HashCtxPtr hashCtx_;
     crypto::HashAlg hmacHashAlg_ = nullptr; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::CipherAlg cipherAlg_ = nullptr; ///< Fetched cipher algorithm by cipher suite
-    crypto::MacCtxPtr hmacCtx_;   ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
+    crypto::MacCtxPtr hmacCtx_;             ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
     crypto::X509CertPtr clientCert_;

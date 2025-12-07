@@ -622,30 +622,48 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::spa
     reader.assert_done();
 }
 
-#define TLS13_TBS_START_SIZE 64
-#define TLS13_TBS_LABEL_SIZE 34
+static const size_t TLS13_TBS_START_SIZE = 64;
+static const size_t TLS13_TBS_LABEL_SIZE = 34;
+
+/// To be signed message prefix for TLSv1.3
+static const std::array<uint8_t, TLS13_TBS_START_SIZE> startTbs = {
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20};
+/// ASCII: "TLS 1.3, server CertificateVerify" with 0x00
+static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> serverContext = {
+    0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x20, 0x43,
+    0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
+/// ASCII: "TLS 1.3, client CertificateVerify" with 0x00
+static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> clientContext = {
+    0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x20, 0x43,
+    0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
+
+static void VerifyMessage(HashCtx* ctx, const SignatureScheme& scheme, const Hash* algorithm, Key* publicKey,
+                          nonstd::span<const uint8_t> signature, nonstd::span<const uint8_t> tbs)
+{
+    KeyCtx* keyCtx{nullptr};
+
+    HashTraits::resetContext(ctx);
+
+    Signature::verifyInit(ctx, algorithm, publicKey, &keyCtx);
+
+    if (scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
+    {
+        RsaAsymmKey::setPssSettings(keyCtx);
+    }
+
+    Signature::verify(ctx, signature, tbs);
+}
 
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
+    KeyPtr publicKey{nullptr};
+    HashAlg hash{nullptr};
+
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
-        auto transcriptHash = handshakeHash_.final(hashCtx_);
-
-        static const std::array<uint8_t, TLS13_TBS_START_SIZE> startTbs = {
-            32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-            32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-            32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32};
-
-        /// ASCII: "TLS 1.3, server CertificateVerify" with 0x00
-        static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> serverContext = {
-            0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x20, 0x43,
-            0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
-        /// ASCII: "TLS 1.3, client CertificateVerify" with 0x00
-        static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> clientContext = {
-            0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x20, 0x43,
-            0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
-
-        HashAlg hash;
         auto hashName = certVerify.scheme.getHashAlgorithm();
         if (!casket::equals(hashName, "UNDEF"))
         {
@@ -656,39 +674,30 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         tbs.reserve(TLS13_TBS_START_SIZE + TLS13_TBS_LABEL_SIZE + EVP_MAX_MD_SIZE);
         tbs.insert(tbs.end(), std::begin(startTbs), std::end(startTbs));
 
-        KeyCtx* keyCtx{nullptr};
-
         if (sideIndex == 0)
         {
-            auto publicKey = Cert::publicKey(clientCert_);
-            Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
+            publicKey = Cert::publicKey(clientCert_);
             tbs.insert(tbs.end(), std::begin(clientContext), std::end(clientContext));
         }
         else
         {
-            auto publicKey = Cert::publicKey(serverCert_);
-            Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
+            publicKey = Cert::publicKey(serverCert_);
             tbs.insert(tbs.end(), std::begin(serverContext), std::end(serverContext));
         }
 
+        auto transcriptHash = handshakeHash_.final(hashCtx_);
         tbs.insert(tbs.end(), transcriptHash.begin(), transcriptHash.end());
 
-        if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
-        {
-            RsaAsymmKey::setPssSettings(keyCtx);
-        }
-
-        Signature::verify(hashCtx_, certVerify.signature, tbs);
+        VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, tbs);
     }
     else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
     {
         casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
         auto publicKey = Cert::publicKey(clientCert_);
 
-        HashAlg hash;
-        auto hashName = certVerify.scheme.getHashAlgorithm();
         if (certVerify.scheme.isSet())
         {
+            auto hashName = certVerify.scheme.getHashAlgorithm();
             if (!casket::equals(hashName, "UNDEF"))
             {
                 hash = CryptoManager::getInstance().fetchDigest(hashName);
@@ -703,16 +712,7 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
             hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
-        KeyCtx* keyCtx{nullptr};
-        HashTraits::resetContext(hashCtx_);
-        Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
-
-        if (certVerify.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
-        {
-            RsaAsymmKey::setPssSettings(keyCtx);
-        }
-
-        Signature::verify(hashCtx_, certVerify.signature, handshakeBuffer_);
+        VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, handshakeBuffer_);
     }
 }
 
@@ -736,7 +736,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         if (scheme.isSet())
         {
             /// In the case of Ed25519 and Ed448 hash algorithm is built into the signature algorithm.
-            if (scheme.getHashAlgorithm() != "UNDEF")
+            if (!casket::equals(scheme.getHashAlgorithm(), "UNDEF"))
             {
                 hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
             }
@@ -757,16 +757,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
         tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
-        KeyCtx* keyCtx{nullptr};
-
-        Signature::verifyInit(hashCtx_, hash, publicKey, &keyCtx);
-
-        if (keyExchange.scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
-        {
-            RsaAsymmKey::setPssSettings(keyCtx);
-        }
-
-        Signature::verify(hashCtx_, keyExchange.signature, tbs);
+        VerifyMessage(hashCtx_, keyExchange.scheme, hash, publicKey, keyExchange.signature, tbs);
     }
 }
 
