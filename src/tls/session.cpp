@@ -680,16 +680,27 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
 
         Signature::verify(hashCtx_, certVerify.signature, tbs);
     }
-    else if (metaInfo_.version == ProtocolVersion::TLSv1_2)
+    else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
     {
         casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
         auto publicKey = Cert::publicKey(clientCert_);
 
         HashAlg hash;
         auto hashName = certVerify.scheme.getHashAlgorithm();
-        if (!casket::equals(hashName, "UNDEF"))
+        if (certVerify.scheme.isSet())
         {
-            hash = CryptoManager::getInstance().fetchDigest(hashName);
+            if (!casket::equals(hashName, "UNDEF"))
+            {
+                hash = CryptoManager::getInstance().fetchDigest(hashName);
+            }
+        }
+        else if (metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
+        {
+            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
+        }
+        else
+        {
+            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
         KeyCtx* keyCtx{nullptr};
