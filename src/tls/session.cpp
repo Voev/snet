@@ -228,6 +228,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         }
         case HandshakeType::CertificateRequestCode:
         {
+            processCertificateRequest(sideIndex, record->getHandshake<CertificateRequest>());
             handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
@@ -594,32 +595,11 @@ void Session::processCertificate(const int8_t sideIndex, const Certificate& cert
     /// @todo verify certificate chain
 }
 
-/// @todo: use it
-void Session::processCertificateRequest(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processCertificateRequest(const std::int8_t sideIndex, const CertificateRequest& certRequest)
 {
-    casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-
-    utils::DataReader reader("Certificate Request", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-
-    casket::ThrowIfTrue(reader.remaining_bytes() < 4, "Certificate_Req: Bad certificate request");
-
-    const auto cert_type_codes = reader.get_span(1, 1, 255);
-    const auto algs = reader.get_span(2, 2, 65534);
-
-    casket::ThrowIfTrue(algs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
-
-    const uint16_t purported_size = reader.get_uint16_t();
-
-    casket::ThrowIfTrue(reader.remaining_bytes() != purported_size, "Inconsistent length in certificate request");
-
-    while (reader.has_remaining())
-    {
-        auto name_bits = reader.get_span(2, 0, 65535);
-    }
-
-    /// @todo: TLSv1.3 fix it.
-
-    reader.assert_done();
+    /// @todo: do it.
+    (void)sideIndex;
+    (void)certRequest;
 }
 
 static const size_t TLS13_TBS_START_SIZE = 64;
@@ -901,6 +881,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 
 void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
 {
+    /// @todo: support it.
     (void)sessionTicket;
 }
 

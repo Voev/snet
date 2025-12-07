@@ -23,7 +23,6 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
-
 namespace snet::tls
 {
 
@@ -109,9 +108,9 @@ public:
 
     void processNewSessionTicket(const NewSessionTicket& sessionTicket);
 
-    void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
     void processCertificate(const int8_t sideIndex, const Certificate& certificate);
+
+    void processCertificateRequest(const int8_t sideIndex, const CertificateRequest& certRequest);
 
     void processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify);
 

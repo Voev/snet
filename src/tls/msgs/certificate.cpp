@@ -21,16 +21,7 @@ void Certificate::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaI
 Certificate Certificate::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     Certificate certificate;
-    if (metaInfo.version == ProtocolVersion::TLSv1_3)
-    {
-        auto& cert = certificate.message.emplace<TLSv13Certificate>();
-        cert.deserialize(input);
-    }
-    else
-    {
-        auto& cert = certificate.message.emplace<TLSv1Certificate>();
-        cert.deserialize(input);
-    }
+    certificate.parse(input, metaInfo);
     return certificate;
 }
 
