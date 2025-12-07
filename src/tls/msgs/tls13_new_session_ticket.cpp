@@ -28,6 +28,7 @@ void TLSv13NewSessionTicket::deserialize(nonstd::span<const uint8_t> input)
 
 size_t TLSv13NewSessionTicket::serialize(nonstd::span<uint8_t> output) const
 {
+    /// @todo: support it.
     (void)output;
     return 0;
 }
