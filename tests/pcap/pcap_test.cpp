@@ -49,7 +49,7 @@ void PcapTestImpl::setUp(const TestParam& param)
     config.setInput(option->second);
     config.setMsgPoolSize(128);
     config.setTimeout(0);
-    config.setSnaplen(2048);
+    config.setSnaplen(4096);
     config.setMode(Mode::ReadFile);
 
     driver_ = ControllerManager::Instance().getDriver("pcap");
