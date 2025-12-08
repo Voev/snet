@@ -53,6 +53,7 @@ Session::Session(RecordPool& recordPool)
 void Session::reset() noexcept
 {
     recordLayer_.reset();
+    handshakeBuffer_.clear();
 
     hmacHashAlg_ = nullptr;
     cipherAlg_ = nullptr;
