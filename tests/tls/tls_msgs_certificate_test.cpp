@@ -37,7 +37,7 @@ TEST_P(CertificateSerializeTest, DeserializeSerialize)
     ASSERT_NO_THROW(certificate = Certificate::deserialize(param.cert, metaInfo));
 
     Session session(recordPool_);
-    ASSERT_NO_THROW(session.processCertificate(certificate));
+    ASSERT_NO_THROW(session.processCertificate(1, certificate));
 
     if (param.version == ProtocolVersion::TLSv1_3)
     {

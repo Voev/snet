@@ -47,22 +47,22 @@ public:
         EVP_MD_CTX_reset(ctx);
     }
 
-    static inline void initHash(HashCtx* ctx, const Hash* algorithm)
+    static inline void hashInit(HashCtx* ctx, const Hash* algorithm)
     {
         ThrowIfFalse(0 < EVP_DigestInit(ctx, algorithm));
     }
 
-    static inline void updateHash(HashCtx* ctx, nonstd::span<const uint8_t> message)
+    static inline void hashUpdate(HashCtx* ctx, nonstd::span<const uint8_t> message)
     {
         ThrowIfFalse(0 < EVP_DigestUpdate(ctx, message.data(), message.size()));
     }
 
-    static inline void copyState(HashCtx* dst, const HashCtx* src)
+    static inline void hashCopy(HashCtx* dst, const HashCtx* src)
     {
         ThrowIfFalse(0 < EVP_MD_CTX_copy_ex(dst, src));
     }
 
-    static inline nonstd::span<uint8_t> finalHash(HashCtx* ctx, nonstd::span<uint8_t> buffer)
+    static inline nonstd::span<uint8_t> hashFinal(HashCtx* ctx, nonstd::span<uint8_t> buffer)
     {
         ThrowIfTrue(buffer.size() < static_cast<size_t>(EVP_MD_CTX_size(ctx)), "buffer too small");
         unsigned int digestSize = buffer.size();

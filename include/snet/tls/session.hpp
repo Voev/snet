@@ -8,12 +8,12 @@
 #include <cstddef>
 
 #include <snet/crypto/secure_array.hpp>
+#include <snet/crypto/signature_scheme.hpp>
 
 #include <snet/tls/alert.hpp>
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/client_random.hpp>
 #include <snet/tls/extensions.hpp>
-#include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/record.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
@@ -107,17 +107,15 @@ public:
 
     void processNewSessionTicket(const NewSessionTicket& sessionTicket);
 
-    void processCertificateRequest(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processCertificate(const int8_t sideIndex, const Certificate& certificate);
 
-    void processCertificate(const Certificate& certificate);
+    void processCertificateRequest(const int8_t sideIndex, const CertificateRequest& certRequest);
 
-    void processCertificateVerify(const CertificateVerify& certVerify);
+    void processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify);
 
     void processServerKeyExchange(const ServerKeyExchange& keyExchange);
 
     void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
-
-    void processServerHelloDone(const int8_t sideIndex, nonstd::span<const uint8_t> message);
 
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).
@@ -166,13 +164,16 @@ public:
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
-    Record* readingRecord = nullptr;
-    crypto::HashCtxPtr hashCtx_ ;
+    Record* readingRecord_ = nullptr;
+    std::vector<uint8_t> handshakeBuffer_;
+    crypto::HashCtxPtr hashCtx_;
+    crypto::HashAlg handshakeHashAlg_ = nullptr;
     crypto::HashAlg hmacHashAlg_ = nullptr; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::CipherAlg cipherAlg_ = nullptr; ///< Fetched cipher algorithm by cipher suite
-    crypto::MacCtxPtr hmacCtx_;   ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
+    crypto::MacCtxPtr hmacCtx_;             ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
     crypto::CipherCtxPtr clientCipherCtx_;
     crypto::CipherCtxPtr serverCipherCtx_;
+    crypto::X509CertPtr clientCert_;
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
     RecordProcessor processor_;
@@ -181,7 +182,6 @@ private:
     SecretNode keyInfo_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
-    HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     Extensions serverEncExtensions_;

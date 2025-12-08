@@ -35,8 +35,11 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     case HandshakeType::CertificateCode:
         message = Certificate::deserialize(payload, metaInfo);
         break;
+    case HandshakeType::CertificateRequestCode:
+        message = CertificateRequest::deserialize(payload, metaInfo);
+        break;
     case HandshakeType::CertificateVerifyCode:
-        message = CertificateVerify::deserialize(payload);
+        message = CertificateVerify::deserialize(payload, metaInfo);
         break;
     case HandshakeType::ServerKeyExchangeCode:
         message = ServerKeyExchange::deserialize(payload, metaInfo);
@@ -45,10 +48,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         message = Finished::deserialize(payload);
         break;
     case HandshakeType::ServerHelloDoneCode:
-        // Nothing to do?
+        // Nothing to do.
         break;
     case HandshakeType::KeyUpdateCode:
-        // Nothing to do?
+        // Nothing to do.
         break;
     case HandshakeType::ClientKeyExchangeCode:
         /// @todo: support it.
