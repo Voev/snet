@@ -173,7 +173,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
             processClientHello(record->getHandshake<ClientHello>());
-            handshakeHash_.commit(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
@@ -183,7 +182,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             processServerHello(record->getHandshake<ServerHello>());
             auto hash = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
             handshakeHash_.init(hash);
-            handshakeHash_.update();
+            handshakeHash_.update(handshakeBuffer_);
             handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;

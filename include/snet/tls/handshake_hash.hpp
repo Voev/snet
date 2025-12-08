@@ -18,20 +18,9 @@ public:
     {
     }
 
-    inline void commit(nonstd::span<const uint8_t> in)
-    {
-        std::copy(in.begin(), in.end(), std::back_inserter(messages_));
-    }
-
     inline void init(const Hash* algorithm)
     {
         crypto::HashTraits::initHash(context_, algorithm);
-    }
-
-    inline void update()
-    {
-        crypto::HashTraits::updateHash(context_, messages_);
-        messages_.clear();
     }
 
     inline void update(nonstd::span<const uint8_t> message)
@@ -47,12 +36,10 @@ public:
 
     void reset() noexcept
     {
-        messages_.clear();
         crypto::HashTraits::resetContext(context_);
     }
 
 private:
-    std::vector<uint8_t> messages_;
     std::array<uint8_t, EVP_MAX_MD_SIZE> digest_;
     crypto::HashCtxPtr context_;
 };
