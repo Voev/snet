@@ -19,29 +19,38 @@ def run_tcpdump(output_file):
         raise
 
 def run_openssl_server(tls_cipher, tls_version, keylog, key_file, cert_file):
-    if not Path(key_file).exists() or not Path(cert_file).exists():
-        raise FileNotFoundError("Certificate or key file not found")
 
-    try:
-        
-        cmd = [
-            "openssl", "s_server",
-            "-accept", "127.0.0.1:8443",
-            "-cert", cert_file,
-            "-key", key_file,
-            "-keylogfile", keylog,
-            "-no_ticket",
-            "-quiet"
-        ]
+    server_key, server_cert, ca_cert = find_cert_files(key_type, "server")
 
-        cmd += tls_cipher
-        cmd += tls_version
+    if not Path(server_key).exists():
+        raise FileNotFoundError(f"Server key file not found: {server_key}")
+    if not Path(server_cert).exists():
+        raise FileNotFoundError(f"Server certificate not found: {server_cert}")
 
-        print("Server args: ", cmd)
-        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except Exception as e:
-        print(f"[!] Failed to start openssl server: {e}")
-        raise
+    keylog_path = Path(keylog)
+    keylog_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "openssl", "s_server",
+        "-accept", "127.0.0.1:8443",
+        "-cert", cert_file,
+        "-key", key_file,
+        "-keylogfile", keylog,
+        "-no_ticket",
+        "-quiet"
+    ]
+
+    if Path(ca_cert).exists():
+        cmd += ["-CAfile", ca_cert, "-Verify", "5"]  # Using -Verify instead of -verify
+    else:
+        print(f"[!] CA certificate not found, disabling client verification")
+        cmd += ["-verify", "0"]  # Disable client certificate verification
+
+    cmd += tls_cipher
+    cmd += tls_version
+
+    print(f"[*] Server command: {' '.join(cmd)}...")
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 def run_openssl_client(tls_cipher, tls_version, data_size, message_count):
     test_data = b"A" * data_size + b"\n"
@@ -82,9 +91,6 @@ def run_openssl_client(tls_cipher, tls_version, data_size, message_count):
 
     except Exception as e:
         print(f"[!] Client error: {e}")
-    finally:
-        if 'client' in locals():
-            client.terminate()
 
 def main():
     parser = argparse.ArgumentParser(description="TLS handshake test with tcpdump capture")
