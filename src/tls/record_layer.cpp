@@ -276,12 +276,12 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
 {
     size_t paddingSize = crypto::HashTraits::isAlgorithm(hmacHash, "SHA1") ? 40 : 48;
 
-    HashTraits::initHash(ctx, hmacHash);
-    HashTraits::updateHash(ctx, macKey);
+    HashTraits::hashInit(ctx, hmacHash);
+    HashTraits::hashUpdate(ctx, macKey);
 
     uint8_t padding[64];
     memset(padding, 0x36, paddingSize);
-    HashTraits::updateHash(ctx, {padding, paddingSize});
+    HashTraits::hashUpdate(ctx, {padding, paddingSize});
 
     std::array<uint8_t, 11> meta;
     casket::store_be(seq, meta.data());
@@ -293,17 +293,17 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
 
     std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
 
-    HashTraits::updateHash(ctx, meta);
-    HashTraits::updateHash(ctx, content);
-    auto preActualMac = HashTraits::finalHash(ctx, buffer);
+    HashTraits::hashUpdate(ctx, meta);
+    HashTraits::hashUpdate(ctx, content);
+    auto preActualMac = HashTraits::hashFinal(ctx, buffer);
 
-    HashTraits::initHash(ctx, hmacHash);
-    HashTraits::updateHash(ctx, macKey);
+    HashTraits::hashInit(ctx, hmacHash);
+    HashTraits::hashUpdate(ctx, macKey);
 
     memset(padding, 0x5c, paddingSize);
-    HashTraits::updateHash(ctx, {padding, paddingSize});
-    HashTraits::updateHash(ctx, preActualMac);
-    auto actualMac = HashTraits::finalHash(ctx, buffer);
+    HashTraits::hashUpdate(ctx, {padding, paddingSize});
+    HashTraits::hashUpdate(ctx, preActualMac);
+    auto actualMac = HashTraits::hashFinal(ctx, buffer);
 
     casket::ThrowIfFalse(expectedMac.size() == actualMac.size() &&
                              std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),

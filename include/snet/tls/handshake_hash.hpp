@@ -20,18 +20,18 @@ public:
 
     inline void init(const Hash* algorithm)
     {
-        crypto::HashTraits::initHash(context_, algorithm);
+        crypto::HashTraits::hashInit(context_, algorithm);
     }
 
     inline void update(nonstd::span<const uint8_t> message)
     {
-        crypto::HashTraits::updateHash(context_, message);
+        crypto::HashTraits::hashUpdate(context_, message);
     }
 
     inline nonstd::span<uint8_t> final(HashCtx* transitContext)
     {
-        crypto::HashTraits::copyState(transitContext, context_);
-        return crypto::HashTraits::finalHash(transitContext, digest_);
+        crypto::HashTraits::hashCopy(transitContext, context_);
+        return crypto::HashTraits::hashFinal(transitContext, digest_);
     }
 
     void reset() noexcept

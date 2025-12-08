@@ -14,7 +14,6 @@
 #include <snet/tls/secret_node_manager.hpp>
 #include <snet/tls/client_random.hpp>
 #include <snet/tls/extensions.hpp>
-#include <snet/tls/handshake_hash.hpp>
 #include <snet/tls/record.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
@@ -165,9 +164,10 @@ public:
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;
-    Record* readingRecord = nullptr;
+    Record* readingRecord_ = nullptr;
     std::vector<uint8_t> handshakeBuffer_;
     crypto::HashCtxPtr hashCtx_;
+    crypto::HashAlg handshakeHashAlg_ = nullptr;
     crypto::HashAlg hmacHashAlg_ = nullptr; ///< Fetched hash algorithm by cipher suite used in HMAC
     crypto::CipherAlg cipherAlg_ = nullptr; ///< Fetched cipher algorithm by cipher suite
     crypto::MacCtxPtr hmacCtx_;             ///< HMAC context for TLSv1.2 (and earlier) non-AEAD cipher suites
@@ -182,7 +182,6 @@ private:
     SecretNode keyInfo_;
     std::array<uint8_t, TLS_RANDOM_SIZE> clientRandom_;
     std::array<uint8_t, TLS_RANDOM_SIZE> serverRandom_;
-    HandshakeHash handshakeHash_;
     Extensions clientExtensions_;
     Extensions serverExtensions_;
     Extensions serverEncExtensions_;

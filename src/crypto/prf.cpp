@@ -46,16 +46,16 @@ void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> cli
         std::memset(salt, ch, saltSize);
         ch++;
 
-        HashTraits::initHash(ctx, sha1);
-        HashTraits::updateHash(ctx, {salt, saltSize});
-        HashTraits::updateHash(ctx, secret);
-        HashTraits::updateHash(ctx, clientRandom);
-        HashTraits::updateHash(ctx, serverRandom);
+        HashTraits::hashInit(ctx, sha1);
+        HashTraits::hashUpdate(ctx, {salt, saltSize});
+        HashTraits::hashUpdate(ctx, secret);
+        HashTraits::hashUpdate(ctx, clientRandom);
+        HashTraits::hashUpdate(ctx, serverRandom);
         crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer, &n));
 
-        HashTraits::initHash(ctx, md5);
-        HashTraits::updateHash(ctx, secret);
-        HashTraits::updateHash(ctx, {buffer, n});
+        HashTraits::hashInit(ctx, md5);
+        HashTraits::hashUpdate(ctx, secret);
+        HashTraits::hashUpdate(ctx, {buffer, n});
 
         if (i + md5Length > out.size())
         {

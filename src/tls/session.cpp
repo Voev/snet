@@ -80,45 +80,45 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
 
     while (processedLength < input.size())
     {
-        if (!readingRecord)
+        if (!readingRecord_)
         {
             if (input.size() < processedLength + TLS_HEADER_SIZE)
             {
                 break;
             }
 
-            readingRecord = recordPool_.acquire();
-            if (!readingRecord)
+            readingRecord_ = recordPool_.acquire();
+            if (!readingRecord_)
             {
                 return processedLength;
             }
 
-            readingRecord->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+            readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
         }
 
-        const size_t payloadProcessed = readingRecord->initPayload(input.subspan(processedLength));
+        const size_t payloadProcessed = readingRecord_->initPayload(input.subspan(processedLength));
         processedLength += payloadProcessed;
 
-        if (readingRecord->isFullyAssembled() && processor_)
+        if (readingRecord_->isFullyAssembled() && processor_)
         {
-            preprocessRecord(sideIndex, readingRecord);
+            preprocessRecord(sideIndex, readingRecord_);
 
             for (const auto& handler : *processor_)
             {
-                handler->handleRecord(sideIndex, this, readingRecord);
+                handler->handleRecord(sideIndex, this, readingRecord_);
             }
 
-            postprocessRecord(sideIndex, readingRecord);
+            postprocessRecord(sideIndex, readingRecord_);
 
-            recordPool_.release(std::exchange(readingRecord, nullptr));
+            recordPool_.release(std::exchange(readingRecord_, nullptr));
         }
     }
 
-    if (readingRecord)
+    if (readingRecord_)
     {
         if (processedLength == 0)
         {
-            recordPool_.release(std::exchange(readingRecord, nullptr));
+            recordPool_.release(std::exchange(readingRecord_, nullptr));
         }
         return 0;
     }
@@ -180,10 +180,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerHello(record->getHandshake<ServerHello>());
-            auto hash = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
-            handshakeHash_.init(hash);
-            handshakeHash_.update(handshakeBuffer_);
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
@@ -191,7 +187,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             processEncryptedExtensions(record->getHandshake<EncryptedExtensions>());
-            handshakeHash_.update(data);
+            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ServerHelloDoneCode:
@@ -199,7 +195,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             reader.assert_done();
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
@@ -207,35 +202,31 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerKeyExchange(record->getHandshake<ServerKeyExchange>());
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ClientKeyExchangeCode:
         {
             processClientKeyExchange(sideIndex, data);
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateCode:
         {
             processCertificate(sideIndex, record->getHandshake<Certificate>());
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateRequestCode:
         {
             processCertificateRequest(sideIndex, record->getHandshake<CertificateRequest>());
-            handshakeHash_.update(data);
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateVerifyCode:
         {
             processCertificateVerify(sideIndex, record->getHandshake<CertificateVerify>());
-            handshakeHash_.update(data);
+            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::FinishedCode:
@@ -244,7 +235,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
             if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
             {
-                handshakeHash_.update(data);
+                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             }
             break;
         }
@@ -256,7 +247,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             if (metaInfo_.version < ProtocolVersion::TLSv1_3)
             {
                 // RFC 5077: 3.3 (must be included in transcript hash)
-                handshakeHash_.update(data);
+                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             }
             break;
         }
@@ -323,7 +314,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
-            PRF(PMS_, "extended master secret", handshakeHash_.final(hashCtx_), {}, keyInfo_.masterSecret);
+            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+            auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
+            PRF(PMS_, "extended master secret", transcriptHash, {}, keyInfo_.masterSecret);
         }
         else
         {
@@ -664,7 +660,11 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
             tbs.insert(tbs.end(), std::begin(serverContext), std::end(serverContext));
         }
 
-        auto transcriptHash = handshakeHash_.final(hashCtx_);
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
         tbs.insert(tbs.end(), transcriptHash.begin(), transcriptHash.end());
 
         VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, tbs);
@@ -804,13 +804,17 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
 
             crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+            ThrowIfFalse(hmacKey);
 
-            std::array<uint8_t, TLS_MAX_MAC_LENGTH> buffer;
-            const auto transcriptHash = handshakeHash_.final(hashCtx_);
+            std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
+            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+            auto transcriptHash = HashTraits::hashFinal(hashCtx_, hashBuffer);
 
+            std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
             Signature::signInit(hashCtx_, digest, hmacKey);
             Signature::signUpdate(hashCtx_, transcriptHash);
-            auto actual = Signature::signFinal(hashCtx_, buffer);
+            auto actual = Signature::signFinal(hashCtx_, sigBuffer);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -824,7 +828,11 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
         if (!keyInfo_.masterSecret.empty())
         {
-            const auto transcriptHash = handshakeHash_.final(hashCtx_);
+            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+            auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
             PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
@@ -961,6 +969,8 @@ void Session::fetchAlgorithms()
     {
         hmacHashAlg_ = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
     }
+
+    handshakeHashAlg_ = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
 }
 
 } // namespace snet::tls
