@@ -431,7 +431,7 @@ void Session::generateTLS13KeyMaterial()
         return;
     }
 
-    const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
+    const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
     crypto::DeriveKey(digestName, keyInfo_.clientHndTrafficSecret, keyInfo_.clientEncKey);
     crypto::DeriveKey(digestName, keyInfo_.serverHndTrafficSecret, keyInfo_.serverEncKey);
@@ -856,7 +856,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
         if (sideIndex == 0)
         {
-            const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
+            const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
             crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
             crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
@@ -871,7 +871,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         }
         else
         {
-            const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
+            const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
             crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
             crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
@@ -898,7 +898,7 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
     /// @todo: handle requested and not requested mode
     casket::ThrowIfFalse(message.subspan(TLS_HANDSHAKE_HEADER_SIZE).size_bytes() == 1, "invalid KeyUpdate message");
 
-    const auto digestName = CipherSuiteGetHandshakeDigestName(metaInfo_.cipherSuite);
+    const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
     if (sideIndex == 0)
     {
