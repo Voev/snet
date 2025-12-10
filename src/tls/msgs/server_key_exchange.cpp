@@ -74,6 +74,7 @@ ServerKeyExchange ServerKeyExchange::deserialize(nonstd::span<const uint8_t> inp
 
 size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session) const
 {
+    /// @todo: support it.
     (void)output;
     (void)session;
     return 0;
