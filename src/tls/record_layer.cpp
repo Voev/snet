@@ -42,29 +42,41 @@ void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     }
     else
     {
-        tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
+        doTLSv1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
     }
 
     record->isDecrypted_ = true;
 }
 
-void RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
-                              Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
-                              nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
+void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+                                 Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                                 nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
+{
+    nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
+    auto encryptedData = doTLSv1Process(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
+                                        record->plaintext_, ciphertext.subspan(TLS_HEADER_SIZE), true);
+
+    record->ciphertext_ = {ciphertext.data(), TLS_HEADER_SIZE + encryptedData.size()};
+    record->isDecrypted_ = false;
+}
+
+void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+                                 Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                                 nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
 {
     auto input = record->getCiphertext();
 
-    record->plaintext_ = tls1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
-                                     input.subspan(TLS_HEADER_SIZE), record->plaintextBuffer_);
+    record->plaintext_ = doTLSv1Process(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
+                                        input.subspan(TLS_HEADER_SIZE), record->plaintextBuffer_, false);
 
     record->isDecrypted_ = true;
 }
 
-nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
-                                               const Hash* hmacHash, RecordType rt, uint64_t seq,
-                                               nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                                               nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
-                                               nonstd::span<uint8_t> out)
+nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
+                                                  const Hash* hmacHash, RecordType rt, uint64_t seq,
+                                                  nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                                                  nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                                  nonstd::span<uint8_t> out, bool encrypt)
 {
     nonstd::span<std::uint8_t> decryptedContent;
 
@@ -103,11 +115,12 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
             crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), nonce.data(), 0));
         }
 
+        uint16_t size = static_cast<uint16_t>(in.size());
         casket::store_be(seq, &aad[0]);
+
         aad[8] = static_cast<uint8_t>(rt);
         aad[9] = version_.majorVersion();
         aad[10] = version_.minorVersion();
-        uint16_t size = static_cast<uint16_t>(in.size());
         aad[11] = casket::get_byte<0>(size);
         aad[12] = casket::get_byte<1>(size);
 
@@ -121,19 +134,22 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
         auto len = EVP_Cipher(cipherCtx, out.data(), in.data(), in.size());
         crypto::ThrowIfFalse(len > 0, "Bad record MAC");
 
-        if (mode == EVP_CIPH_GCM_MODE)
+        if (!encrypt)
         {
-            out = out.subspan(EVP_GCM_TLS_EXPLICIT_IV_LEN);
-            len = in.size() - EVP_GCM_TLS_EXPLICIT_IV_LEN - tagLength;
-        }
-        else if (mode == EVP_CIPH_CCM_MODE)
-        {
-            out = out.subspan(EVP_CCM_TLS_EXPLICIT_IV_LEN);
-            len = in.size() - EVP_CCM_TLS_EXPLICIT_IV_LEN - tagLength;
-        }
-        else
-        {
-            len = in.size() - tagLength;
+            if (mode == EVP_CIPH_GCM_MODE)
+            {
+                out = out.subspan(EVP_GCM_TLS_EXPLICIT_IV_LEN);
+                len = in.size() - EVP_GCM_TLS_EXPLICIT_IV_LEN - tagLength;
+            }
+            else if (mode == EVP_CIPH_CCM_MODE)
+            {
+                out = out.subspan(EVP_CCM_TLS_EXPLICIT_IV_LEN);
+                len = in.size() - EVP_CCM_TLS_EXPLICIT_IV_LEN - tagLength;
+            }
+            else
+            {
+                len = in.size() - tagLength;
+            }
         }
 
         decryptedContent = {out.data(), static_cast<size_t>(len)};
@@ -238,9 +254,9 @@ nonstd::span<uint8_t> RecordLayer::tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hma
     return decryptedContent;
 }
 
-void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const RecordType recordType, uint64_t seq, nonstd::span<const uint8_t> macKey,
-                               nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> content,
-                               nonstd::span<const uint8_t> expectedMac)
+void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const RecordType recordType, uint64_t seq,
+                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                               nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
 {
     std::array<uint8_t, 13> meta;
     casket::store_be(seq, meta.data());

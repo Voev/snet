@@ -64,15 +64,13 @@ public:
                  uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                  nonstd::span<const uint8_t> iv);
 
-    nonstd::span<std::uint8_t> tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
-                                           const Hash* hmacHash, RecordType rt, uint64_t seq,
-                                           nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                                           nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
-                                           nonstd::span<uint8_t> out);
+    void doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                        uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                        nonstd::span<const uint8_t> iv);
 
-    void tls1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
-                     uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                     nonstd::span<const uint8_t> iv);
+    void doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                        uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                        nonstd::span<const uint8_t> iv);
 
     void doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                          nonstd::span<const uint8_t> iv);
@@ -88,6 +86,11 @@ private:
     void ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> content,
                       nonstd::span<const uint8_t> mac);
+
+    nonstd::span<uint8_t> doTLSv1Process(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+                                         RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
+                                         nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                                         nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
 
     nonstd::span<std::uint8_t> doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
                                                nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
