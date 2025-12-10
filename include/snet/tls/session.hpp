@@ -115,7 +115,7 @@ public:
 
     void processServerKeyExchange(const ServerKeyExchange& keyExchange);
 
-    void processClientKeyExchange(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    void processClientKeyExchange(const ClientKeyExchange& keyExchange);
 
     /// @brief Handles Finished message to create key material if it's necessary.
     /// @param sideIndex The side (client or server).

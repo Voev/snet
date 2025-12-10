@@ -4,6 +4,7 @@
 #include <snet/tls/msgs/client_hello.hpp>
 #include <snet/tls/msgs/server_hello.hpp>
 #include <snet/tls/msgs/encrypted_extensions.hpp>
+#include <snet/tls/msgs/client_key_exchange.hpp>
 #include <snet/tls/msgs/server_key_exchange.hpp>
 #include <snet/tls/msgs/certificate.hpp>
 #include <snet/tls/msgs/certificate_request.hpp>
@@ -18,13 +19,15 @@ class Session;
 
 struct HandshakeMessage final
 {
-    using MessageType = std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, Certificate,
-                                     CertificateRequest, CertificateVerify, Finished, NewSessionTicket>;
+    using MessageType =
+        std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, ClientKeyExchange, Certificate,
+                     CertificateRequest, CertificateVerify, Finished, NewSessionTicket>;
 
     HandshakeMessage()
         : message(ClientHello())
         , type(HandshakeType::NoneCode)
-    {}
+    {
+    }
 
     static HandshakeMessage deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
@@ -41,7 +44,6 @@ private:
         , type(htype)
     {
     }
-
 };
 
 } // namespace snet::tls

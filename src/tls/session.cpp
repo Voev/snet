@@ -208,7 +208,8 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         }
         case HandshakeType::ClientKeyExchangeCode:
         {
-            processClientKeyExchange(sideIndex, data);
+            casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
+            processClientKeyExchange(record->getHandshake<ClientKeyExchange>());
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
@@ -741,13 +742,9 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     }
 }
 
-void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 {
-    casket::ThrowIfTrue(sideIndex != 0, "Incorrect side index");
-
-    /// @todo: deserialize
-
-    (void)message;
+    (void)keyExchange;
 
     if (!serverKey_)
     {
@@ -756,10 +753,6 @@ void Session::processClientKeyExchange(const std::int8_t sideIndex, nonstd::span
 
     /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
-        utils::DataReader reader("ClientKeyExchange", message.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-        const auto encryptedPreMaster = reader.get_span(2, 0, 65535);
-        reader.assert_done();
-
         auto ctx = crypto::CryptoManager::getInstance().createKeyContext(serverKey_);
         crypto::ThrowIfFalse(ctx != nullptr);
 
@@ -949,9 +942,8 @@ void Session::fetchAlgorithms()
             keyInfo_.clientEncKey.resize(keySize);
             keyInfo_.serverEncKey.resize(keySize);
 
-            /// @todo: fix constant.
-            keyInfo_.clientIV.resize(12);
-            keyInfo_.serverIV.resize(12);
+            keyInfo_.clientIV.resize(TLS13_AEAD_NONCE_SIZE);
+            keyInfo_.serverIV.resize(TLS13_AEAD_NONCE_SIZE);
         }
         else
         {
