@@ -54,7 +54,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         // Nothing to do.
         break;
     case HandshakeType::ClientKeyExchangeCode:
-        ClientKeyExchange::deserialize(payload, metaInfo);
+        message = ClientKeyExchange::deserialize(payload, metaInfo);
         break;
     case HandshakeType::NewSessionTicketCode:
         message = NewSessionTicket::deserialize(payload, metaInfo);
