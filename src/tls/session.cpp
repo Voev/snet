@@ -1,6 +1,7 @@
 #include <cassert>
 #include <limits>
 #include <memory>
+#include <utility>
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
@@ -667,7 +668,7 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
         auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
 
-        tbs.insert(tbs.end(), transcriptHash.begin(), transcriptHash.end());
+        std::copy_n(transcriptHash.data(), transcriptHash.size(), std::back_inserter(tbs));
 
         VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, tbs);
     }

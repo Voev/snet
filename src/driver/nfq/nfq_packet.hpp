@@ -10,6 +10,7 @@ class NfqPacket final : public layers::Packet
 public:
     NfqPacket()
         : layers::Packet()
+        , buffer(nullptr)
     {
     }
 

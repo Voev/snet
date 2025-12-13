@@ -435,6 +435,7 @@ NfQueue::Impl::Impl()
     , portid(0)
     , snaplen(0)
     , timeout(0)
+    , interrupted(false)
 {
 }
 
@@ -683,6 +684,12 @@ void NfQueue::resetStats()
 int NfQueue::getSnaplen() const
 {
     return impl_->snaplen;
+}
+
+Status NfQueue::getMsgPoolInfo(PacketPoolInfo* info)
+{
+    (void)info;
+    return Status::Success;
 }
 
 } // namespace snet::driver
