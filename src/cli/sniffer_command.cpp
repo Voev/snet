@@ -209,8 +209,13 @@ public:
         do
         {
             status = driver->receivePacket(&packet);
-            if (packet)
+            if (status == RecvStatus::Error)
             {
+                std::cout << "Error occured: " << driver->getLastError() << std::endl;
+            }
+            else if (packet)
+            {
+                packet->parsePacket(layers::TCP);
                 tcpReassembly.reassemblePacket(packet);
                 driver->finalizePacket(packet, Verdict::Pass);
             }

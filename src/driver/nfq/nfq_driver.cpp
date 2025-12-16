@@ -261,8 +261,7 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
     return true;
 }
 
-int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, NfqPacket* rawPacket,
-                    std::error_code& ec)
+int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, NfqPacket* rawPacket, std::error_code& ec)
 {
     const nlmsghdr* nlh = static_cast<const nlmsghdr*>(buffer);
     int len = numbytes;
@@ -300,7 +299,7 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, Nf
             }
 
             ec = std::make_error_code(static_cast<std::errc>(abs(err->error)));
-            return ec ? 0 : -1;
+            return err->error == 0 ? 0 : -1;
         }
         else
         {
@@ -548,6 +547,7 @@ Status NfQueue::stop()
     nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queueNumber);
     if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
+        setError(format("{}", ec.message()));
         return Status::Error;
     }
 
@@ -567,6 +567,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
 
     if (pRawPacket == nullptr)
     {
+        setError("Invalid input argument");
         return RecvStatus::Error;
     }
 
@@ -579,6 +580,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
     NfqPacket* rawPacket = impl_->pool.acquirePacket();
     if (!rawPacket)
     {
+        setError("Failed to get new packet");
         return RecvStatus::Error;
     }
 
@@ -610,6 +612,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
             }
             else
             {
+                setError(format("{}", ec.message()));
                 rstat = RecvStatus::Error;
             }
             break;
@@ -618,6 +621,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
         ret = ProcessMessages(rawPacket->buffer, ret, impl_->portid, rawPacket, ec);
         if (ret < 0)
         {
+            setError(format("{}", ec.message()));
             rstat = RecvStatus::Error;
         }
         else
