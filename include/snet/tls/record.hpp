@@ -73,7 +73,7 @@ public:
 
     size_t initPlaintext(nonstd::span<const uint8_t> plaintext);
 
-    size_t initPayload(nonstd::span<const uint8_t> data);
+    size_t initPayload(nonstd::span<const uint8_t> data) noexcept;
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 

@@ -61,7 +61,7 @@ size_t Record::initPlaintext(nonstd::span<const uint8_t> plaintext)
     return plaintext_.size();
 }
 
-size_t Record::initPayload(nonstd::span<const uint8_t> data)
+size_t Record::initPayload(nonstd::span<const uint8_t> data) noexcept
 {
     if (currentLength_ > 0 || expectedLength_ > data.size())
     {
