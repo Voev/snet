@@ -43,12 +43,11 @@ public:
             return *this;
         }
 
-        ~ScopedRecord()
+        ~ScopedRecord() noexcept
         {
             release();
         }
 
-        // Явный release
         void release() noexcept
         {
             if (record_ && pool_)
@@ -59,13 +58,11 @@ public:
             }
         }
 
-        // Получение указателя на Record
         Record* get() const noexcept
         {
             return record_;
         }
 
-        // Операторы доступа
         Record* operator->() const noexcept
         {
             assert(record_);
@@ -78,7 +75,6 @@ public:
             return *record_;
         }
 
-        // Проверка наличия записи
         explicit operator bool() const noexcept
         {
             return record_ != nullptr;
