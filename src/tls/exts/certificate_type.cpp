@@ -1,3 +1,5 @@
+#include <algorithm> // transform
+
 #include <snet/tls/exts/certificate_type.hpp>
 #include <snet/utils/data_writer.hpp>
 #include <snet/utils/data_reader.hpp>

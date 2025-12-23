@@ -28,6 +28,8 @@ void ClientKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo&
 {
     utils::DataReader reader("ClientKeyExchange", input);
 
+    casket::ThrowIfFalse(metaInfo.cipherSuite, "Cipher suite not setted");
+
     auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
     if (kex == NID_kx_rsa)
     {

@@ -1,6 +1,7 @@
 #include <cassert>
 #include <limits>
 #include <memory>
+#include <utility>
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
@@ -79,11 +80,13 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
 
     size_t processedLength{0};
 
+    utils::printHex(std::cout, input, "Preprocessing output", true);
+
     while (processedLength < input.size())
     {
         if (!readingRecord_)
         {
-            if (input.size() < processedLength + TLS_HEADER_SIZE)
+            if (input.size() - processedLength < TLS_HEADER_SIZE)
             {
                 break;
             }
@@ -94,22 +97,45 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
                 return processedLength;
             }
 
-            readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+            /// @todo: simplify try-catch block.
+            try
+            {
+                readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+            }
+            catch (const std::exception& e)
+            {
+                std::cout << "Failed to parse header: " << e.what() << std::endl;
+                recordPool_.release(std::exchange(readingRecord_, nullptr));
+                throw;
+            }
         }
 
         const size_t payloadProcessed = readingRecord_->initPayload(input.subspan(processedLength));
         processedLength += payloadProcessed;
 
-        if (readingRecord_->isFullyAssembled() && processor_)
+        if (readingRecord_->isFullyAssembled())
         {
-            preprocessRecord(sideIndex, readingRecord_);
-
-            for (const auto& handler : *processor_)
+            /// @todo: simplify try-catch block.
+            try
             {
-                handler->handleRecord(sideIndex, this, readingRecord_);
-            }
+                if (processor_)
+                {
+                    preprocessRecord(sideIndex, readingRecord_);
 
-            postprocessRecord(sideIndex, readingRecord_);
+                    for (const auto& handler : *processor_)
+                    {
+                        handler->handleRecord(sideIndex, this, readingRecord_);
+                    }
+
+                    postprocessRecord(sideIndex, readingRecord_);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cout << "Failed to parse payload: " << e.what() << std::endl;
+                recordPool_.release(std::exchange(readingRecord_, nullptr));
+                throw;
+            }
 
             recordPool_.release(std::exchange(readingRecord_, nullptr));
         }
@@ -533,7 +559,9 @@ void Session::processServerHello(const ServerHello& serverHello)
 
     if (!serverHello.extensions.empty())
     {
-        serverExtensions_.deserialize(Side::Server, serverHello.extensions, HandshakeType::ServerHelloCode);
+        auto type =
+            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
+        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
 
         if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
         {
@@ -667,7 +695,7 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
         auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
 
-        tbs.insert(tbs.end(), transcriptHash.begin(), transcriptHash.end());
+        std::copy_n(transcriptHash.data(), transcriptHash.size(), std::back_inserter(tbs));
 
         VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, tbs);
     }

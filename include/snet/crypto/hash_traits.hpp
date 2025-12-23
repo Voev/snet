@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cassert>
 #include <openssl/evp.h>
 #include <casket/nonstd/span.hpp>
 #include <snet/crypto/pointers.hpp>
@@ -67,6 +68,7 @@ public:
         ThrowIfTrue(buffer.size() < static_cast<size_t>(EVP_MD_CTX_size(ctx)), "buffer too small");
         unsigned int digestSize = buffer.size();
         ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, buffer.data(), &digestSize));
+        assert(digestSize <= buffer.size());
         return {buffer.data(), digestSize};
     }
 };
