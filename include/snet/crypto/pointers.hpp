@@ -8,6 +8,7 @@
 #include <openssl/store.h>
 #include <openssl/cms.h>
 #include <openssl/safestack.h>
+#include <openssl/txt_db.h>
 
 #include <openssl/kdf.h>
 #include <openssl/hmac.h>
@@ -80,6 +81,8 @@ DEFINE_CUSTOM_UNIQUE_PTR(Asn1OctetStringPtr, Asn1OctetString, ASN1_OCTET_STRING_
 
 DEFINE_CUSTOM_UNIQUE_PTR(BigNumPtr, BigNum, BN_free);
 DEFINE_CUSTOM_UNIQUE_PTR(BioPtr, Bio, BIO_free_all);
+
+DEFINE_CUSTOM_UNIQUE_PTR(TxtDbPtr, TxtDb, TXT_DB_free);
 
 DEFINE_CUSTOM_UNIQUE_PTR(X509CertPtr, X509Cert, X509_free);
 DEFINE_CUSTOM_UNIQUE_PTR(X509ReqPtr, X509Req, X509_REQ_free);

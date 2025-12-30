@@ -42,6 +42,7 @@ using Asn1OctetString = struct asn1_string_st;
 using Asn1Time = struct asn1_string_st;
 using BigNum = struct bignum_st;
 using Bio = struct bio_st;
+using TxtDb = struct txt_db_st;
 using X509Cert = struct x509_st;
 using X509Attr = struct x509_attributes_st;
 using X509Ext = struct X509_extension_st;
