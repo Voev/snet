@@ -20,11 +20,7 @@ public:
 
 private:
     std::string filename;
-#if _SQUID_WINDOWS_
-    HANDLE hFile; ///< Windows file handle.
-#else
     int fd; ///< Linux file descriptor.
-#endif
 };
 
 /// an exception-safe way to obtain and release a lock
@@ -171,7 +167,7 @@ private:
     const std::string cert_full; ///< Full path of the directory to store the certs.
     const std::string size_full; ///< Full path of the file to store the db size.
 
-    TxtDbPtr db;          ///< Database with certificates info.
+    crypto::TxtDbPtr db;        ///< Database with certificates info.
     const size_t max_db_size;   ///< Max size of db.
     const size_t fs_block_size; ///< File system block size.
     mutable Lock dbLock;        ///< protects the database file

@@ -8,6 +8,7 @@
 
 #include <openssl/txt_db.h>
 
+#include <cstring>
 #include <cassert>
 #include <cerrno>
 #include <fstream>
