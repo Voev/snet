@@ -36,6 +36,19 @@ public:
         return EVP_CIPHER_block_size(cipher);
     }
 
+    static inline int getExplicitNonceLength(const Cipher* cipher)
+    {
+        if (EVP_CIPHER_mode(cipher) == EVP_CIPH_GCM_MODE)
+        {
+            return EVP_GCM_TLS_EXPLICIT_IV_LEN;
+        }
+        else if (EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE)
+        {
+            return EVP_CCM_TLS_EXPLICIT_IV_LEN;
+        }
+        return 0;
+    }
+
     static inline int getIVLengthWithinKeyBlock(const Cipher* cipher)
     {
         if (EVP_CIPHER_mode(cipher) == EVP_CIPH_GCM_MODE)

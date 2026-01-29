@@ -5,6 +5,7 @@
 #include <vector>
 #include <casket/nonstd/span.hpp>
 #include <snet/crypto/pointers.hpp>
+#include <snet/crypto/cipher_traits.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/tls/record.hpp>
@@ -64,6 +65,16 @@ public:
                  uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                  nonstd::span<const uint8_t> iv);
 
+    void doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                            nonstd::span<const uint8_t> iv);
+
+    void doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                            nonstd::span<const uint8_t> iv);
+
+    nonstd::span<uint8_t> doTLSv1AeadProcess(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
+                                             nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
+                                             nonstd::span<uint8_t> in, bool encrypt);
+
     void doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
                         uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                         nonstd::span<const uint8_t> iv);
@@ -77,6 +88,15 @@ public:
 
     void doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                          nonstd::span<const uint8_t> iv);
+
+    void prepareRecordForEncrypt(Record* record, const Cipher* cipher)
+    {
+        if( aead_ && version_ <= ProtocolVersion::TLSv1_3 )
+        {
+            auto prefixLength = crypto::CipherTraits::getExplicitNonceLength(cipher);
+            record->setDataOffset( prefixLength );
+        }
+    }
 
 private:
     void tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
@@ -95,6 +115,8 @@ private:
     nonstd::span<std::uint8_t> doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
                                                nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
                                                nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
+
+
 
 private:
     ProtocolVersion version_;

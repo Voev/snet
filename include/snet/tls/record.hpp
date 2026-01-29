@@ -3,6 +3,8 @@
 
 #pragma once
 #include <variant>
+#include <cstring>
+#include <cassert>
 #include <casket/nonstd/span.hpp>
 #include <casket/utils/load_store.hpp>
 #include <casket/utils/exception.hpp>
@@ -71,7 +73,22 @@ public:
 
     void reset();
 
-    size_t initPlaintext(nonstd::span<const uint8_t> plaintext);
+    size_t initPlaintext(nonstd::span<const uint8_t> plaintext)
+    {
+        assert(plaintext.size() <= (plaintextBuffer_.size() - dataStartOffset_));
+        
+        std::memcpy(plaintextBuffer_.data() + dataStartOffset_, 
+                   plaintext.data(), 
+                   plaintext.size());
+        
+        plaintext_ = {plaintextBuffer_.data(), dataStartOffset_ + plaintext.size()};
+        return plaintext_.size();
+    }
+
+    void setDataOffset(size_t offset)
+    {
+        dataStartOffset_ = offset;
+    }
 
     size_t initPayload(nonstd::span<const uint8_t> data) noexcept;
 
@@ -100,6 +117,7 @@ private:
     HandshakeMessage handshake_;
     size_t currentLength_;
     size_t expectedLength_;
+    size_t dataStartOffset_ = 0;
     nonstd::span<const std::uint8_t> ciphertext_;
     nonstd::span<std::uint8_t> plaintext_;
     bool isDecrypted_;
