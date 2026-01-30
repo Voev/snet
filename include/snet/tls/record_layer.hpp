@@ -91,11 +91,12 @@ public:
 
     void prepareRecordForEncrypt(Record* record, const Cipher* cipher)
     {
+        int prefixLength = TLS_HEADER_SIZE;
         if( aead_ && version_ <= ProtocolVersion::TLSv1_3 )
         {
-            auto prefixLength = crypto::CipherTraits::getExplicitNonceLength(cipher);
-            record->setDataOffset( prefixLength );
+            prefixLength += crypto::CipherTraits::getExplicitNonceLength(cipher);
         }
+        record->setDataOffset( prefixLength );
     }
 
 private:

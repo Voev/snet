@@ -66,7 +66,18 @@ public:
         return ciphertext_;
     }
 
+    inline nonstd::span<uint8_t> getCiphertext() noexcept
+    {
+        return {const_cast<uint8_t*>(ciphertext_.data()), ciphertext_.size()};
+        
+    }
+
     inline nonstd::span<const uint8_t> getPlaintext() const noexcept
+    {
+        return plaintext_;
+    }
+
+    inline nonstd::span<uint8_t> getPlaintext() noexcept
     {
         return plaintext_;
     }
