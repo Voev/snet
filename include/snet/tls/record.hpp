@@ -3,6 +3,8 @@
 
 #pragma once
 #include <variant>
+#include <cstring>
+#include <cassert>
 #include <casket/nonstd/span.hpp>
 #include <casket/utils/load_store.hpp>
 #include <casket/utils/exception.hpp>
@@ -64,14 +66,55 @@ public:
         return ciphertext_;
     }
 
+    inline nonstd::span<uint8_t> getCiphertext() noexcept
+    {
+        return {const_cast<uint8_t*>(ciphertext_.data()), ciphertext_.size()};
+        
+    }
+
+    /// @brief Get plaintext span (const).
+    ///
+    /// @return Const span containing plaintext.
     inline nonstd::span<const uint8_t> getPlaintext() const noexcept
+    {
+        return plaintext_;
+    }
+
+    /// @brief Get plaintext span.
+    ///
+    /// @return Span containing plaintext.
+    inline nonstd::span<uint8_t> getPlaintext() noexcept
     {
         return plaintext_;
     }
 
     void reset();
 
-    size_t initPlaintext(nonstd::span<const uint8_t> plaintext);
+    /// @brief Initialize plaintext buffer.
+    ///
+    /// @param[in] plaintext Source data to copy.
+    ///
+    /// @return Final plaintext size.
+    size_t initPlaintext(nonstd::span<const uint8_t> plaintext)
+    {
+        assert(plaintext.size() <= (plaintextBuffer_.size() - dataStartOffset_));
+        
+        std::memcpy(plaintextBuffer_.data() + dataStartOffset_, 
+                   plaintext.data(), 
+                   plaintext.size());
+        
+        plaintext_ = {plaintextBuffer_.data(), dataStartOffset_ + plaintext.size()};
+        return plaintext_.size();
+    }
+
+    /// @brief Set data start offset.
+    ///
+    /// @param[in] offset Offset value.
+    ///
+    void setDataOffset(size_t offset)
+    {
+        dataStartOffset_ = offset;
+    }
 
     size_t initPayload(nonstd::span<const uint8_t> data) noexcept;
 
@@ -100,6 +143,7 @@ private:
     HandshakeMessage handshake_;
     size_t currentLength_;
     size_t expectedLength_;
+    size_t dataStartOffset_ = 0;
     nonstd::span<const std::uint8_t> ciphertext_;
     nonstd::span<std::uint8_t> plaintext_;
     bool isDecrypted_;
