@@ -36,6 +36,11 @@ public:
         return EVP_CIPHER_block_size(cipher);
     }
 
+    /// @brief Get explicit nonce length for TLS cipher.
+    ///
+    /// @param[in] cipher EVP_CIPHER structure pointer.
+    ///
+    /// @return Nonce length in bytes for GCM/CCM, 0 otherwise.
     static inline int getExplicitNonceLength(const Cipher* cipher)
     {
         if (EVP_CIPHER_mode(cipher) == EVP_CIPH_GCM_MODE)

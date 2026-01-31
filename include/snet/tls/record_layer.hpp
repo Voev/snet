@@ -65,15 +65,27 @@ public:
                  uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                  nonstd::span<const uint8_t> iv);
 
+    /// @brief Encrypt TLS 1.2 AEAD record.
+    ///
+    /// @param[in] cipherCtx Cipher context.
+    /// @param[in] record Record to encrypt.
+    /// @param[in] seq Sequence number.
+    /// @param[in] key Encryption key.
+    /// @param[in] iv Initialization vector.
+    ///
     void doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                             nonstd::span<const uint8_t> iv);
 
+    /// @brief Decrypt TLS 1.2 AEAD record.
+    ///
+    /// @param[in] cipherCtx Cipher context.
+    /// @param[in] record Record to decrypt.
+    /// @param[in] seq Sequence number.
+    /// @param[in] key Decryption key.
+    /// @param[in] iv Initialization vector.
+    ///
     void doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                             nonstd::span<const uint8_t> iv);
-
-    nonstd::span<uint8_t> doTLSv1AeadProcess(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                             nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                             nonstd::span<uint8_t> in, bool encrypt);
 
     void doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
                         uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
@@ -89,14 +101,20 @@ public:
     void doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                          nonstd::span<const uint8_t> iv);
 
+    /// @brief Prepare record for encryption.
+    ///
+    /// @details Adjusts data offset based on TLS header and cipher.
+    ///
+    /// @param[in] record Record to prepare.
+    /// @param[in] cipher Cipher algorithm.
     void prepareRecordForEncrypt(Record* record, const Cipher* cipher)
     {
         int prefixLength = TLS_HEADER_SIZE;
-        if( aead_ && version_ <= ProtocolVersion::TLSv1_3 )
+        if (aead_ && version_ <= ProtocolVersion::TLSv1_3)
         {
             prefixLength += crypto::CipherTraits::getExplicitNonceLength(cipher);
         }
-        record->setDataOffset( prefixLength );
+        record->setDataOffset(prefixLength);
     }
 
 private:
@@ -113,11 +131,24 @@ private:
                                          nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                                          nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
 
+    /// @brief Process TLS 1.2 AEAD data.
+    ///
+    /// @param[in] cipherCtx Cipher context.
+    /// @param[in] rt Record type.
+    /// @param[in] seq Sequence number.
+    /// @param[in] key Encryption/decryption key.
+    /// @param[in] iv Initialization vector.
+    /// @param[in] in Input/output data buffer.
+    /// @param[in] encrypt True for encryption, false for decryption.
+    ///
+    /// @return Processed data span.
+    nonstd::span<uint8_t> doTLSv1AeadProcess(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
+                                             nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
+                                             nonstd::span<uint8_t> in, bool encrypt);
+
     nonstd::span<std::uint8_t> doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
                                                nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
                                                nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
-
-
 
 private:
     ProtocolVersion version_;

@@ -72,11 +72,17 @@ public:
         
     }
 
+    /// @brief Get plaintext span (const).
+    ///
+    /// @return Const span containing plaintext.
     inline nonstd::span<const uint8_t> getPlaintext() const noexcept
     {
         return plaintext_;
     }
 
+    /// @brief Get plaintext span.
+    ///
+    /// @return Span containing plaintext.
     inline nonstd::span<uint8_t> getPlaintext() noexcept
     {
         return plaintext_;
@@ -84,6 +90,11 @@ public:
 
     void reset();
 
+    /// @brief Initialize plaintext buffer.
+    ///
+    /// @param[in] plaintext Source data to copy.
+    ///
+    /// @return Final plaintext size.
     size_t initPlaintext(nonstd::span<const uint8_t> plaintext)
     {
         assert(plaintext.size() <= (plaintextBuffer_.size() - dataStartOffset_));
@@ -96,6 +107,10 @@ public:
         return plaintext_.size();
     }
 
+    /// @brief Set data start offset.
+    ///
+    /// @param[in] offset Offset value.
+    ///
     void setDataOffset(size_t offset)
     {
         dataStartOffset_ = offset;

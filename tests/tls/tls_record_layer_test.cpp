@@ -31,11 +31,33 @@ auto& get(Tuple& tuple)
     return std::get<static_cast<size_t>(field)>(tuple);
 }
 
-class RecordLayerTest : public TestWithParam<RecordLayerTestParam>
+std::string CastToString(uint16_t value)
+{
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0') << std::uppercase;
+    oss << "0x" << std::setw(2) << ((value >> 8) & 0xFF) << ", 0x" << std::setw(2) << (value & 0xFF);
+    return oss.str();
+}
+
+template <typename T, size_t N>
+constexpr std::array<T, N> GenerateSequence(T start, T end)
+{
+    static_assert(std::is_arithmetic_v<T>, "T must be an arithmetic type");
+    static_assert(N > 1, "Need at least 2 elements for range");
+    std::array<T, N> sequence{};
+    T step = (end - start) / (N - 1);
+    for (size_t i = 0; i < N; ++i)
+    {
+        sequence[i] = start + static_cast<T>(i) * step;
+    }
+    return sequence;
+}
+
+class TLSv13AeadRecordLayerTest : public TestWithParam<RecordLayerTestParam>
 {
 };
 
-TEST_P(RecordLayerTest, EncryptDecrypt)
+TEST_P(TLSv13AeadRecordLayerTest, EncryptDecrypt)
 {
     const auto& param = GetParam();
     auto cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(::get<RecordLayerFields::Suite>(param));
@@ -81,19 +103,11 @@ static std::array<uint16_t, 5> gTLSv13CipherSuites = {
     casket::make_uint16(0x13, 0x05), /// TLS_AES_128_CCM_8_SHA256
 };
 
-class TLSv1RecordLayerTest : public TestWithParam<RecordLayerTestParam>
+class TLSv12AeadRecordLayerTest : public TestWithParam<RecordLayerTestParam>
 {
 };
 
-std::string cast_to_string(uint16_t value)
-{
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0') << std::uppercase;
-    oss << "0x" << std::setw(2) << ((value >> 8) & 0xFF) << ", 0x" << std::setw(2) << (value & 0xFF);
-    return oss.str();
-}
-
-TEST_P(TLSv1RecordLayerTest, EncryptDecrypt)
+TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 {
     const auto& param = GetParam();
     auto suiteCode = ::get<RecordLayerFields::Suite>(param);
@@ -106,11 +120,10 @@ TEST_P(TLSv1RecordLayerTest, EncryptDecrypt)
     }
 
     auto cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(suiteCode);
-    ASSERT_NE(cipherSuite, nullptr) << "Unsupported cipher suite: " << cast_to_string(suiteCode);
+    ASSERT_NE(cipherSuite, nullptr) << "Unsupported cipher suite: " << CastToString(suiteCode);
 
     auto tagLength = CipherSuiteManager::getInstance().getTagLengthByID(suiteCode);
     auto cipherAlg = CryptoManager::getInstance().fetchCipher(CipherSuiteGetCipherName(cipherSuite));
-    // auto hmacAlg = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite));
 
     ASSERT_NE(cipherAlg, nullptr);
     ASSERT_TRUE(CipherTraits::isAEAD(cipherAlg));
@@ -127,12 +140,6 @@ TEST_P(TLSv1RecordLayerTest, EncryptDecrypt)
     ASSERT_NO_THROW(ctx = CipherTraits::createContext());
     ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
-    /*MacCtxPtr hmacCtx;
-    ASSERT_NO_THROW(hmacCtx = HmacTraits::createContext());
-
-    HashCtxPtr hashCtx;
-    ASSERT_NO_THROW(hashCtx = HashTraits::createContext());
-*/
     RecordLayer recordLayer;
 
     recordLayer.setVersion(ProtocolVersion::TLSv1_2);
@@ -146,8 +153,7 @@ TEST_P(TLSv1RecordLayerTest, EncryptDecrypt)
     record.initPlaintext(plaintext);
 
     ASSERT_NO_THROW(recordLayer.doTLSv1AeadEncrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, iv));
-    ASSERT_NO_THROW(recordLayer.doTLSv1AeadDecrypt(ctx, /*hmacCtx, hashCtx, nullptr,*/ &record,
-                                                   ::get<RecordLayerFields::Seqnum>(param), key, iv));
+    ASSERT_NO_THROW(recordLayer.doTLSv1AeadDecrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, iv));
 
     auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
@@ -194,9 +200,64 @@ constexpr std::array<uint16_t, 35> gTLSv12AeadCipherSuites = {
     casket::make_uint16(0xC0, 0x50), /// TLS_RSA_WITH_ARIA_128_GCM_SHA256
 };
 
-/*
+/*class TLSv1RecordLayerTest : public TestWithParam<RecordLayerTestParam>
+{
+};
 
-    // RSA without PFS (TLS 1.2)
+TEST_P(TLSv1RecordLayerTest, DISABLED_EncryptDecrypt)
+{
+    const auto& param = GetParam();
+    auto suiteCode = ::get<RecordLayerFields::Suite>(param);
+    auto cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(suiteCode);
+    ASSERT_NE(cipherSuite, nullptr) << "Unsupported cipher suite: " << CastToString(suiteCode);
+
+    auto cipherAlg = CryptoManager::getInstance().fetchCipher(CipherSuiteGetCipherName(cipherSuite));
+    auto hmacAlg = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite));
+
+    ASSERT_NE(cipherAlg, nullptr);
+    ASSERT_TRUE(CipherTraits::isAEAD(cipherAlg));
+
+    std::vector<uint8_t> key(CipherTraits::getKeyLength(cipherAlg));
+    std::vector<uint8_t> macKey(HashTraits::getSize(hmacAlg));
+    std::vector<uint8_t> iv(CipherTraits::getIVLengthWithinKeyBlock(cipherAlg));
+    std::vector<uint8_t> plaintext(::get<RecordLayerFields::DataSize>(param));
+
+    Rand::generate(key);
+    Rand::generate(macKey);
+    Rand::generate(iv);
+    Rand::generate(plaintext);
+
+    CipherCtxPtr ctx;
+    ASSERT_NO_THROW(ctx = CipherTraits::createContext());
+    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
+
+    MacCtxPtr hmacCtx;
+    ASSERT_NO_THROW(hmacCtx = HmacTraits::createContext());
+
+    HashCtxPtr hashCtx;
+    ASSERT_NO_THROW(hashCtx = HashTraits::createContext());
+
+    RecordLayer recordLayer;
+
+    recordLayer.setVersion(ProtocolVersion::TLSv1_2);
+    Record record(RecordType::ApplicationData);
+
+    recordLayer.prepareRecordForEncrypt(&record, cipherAlg);
+
+    record.initPlaintext(plaintext);
+
+    ASSERT_NO_THROW(recordLayer.doTLSv1Encrypt(ctx, hmacCtx, hashCtx, hmacAlg, &record,
+                                               ::get<RecordLayerFields::Seqnum>(param), key, macKey, iv));
+    ASSERT_NO_THROW(recordLayer.doTLSv1Decrypt(ctx, hmacCtx, hashCtx, hmacAlg, &record,
+                                               ::get<RecordLayerFields::Seqnum>(param), key, macKey, iv));
+
+    auto decryptedData = record.getPlaintext();
+    ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
+}*/
+
+/*
+constexpr std::array<uint16_t, 36> gTLSv1CipherSuites = {
+    // RSA without PFS
     casket::make_uint16(0x00, 0x3D), /// TLS_RSA_WITH_AES_256_CBC_SHA256
     casket::make_uint16(0x00, 0xC0), /// TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256
     casket::make_uint16(0x00, 0x3C), /// TLS_RSA_WITH_AES_128_CBC_SHA256
@@ -216,7 +277,7 @@ constexpr std::array<uint16_t, 35> gTLSv12AeadCipherSuites = {
     casket::make_uint16(0x00, 0x45), /// TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
     casket::make_uint16(0x00, 0x44), /// TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA
 
-    // TLS 1.2 CBC mode с SHA384/SHA256 (с PFS)
+    // TLS 1.2 CBC mode with SHA384/SHA256
     casket::make_uint16(0xC0, 0x24), /// TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
     casket::make_uint16(0xC0, 0x28), /// TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
     casket::make_uint16(0x00, 0x6B), /// TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
@@ -234,30 +295,16 @@ constexpr std::array<uint16_t, 35> gTLSv12AeadCipherSuites = {
     casket::make_uint16(0x00, 0xBE), /// TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256
     casket::make_uint16(0x00, 0xBD), /// TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256
 
-    // Legacy RSA без PFS (TLS 1.0/SSLv3)
+    // Legacy RSA without PFS (TLS 1.0/SSLv3)
     casket::make_uint16(0x00, 0x35), /// TLS_RSA_WITH_AES_256_CBC_SHA
     casket::make_uint16(0x00, 0x84), /// TLS_RSA_WITH_CAMELLIA_256_CBC_SHA
     casket::make_uint16(0x00, 0x2F), /// TLS_RSA_WITH_AES_128_CBC_SHA
     casket::make_uint16(0x00, 0x41), /// TLS_RSA_WITH_CAMELLIA_128_CBC_SHA
-*/
-
-template <typename T, size_t N>
-constexpr std::array<T, N> GenerateSequence(T start, T end)
-{
-    static_assert(std::is_arithmetic_v<T>, "T must be an arithmetic type");
-    static_assert(N > 1, "Need at least 2 elements for range");
-    std::array<T, N> sequence{};
-    T step = (end - start) / (N - 1);
-    for (size_t i = 0; i < N; ++i)
-    {
-        sequence[i] = start + static_cast<T>(i) * step;
-    }
-    return sequence;
-}
+};*/
 
 // clang-format off
 
-INSTANTIATE_TEST_SUITE_P(CryptoTests, RecordLayerTest,
+INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv13AeadRecordLayerTest,
     Combine(
         ValuesIn(gTLSv13CipherSuites),
         ValuesIn(GenerateSequence<uint64_t, 10>(0, std::numeric_limits<uint64_t>::max())),
@@ -265,7 +312,7 @@ INSTANTIATE_TEST_SUITE_P(CryptoTests, RecordLayerTest,
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv1RecordLayerTest,
+INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv12AeadRecordLayerTest,
     Combine(
         ValuesIn(gTLSv12AeadCipherSuites),
         ValuesIn(GenerateSequence<uint64_t, 10>(0, std::numeric_limits<uint64_t>::max())),

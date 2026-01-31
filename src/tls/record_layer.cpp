@@ -52,6 +52,22 @@ void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     record->isDecrypted_ = true;
 }
 
+void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+                                 Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
+                                 nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
+{
+    /// @todo Implementation
+    (void)cipherCtx;
+    (void)hmacCtx;
+    (void)hashCtx;
+    (void)hmacHash;
+    (void)record;
+    (void)seq;
+    (void)key;
+    (void)macKey;
+    (void)iv;
+}
+
 void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
                                  Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                                  nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv)
