@@ -38,7 +38,6 @@ struct HandshakeMessage final
     MessageType message;
     HandshakeType type;
 
-private:
     explicit HandshakeMessage(MessageType&& msg, HandshakeType htype)
         : message(std::move(msg))
         , type(htype)
