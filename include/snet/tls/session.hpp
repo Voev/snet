@@ -6,6 +6,9 @@
 #include <memory>
 #include <string>
 #include <cstddef>
+#include <iostream>
+
+#include <casket/types/ring_buffer.hpp>
 
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/signature_scheme.hpp>
@@ -41,11 +44,42 @@ public:
 
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
+    size_t readRecords(nonstd::span<const uint8_t> input);
+
+    size_t writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> output);
+
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
 
-    void preprocessRecord(const int8_t sideIndex, Record* record);
+    template <class Handler>
+    void processPendingRecords(const int8_t sideIndex, Handler&& recordHandler)
+    {
+        while (!pendingRecords_.empty())
+        {
+            Record* record{nullptr};
 
-    void postprocessRecord(const int8_t sideIndex, Record* record);
+            if (!pendingRecords_.pop(record))
+            {
+                continue;
+            }
+
+            try
+            {
+                preprocessRecord(sideIndex, record);
+
+                recordHandler(sideIndex, record);
+
+                postprocessRecord(sideIndex, record);
+            }
+            catch (const std::exception& e)
+            {
+                std::cout << "Failed to handle: " << e.what() << std::endl;
+                recordPool_.release(record);
+                throw;
+            }
+
+            recordPool_.release(record);
+        }
+    }
 
     /// @brief Checks if the session can decrypt data.
     ///
@@ -53,6 +87,8 @@ public:
     ///
     /// @return true - if session can decrypt data, false - otherwise.
     bool canDecrypt(const int8_t sideIndex) const noexcept;
+
+    void encrypt(const int8_t sideIndex, Record* record);
 
     /// @brief Decrypts a TLS record.
     ///
@@ -76,6 +112,10 @@ public:
 
     /// @brief Generates key material for TLS 1.3.
     void generateTLS13KeyMaterial();
+
+    void generateKeyShare();
+
+    void generateServerKeyShare();
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
@@ -162,9 +202,16 @@ public:
     }
 
 private:
+    void preprocessRecord(const int8_t sideIndex, Record* record);
+
+    void postprocessRecord(const int8_t sideIndex, Record* record);
+
+private:
     RecordPool& recordPool_;
-    RecordLayer recordLayer_;
     Record* readingRecord_ = nullptr;
+    casket::RingBuffer<Record*> pendingRecords_;  // Входящие записи
+    casket::RingBuffer<Record*> outgoingRecords_; // Исходящие записи
+    RecordLayer recordLayer_;
     std::vector<uint8_t> handshakeBuffer_;
     crypto::HashCtxPtr hashCtx_;
     crypto::HashAlg handshakeHashAlg_ = nullptr;
@@ -176,6 +223,9 @@ private:
     crypto::X509CertPtr clientCert_;
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
+
+    crypto::KeyPtr ephemeralClientKey_;
+    crypto::KeyPtr ephemeralServerKey_;
     RecordProcessor processor_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;

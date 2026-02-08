@@ -40,6 +40,8 @@ namespace snet::tls
 
 Session::Session(RecordPool& recordPool)
     : recordPool_(recordPool)
+    , pendingRecords_(64)
+    , outgoingRecords_(64)
     , hashCtx_(HashTraits::createContext())
     , hmacCtx_(HmacTraits::createContext())
     , clientCipherCtx_(CipherTraits::createContext())
@@ -72,6 +74,109 @@ bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
 bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
 {
     return ((canDecrypt_ & 0x1) && sideIndex == 0) || ((canDecrypt_ & 0x2) && sideIndex == 1);
+}
+
+size_t Session::readRecords(nonstd::span<const uint8_t> input)
+{
+    if (input.empty())
+    {
+        return 0;
+    }
+
+    size_t processedLength = 0;
+
+    while (processedLength < input.size())
+    {
+        // Если нет текущей читаемой записи, начинаем новую
+        if (!readingRecord_)
+        {
+            if (input.size() - processedLength < TLS_HEADER_SIZE)
+            {
+                // Не хватает данных для заголовка
+                break;
+            }
+
+            readingRecord_ = recordPool_.acquire();
+            if (!readingRecord_)
+            {
+                // Нет свободных записей в пуле
+                return processedLength;
+            }
+
+            try
+            {
+                readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Failed to parse TLS header: " << e.what() << std::endl;
+                recordPool_.release(std::exchange(readingRecord_, nullptr));
+                throw;
+            }
+        }
+
+        // Добавляем данные в текущую запись
+        const size_t payloadProcessed = readingRecord_->initPayload(input.subspan(processedLength));
+        processedLength += payloadProcessed;
+
+        // Если запись полностью собрана
+        if (readingRecord_->isFullyAssembled())
+        {
+            // Добавляем в очередь входящих записей
+            if (pendingRecords_.push(readingRecord_))
+            {
+                // Запись добавлена, сбрасываем указатель
+                readingRecord_ = nullptr;
+            }
+            else
+            {
+                // Очередь полна, освобождаем запись
+                recordPool_.release(std::exchange(readingRecord_, nullptr));
+                return processedLength;
+            }
+        }
+    }
+
+    // Если есть частичная запись, но не удалось ничего обработать
+    if (readingRecord_ && processedLength == 0)
+    {
+        recordPool_.release(std::exchange(readingRecord_, nullptr));
+    }
+
+    return processedLength;
+}
+
+size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> output)
+{
+    size_t written = 0;
+
+    while (!outgoingRecords_.empty() && written < output.size())
+    {
+        Record* record{nullptr};
+
+        if (!outgoingRecords_.pop(record))
+        {
+            continue;
+        }
+
+        if (canDecrypt(sideIndex))
+        {
+            encrypt(sideIndex, record);
+        }
+
+        // Сериализуем заголовок
+        size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
+
+        // Копируем данные
+        nonstd::span<const uint8_t> data = record->isDecrypted() ? record->getPlaintext() : record->getCiphertext();
+
+        std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
+
+        written += headerSize + data.size();
+        recordPool_.release(record);
+    }
+
+    return written;
 }
 
 size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_t> input)
@@ -312,6 +417,22 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
+void Session::encrypt(const int8_t sideIndex, Record* record)
+{
+    if (sideIndex == 0)
+    {
+        recordLayer_.encrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
+                             keyInfo_.clientEncKey, keyInfo_.clientMacKey, keyInfo_.clientIV);
+        seqnum_.acceptClientSequence();
+    }
+    else
+    {
+        recordLayer_.encrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
+                             keyInfo_.serverEncKey, keyInfo_.serverMacKey, keyInfo_.serverIV);
+        seqnum_.acceptServerSequence();
+    }
+}
+
 void Session::decrypt(const int8_t sideIndex, Record* record)
 {
     if (sideIndex == 0)
@@ -478,6 +599,40 @@ void Session::generateTLS13KeyMaterial()
     RecordLayer::init(serverCipherCtx_, cipherAlg_);
 
     canDecrypt_ |= 3;
+}
+
+void Session::generateKeyShare()
+{
+    if (clientExtensions_.has(ExtensionCode::KeyShare))
+    {
+        auto keyShare = clientExtensions_.take<KeyShare>();
+        auto offeredGroups = keyShare->offeredGroups();
+        auto firstGroup = offeredGroups.front();
+
+        /// @todo: check offered group by policy
+
+        ephemeralClientKey_ = GroupParams::generateKeyByParams( firstGroup );
+        keyShare->setPublicKey(0, ephemeralClientKey_);
+
+        clientExtensions_.add(std::move(keyShare));
+    }
+}
+
+void Session::generateServerKeyShare()
+{
+    if (serverExtensions_.has(ExtensionCode::KeyShare))
+    {
+        auto keyShare = serverExtensions_.take<KeyShare>();
+        auto offeredGroups = keyShare->offeredGroups();
+        auto firstGroup = offeredGroups.front();
+
+        /// @todo: check offered group by policy
+
+        ephemeralServerKey_ = GroupParams::generateKeyByParams( firstGroup );
+        keyShare->setPublicKey(ephemeralServerKey_);
+
+        serverExtensions_.add(std::move(keyShare));
+    }
 }
 
 std::string_view Session::getHashAlgorithm() const

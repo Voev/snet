@@ -3,6 +3,7 @@
 #include <limits>
 
 #include <snet/tls/record.hpp>
+#include <snet/tls/session.hpp>
 
 #include <casket/utils/exception.hpp>
 
@@ -15,7 +16,10 @@ void Record::reset()
     version_ = ProtocolVersion();
 
     std::memset(plaintextBuffer_.data(), 0, plaintextBuffer_.size());
+    plaintext_ = plaintextBuffer_;
+
     std::memset(ciphertextBuffer_.data(), 0, ciphertextBuffer_.size());
+    ciphertext_ = ciphertextBuffer_;
 
     currentLength_ = 0;
     expectedLength_ = 0;
@@ -52,7 +56,7 @@ size_t Record::serializeHeader(nonstd::span<uint8_t> output)
     return TLS_HEADER_SIZE;
 }
 
-size_t Record::initPayload(nonstd::span<const uint8_t> data)
+size_t Record::initPayload(nonstd::span<const uint8_t> data) noexcept
 {
     if (currentLength_ > 0 || expectedLength_ > data.size())
     {
@@ -76,5 +80,26 @@ void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaI
 {
     handshake_ = HandshakeMessage::deserialize(input, metaInfo);
 }
+
+size_t Record::serializeServerHello(ServerHello& serverHello, nonstd::span<uint8_t> output, const Session& session)
+{
+    handshake_ = HandshakeMessage(serverHello, HandshakeType::ServerHelloCode);
+    expectedLength_ = handshake_.serialize(output, session);
+    version_ = session.getVersion();
+    type_ = RecordType::Handshake;
+
+    return expectedLength_;
+}
+
+size_t Record::serializeEncryptedExtensions(EncryptedExtensions& encryptedExtensions, const Session& session)
+{
+    handshake_ = HandshakeMessage(encryptedExtensions, HandshakeType::EncryptedExtensionsCode);
+    expectedLength_ = handshake_.serialize(plaintext_, session);
+    version_ = session.getVersion();
+    type_ = RecordType::Handshake;
+
+    return expectedLength_;
+}
+
 
 } // namespace snet::tls

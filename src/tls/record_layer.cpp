@@ -32,6 +32,26 @@ void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const 
     crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, key.data(), iv.data(), 0));
 }
 
+void RecordLayer::encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                          uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                          nonstd::span<const uint8_t> iv)
+{
+    if (version_ == ProtocolVersion::TLSv1_3)
+    {
+        doTLSv13Encrypt(cipherCtx, record, seq, key, iv);
+    }
+    else if (aead_)
+    {
+        doTLSv1AeadEncrypt(cipherCtx, record, seq, key, iv);
+    }
+    else
+    {
+        doTLSv1Encrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
+    }
+
+    record->isDecrypted_ = false;
+}
+
 void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
                           uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
                           nonstd::span<const uint8_t> iv)
