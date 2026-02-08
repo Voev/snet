@@ -54,7 +54,14 @@ public:
     /// @return true - if session can decrypt data, false - otherwise.
     bool canDecrypt(const int8_t sideIndex) const noexcept;
 
-    /// @brief Decrypts a TLS record.
+    /// @brief Encrypt a TLS record.
+    ///
+    /// @param[in] sideIndex Index indicating the side (client or server).
+    /// @param[in] record TLS record.
+    ///
+    void encrypt(const int8_t sideIndex, Record* record);
+
+    /// @brief Decrypt a TLS record.
     ///
     /// @param[in] sideIndex The index indicating the side (client or server).
     /// @param[in] record TLS record.
