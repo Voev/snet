@@ -734,6 +734,13 @@ void Session::processServerHello(const ServerHello& serverHello)
 
         if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
         {
+            if(ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
+            {
+                auto keyShare = serverExtensions_.get<KeyShare>();
+                auto serverPublicKey = keyShare->getPublicKey(0);
+                auto masterSecret = GroupParams::deriveSecret(ephemeralClientKey_, serverPublicKey, true);
+            }
+
             generateTLS13KeyMaterial();
         }
     }

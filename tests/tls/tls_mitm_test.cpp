@@ -105,11 +105,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec);
 
-        ASSERT_EQ(clientBufferSize, mitmClient.readRecords({clientBuffer.data(), clientBufferSize}));
+        ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
         snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize});
 
-        mitmClient.processPendingRecords(0, [&clientBufferSize, &clientBuffer, &recordPool, &mitmServer, &mitmClient](const int8_t sideIndex, Record* record) {
+        mitmServer.processPendingRecords(0, [&clientBufferSize, &clientBuffer, &recordPool, &mitmClient](const int8_t sideIndex, Record* record) {
             
             (void)sideIndex;
             
@@ -121,8 +121,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                 {
                     ClientHello clientHello = record->getHandshake<ClientHello>();
 
-                    /// mitmServer сохраняет себе открытые ключи исходного клиента
-                    mitmServer.processClientHello(clientHello);
+                    mitmClient.processClientHello(clientHello);
+
+                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
 
                     uint8_t random[32] = {};
                     Rand::generate(random);
@@ -130,9 +131,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     clientHello.random = random;
                     /// filter ciphersuites
                     /// filter extensions
-
-
-                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
 
                     mitmClient.generateKeyShare();
 
@@ -148,7 +146,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             }
         } );
 
-        
         snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Modified:");
 
         serverBufferSize = serverBuffer.size();
@@ -156,12 +153,12 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec);
 
-        ASSERT_EQ(serverBufferSize, mitmServer.readRecords({serverBuffer.data(), serverBufferSize}));
+        ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize});
 
         serverBufferSize = 0;
 
-        mitmServer.processPendingRecords(1, [&serverBufferSize, &serverBuffer, &recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record) {
+        mitmClient.processPendingRecords(1, [&serverBufferSize, &serverBuffer, &recordPool, &mitmServer](const int8_t sideIndex, Record* record) {
             
             (void)sideIndex;
             
@@ -172,9 +169,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                 case HandshakeType::ServerHelloCode:
                 {
                     ServerHello serverHello = record->getHandshake<ServerHello>();
-
-                    /// Клиент тоже должен обработать сообщение ServerHello
-                    mitmClient.processServerHello(serverHello);
 
                     uint8_t random[32] = {};
                     Rand::generate(random);
@@ -196,16 +190,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                 {
                     EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
 
-                    /// Клиент тоже должен обработать сообщение ServerHello
-                    mitmClient.processEncryptedExtensions(encryptedExtensions);
-
-                    modifiedRecord->initPayload(serverBuffer);
+                    // задаем в plaintext_
+                    // сериализуем сразу в plaintext_
                     serverBufferSize += modifiedRecord->serializeEncryptedExtensions(encryptedExtensions, mitmServer);
-
-                    mitmClient.encrypt(1, modifiedRecord.get());
-
-                    serverBufferSize += modifiedRecord->serializeHeader();
-
+                    // шифруем в ciphertext_
+                    mitmServer.sealHandshakeRecord(1, modifiedRecord.get());
                 }
                 default:
                 {

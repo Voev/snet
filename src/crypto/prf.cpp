@@ -117,6 +117,40 @@ void tls1Prf(std::string_view algorithm, nonstd::span<const uint8_t> secret, std
 static constexpr size_t kMaxFullLabelSize = 255;
 static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0x33, 0x20};
 
+std::vector<uint8_t> HkdfExtract(std::string_view algorithm, std::span<const uint8_t> prevSecret,
+                                 std::span<const uint8_t> inSecret, size_t length)
+{
+    static int mode{EVP_PKEY_HKDEF_MODE_EXTRACT_ONLY};
+    static const char derived_secret_label[] = "derived";
+
+    auto kdf = CipherSuiteManager::getInstance().fetchKdf(OSSL_KDF_NAME_TLS1_3_KDF);
+
+    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
+    crypto::ThrowIfTrue(kctx == nullptr);
+
+    OSSL_PARAM params[7], *p = params;
+
+    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+
+    if (!inSecret.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, (uint8_t*)inSecret.data(), inSecret.size());
+    if (!prevSecret.empty())
+        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT, (uint8_t*)prevSecret.data(), prevSecret.size());
+
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PREFIX, (unsigned char*)gLabelPrefix,
+                                             sizeof(gLabelPrefix) - 1);
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_LABEL, (unsigned char*)derived_secret_label,
+                                             sizeof(derived_secret_label) - 1);
+    *p++ = OSSL_PARAM_construct_end();
+
+    std::vector<uint8_t> out(length);
+    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
+    out.resize(length);
+
+    return out;
+}
+
 void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {

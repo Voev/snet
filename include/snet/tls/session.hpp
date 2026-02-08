@@ -81,6 +81,13 @@ public:
         }
     }
 
+    void sealHandshakeRecord(const int8_t sideIndex, Record* record)
+    {
+        encrypt(sideIndex, record);
+        auto ciphertext = record->getCiphertext();
+        record->serializeHeader(ciphertext);
+    }
+
     /// @brief Checks if the session can decrypt data.
     ///
     /// @param[in] client2server Indicates if the direction is client to server.

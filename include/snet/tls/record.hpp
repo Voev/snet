@@ -107,6 +107,11 @@ public:
         return plaintext_.size();
     }
 
+    void setPlaintext(nonstd::span<uint8_t> plaintext)
+    {
+        plaintext_ = plaintext;
+    }
+
     /// @brief Set data start offset.
     ///
     /// @param[in] offset Offset value.
