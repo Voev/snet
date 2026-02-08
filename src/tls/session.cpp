@@ -80,8 +80,6 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
 
     size_t processedLength{0};
 
-    utils::printHex(std::cout, input, "Preprocessing output", true);
-
     while (processedLength < input.size())
     {
         if (!readingRecord_)
@@ -309,6 +307,22 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     {
         /// @todo: pay attention to the HelloRetryRequest
         cipherState_ |= (sideIndex == 0 ? 1 : 2);
+    }
+}
+
+void Session::encrypt(const int8_t sideIndex, Record* record)
+{
+    if (sideIndex == 0)
+    {
+        recordLayer_.encrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
+                             keyInfo_.clientEncKey, keyInfo_.clientMacKey, keyInfo_.clientIV);
+        seqnum_.acceptClientSequence();
+    }
+    else
+    {
+        recordLayer_.encrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
+                             keyInfo_.serverEncKey, keyInfo_.serverMacKey, keyInfo_.serverIV);
+        seqnum_.acceptServerSequence();
     }
 }
 

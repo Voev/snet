@@ -52,7 +52,7 @@ size_t Record::serializeHeader(nonstd::span<uint8_t> output)
     return TLS_HEADER_SIZE;
 }
 
-size_t Record::initPayload(nonstd::span<const uint8_t> data)
+size_t Record::initPayload(nonstd::span<const uint8_t> data) noexcept
 {
     if (currentLength_ > 0 || expectedLength_ > data.size())
     {

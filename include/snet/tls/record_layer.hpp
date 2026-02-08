@@ -16,18 +16,6 @@ namespace snet::tls
 class RecordLayer final
 {
 public:
-    struct Operation
-    {
-        CipherCtx* cipherCtx;
-        MacCtx* hmacCtx;
-        HashCtx* hashCtx;
-        const Hash* hmacHash;
-
-        uint8_t* encKey;
-        uint8_t* macKey;
-        uint8_t* iv;
-    };
-
     void reset() noexcept
     {
         version_ = ProtocolVersion();
@@ -60,6 +48,10 @@ public:
 
     static void init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
                      nonstd::span<const uint8_t> iv);
+
+    void encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
+                 uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
+                 nonstd::span<const uint8_t> iv);
 
     void decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
                  uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
