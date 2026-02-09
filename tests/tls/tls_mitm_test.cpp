@@ -120,10 +120,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                 case HandshakeType::ClientHelloCode:
                 {
                     ClientHello clientHello = record->getHandshake<ClientHello>();
+                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
 
                     mitmClient.processClientHello(clientHello);
-
-                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
 
                     uint8_t random[32] = {};
                     Rand::generate(random);
@@ -134,8 +133,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                     mitmClient.generateKeyShare();
 
+                    /// Обязательно после модификации
+                    
                     nonstd::span<uint8_t> out = clientBuffer;
                     clientBufferSize = modifiedRecord->serializeClientHello(clientHello, out.subspan(TLS_HEADER_SIZE), mitmClient);
+                    mitmClient.updateData({out.subspan(TLS_HEADER_SIZE).data(), clientBufferSize});
                     clientBufferSize += modifiedRecord->serializeHeader(out.subspan(0, TLS_HEADER_SIZE));
                     break;
                 }

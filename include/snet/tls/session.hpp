@@ -125,6 +125,8 @@ public:
     /// @brief Generates key material for TLS 1.3.
     void generateTLS13KeyMaterial();
 
+    void generateAppDataKeys(const int8_t sideIndex);
+
     void generateKeyShare();
 
     void generateServerKeyShare();

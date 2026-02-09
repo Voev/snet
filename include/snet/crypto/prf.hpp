@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include <casket/nonstd/span.hpp>
+#include <snet/crypto/typedefs.hpp>
 
 namespace snet::crypto
 {
@@ -33,8 +34,19 @@ void tls1Prf(std::string_view algorithm, nonstd::span<const uint8_t> secret, std
              nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out);
 
+void GenerateSecret(const Hash* hashAlg, nonstd::span<const uint8_t> prevSecret,
+                    nonstd::span<const uint8_t> inSecret, nonstd::span<uint8_t> outSecret);
+
 void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
+void DeriveClientHsTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
+void DeriveServerHsTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
+void DeriveClientApTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
+
+void DeriveServerApTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out);
 
 void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out);
 

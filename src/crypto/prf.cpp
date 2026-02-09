@@ -7,6 +7,7 @@
 #include <snet/crypto/crypto_manager.hpp>
 #include <snet/crypto/hash_traits.hpp>
 #include <snet/crypto/prf.hpp>
+#include <snet/crypto/secure_array.hpp>
 
 #include <casket/utils/load_store.hpp>
 
@@ -20,8 +21,8 @@
 namespace snet::crypto
 {
 
-void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
-             nonstd::span<uint8_t> out)
+void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> clientRandom,
+             nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out)
 {
     unsigned int ch = 'A';
     unsigned char salt[EVP_MAX_MD_SIZE];
@@ -117,44 +118,54 @@ void tls1Prf(std::string_view algorithm, nonstd::span<const uint8_t> secret, std
 static constexpr size_t kMaxFullLabelSize = 255;
 static constexpr std::array<uint8_t, 6> labelPrefix = {0x74, 0x6C, 0x73, 0x31, 0x33, 0x20};
 
-std::vector<uint8_t> HkdfExtract(std::string_view algorithm, std::span<const uint8_t> prevSecret,
-                                 std::span<const uint8_t> inSecret, size_t length)
+/// "derived" in ASCII.
+static constexpr std::array<unsigned char, 7> kDerivedSecretLabel = {0x64, 0x65, 0x72, 0x69, 0x76, 0x65, 0x64};
+
+static const unsigned char default_zeros[EVP_MAX_MD_SIZE] = {};
+
+void GenerateSecret(const Hash* hashAlg, nonstd::span<const uint8_t> prevSecret, nonstd::span<const uint8_t> inSecret,
+                    nonstd::span<uint8_t> outSecret)
 {
-    static int mode{EVP_PKEY_HKDEF_MODE_EXTRACT_ONLY};
-    static const char derived_secret_label[] = "derived";
+    size_t mdlen;
+    int mdleni;
+    crypto::SecureArray<uint8_t, EVP_MAX_MD_SIZE> preExtractSecret;
 
-    auto kdf = CipherSuiteManager::getInstance().fetchKdf(OSSL_KDF_NAME_TLS1_3_KDF);
+    KeyCtxPtr pctx = CryptoManager::getInstance().createKeyContext("HKDF");
 
-    KdfCtxPtr kctx(EVP_KDF_CTX_new(kdf));
-    crypto::ThrowIfTrue(kctx == nullptr);
+    mdleni = EVP_MD_size(hashAlg);
+    mdlen = (size_t)mdleni;
 
-    OSSL_PARAM params[7], *p = params;
+    if (inSecret.empty())
+    {
+        inSecret = {default_zeros, mdlen};
+    }
+    if (prevSecret.empty())
+    {
+        prevSecret = {default_zeros, mdlen};
+    }
+    else
+    {
+        HashCtxPtr mctx = HashTraits::createContext();
+        unsigned char buffer[EVP_MAX_MD_SIZE];
 
-    *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
-    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
+        HashTraits::hashInit(mctx, hashAlg);
+        auto hash = HashTraits::hashFinal(mctx, buffer);
+        HkdfExpand(HashTraits::getName(hashAlg), prevSecret, kDerivedSecretLabel, hash,
+                   {preExtractSecret.data(), mdlen});
+        prevSecret = {preExtractSecret.data(), mdlen};
+    }
 
-    if (!inSecret.empty())
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, (uint8_t*)inSecret.data(), inSecret.size());
-    if (!prevSecret.empty())
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT, (uint8_t*)prevSecret.data(), prevSecret.size());
-
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PREFIX, (unsigned char*)gLabelPrefix,
-                                             sizeof(gLabelPrefix) - 1);
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_LABEL, (unsigned char*)derived_secret_label,
-                                             sizeof(derived_secret_label) - 1);
-    *p++ = OSSL_PARAM_construct_end();
-
-    std::vector<uint8_t> out(length);
-    crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
-    out.resize(length);
-
-    return out;
+    ThrowIfFalse(0 < EVP_PKEY_derive_init(pctx));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXTRACT_ONLY));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set_hkdf_md(pctx, hashAlg));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set1_hkdf_key(pctx, inSecret.data(), inSecret.size_bytes()));
+    ThrowIfFalse(0 < EVP_PKEY_CTX_set1_hkdf_salt(pctx, prevSecret.data(), prevSecret.size_bytes()));
+    ThrowIfFalse(0 < EVP_PKEY_derive(pctx, outSecret.data(), &mdlen));
 }
 
 void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {
-
     ThrowIfFalse(labelPrefix.size() + label.size() <= kMaxFullLabelSize, "label too large");
     ThrowIfFalse(data.size() <= EVP_MAX_MD_SIZE, "context too large");
     ThrowIfFalse(out.size() <= std::numeric_limits<uint16_t>::max(), "invalid length");
@@ -242,6 +253,39 @@ void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> s
     HkdfExpand(algorithm, secret, finishedLabel, {}, out);
 }
 
+static const unsigned char client_handshake_traffic[] = {0x63, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74,
+                                                         0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char client_application_traffic[] = {0x63, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74,
+                                                           0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char server_handshake_traffic[] = {0x73, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74,
+                                                         0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char server_application_traffic[] = {0x73, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74,
+                                                           0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+
+void DeriveClientHsTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data,
+                           nonstd::span<uint8_t> out)
+{
+    HkdfExpand(HashTraits::getName(hashAlg), secret, client_handshake_traffic, data, out);
+}
+
+void DeriveServerHsTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data,
+                           nonstd::span<uint8_t> out)
+{
+    HkdfExpand(HashTraits::getName(hashAlg), secret, server_handshake_traffic, data, out);
+}
+
+void DeriveClientApTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data,
+                           nonstd::span<uint8_t> out)
+{
+    HkdfExpand(HashTraits::getName(hashAlg), secret, client_application_traffic, data, out);
+}
+
+void DeriveServerApTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data,
+                           nonstd::span<uint8_t> out)
+{
+    HkdfExpand(HashTraits::getName(hashAlg), secret, server_application_traffic, data, out);
+}
+
 void DeriveKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
     static constexpr std::array<unsigned char, 3> keyLabel = {0x6B, 0x65, 0x79};
@@ -264,4 +308,4 @@ void UpdateTrafficSecret(std::string_view algorithm, nonstd::span<uint8_t> secre
     HkdfExpand(algorithm, secret, trafficUpdateLabel, {}, secret);
 }
 
-} // namespace snet::tls
+} // namespace snet::crypto

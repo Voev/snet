@@ -409,8 +409,54 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
     else
     {
-        /// @todo: pay attention to the HelloRetryRequest
-        cipherState_ |= (sideIndex == 0 ? 1 : 2);
+        if (record->getType() == RecordType::Handshake)
+        {
+            if (record->getHandshakeType() == HandshakeType::ServerHelloCode)
+            {
+                if (!monitor_)
+                {
+                    if (!keyInfo_.handshakeSecret.empty())
+                    {
+                        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+                        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+                        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+                        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
+                        keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+                        keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+
+                        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                                              keyInfo_.clientHndTrafficSecret);
+                        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                                              keyInfo_.serverHndTrafficSecret);
+                    }
+                    generateTLS13KeyMaterial();
+                }
+            }
+            else if (record->getHandshakeType() == HandshakeType::FinishedCode)
+            {
+                if (!monitor_)
+                {
+                    if (!keyInfo_.masterSecret.empty())
+                    {
+                        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+                        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+                        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+                        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
+                        DeriveClientApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
+                                              keyInfo_.clientAppTrafficSecret);
+                        DeriveServerApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
+                                              keyInfo_.serverAppTrafficSecret);
+                    }
+                }
+
+                generateAppDataKeys(sideIndex);
+
+                /// @todo: pay attention to the HelloRetryRequest
+                cipherState_ |= (sideIndex == 0 ? 1 : 2);
+            }
+        }
     }
 }
 
@@ -568,11 +614,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
 void Session::generateTLS13KeyMaterial()
 {
-    if (!keyInfo_.isValid(ProtocolVersion::TLSv1_3))
-    {
-        return;
-    }
-
     const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
     crypto::DeriveKey(digestName, keyInfo_.clientHndTrafficSecret, keyInfo_.clientEncKey);
@@ -595,6 +636,40 @@ void Session::generateTLS13KeyMaterial()
     canDecrypt_ |= 3;
 }
 
+void Session::generateAppDataKeys(const int8_t sideIndex)
+{
+    if (sideIndex == 0)
+    {
+        const auto digestName = HashTraits::getName(handshakeHashAlg_);
+
+        crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
+        crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
+
+        seqnum_.resetClientSequence();
+
+        if (debugKeys_)
+        {
+            utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
+            utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
+        }
+    }
+    else
+    {
+        const auto digestName = HashTraits::getName(handshakeHashAlg_);
+
+        crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
+        crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
+
+        seqnum_.resetServerSequence();
+
+        if (debugKeys_)
+        {
+            utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
+            utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server IV"));
+        }
+    }
+}
+
 void Session::generateKeyShare()
 {
     if (clientExtensions_.has(ExtensionCode::KeyShare))
@@ -605,7 +680,7 @@ void Session::generateKeyShare()
 
         /// @todo: check offered group by policy
 
-        ephemeralClientKey_ = GroupParams::generateKeyByParams( firstGroup );
+        ephemeralClientKey_ = GroupParams::generateKeyByParams(firstGroup);
         keyShare->setPublicKey(0, ephemeralClientKey_);
 
         clientExtensions_.add(std::move(keyShare));
@@ -622,7 +697,7 @@ void Session::generateServerKeyShare()
 
         /// @todo: check offered group by policy
 
-        ephemeralServerKey_ = GroupParams::generateKeyByParams( firstGroup );
+        ephemeralServerKey_ = GroupParams::generateKeyByParams(firstGroup);
         keyShare->setPublicKey(ephemeralServerKey_);
 
         serverExtensions_.add(std::move(keyShare));
@@ -734,14 +809,20 @@ void Session::processServerHello(const ServerHello& serverHello)
 
         if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
         {
-            if(ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
+            if (ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
             {
                 auto keyShare = serverExtensions_.get<KeyShare>();
                 auto serverPublicKey = keyShare->getPublicKey(0);
-                auto masterSecret = GroupParams::deriveSecret(ephemeralClientKey_, serverPublicKey, true);
-            }
+                auto ecdheSecret = GroupParams::deriveSecret(ephemeralClientKey_, serverPublicKey, true);
 
-            generateTLS13KeyMaterial();
+                /// RFC 8446. Section 7.1.
+                ///
+                keyInfo_.earlySecret.resize(HashTraits::getSize(handshakeHashAlg_));
+                GenerateSecret(handshakeHashAlg_, {}, {}, keyInfo_.earlySecret);
+
+                keyInfo_.handshakeSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+                GenerateSecret(handshakeHashAlg_, keyInfo_.earlySecret, ecdheSecret, keyInfo_.handshakeSecret);
+            }
         }
     }
 }
@@ -993,42 +1074,6 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     case ProtocolVersion::SSLv3_0:
         /// @todo: do it.
         break;
-    }
-
-    /// Generate key material
-
-    if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
-    {
-        if (sideIndex == 0)
-        {
-            const auto digestName = HashTraits::getName(handshakeHashAlg_);
-
-            crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
-            crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
-
-            seqnum_.resetClientSequence();
-
-            if (debugKeys_)
-            {
-                utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
-                utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
-            }
-        }
-        else
-        {
-            const auto digestName = HashTraits::getName(handshakeHashAlg_);
-
-            crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
-            crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
-
-            seqnum_.resetServerSequence();
-
-            if (debugKeys_)
-            {
-                utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
-                utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server IV"));
-            }
-        }
     }
 }
 
