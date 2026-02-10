@@ -118,6 +118,8 @@ public:
     void PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
+    void generateHandshakeSecret(KeyShare* keyShare, Key* privateKey);
+
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
     void generateKeyMaterial(const int8_t sideIndex);
@@ -154,6 +156,8 @@ public:
     void setServerKey(Key* key);
 
     void processClientHello(const ClientHello& clientHello);
+
+    void constructClientHello(ClientHello& clientHello);
 
     void processServerHello(const ServerHello& serverHello);
 

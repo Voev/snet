@@ -492,6 +492,22 @@ void Session::decrypt(const int8_t sideIndex, Record* record)
     }
 }
 
+void Session::generateHandshakeSecret(KeyShare* keyShare, Key* privateKey)
+{
+    auto publicKey = keyShare->getPublicKey(0);
+    auto ecdheSecret = GroupParams::deriveSecret(privateKey, publicKey, true);
+
+    /// RFC 8446. Section 7.1.
+
+    /// Generation of early_secret.
+    keyInfo_.earlySecret.resize(HashTraits::getSize(handshakeHashAlg_));
+    GenerateSecret(handshakeHashAlg_, {}, {}, keyInfo_.earlySecret);
+
+    /// Generation of handshake_secret.
+    keyInfo_.handshakeSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+    GenerateSecret(handshakeHashAlg_, keyInfo_.earlySecret, ecdheSecret, keyInfo_.handshakeSecret);
+}
+
 void Session::generateKeyMaterial(const int8_t sideIndex)
 {
     if (!keyInfo_.isValid(ProtocolVersion::TLSv1_2))
@@ -689,19 +705,16 @@ void Session::generateKeyShare()
 
 void Session::generateServerKeyShare()
 {
-    if (serverExtensions_.has(ExtensionCode::KeyShare))
-    {
-        auto keyShare = serverExtensions_.take<KeyShare>();
-        auto offeredGroups = keyShare->offeredGroups();
-        auto firstGroup = offeredGroups.front();
+    auto keyShare = serverExtensions_.take<KeyShare>();
+    auto offeredGroups = keyShare->offeredGroups();
+    auto firstGroup = offeredGroups.front();
 
-        /// @todo: check offered group by policy
+    /// @todo: check offered group by policy
 
-        ephemeralServerKey_ = GroupParams::generateKeyByParams(firstGroup);
-        keyShare->setPublicKey(ephemeralServerKey_);
+    ephemeralServerKey_ = GroupParams::generateKeyByParams(firstGroup);
+    keyShare->setPublicKey(ephemeralServerKey_);
 
-        serverExtensions_.add(std::move(keyShare));
-    }
+    serverExtensions_.add(std::move(keyShare));
 }
 
 std::string_view Session::getHashAlgorithm() const
@@ -776,6 +789,35 @@ void Session::processClientHello(const ClientHello& clientHello)
     }
 }
 
+void Session::constructClientHello(ClientHello& clientHello)
+{
+    metaInfo_.version = clientHello.version;
+
+    Rand::generate(clientRandom_);
+    clientHello.random = clientRandom_;
+
+    /// @todo: filter ciphersuites
+
+    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
+    {
+        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+
+        if (clientExtensions_.has(ExtensionCode::KeyShare))
+        {
+            auto keyShare = clientExtensions_.take<KeyShare>();
+            auto offeredGroups = keyShare->offeredGroups();
+            auto firstGroup = offeredGroups.front();
+
+            /// @todo: check offered group by policy
+
+            ephemeralClientKey_ = GroupParams::generateKeyByParams(firstGroup);
+            keyShare->setPublicKey(0, ephemeralClientKey_);
+
+            clientExtensions_.add(std::move(keyShare));
+        }
+    }
+}
+
 void Session::processServerHello(const ServerHello& serverHello)
 {
     assert(serverHello.random.size() == TLS_RANDOM_SIZE);
@@ -811,17 +853,7 @@ void Session::processServerHello(const ServerHello& serverHello)
         {
             if (ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
             {
-                auto keyShare = serverExtensions_.get<KeyShare>();
-                auto serverPublicKey = keyShare->getPublicKey(0);
-                auto ecdheSecret = GroupParams::deriveSecret(ephemeralClientKey_, serverPublicKey, true);
-
-                /// RFC 8446. Section 7.1.
-                ///
-                keyInfo_.earlySecret.resize(HashTraits::getSize(handshakeHashAlg_));
-                GenerateSecret(handshakeHashAlg_, {}, {}, keyInfo_.earlySecret);
-
-                keyInfo_.handshakeSecret.resize(HashTraits::getSize(handshakeHashAlg_));
-                GenerateSecret(handshakeHashAlg_, keyInfo_.earlySecret, ecdheSecret, keyInfo_.handshakeSecret);
+                generateHandshakeSecret(serverExtensions_.get<KeyShare>(), ephemeralClientKey_);
             }
         }
     }

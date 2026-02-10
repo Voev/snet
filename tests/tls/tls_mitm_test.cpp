@@ -60,13 +60,12 @@ public:
         (void)modified;
         (void)session;
 
-        //Record* record{nullptr};
+        // Record* record{nullptr};
 
-        //record= session->acquireRecord();
+        // record= session->acquireRecord();
 
-        //record->serializeClientHello(modified);
+        // record->serializeClientHello(modified);
     }
-
 };
 
 TEST_P(TLSMitmTest, IterativeHandshake)
@@ -92,9 +91,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
     RecordPool recordPool(64);
     RecordProcessor proc(std::make_shared<RecordHandlers>());
-    
+
     proc->push_back(std::make_shared<RecordPrinter>());
-    
+
     Session mitmClient(recordPool);
     Session mitmServer(recordPool);
 
@@ -109,34 +108,28 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize});
 
-        mitmServer.processPendingRecords(0, [&clientBufferSize, &clientBuffer, &recordPool, &mitmClient](const int8_t sideIndex, Record* record) {
-            
-            (void)sideIndex;
-            
-            auto modifiedRecord = recordPool.acquireScoped();
-
-            switch(record->getHandshakeType())
+        mitmServer.processPendingRecords(
+            0,
+            [&clientBufferSize, &clientBuffer, &recordPool, &mitmClient](const int8_t sideIndex, Record* record)
             {
+                (void)sideIndex;
+
+                auto modifiedRecord = recordPool.acquireScoped();
+
+                /// 1. Serialization
+                /// 2. Update hash
+                /// 3. Encryption
+
+                switch (record->getHandshakeType())
+                {
                 case HandshakeType::ClientHelloCode:
                 {
                     ClientHello clientHello = record->getHandshake<ClientHello>();
-                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
+                    mitmClient.constructClientHello(clientHello);
 
-                    mitmClient.processClientHello(clientHello);
-
-                    uint8_t random[32] = {};
-                    Rand::generate(random);
-
-                    clientHello.random = random;
-                    /// filter ciphersuites
-                    /// filter extensions
-
-                    mitmClient.generateKeyShare();
-
-                    /// Обязательно после модификации
-                    
                     nonstd::span<uint8_t> out = clientBuffer;
-                    clientBufferSize = modifiedRecord->serializeClientHello(clientHello, out.subspan(TLS_HEADER_SIZE), mitmClient);
+                    clientBufferSize =
+                        modifiedRecord->serializeClientHello(clientHello, out.subspan(TLS_HEADER_SIZE), mitmClient);
                     mitmClient.updateData({out.subspan(TLS_HEADER_SIZE).data(), clientBufferSize});
                     clientBufferSize += modifiedRecord->serializeHeader(out.subspan(0, TLS_HEADER_SIZE));
                     break;
@@ -145,8 +138,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                 {
                     break;
                 }
-            }
-        } );
+                }
+            });
 
         snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Modified:");
 
@@ -160,50 +153,66 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         serverBufferSize = 0;
 
-        mitmClient.processPendingRecords(1, [&serverBufferSize, &serverBuffer, &recordPool, &mitmServer](const int8_t sideIndex, Record* record) {
-            
-            (void)sideIndex;
-            
-            auto modifiedRecord = recordPool.acquireScoped();
-
-            switch(record->getHandshakeType())
+        mitmClient.processPendingRecords(
+            1,
+            [&serverBufferSize, &serverBuffer, &recordPool, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                case HandshakeType::ServerHelloCode:
+                /// 1. Serialization
+                /// 2. Update hash
+                /// 3. Encryption
+
+                auto modifiedRecord = recordPool.acquireScoped();
+
+                if (record->getType() == RecordType::Handshake)
                 {
-                    ServerHello serverHello = record->getHandshake<ServerHello>();
+                    switch (record->getHandshakeType())
+                    {
+                    case HandshakeType::ServerHelloCode:
+                    {
+                        ServerHello serverHello = record->getHandshake<ServerHello>();
 
-                    uint8_t random[32] = {};
-                    Rand::generate(random);
+                        uint8_t random[32] = {};
+                        Rand::generate(random);
 
-                    serverHello.random = random; 
-                    /// filter ciphersuite
-                    /// filter extensions
+                        serverHello.random = random;
+                        /// filter ciphersuite
+                        /// filter extensions
 
-                    /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
+                        /// mitmClient перегенерирует KeyShare на основе того GroupParams который уже есть
 
-                    mitmServer.generateServerKeyShare();
+                        mitmServer.processServerHello(serverHello);
+                        mitmServer.generateServerKeyShare();
+                        mitmServer.generateTLS13KeyMaterial();
 
-                    nonstd::span<uint8_t> out = serverBuffer;
-                    serverBufferSize += modifiedRecord->serializeServerHello(serverHello, out.subspan(TLS_HEADER_SIZE), mitmServer);
-                    serverBufferSize += modifiedRecord->serializeHeader(out.subspan(0, TLS_HEADER_SIZE));
-                    break;
+                        nonstd::span<uint8_t> out = serverBuffer;
+                        serverBufferSize +=
+                            modifiedRecord->serializeServerHello(serverHello, out.subspan(TLS_HEADER_SIZE), mitmServer);
+                        serverBufferSize += modifiedRecord->serializeHeader(out.subspan(0, TLS_HEADER_SIZE));
+                        break;
+                    }
+                    case HandshakeType::EncryptedExtensionsCode:
+                    {
+                        EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
+
+                        // задаем в plaintext_
+                        // сериализуем сразу в plaintext_
+                        serverBufferSize +=
+                            modifiedRecord->serializeEncryptedExtensions(encryptedExtensions, mitmServer);
+                        // шифруем в ciphertext_
+                        //mitmServer.sealHandshakeRecord(sideIndex, modifiedRecord.get());
+                    }
+                    default:
+                    {
+                        break;
+                    }
+                    } /// switch
                 }
-                case HandshakeType::EncryptedExtensionsCode:
+
+                if(mitmServer.canDecrypt(sideIndex))
                 {
-                    EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
-
-                    // задаем в plaintext_
-                    // сериализуем сразу в plaintext_
-                    serverBufferSize += modifiedRecord->serializeEncryptedExtensions(encryptedExtensions, mitmServer);
-                    // шифруем в ciphertext_
-                    mitmServer.sealHandshakeRecord(1, modifiedRecord.get());
+                    mitmServer.sealHandshakeRecord(sideIndex, modifiedRecord.get());
                 }
-                default:
-                {
-                    break;
-                }
-            }
-        } );
+            });
 
         snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "After MITM server:");
 
@@ -212,5 +221,4 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     ASSERT_TRUE(server.afterHandshake());
 }
 
-INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest,
-                         testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
+INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest, testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
