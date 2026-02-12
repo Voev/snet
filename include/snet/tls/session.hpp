@@ -267,6 +267,11 @@ public:
         return serverEncExtensions_;
     }
 
+    void setEphemeralClientKey(crypto::KeyPtr key)
+    {
+        ephemeralClientKey_ = std::move(key);
+    }
+
     void setEphemeralServerKey(crypto::KeyPtr key)
     {
         ephemeralServerKey_ = std::move(key);

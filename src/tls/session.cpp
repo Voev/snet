@@ -302,21 +302,18 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
             processClientHello(record->getHandshake<ClientHello>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ServerHelloCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerHello(record->getHandshake<ServerHello>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::EncryptedExtensionsCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             processEncryptedExtensions(record->getHandshake<EncryptedExtensions>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ServerHelloDoneCode:
@@ -324,61 +321,44 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
             reader.assert_done();
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ServerKeyExchangeCode:
         {
             casket::ThrowIfFalse(sideIndex == 1, "Incorrect side index");
             processServerKeyExchange(record->getHandshake<ServerKeyExchange>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::ClientKeyExchangeCode:
         {
             casket::ThrowIfFalse(sideIndex == 0, "Incorrect side index");
             processClientKeyExchange(record->getHandshake<ClientKeyExchange>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateCode:
         {
             processCertificate(sideIndex, record->getHandshake<Certificate>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateRequestCode:
         {
             processCertificateRequest(sideIndex, record->getHandshake<CertificateRequest>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::CertificateVerifyCode:
         {
             processCertificateVerify(sideIndex, record->getHandshake<CertificateVerify>());
-            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
             break;
         }
         case HandshakeType::FinishedCode:
         {
             processFinished(sideIndex, record->getHandshake<Finished>());
-
-            if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
-            {
-                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
-            }
             break;
         }
         case HandshakeType::NewSessionTicketCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
             processNewSessionTicket(record->getHandshake<NewSessionTicket>());
-
-            if (metaInfo_.version < ProtocolVersion::TLSv1_3)
-            {
-                // RFC 5077: 3.3 (must be included in transcript hash)
-                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
-            }
             break;
         }
         case HandshakeType::KeyUpdateCode:
@@ -400,6 +380,63 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
 void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 {
+    nonstd::span<const uint8_t> data;
+
+    if (canDecrypt(sideIndex) && record->getType() != RecordType::ChangeCipherSpec)
+    {
+        data = record->getPlaintext();
+    }
+    else
+    {
+        data = record->getCiphertext().subspan(TLS_HEADER_SIZE);
+    }
+
+    if (record->getType() == RecordType::Handshake)
+    {
+        switch (record->getHandshakeType())
+        {
+        case HandshakeType::ClientHelloCode:
+        case HandshakeType::ServerHelloCode:
+        case HandshakeType::EncryptedExtensionsCode:
+        case HandshakeType::ServerHelloDoneCode:
+        case HandshakeType::ServerKeyExchangeCode:
+        case HandshakeType::ClientKeyExchangeCode:
+        case HandshakeType::CertificateCode:
+        case HandshakeType::CertificateRequestCode:
+        case HandshakeType::CertificateVerifyCode:
+        {
+            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
+            break;
+        }
+        case HandshakeType::FinishedCode:
+        {
+            if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
+            {
+                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
+            }
+            break;
+        }
+        case HandshakeType::NewSessionTicketCode:
+        {
+            if (metaInfo_.version < ProtocolVersion::TLSv1_3)
+            {
+                // RFC 5077: 3.3 (must be included in transcript hash)
+                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
+            }
+            break;
+        }
+        case HandshakeType::KeyUpdateCode:
+        case HandshakeType::HelloRequestCode:
+        case HandshakeType::HelloVerifyRequestCode:
+        case HandshakeType::EndOfEarlyDataCode:
+        case HandshakeType::HelloRetryRequestCode:
+        case HandshakeType::HandshakeCCSCode:
+        default:
+            /* Not implemented */
+            break;
+        }
+    }
+
     if (getVersion() < ProtocolVersion::TLSv1_3)
     {
         if (record->getType() == RecordType::ChangeCipherSpec)
