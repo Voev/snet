@@ -33,7 +33,10 @@ struct HandshakeMessage final
 
     size_t serialize(nonstd::span<uint8_t> output, const Session& session);
 
-    HandshakeType getType() const;
+    HandshakeType getType() const
+    {
+        return type;
+    }
 
     MessageType message;
     HandshakeType type;

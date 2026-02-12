@@ -23,6 +23,7 @@
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
 namespace snet::tls
@@ -32,6 +33,10 @@ namespace snet::tls
 class Session
 {
 public:
+    struct EmptyExtensionsHandler
+    {
+    };
+
     /// @brief Default constructor.
     explicit Session(RecordPool& recordPool);
 
@@ -49,6 +54,17 @@ public:
     size_t writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> output);
 
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
+
+    void addOutgoingRecord(Record* record)
+    {
+        if (record)
+        {
+            if (!outgoingRecords_.push(record))
+            {
+                recordPool_.release(record);
+            }
+        }
+    }
 
     template <class Handler>
     void processPendingRecords(const int8_t sideIndex, Handler&& recordHandler)
@@ -79,6 +95,40 @@ public:
 
             recordPool_.release(record);
         }
+    }
+
+    size_t writeRecords(nonstd::span<uint8_t> output)
+    {
+        size_t written = 0;
+
+        while (!outgoingRecords_.empty() && written < output.size())
+        {
+            Record* record = nullptr;
+
+            if (!outgoingRecords_.pop(record))
+            {
+                continue;
+            }
+
+            size_t recordSize = record->getLength() + TLS_HEADER_SIZE;
+
+            if (written + recordSize > output.size())
+            {
+                outgoingRecords_.push(record);
+                break;
+            }
+
+            size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
+
+            nonstd::span<const uint8_t> data = record->isDecrypted() ? record->getPlaintext() : record->getCiphertext();
+
+            std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
+
+            written += headerSize + data.size();
+            recordPool_.release(record);
+        }
+
+        return written;
     }
 
     void sealHandshakeRecord(const int8_t sideIndex, Record* record)
@@ -120,6 +170,8 @@ public:
 
     void generateHandshakeSecret(KeyShare* keyShare, Key* privateKey);
 
+    void generateHandshakeTrafficSecrets();
+
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
     void generateKeyMaterial(const int8_t sideIndex);
@@ -159,7 +211,8 @@ public:
 
     void constructClientHello(ClientHello& clientHello);
 
-    void processServerHello(const ServerHello& serverHello);
+    template <typename ExtensionsHandler = std::nullptr_t>
+    void processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler = nullptr);
 
     void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
 
@@ -214,6 +267,11 @@ public:
         return serverEncExtensions_;
     }
 
+    void setEphemeralServerKey(crypto::KeyPtr key)
+    {
+        ephemeralServerKey_ = std::move(key);
+    }
+
     X509Cert* getServerCert() const noexcept
     {
         return serverCert_.get();
@@ -227,11 +285,11 @@ public:
         crypto::HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
         return crypto::HashTraits::hashFinal(hashCtx_, buffer);
     }
-    
-private:
-    void preprocessRecord(const int8_t sideIndex, Record* record);
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
+
+private:
+    void preprocessRecord(const int8_t sideIndex, Record* record);
 
 private:
     RecordPool& recordPool_;
@@ -268,5 +326,52 @@ private:
     uint8_t monitor_;
     uint8_t debugKeys_;
 };
+
+template <typename ExtensionsHandler>
+void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler)
+{
+    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
+
+    if (!serverHello.extensions.empty())
+    {
+        auto type =
+            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
+        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
+
+        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
+        {
+            handler(this, serverExtensions_);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
+        {
+            auto ext = serverExtensions_.get<tls::SupportedVersions>();
+            metaInfo_.version = std::move(ext->versions()[0]);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
+        {
+            recordLayer_.enableEncryptThenMAC();
+        }
+    }
+
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
+
+    if (!monitor_)
+    {
+        recordLayer_.setVersion(metaInfo_.version);
+        fetchAlgorithms();
+
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
+        {
+            if (ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
+            {
+                generateHandshakeSecret(serverExtensions_.get<KeyShare>(), ephemeralClientKey_);
+            }
+        }
+    }
+}
 
 } // namespace snet::tls

@@ -415,21 +415,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
             {
                 if (!monitor_)
                 {
-                    if (!keyInfo_.handshakeSecret.empty())
-                    {
-                        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-                        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-                        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-                        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
-
-                        keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
-                        keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
-
-                        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                                              keyInfo_.clientHndTrafficSecret);
-                        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                                              keyInfo_.serverHndTrafficSecret);
-                    }
+                    generateHandshakeTrafficSecrets();
                     generateTLS13KeyMaterial();
                 }
             }
@@ -506,6 +492,25 @@ void Session::generateHandshakeSecret(KeyShare* keyShare, Key* privateKey)
     /// Generation of handshake_secret.
     keyInfo_.handshakeSecret.resize(HashTraits::getSize(handshakeHashAlg_));
     GenerateSecret(handshakeHashAlg_, keyInfo_.earlySecret, ecdheSecret, keyInfo_.handshakeSecret);
+}
+
+void Session::generateHandshakeTrafficSecrets()
+{
+    if (!keyInfo_.handshakeSecret.empty())
+    {
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
+        keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+        keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+
+        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                              keyInfo_.clientHndTrafficSecret);
+        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                              keyInfo_.serverHndTrafficSecret);
+    }
 }
 
 void Session::generateKeyMaterial(const int8_t sideIndex)
@@ -630,6 +635,9 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
 void Session::generateTLS13KeyMaterial()
 {
+    assert(!keyInfo_.clientHndTrafficSecret.empty());
+    assert(!keyInfo_.serverHndTrafficSecret.empty());
+
     const auto digestName = HashTraits::getName(handshakeHashAlg_);
 
     crypto::DeriveKey(digestName, keyInfo_.clientHndTrafficSecret, keyInfo_.clientEncKey);
@@ -814,47 +822,6 @@ void Session::constructClientHello(ClientHello& clientHello)
             keyShare->setPublicKey(0, ephemeralClientKey_);
 
             clientExtensions_.add(std::move(keyShare));
-        }
-    }
-}
-
-void Session::processServerHello(const ServerHello& serverHello)
-{
-    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
-
-    if (!serverHello.extensions.empty())
-    {
-        auto type =
-            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
-        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
-
-        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
-        {
-            auto ext = serverExtensions_.get<tls::SupportedVersions>();
-            metaInfo_.version = std::move(ext->versions()[0]);
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
-        {
-            recordLayer_.enableEncryptThenMAC();
-        }
-    }
-
-    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
-
-    if (!monitor_)
-    {
-        recordLayer_.setVersion(metaInfo_.version);
-        fetchAlgorithms();
-
-        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
-        {
-            if (ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
-            {
-                generateHandshakeSecret(serverExtensions_.get<KeyShare>(), ephemeralClientKey_);
-            }
         }
     }
 }

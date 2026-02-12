@@ -129,6 +129,8 @@ public:
 
     void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
+    size_t serializeHandshake(HandshakeMessage&& handshake, const Session& session);
+
     /// @brief Serialize handshake message into provided buffer
     ///
     /// @param[in] output Output buffer for serialized data

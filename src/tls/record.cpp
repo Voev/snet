@@ -81,6 +81,17 @@ void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaI
     handshake_ = HandshakeMessage::deserialize(input, metaInfo);
 }
 
+size_t Record::serializeHandshake(HandshakeMessage&& handshake, const Session& session)
+{
+    handshake_ = std::move(handshake);
+    expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
+    version_ = handshake_.getType() == HandshakeType::ClientHelloCode ? ProtocolVersion::TLSv1_0 : session.getVersion();
+    type_ = RecordType::Handshake;
+
+    return expectedLength_;
+}
+
+
 size_t Record::serializeServerHello(ServerHello& serverHello, nonstd::span<uint8_t> output, const Session& session)
 {
     handshake_ = HandshakeMessage(serverHello, HandshakeType::ServerHelloCode);
