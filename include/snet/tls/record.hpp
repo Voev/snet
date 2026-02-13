@@ -176,10 +176,6 @@ public:
         return expectedLength_;
     }
 
-    size_t serializeServerHello(ServerHello& serverHello, nonstd::span<uint8_t> output, const Session& session);
-
-    size_t serializeEncryptedExtensions(EncryptedExtensions& encryptedExtensions, const Session& session);
-
 private:
     RecordType type_;
     ProtocolVersion version_;

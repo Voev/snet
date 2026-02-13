@@ -167,8 +167,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                 if (record->getType() == RecordType::Handshake)
                 {
-                    HandshakeMessage handshake;
-
                     switch (record->getHandshakeType())
                     {
                     case HandshakeType::ServerHelloCode:
@@ -176,6 +174,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         /// 1. Modify
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
+                        /// В ServerHello от истинного сервера модифицируем KeyShare
                         mitmServer.processServerHello(serverHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {
@@ -185,24 +184,32 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               auto offeredGroups = keyShare->offeredGroups();
                                                               auto firstGroup = offeredGroups.front();
 
+                                                              auto clientKeyShare =
+                                                                  session->getClientExtensions().get<KeyShare>();
+                                                              auto peerKey = clientKeyShare->getPublicKey();
+                                                              session->setPublicPeerKey(std::move(peerKey));
+
                                                               auto key = GroupParams::generateKeyByParams(firstGroup);
                                                               keyShare->setPublicKey(key);
 
-                                                              session->setEphemeralServerKey(std::move(key));
+                                                              session->setEphemeralPrivateKey(std::move(key));
                                                               extensions.add(std::move(keyShare));
                                                           }
                                                       });
 
-                        handshake = HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode);
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), mitmServer);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
                     {
                         EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
+
                         mitmServer.processEncryptedExtensions(encryptedExtensions);
-                        handshake =
-                            HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode);
-                        ;
+
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode),
+                            mitmServer);
                         break;
                     }
                     default:
@@ -211,25 +218,19 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     } /// switch
 
-                    /// 3. serialize (handshake)
-                    modifiedRecord->serializeHandshake(std::move(handshake), mitmServer);
-
                     /// 4. update hash (handshake) - here???
                     mitmServer.postprocessRecord(sideIndex, modifiedRecord);
 
-                    /// 5. encryption (optional)
-                    if (mitmServer.canDecrypt(sideIndex))
-                    {
-                        mitmServer.encrypt(sideIndex, modifiedRecord);
-                    }
-
-                    mitmServer.addOutgoingRecord(modifiedRecord);
+                    if(record->getHandshakeType() == HandshakeType::ServerHelloCode)
+                        mitmServer.addOutgoingRecord(modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
                 {
                     /// write decrypted data...
                 }
             });
+
+        serverBufferSize = mitmServer.writeRecords(1, serverBuffer);
 
         snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "After MITM server:");
 

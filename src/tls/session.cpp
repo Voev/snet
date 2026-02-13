@@ -158,10 +158,12 @@ size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> outpu
             continue;
         }
 
-        if (canDecrypt(sideIndex))
+        (void)sideIndex;
+        /*if (canDecrypt(sideIndex))
         {
             encrypt(sideIndex, record);
-        }
+        }*/
+
 
         // Сериализуем заголовок
         size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
@@ -515,9 +517,8 @@ void Session::decrypt(const int8_t sideIndex, Record* record)
     }
 }
 
-void Session::generateHandshakeSecret(KeyShare* keyShare, Key* privateKey)
+void Session::generateHandshakeSecret(Key* publicKey, Key* privateKey)
 {
-    auto publicKey = keyShare->getPublicKey(0);
     auto ecdheSecret = GroupParams::deriveSecret(privateKey, publicKey, true);
 
     /// RFC 8446. Section 7.1.
@@ -741,25 +742,11 @@ void Session::generateKeyShare()
 
         /// @todo: check offered group by policy
 
-        ephemeralClientKey_ = GroupParams::generateKeyByParams(firstGroup);
-        keyShare->setPublicKey(0, ephemeralClientKey_);
+        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
+        keyShare->setPublicKey(0, ephemeralPrivateKey_);
 
         clientExtensions_.add(std::move(keyShare));
     }
-}
-
-void Session::generateServerKeyShare()
-{
-    auto keyShare = serverExtensions_.take<KeyShare>();
-    auto offeredGroups = keyShare->offeredGroups();
-    auto firstGroup = offeredGroups.front();
-
-    /// @todo: check offered group by policy
-
-    ephemeralServerKey_ = GroupParams::generateKeyByParams(firstGroup);
-    keyShare->setPublicKey(ephemeralServerKey_);
-
-    serverExtensions_.add(std::move(keyShare));
 }
 
 std::string_view Session::getHashAlgorithm() const
@@ -855,8 +842,8 @@ void Session::constructClientHello(ClientHello& clientHello)
 
             /// @todo: check offered group by policy
 
-            ephemeralClientKey_ = GroupParams::generateKeyByParams(firstGroup);
-            keyShare->setPublicKey(0, ephemeralClientKey_);
+            ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
+            keyShare->setPublicKey(0, ephemeralPrivateKey_);
 
             clientExtensions_.add(std::move(keyShare));
         }

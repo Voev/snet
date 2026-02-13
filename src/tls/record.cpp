@@ -87,30 +87,9 @@ size_t Record::serializeHandshake(HandshakeMessage&& handshake, const Session& s
     expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
     version_ = handshake_.getType() == HandshakeType::ClientHelloCode ? ProtocolVersion::TLSv1_0 : session.getVersion();
     type_ = RecordType::Handshake;
-
+    plaintext_ = {plaintextBuffer_.data(), expectedLength_};
+    isDecrypted_ = true;
     return expectedLength_;
 }
-
-
-size_t Record::serializeServerHello(ServerHello& serverHello, nonstd::span<uint8_t> output, const Session& session)
-{
-    handshake_ = HandshakeMessage(serverHello, HandshakeType::ServerHelloCode);
-    expectedLength_ = handshake_.serialize(output, session);
-    version_ = session.getVersion();
-    type_ = RecordType::Handshake;
-
-    return expectedLength_;
-}
-
-size_t Record::serializeEncryptedExtensions(EncryptedExtensions& encryptedExtensions, const Session& session)
-{
-    handshake_ = HandshakeMessage(encryptedExtensions, HandshakeType::EncryptedExtensionsCode);
-    expectedLength_ = handshake_.serialize(plaintext_, session);
-    version_ = session.getVersion();
-    type_ = RecordType::Handshake;
-
-    return expectedLength_;
-}
-
 
 } // namespace snet::tls

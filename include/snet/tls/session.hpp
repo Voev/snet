@@ -168,7 +168,7 @@ public:
     void PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
-    void generateHandshakeSecret(KeyShare* keyShare, Key* privateKey);
+    void generateHandshakeSecret(Key* publicKey, Key* privateKey);
 
     void generateHandshakeTrafficSecrets();
 
@@ -267,14 +267,14 @@ public:
         return serverEncExtensions_;
     }
 
-    void setEphemeralClientKey(crypto::KeyPtr key)
+    void setPublicPeerKey(crypto::KeyPtr key)
     {
-        ephemeralClientKey_ = std::move(key);
+        publicPeerKey_ = std::move(key);
     }
 
-    void setEphemeralServerKey(crypto::KeyPtr key)
+    void setEphemeralPrivateKey(crypto::KeyPtr key)
     {
-        ephemeralServerKey_ = std::move(key);
+        ephemeralPrivateKey_ = std::move(key);
     }
 
     X509Cert* getServerCert() const noexcept
@@ -314,8 +314,8 @@ private:
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
 
-    crypto::KeyPtr ephemeralClientKey_;
-    crypto::KeyPtr ephemeralServerKey_;
+    crypto::KeyPtr ephemeralPrivateKey_;
+    crypto::KeyPtr publicPeerKey_;
     RecordProcessor processor_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;
@@ -369,12 +369,10 @@ void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandl
         recordLayer_.setVersion(metaInfo_.version);
         fetchAlgorithms();
 
-        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3)
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
         {
-            if (ephemeralClientKey_ && serverExtensions_.has(ExtensionCode::KeyShare))
-            {
-                generateHandshakeSecret(serverExtensions_.get<KeyShare>(), ephemeralClientKey_);
-            }
+            auto keyShare = serverExtensions_.get<KeyShare>();
+            generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
         }
     }
 }
