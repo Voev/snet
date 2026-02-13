@@ -207,7 +207,8 @@ public:
     ///
     void setServerKey(Key* key);
 
-    void processClientHello(const ClientHello& clientHello);
+    template <typename ExtensionsHandler = std::nullptr_t>
+    void processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler = nullptr);
 
     void constructClientHello(ClientHello& clientHello);
 
@@ -333,6 +334,33 @@ private:
 };
 
 template <typename ExtensionsHandler>
+void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler)
+{
+    metaInfo_.version = clientHello.version;
+
+    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
+
+    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
+    {
+        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+
+        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
+        {
+            handler(this, clientExtensions_);
+        }
+    }
+
+    if (processor_)
+    {
+        for (const auto& handler : *processor_)
+        {
+            handler->handleClientHello(clientHello, this);
+        }
+    }
+}
+
+template <typename ExtensionsHandler>
 void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler)
 {
     assert(serverHello.random.size() == TLS_RANDOM_SIZE);
@@ -371,8 +399,17 @@ void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandl
 
         if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
         {
-            auto keyShare = serverExtensions_.get<KeyShare>();
-            generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
+            if (publicPeerKey_)
+            {
+                /// We know public key by external way
+                generateHandshakeSecret(publicPeerKey_, ephemeralPrivateKey_);
+            }
+            else
+            {
+                /// We know public key by key share
+                auto keyShare = serverExtensions_.get<KeyShare>();
+                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
+            }
         }
     }
 }

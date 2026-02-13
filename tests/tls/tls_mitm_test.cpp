@@ -110,37 +110,52 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         mitmServer.processPendingRecords(
             0,
-            [&clientBufferSize, &clientBuffer, &recordPool, &mitmClient](const int8_t sideIndex, Record* record)
+            [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
             {
-                (void)sideIndex;
+                auto modifiedRecord = recordPool.acquire();
 
-                auto modifiedRecord = recordPool.acquireScoped();
-
-                /// 1. Serialization
-                /// 2. Update hash
-                /// 3. Encryption
-
-                switch (record->getHandshakeType())
+                if (record->getType() == RecordType::Handshake)
                 {
-                case HandshakeType::ClientHelloCode:
-                {
-                    ClientHello clientHello = record->getHandshake<ClientHello>();
-                    mitmClient.constructClientHello(clientHello);
+                    switch (record->getHandshakeType())
+                    {
+                    case HandshakeType::ClientHelloCode:
+                    {
+                        ClientHello clientHello = record->getHandshake<ClientHello>();
 
-                    nonstd::span<uint8_t> out = clientBuffer;
-                    clientBufferSize =
-                        modifiedRecord->serializeClientHello(clientHello, out.subspan(TLS_HEADER_SIZE), mitmClient);
-                    mitmClient.updateData({out.subspan(TLS_HEADER_SIZE).data(), clientBufferSize});
-                    clientBufferSize += modifiedRecord->serializeHeader(out.subspan(0, TLS_HEADER_SIZE));
-                    break;
-                }
-                default:
-                {
-                    break;
-                }
+                        mitmClient.processClientHello(clientHello,
+                                                      [](Session* session, Extensions& extensions)
+                                                      {
+                                                          if (extensions.has(ExtensionCode::KeyShare))
+                                                          {
+                                                              auto keyShare = extensions.take<KeyShare>();
+                                                              auto offeredGroups = keyShare->offeredGroups();
+                                                              auto firstGroup = offeredGroups.front();
+
+                                                              /// @todo: check offered group by policy
+
+                                                              auto key = GroupParams::generateKeyByParams(firstGroup);
+                                                              keyShare->setPublicKey(0, key);
+                                                              session->setEphemeralPrivateKey(std::move(key));
+                                                              extensions.add(std::move(keyShare));
+                                                          }
+                                                      });
+
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), mitmClient);
+                        break;
+                    }
+                    default:
+                    {
+                        break;
+                    }
+                    }
+
+                    mitmClient.postprocessRecord(sideIndex, modifiedRecord);
+                    mitmClient.addOutgoingRecord(modifiedRecord);
                 }
             });
 
+        clientBufferSize = mitmClient.writeRecords(0, clientBuffer);
         snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "After MITM client:");
 
         serverBufferSize = serverBuffer.size();
@@ -149,13 +164,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
         ASSERT_FALSE(ec);
 
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
-        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize});
-
-        serverBufferSize = 0;
-
         mitmClient.processPendingRecords(
             1,
-            [&serverBufferSize, &serverBuffer, &recordPool, &mitmServer](const int8_t sideIndex, Record* record)
+            [&recordPool, &mitmServer](const int8_t sideIndex, Record* record)
             {
                 /// 1. Modify
                 /// 2. Process
@@ -171,10 +182,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                     case HandshakeType::ServerHelloCode:
                     {
-                        /// 1. Modify
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
-                        /// В ServerHello от истинного сервера модифицируем KeyShare
                         mitmServer.processServerHello(serverHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {
@@ -218,10 +227,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     } /// switch
 
-                    /// 4. update hash (handshake) - here???
                     mitmServer.postprocessRecord(sideIndex, modifiedRecord);
 
-                    if(record->getHandshakeType() == HandshakeType::ServerHelloCode)
+                    if (record->getHandshakeType() == HandshakeType::ServerHelloCode)
                         mitmServer.addOutgoingRecord(modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
@@ -231,7 +239,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         serverBufferSize = mitmServer.writeRecords(1, serverBuffer);
-
         snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "After MITM server:");
 
     } while (!client.afterHandshake());

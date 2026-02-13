@@ -384,7 +384,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 {
     nonstd::span<const uint8_t> data;
 
-    if (canDecrypt(sideIndex) && record->getType() != RecordType::ChangeCipherSpec)
+    if (record->isDecrypted() && record->getType() != RecordType::ChangeCipherSpec)
     {
         data = record->getPlaintext();
     }
@@ -798,27 +798,6 @@ void Session::setPremasterSecret(std::vector<std::uint8_t> pms)
 void Session::setServerKey(Key* key)
 {
     serverKey_ = crypto::AsymmKey::shallowCopy(key);
-}
-
-void Session::processClientHello(const ClientHello& clientHello)
-{
-    metaInfo_.version = clientHello.version;
-
-    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
-
-    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
-    {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
-    }
-
-    if (processor_)
-    {
-        for (const auto& handler : *processor_)
-        {
-            handler->handleClientHello(clientHello, this);
-        }
-    }
 }
 
 void Session::constructClientHello(ClientHello& clientHello)
