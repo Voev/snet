@@ -131,30 +131,6 @@ public:
 
     size_t serializeHandshake(HandshakeMessage&& handshake, const Session& session);
 
-    /// @brief Serialize handshake message into provided buffer
-    ///
-    /// @param[in] output Output buffer for serialized data
-    /// @param[in] session Session context for serialization
-    ///
-    /// @return Size of serialized data, or 0 if error
-    size_t serializeHandshake(nonstd::span<uint8_t> output, const Session& session)
-    {
-        if (handshake_.type == HandshakeType::NoneCode)
-        {
-            throw std::runtime_error("No handshake message to serialize");
-        }
-
-        size_t serializedSize = handshake_.serialize(output, session);
-        if (serializedSize == 0)
-        {
-            return 0;
-        }
-
-        expectedLength_ = serializedSize;
-        currentLength_ = serializedSize;
-        return serializedSize;
-    }
-
     inline HandshakeType getHandshakeType() const
     {
         return handshake_.type;
@@ -164,16 +140,6 @@ public:
     const T& getHandshake() const
     {
         return std::get<T>(handshake_.message);
-    }
-
-    size_t serializeClientHello(ClientHello& clientHello, nonstd::span<uint8_t> output, const Session& session)
-    {
-        handshake_ = HandshakeMessage(clientHello, HandshakeType::ClientHelloCode);
-        expectedLength_ = handshake_.serialize(output, session);
-        version_ = ProtocolVersion::TLSv1_0;
-        type_ = RecordType::Handshake;
-
-        return expectedLength_;
     }
 
 private:
