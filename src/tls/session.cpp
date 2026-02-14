@@ -158,20 +158,15 @@ size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> outpu
             continue;
         }
 
-        (void)sideIndex;
-        /*if (canDecrypt(sideIndex))
+        if (record->mustBeEncrypted())
         {
             encrypt(sideIndex, record);
-        }*/
+        }
 
-
-        // Сериализуем заголовок
+        nonstd::span<const uint8_t> data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
+        std::copy(data.begin(), data.end(), output.begin() + written + TLS_HEADER_SIZE);
+        
         size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
-
-        // Копируем данные
-        nonstd::span<const uint8_t> data = record->isDecrypted() ? record->getPlaintext() : record->getCiphertext();
-
-        std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
 
         written += headerSize + data.size();
         recordPool_.release(record);
@@ -384,7 +379,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 {
     nonstd::span<const uint8_t> data;
 
-    if (record->isDecrypted() && record->getType() != RecordType::ChangeCipherSpec)
+    if (record->isPlaintext() && record->getType() != RecordType::ChangeCipherSpec)
     {
         data = record->getPlaintext();
     }

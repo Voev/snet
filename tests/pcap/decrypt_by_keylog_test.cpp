@@ -19,7 +19,7 @@ public:
         (void)sideIndex;
         (void)session;
 
-        if (record->isDecrypted())
+        if (record->isPlaintext())
         {
             decryptedRecordCount += 1;
         }

@@ -25,7 +25,7 @@ void RecordPrinter::handleRecord(const std::int8_t sideIndex, Session* session, 
                                 record->getLength())
               << std::endl;
 
-    if (record->isDecrypted())
+    if (record->isPlaintext())
     {
         auto data = record->getPlaintext();
         if (record->getType() == RecordType::Handshake)

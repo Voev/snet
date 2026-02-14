@@ -23,7 +23,7 @@ void Record::reset()
 
     currentLength_ = 0;
     expectedLength_ = 0;
-    isDecrypted_ = false;
+    isPlaintext_ = false;
 }
 
 void Record::deserializeHeader(nonstd::span<const uint8_t> data)
@@ -81,14 +81,15 @@ void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaI
     handshake_ = HandshakeMessage::deserialize(input, metaInfo);
 }
 
-size_t Record::serializeHandshake(HandshakeMessage&& handshake, const Session& session)
+size_t Record::serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session)
 {
     handshake_ = std::move(handshake);
     expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
     version_ = handshake_.getType() == HandshakeType::ClientHelloCode ? ProtocolVersion::TLSv1_0 : session.getVersion();
     type_ = RecordType::Handshake;
     plaintext_ = {plaintextBuffer_.data(), expectedLength_};
-    isDecrypted_ = true;
+    isPlaintext_ = true;
+    mustBeEncrypted_ = session.canDecrypt(sideIndex);
     return expectedLength_;
 }
 

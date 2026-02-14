@@ -97,40 +97,6 @@ public:
         }
     }
 
-    size_t writeRecords(nonstd::span<uint8_t> output)
-    {
-        size_t written = 0;
-
-        while (!outgoingRecords_.empty() && written < output.size())
-        {
-            Record* record = nullptr;
-
-            if (!outgoingRecords_.pop(record))
-            {
-                continue;
-            }
-
-            size_t recordSize = record->getLength() + TLS_HEADER_SIZE;
-
-            if (written + recordSize > output.size())
-            {
-                outgoingRecords_.push(record);
-                break;
-            }
-
-            size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
-
-            nonstd::span<const uint8_t> data = record->isDecrypted() ? record->getPlaintext() : record->getCiphertext();
-
-            std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
-
-            written += headerSize + data.size();
-            recordPool_.release(record);
-        }
-
-        return written;
-    }
-
     void sealHandshakeRecord(const int8_t sideIndex, Record* record)
     {
         encrypt(sideIndex, record);

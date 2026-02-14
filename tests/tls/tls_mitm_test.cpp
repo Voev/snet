@@ -141,7 +141,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), mitmClient);
+                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), sideIndex, mitmClient);
                         break;
                     }
                     default:
@@ -207,7 +207,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), mitmServer);
+                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex, mitmServer);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
@@ -218,6 +218,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode),
+                            sideIndex,
                             mitmServer);
                         break;
                     }
@@ -228,9 +229,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     } /// switch
 
                     mitmServer.postprocessRecord(sideIndex, modifiedRecord);
-
-                    if (record->getHandshakeType() == HandshakeType::ServerHelloCode)
-                        mitmServer.addOutgoingRecord(modifiedRecord);
+                    mitmServer.addOutgoingRecord(modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
                 {
