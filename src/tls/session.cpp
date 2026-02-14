@@ -727,23 +727,6 @@ void Session::generateAppDataKeys(const int8_t sideIndex)
     }
 }
 
-void Session::generateKeyShare()
-{
-    if (clientExtensions_.has(ExtensionCode::KeyShare))
-    {
-        auto keyShare = clientExtensions_.take<KeyShare>();
-        auto offeredGroups = keyShare->offeredGroups();
-        auto firstGroup = offeredGroups.front();
-
-        /// @todo: check offered group by policy
-
-        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
-        keyShare->setPublicKey(0, ephemeralPrivateKey_);
-
-        clientExtensions_.add(std::move(keyShare));
-    }
-}
-
 std::string_view Session::getHashAlgorithm() const
 {
     std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
