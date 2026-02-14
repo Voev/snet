@@ -106,7 +106,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
-        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize});
+        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Before MITM client:");
 
         mitmServer.processPendingRecords(
             0,
@@ -141,7 +141,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), sideIndex, mitmClient);
+                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), sideIndex,
+                            mitmClient);
                         break;
                     }
                     default:
@@ -162,6 +163,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
         ASSERT_EQ(Want::Nothing,
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec);
+
+        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Before MITM server:");
 
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
@@ -207,7 +210,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex, mitmServer);
+                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex,
+                            mitmServer);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
@@ -218,8 +222,38 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode),
-                            sideIndex,
-                            mitmServer);
+                            sideIndex, mitmServer);
+                        break;
+                    }
+                    case HandshakeType::CertificateCode:
+                    {
+                        Certificate certificate = record->getHandshake<Certificate>();
+
+                        mitmServer.processCertificate(sideIndex, certificate);
+
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode),
+                            sideIndex, mitmServer);
+                        break;
+                    }
+                    case HandshakeType::FinishedCode:
+                    {
+                        Finished finished = record->getHandshake<Finished>();
+
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(finished), HandshakeType::FinishedCode),
+                            sideIndex, mitmServer);
+                        break;
+                    }
+                    case HandshakeType::CertificateVerifyCode:
+                    {
+                        CertificateVerify certificateVerify = record->getHandshake<CertificateVerify>();
+
+                        mitmServer.processCertificateVerify(sideIndex, certificateVerify);
+
+                        modifiedRecord->serializeHandshake(
+                            HandshakeMessage(std::move(certificateVerify), HandshakeType::CertificateCode),
+                            sideIndex, mitmServer);
                         break;
                     }
                     default:

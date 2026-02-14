@@ -388,10 +388,10 @@ void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t
 
     nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
     auto encryptedData = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, record->plaintext_,
-                                         ciphertext.subspan(TLS_HEADER_SIZE), true);
+                                         ciphertext, true);
 
     record->type_ = RecordType::ApplicationData;
-    record->ciphertext_ = {ciphertext.data(), TLS_HEADER_SIZE + encryptedData.size()};
+    record->ciphertext_ = {ciphertext.data(), encryptedData.size()};
     record->expectedLength_ = encryptedData.size();
     record->isPlaintext_ = false;
 }
