@@ -48,8 +48,6 @@ void RecordLayer::encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     {
         doTLSv1Encrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
     }
-
-    record->isPlaintext_ = false;
 }
 
 void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
@@ -68,8 +66,6 @@ void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     {
         doTLSv1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
     }
-
-    record->isPlaintext_ = true;
 }
 
 void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
