@@ -168,6 +168,13 @@ public:
         return serverCert_.get();
     }
 
+    inline nonstd::span<const uint8_t> getTranscriptHash(nonstd::span<uint8_t> buffer)
+    {
+        crypto::HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+        crypto::HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+        return crypto::HashTraits::hashFinal(hashCtx_, buffer);
+    }
+    
 private:
     RecordPool& recordPool_;
     RecordLayer recordLayer_;

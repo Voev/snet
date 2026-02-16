@@ -21,7 +21,6 @@
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/prf.hpp>
 #include <snet/crypto/rsa_asymm_key.hpp>
-
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
@@ -357,10 +356,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
         if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-            auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
-
+            auto transcriptHash = getTranscriptHash(buffer);
             PRF(PMS_, "extended master secret", transcriptHash, {}, keyInfo_.masterSecret);
         }
         else
@@ -659,23 +655,6 @@ static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> clientContext = {
     0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x20, 0x43,
     0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
 
-static void VerifyMessage(HashCtx* ctx, const SignatureScheme& scheme, const Hash* algorithm, Key* publicKey,
-                          nonstd::span<const uint8_t> signature, nonstd::span<const uint8_t> tbs)
-{
-    KeyCtx* keyCtx{nullptr};
-
-    HashTraits::resetContext(ctx);
-
-    Signature::verifyInit(ctx, algorithm, publicKey, &keyCtx);
-
-    if (scheme.getKeyAlgorithm() == EVP_PKEY_RSA_PSS)
-    {
-        RsaAsymmKey::setPssSettings(keyCtx);
-    }
-
-    Signature::verify(ctx, signature, tbs);
-}
-
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
     KeyPtr publicKey{nullptr};
@@ -705,13 +684,13 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         }
 
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+        auto transcriptHash = getTranscriptHash(buffer);
 
         std::copy_n(transcriptHash.data(), transcriptHash.size(), std::back_inserter(tbs));
 
-        VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, tbs);
+        HashTraits::resetContext(hashCtx_);
+        Signature::verifyMessage(hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature,
+                                 tbs);
     }
     else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
     {
@@ -735,7 +714,9 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
             hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
         }
 
-        VerifyMessage(hashCtx_, certVerify.scheme, hash, publicKey, certVerify.signature, handshakeBuffer_);
+        HashTraits::resetContext(hashCtx_);
+        Signature::verifyMessage(hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature,
+                                 handshakeBuffer_);
     }
 }
 
@@ -780,7 +761,9 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
         tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
-        VerifyMessage(hashCtx_, keyExchange.scheme, hash, publicKey, keyExchange.signature, tbs);
+        HashTraits::resetContext(hashCtx_);
+        Signature::verifyMessage(hashCtx_, keyExchange.scheme.getKeyAlgorithm(), hash, publicKey, keyExchange.signature,
+                                 tbs);
     }
 }
 
@@ -843,9 +826,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
             ThrowIfFalse(hmacKey);
 
             std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
-            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-            auto transcriptHash = HashTraits::hashFinal(hashCtx_, hashBuffer);
+            auto transcriptHash = getTranscriptHash(hashBuffer);
 
             std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
             Signature::signInit(hashCtx_, digest, hmacKey);
@@ -865,9 +846,7 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         if (!keyInfo_.masterSecret.empty())
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-            HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-            HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-            auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+            auto transcriptHash = getTranscriptHash(buffer);
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
