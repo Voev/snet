@@ -29,11 +29,12 @@ public:
         return {buffer.data(), signatureSize};
     }
 
-    inline nonstd::span<uint8_t> signMessage(HashCtx* ctx, const int keyAlgorithm, const Hash* algorithm, Key* publicKey,
-                                             nonstd::span<uint8_t> buffer, nonstd::span<const uint8_t> tbs)
+    static inline nonstd::span<uint8_t> signMessage(HashCtx* ctx, const int keyAlgorithm, const Hash* algorithm,
+                                                    Key* privateKey, nonstd::span<uint8_t> buffer,
+                                                    nonstd::span<const uint8_t> tbs)
     {
         KeyCtx* keyCtx{nullptr};
-        signInit(ctx, algorithm, publicKey, &keyCtx);
+        signInit(ctx, algorithm, privateKey, &keyCtx);
 
         if (keyAlgorithm == EVP_PKEY_RSA_PSS)
         {

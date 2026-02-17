@@ -637,23 +637,24 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, const Certi
     (void)certRequest;
 }
 
-static const size_t TLS13_TBS_START_SIZE = 64;
-static const size_t TLS13_TBS_LABEL_SIZE = 34;
+void Session::constructCertificateVerify(const int8_t sideIndex, nonstd::span<uint8_t> output)
+{
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    {
+        CertificateVerify certVerify;
+        auto scheme = SignatureScheme::RSA_PSS_PSS_SHA384;
+        std::array<uint8_t, EVP_MAX_KEY_LENGTH * 2> signatureBuffer;
+        std::array<uint8_t, EVP_MAX_MD_SIZE> transcriptHashBuffer;
 
-/// To be signed message prefix for TLSv1.3
-static const std::array<uint8_t, TLS13_TBS_START_SIZE> startTbs = {
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20};
-/// ASCII: "TLS 1.3, server CertificateVerify" with 0x00
-static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> serverContext = {
-    0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x20, 0x43,
-    0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
-/// ASCII: "TLS 1.3, client CertificateVerify" with 0x00
-static const std::array<uint8_t, TLS13_TBS_LABEL_SIZE> clientContext = {
-    0x54, 0x4c, 0x53, 0x20, 0x31, 0x2e, 0x33, 0x2c, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x20, 0x43,
-    0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x79, 0x00};
+        auto transcriptHash = getTranscriptHash(transcriptHashBuffer);
+        auto signature = CertificateVerify::doTLSv13Sign(
+            scheme, sideIndex, hashCtx_, (sideIndex == 1 ? serverKey_.get() : nullptr), transcriptHash, signatureBuffer);
+
+        certVerify.scheme = scheme;
+        certVerify.signature = signature;
+        certVerify.serialize(output, *this);
+    }
+}
 
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
@@ -662,35 +663,19 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
 
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
-        auto hashName = certVerify.scheme.getHashAlgorithm();
-        if (!casket::equals(hashName, "UNDEF"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(hashName);
-        }
-
-        std::vector<uint8_t> tbs;
-        tbs.reserve(TLS13_TBS_START_SIZE + TLS13_TBS_LABEL_SIZE + EVP_MAX_MD_SIZE);
-        tbs.insert(tbs.end(), std::begin(startTbs), std::end(startTbs));
-
         if (sideIndex == 0)
         {
             publicKey = Cert::publicKey(clientCert_);
-            tbs.insert(tbs.end(), std::begin(clientContext), std::end(clientContext));
         }
         else
         {
             publicKey = Cert::publicKey(serverCert_);
-            tbs.insert(tbs.end(), std::begin(serverContext), std::end(serverContext));
         }
 
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
         auto transcriptHash = getTranscriptHash(buffer);
-
-        std::copy_n(transcriptHash.data(), transcriptHash.size(), std::back_inserter(tbs));
-
         HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature,
-                                 tbs);
+        CertificateVerify::doTLSv13Verify(certVerify, sideIndex, hashCtx_, publicKey, transcriptHash);
     }
     else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
     {
