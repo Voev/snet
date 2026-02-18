@@ -21,6 +21,8 @@
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/prf.hpp>
 #include <snet/crypto/rsa_asymm_key.hpp>
+#include <snet/crypto/rand.hpp>
+
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
@@ -165,7 +167,7 @@ size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> outpu
 
         nonstd::span<const uint8_t> data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
         std::copy(data.begin(), data.end(), output.begin() + written + TLS_HEADER_SIZE);
-        
+
         size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
 
         written += headerSize + data.size();
@@ -844,22 +846,26 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, const Certi
     (void)certRequest;
 }
 
-void Session::constructCertificateVerify(const int8_t sideIndex, nonstd::span<uint8_t> output)
+void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
 {
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
         CertificateVerify certVerify;
         auto scheme = SignatureScheme::RSA_PSS_PSS_SHA384;
-        std::array<uint8_t, EVP_MAX_KEY_LENGTH * 2> signatureBuffer;
         std::array<uint8_t, EVP_MAX_MD_SIZE> transcriptHashBuffer;
 
+        Key* privateKey = (sideIndex == 1 ? serverKey_.get() : nullptr);
+
         auto transcriptHash = getTranscriptHash(transcriptHashBuffer);
-        auto signature = CertificateVerify::doTLSv13Sign(
-            scheme, sideIndex, hashCtx_, (sideIndex == 1 ? serverKey_.get() : nullptr), transcriptHash, signatureBuffer);
+        std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(privateKey));
+        auto signature =
+            CertificateVerify::doTLSv13Sign(scheme, sideIndex, hashCtx_, privateKey, transcriptHash, signatureBuffer);
 
         certVerify.scheme = scheme;
         certVerify.signature = signature;
-        certVerify.serialize(output, *this);
+
+        record->serializeHandshake(HandshakeMessage(std::move(certVerify), HandshakeType::CertificateVerifyCode),
+                                   sideIndex, *this);
     }
 }
 

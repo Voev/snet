@@ -238,7 +238,7 @@ public:
         return serverCert_.get();
     }
 
-    void constructCertificateVerify(const int8_t sideIndex, nonstd::span<uint8_t> output);
+    void constructCertificateVerify(const int8_t sideIndex, Record* record);
 
     inline nonstd::span<const uint8_t> getTranscriptHash(nonstd::span<uint8_t> buffer)
     {

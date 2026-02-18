@@ -28,6 +28,12 @@ KeyPtr AsymmKey::shallowCopy(Key* key)
     return nullptr;
 }
 
+
+int AsymmKey::getKeySize(const Key* key)
+{
+    return EVP_PKEY_size(key);
+}
+
 bool AsymmKey::isAlgorithm(const Key* key, std::string_view alg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)

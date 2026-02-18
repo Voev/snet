@@ -81,11 +81,29 @@ void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaI
     handshake_ = HandshakeMessage::deserialize(input, metaInfo);
 }
 
+inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session& session) noexcept
+{
+    ProtocolVersion version;
+    if (type == HandshakeType::ClientHelloCode)
+    {
+        version = ProtocolVersion::TLSv1_0;
+    }
+    else
+    {
+        version = session.getVersion();
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            version = ProtocolVersion::TLSv1_2;
+        }
+    }
+    return version;
+}
+
 size_t Record::serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session)
 {
     handshake_ = std::move(handshake);
     expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
-    version_ = handshake_.getType() == HandshakeType::ClientHelloCode ? ProtocolVersion::TLSv1_0 : session.getVersion();
+    version_ = GetRecordVersion(handshake_.getType(), session);
     type_ = RecordType::Handshake;
     plaintext_ = {plaintextBuffer_.data(), expectedLength_};
     isPlaintext_ = true;

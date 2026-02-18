@@ -97,12 +97,15 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     Session mitmClient(recordPool);
     Session mitmServer(recordPool);
 
+    auto mitmKey = RsaAsymmKey::generate(2048);
+    mitmServer.setServerKey(mitmKey);
+
     do
     {
         clientBufferSize = clientBuffer.size();
         ASSERT_EQ(Want::Nothing,
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
@@ -162,7 +165,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing,
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
         snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Before MITM server:");
 
@@ -236,23 +239,17 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                             sideIndex, mitmServer);
                         break;
                     }
+                    case HandshakeType::CertificateVerifyCode:
+                    {
+                        mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         Finished finished = record->getHandshake<Finished>();
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(finished), HandshakeType::FinishedCode),
-                            sideIndex, mitmServer);
-                        break;
-                    }
-                    case HandshakeType::CertificateVerifyCode:
-                    {
-                        CertificateVerify certificateVerify = record->getHandshake<CertificateVerify>();
-
-                        mitmServer.processCertificateVerify(sideIndex, certificateVerify);
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(certificateVerify), HandshakeType::CertificateCode),
                             sideIndex, mitmServer);
                         break;
                     }

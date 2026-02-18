@@ -1,7 +1,12 @@
+#include <limits>
+
 #include <casket/utils/string.hpp>
+
 #include <snet/tls/types.hpp>
 #include <snet/tls/msgs/certificate_verify.hpp>
+
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/data_writer.hpp>
 
 #include <snet/crypto/signature.hpp>
 #include <snet/crypto/crypto_manager.hpp>
@@ -84,11 +89,20 @@ CertificateVerify CertificateVerify::deserialize(nonstd::span<const uint8_t> inp
 
 size_t CertificateVerify::serialize(nonstd::span<uint8_t> output, const Session& session) const
 {
-    /// @todo: support it.
-    (void)output;
     (void)session;
 
-    return 0;
+    size_t length{};
+
+    ThrowIfTrue(signature.size() > std::numeric_limits<uint16_t>::max(),
+                "CertificateVerify signature too long to encode");
+
+    const auto code = scheme.wireCode();
+    output[0] = casket::get_byte<0>(code);
+    output[1] = casket::get_byte<1>(code);
+    length += 2;
+
+    length += append_length_and_value(output.subspan(length), signature.data(), signature.size(), 2);
+    return length;
 }
 
 nonstd::span<uint8_t> CertificateVerify::doTLSv13Sign(const SignatureScheme& scheme, const int8_t sideIndex,
@@ -98,6 +112,8 @@ nonstd::span<uint8_t> CertificateVerify::doTLSv13Sign(const SignatureScheme& sch
 {
     std::array<uint8_t, MAX_TBS_SIZE> signingBuffer;
     HashAlg hash{nullptr};
+
+    ThrowIfFalse(privateKey, "Invalid private key");
 
     auto hashName = scheme.getHashAlgorithm();
     if (!casket::equals(hashName, "UNDEF"))
