@@ -147,7 +147,7 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
     return processedLength;
 }
 
-size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> output)
+size_t Session::writeRecords(nonstd::span<uint8_t> output)
 {
     size_t written = 0;
 
@@ -158,11 +158,6 @@ size_t Session::writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> outpu
         if (!outgoingRecords_.pop(record))
         {
             continue;
-        }
-
-        if (record->mustBeEncrypted())
-        {
-            encrypt(sideIndex, record);
         }
 
         nonstd::span<const uint8_t> data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();

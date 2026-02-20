@@ -51,14 +51,19 @@ public:
 
     size_t readRecords(nonstd::span<const uint8_t> input);
 
-    size_t writeRecords(const int8_t sideIndex, nonstd::span<uint8_t> output);
+    size_t writeRecords(nonstd::span<uint8_t> output);
 
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
 
-    void addOutgoingRecord(Record* record)
+    void addOutgoingRecord(const int8_t sideIndex, Record* record)
     {
         if (record)
         {
+            if (record->mustBeEncrypted())
+            {
+                encrypt(sideIndex, record);
+            }
+
             if (!outgoingRecords_.push(record))
             {
                 recordPool_.release(record);

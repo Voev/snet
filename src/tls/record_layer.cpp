@@ -385,12 +385,12 @@ void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t
 
     record->plaintext_ = record->plaintext_.first(record->plaintext_.size() + 1);
     record->plaintext_.back() = static_cast<uint8_t>(record->getType());
+    record->type_ = RecordType::ApplicationData;
 
     nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
     auto encryptedData = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, record->plaintext_,
                                          ciphertext, true);
 
-    record->type_ = RecordType::ApplicationData;
     record->ciphertext_ = {ciphertext.data(), encryptedData.size()};
     record->expectedLength_ = encryptedData.size();
     record->isPlaintext_ = false;
