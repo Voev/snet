@@ -136,14 +136,16 @@ public:
 
     void generateHandshakeTrafficSecrets();
 
+    void generateApplicationTrafficSecrets();
+
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
     void generateKeyMaterial(const int8_t sideIndex);
 
     /// @brief Generates key material for TLS 1.3.
-    void generateTLS13KeyMaterial();
+    void generateHandshakeKeyAndIv();
 
-    void generateAppDataKeys(const int8_t sideIndex);
+    void generateApplicationKeyAndIv(const int8_t sideIndex);
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.

@@ -447,28 +447,16 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
                 if (!monitor_)
                 {
                     generateHandshakeTrafficSecrets();
-                    generateTLS13KeyMaterial();
+                    generateHandshakeKeyAndIv();
                 }
             }
             else if (record->getHandshakeType() == HandshakeType::FinishedCode)
             {
                 if (!monitor_)
                 {
-                    if (!keyInfo_.masterSecret.empty())
-                    {
-                        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-                        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-                        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-                        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
-
-                        DeriveClientApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
-                                              keyInfo_.clientAppTrafficSecret);
-                        DeriveServerApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
-                                              keyInfo_.serverAppTrafficSecret);
-                    }
+                    generateApplicationTrafficSecrets();
+                    generateApplicationKeyAndIv(sideIndex);
                 }
-
-                generateAppDataKeys(sideIndex);
 
                 /// @todo: pay attention to the HelloRetryRequest
                 cipherState_ |= (sideIndex == 0 ? 1 : 2);
@@ -543,22 +531,22 @@ void Session::generateHandshakeTrafficSecrets()
     }
 }
 
-void Session::generateHandshakeTrafficSecrets()
+void Session::generateApplicationTrafficSecrets()
 {
-    if (!keyInfo_.handshakeSecret.empty())
+    if (!keyInfo_.masterSecret.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
         HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
         HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
         auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
 
-        keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
-        keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+        keyInfo_.clientAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+        keyInfo_.serverAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
 
-        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                              keyInfo_.clientHndTrafficSecret);
-        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                              keyInfo_.serverHndTrafficSecret);
+        DeriveClientApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
+                              keyInfo_.clientAppTrafficSecret);
+        DeriveServerApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
+                              keyInfo_.serverAppTrafficSecret);
     }
 }
 
@@ -682,7 +670,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     }
 }
 
-void Session::generateTLS13KeyMaterial()
+void Session::generateHandshakeKeyAndIv()
 {
     assert(!keyInfo_.clientHndTrafficSecret.empty());
     assert(!keyInfo_.serverHndTrafficSecret.empty());
@@ -709,7 +697,7 @@ void Session::generateTLS13KeyMaterial()
     canDecrypt_ |= 3;
 }
 
-void Session::generateAppDataKeys(const int8_t sideIndex)
+void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
 {
     if (sideIndex == 0)
     {
@@ -895,7 +883,8 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
         auto sigAlgs = clientExtensions_.get<SignatureAlgorithms>();
 
         Key* privateKey = (sideIndex == 1 ? serverKey_.get() : nullptr);
-        auto scheme = ChooseSignatureScheme(privateKey, SignatureScheme::supportedSchemes(), sigAlgs->supportedSchemes());
+        auto scheme =
+            ChooseSignatureScheme(privateKey, SignatureScheme::supportedSchemes(), sigAlgs->supportedSchemes());
 
         auto transcriptHash = getTranscriptHash(transcriptHashBuffer);
         std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(privateKey));
