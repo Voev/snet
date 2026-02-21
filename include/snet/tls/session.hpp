@@ -64,6 +64,8 @@ public:
                 encrypt(sideIndex, record);
             }
 
+            keySchedule(sideIndex, record);
+
             if (!outgoingRecords_.push(record))
             {
                 recordPool_.release(record);
@@ -90,6 +92,8 @@ public:
                 recordHandler(sideIndex, record);
 
                 postprocessRecord(sideIndex, record);
+
+                keySchedule(sideIndex, record);
             }
             catch (const std::exception& e)
             {
@@ -257,6 +261,8 @@ public:
     }
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
+
+    void keySchedule(const int8_t sideIndex, Record* record);
 
     void setCertificate(const int8_t sideIndex, crypto::X509CertPtr cert)
     {

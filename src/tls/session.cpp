@@ -224,6 +224,8 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
                     }
 
                     postprocessRecord(sideIndex, readingRecord_);
+
+                    keySchedule(sideIndex, readingRecord_);
                 }
             }
             catch (const std::exception& e)
@@ -430,7 +432,10 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
             break;
         }
     }
+}
 
+void Session::keySchedule(const std::int8_t sideIndex, Record* record)
+{
     if (getVersion() < ProtocolVersion::TLSv1_3)
     {
         if (record->getType() == RecordType::ChangeCipherSpec)
@@ -454,6 +459,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
             {
                 if (!monitor_)
                 {
+                    /// @todo: generate master key
                     generateApplicationTrafficSecrets();
                     generateApplicationKeyAndIv(sideIndex);
                 }
@@ -517,9 +523,7 @@ void Session::generateHandshakeTrafficSecrets()
     if (!keyInfo_.handshakeSecret.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+        auto transcriptHash = getTranscriptHash(buffer);
 
         keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
         keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
@@ -536,9 +540,7 @@ void Session::generateApplicationTrafficSecrets()
     if (!keyInfo_.masterSecret.empty())
     {
         std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
-        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
-        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+        auto transcriptHash = getTranscriptHash(buffer);
 
         keyInfo_.clientAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
         keyInfo_.serverAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
