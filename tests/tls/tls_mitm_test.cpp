@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 #include <snet/tls.hpp>
 
+#include <snet/crypto/pointers.hpp>
 #include <snet/crypto/rand.hpp>
-#include <snet/crypto/rsa_asymm_key.hpp>
+#include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_authority.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
+#include <snet/crypto/cert_forger.hpp>
 
 #include <snet/utils/print_hex.hpp>
 
@@ -32,12 +35,14 @@ public:
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
 
-        auto serverKey = RsaAsymmKey::generate(2048);
-        auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
+        serverKey_ = RsaAsymmKey::generate(2048);
+        serverCert_ = ca_.sign("CN=Test Server", serverKey_);
 
         ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
-        ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert.get()));
-        ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey.get()));
+        ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert_));
+        ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey_));
+
+        certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
     }
 
     void TearDown() override
@@ -48,6 +53,9 @@ protected:
     CertAuthority ca_;
     ClientSettings clientSettings_;
     ServerSettings serverSettings_;
+    KeyPtr serverKey_;
+    X509CertPtr serverCert_;
+    std::unique_ptr<CertForger> certForger_;
 };
 
 class MITMRecordHandler : public IRecordHandler
@@ -101,7 +109,10 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     mitmServer.setDebugKeys(true);
 
     auto mitmKey = RsaAsymmKey::generate(2048);
+    auto mitmCert = certForger_->resign(mitmKey, serverCert_);
+
     mitmServer.setServerKey(mitmKey);
+    mitmServer.setCertificate(1, std::move(mitmCert));
 
     do
     {
@@ -240,13 +251,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        Certificate certificate = record->getHandshake<Certificate>();
-
-                        mitmServer.processCertificate(sideIndex, certificate);
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode),
-                            sideIndex, mitmServer);
+                        mitmServer.constructCertificate(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::CertificateVerifyCode:

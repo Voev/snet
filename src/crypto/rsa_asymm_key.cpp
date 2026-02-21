@@ -8,7 +8,7 @@ namespace snet::crypto
 KeyPtr RsaAsymmKey::generate(size_t bits)
 {
     EVP_PKEY* pkey{nullptr};
-    crypto::KeyCtxPtr ctx{CryptoManager::getInstance().createKeyContext("rsaEncryption")};
+    crypto::KeyCtxPtr ctx{CryptoManager::getInstance().createKeyContext(OBJ_nid2sn(EVP_PKEY_RSA_PSS))};
     crypto::ThrowIfFalse(ctx != nullptr);
     crypto::ThrowIfFalse(0 < EVP_PKEY_keygen_init(ctx));
     crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits));

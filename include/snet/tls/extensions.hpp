@@ -24,6 +24,7 @@
 #include <snet/tls/exts/supported_versions.hpp>
 #include <snet/tls/exts/key_share.hpp>
 #include <snet/tls/exts/unknown_extension.hpp>
+#include <snet/tls/exts/signature_algorithms.hpp>
 
 namespace snet::tls {
 

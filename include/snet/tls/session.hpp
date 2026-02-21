@@ -243,6 +243,8 @@ public:
         return serverCert_.get();
     }
 
+    void constructCertificate(const int8_t sideIndex, Record* record);
+
     void constructCertificateVerify(const int8_t sideIndex, Record* record);
 
     inline nonstd::span<const uint8_t> getTranscriptHash(nonstd::span<uint8_t> buffer)
@@ -253,6 +255,18 @@ public:
     }
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
+
+    void setCertificate(const int8_t sideIndex, crypto::X509CertPtr cert)
+    {
+        if(sideIndex == 0)
+        {
+            clientCert_ = std::move(cert);
+        }
+        else
+        {
+            serverCert_ = std::move(cert);
+        }
+    }
 
 private:
     void preprocessRecord(const int8_t sideIndex, Record* record);

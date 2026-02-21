@@ -543,6 +543,25 @@ void Session::generateHandshakeTrafficSecrets()
     }
 }
 
+void Session::generateHandshakeTrafficSecrets()
+{
+    if (!keyInfo_.handshakeSecret.empty())
+    {
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        HashTraits::hashInit(hashCtx_, handshakeHashAlg_);
+        HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
+        auto transcriptHash = HashTraits::hashFinal(hashCtx_, buffer);
+
+        keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+        keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+
+        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                              keyInfo_.clientHndTrafficSecret);
+        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
+                              keyInfo_.serverHndTrafficSecret);
+    }
+}
+
 void Session::generateKeyMaterial(const int8_t sideIndex)
 {
     if (!keyInfo_.isValid(ProtocolVersion::TLSv1_2))
@@ -841,15 +860,42 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, const Certi
     (void)certRequest;
 }
 
+void Session::constructCertificate(const int8_t sideIndex, Record* record)
+{
+    Certificate certificate;
+
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    {
+        TLSv13Certificate message;
+        TLSv13Certificate::Entry entry;
+
+        entry.cert = sideIndex == 0 ? clientCert_.get() : serverCert_.get();
+        entry.extensions = nullptr;
+
+        message.entryList[0] = std::move(entry);
+        message.entryCount = 1;
+
+        certificate.message = std::move(message);
+
+        record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
+                                   *this);
+    }
+}
+
 void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
 {
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
         CertificateVerify certVerify;
-        auto scheme = SignatureScheme::RSA_PSS_PSS_SHA384;
         std::array<uint8_t, EVP_MAX_MD_SIZE> transcriptHashBuffer;
 
+        /// @todo: keep your mind for client side.
+
+        ThrowIfFalse(clientExtensions_.has<SignatureAlgorithms>(), "SignatureAlgorithms extensions not found");
+        auto sigAlgs = clientExtensions_.get<SignatureAlgorithms>();
+
         Key* privateKey = (sideIndex == 1 ? serverKey_.get() : nullptr);
+        auto scheme = ChooseSignatureScheme(privateKey, SignatureScheme::supportedSchemes(), sigAlgs->supportedSchemes());
 
         auto transcriptHash = getTranscriptHash(transcriptHashBuffer);
         std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(privateKey));

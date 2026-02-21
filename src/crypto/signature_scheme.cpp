@@ -172,4 +172,23 @@ int SignatureScheme::getKeyAlgorithm() const noexcept
     }
 }
 
-} // namespace snet::tls
+static std::array<SignatureScheme, 26> gAllSupportedSchemes = {
+
+    SignatureScheme::Code::ECDSA_SHA256,
+    SignatureScheme::Code::ECDSA_SHA384,
+    SignatureScheme::Code::ECDSA_SHA512,
+
+    SignatureScheme::Code::EDDSA_25519,
+    SignatureScheme::Code::EDDSA_448,
+
+    SignatureScheme::Code::RSA_PSS_PSS_SHA256,
+    SignatureScheme::Code::RSA_PSS_PSS_SHA384,
+    SignatureScheme::Code::RSA_PSS_PSS_SHA512,
+};
+
+nonstd::span<const SignatureScheme> SignatureScheme::supportedSchemes()
+{
+    return gAllSupportedSchemes;
+}
+
+} // namespace snet::crypto

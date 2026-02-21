@@ -5,6 +5,7 @@
 #include <optional>
 #include <snet/crypto/typedefs.hpp>
 #include <casket/nonstd/span.hpp>
+#include <snet/crypto/asymm_key.hpp>
 
 namespace snet::crypto
 {
@@ -50,7 +51,7 @@ public:
         /* EdDSA algorithms */
         EDDSA_25519 = 0x0807,
         EDDSA_448 = 0x0808,
-        
+
         /* RSASSA-PSS algorithms with public key OID RSASSA-PSS */
         RSA_PSS_PSS_SHA256 = 0x0809,
         RSA_PSS_PSS_SHA384 = 0x080a,
@@ -96,8 +97,16 @@ public:
 
     int getKeyAlgorithm() const noexcept;
 
+    bool isSuitableFor(const Key* key)
+    {
+        auto keyAlg = getKeyAlgorithm();
+        return crypto::AsymmKey::isAlgorithm(key, OBJ_nid2sn(keyAlg));
+    }
+
+    static nonstd::span<const SignatureScheme> supportedSchemes();
+
 private:
     Code code_;
 };
 
-} // namespace snet::tls
+} // namespace snet::crypto
