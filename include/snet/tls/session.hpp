@@ -59,6 +59,8 @@ public:
     {
         if (record)
         {
+            postprocessRecord(sideIndex, record);
+
             if (record->mustBeEncrypted())
             {
                 encrypt(sideIndex, record);

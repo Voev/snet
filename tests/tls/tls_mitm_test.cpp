@@ -174,7 +174,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     }
 
-                    mitmClient.postprocessRecord(sideIndex, modifiedRecord);
                     mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
             });
@@ -269,13 +268,18 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.constructFinished(sideIndex, modifiedRecord);
                         break;
                     }
+                    case HandshakeType::NewSessionTicketCode:
+                    {
+                        recordPool.release(modifiedRecord);
+                        modifiedRecord = nullptr;
+                        break;
+                    }
                     default:
                     {
                         break;
                     }
                     } /// switch
 
-                    mitmServer.postprocessRecord(sideIndex, modifiedRecord);
                     mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
