@@ -138,6 +138,8 @@ public:
 
     void generateHandshakeSecret(Key* publicKey, Key* privateKey);
 
+    void generateTLSv13MasterSecret();
+
     void generateHandshakeTrafficSecrets();
 
     void generateApplicationTrafficSecrets();

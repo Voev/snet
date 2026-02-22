@@ -459,7 +459,7 @@ void Session::keySchedule(const std::int8_t sideIndex, Record* record)
             {
                 if (!monitor_)
                 {
-                    /// @todo: generate master key
+                    generateTLSv13MasterSecret();
                     generateApplicationTrafficSecrets();
                     generateApplicationKeyAndIv(sideIndex);
                 }
@@ -532,6 +532,16 @@ void Session::generateHandshakeTrafficSecrets()
                               keyInfo_.clientHndTrafficSecret);
         DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
                               keyInfo_.serverHndTrafficSecret);
+    }
+}
+
+void Session::generateTLSv13MasterSecret()
+{
+    if (!keyInfo_.handshakeSecret.empty())
+    {
+        /// Generation of master_secret.
+        keyInfo_.masterSecret.resize(HashTraits::getSize(handshakeHashAlg_));
+        GenerateSecret(handshakeHashAlg_, keyInfo_.handshakeSecret, {}, keyInfo_.masterSecret);
     }
 }
 
@@ -703,13 +713,14 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
 {
     if (sideIndex == 0)
     {
+        assert(!keyInfo_.clientAppTrafficSecret.empty());
         const auto digestName = HashTraits::getName(handshakeHashAlg_);
-
+        
         crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
         crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
-
+        
         seqnum_.resetClientSequence();
-
+        
         if (debugKeys_)
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
@@ -718,13 +729,14 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
     }
     else
     {
+        assert(!keyInfo_.serverAppTrafficSecret.empty());
         const auto digestName = HashTraits::getName(handshakeHashAlg_);
-
+        
         crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
         crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
-
+        
         seqnum_.resetServerSequence();
-
+        
         if (debugKeys_)
         {
             utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
@@ -929,8 +941,8 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
 
         finished.verifyData = actual;
 
-        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode),
-                                   sideIndex, *this);
+        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
+                                   *this);
     }
 }
 
