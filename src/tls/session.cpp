@@ -88,19 +88,16 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
 
     while (processedLength < input.size())
     {
-        // Если нет текущей читаемой записи, начинаем новую
         if (!readingRecord_)
         {
             if (input.size() - processedLength < TLS_HEADER_SIZE)
             {
-                // Не хватает данных для заголовка
                 break;
             }
 
             readingRecord_ = recordPool_.acquire();
             if (!readingRecord_)
             {
-                // Нет свободных записей в пуле
                 return processedLength;
             }
 
@@ -116,29 +113,23 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
             }
         }
 
-        // Добавляем данные в текущую запись
-        const size_t payloadProcessed = readingRecord_->initPayload(input.subspan(processedLength));
+        const size_t payloadProcessed = readingRecord_->initCiphertext(input.subspan(processedLength));
         processedLength += payloadProcessed;
 
-        // Если запись полностью собрана
         if (readingRecord_->isFullyAssembled())
         {
-            // Добавляем в очередь входящих записей
             if (pendingRecords_.push(readingRecord_))
             {
-                // Запись добавлена, сбрасываем указатель
                 readingRecord_ = nullptr;
             }
             else
             {
-                // Очередь полна, освобождаем запись
                 recordPool_.release(std::exchange(readingRecord_, nullptr));
                 return processedLength;
             }
         }
     }
 
-    // Если есть частичная запись, но не удалось ничего обработать
     if (readingRecord_ && processedLength == 0)
     {
         recordPool_.release(std::exchange(readingRecord_, nullptr));
@@ -206,7 +197,7 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
             }
         }
 
-        const size_t payloadProcessed = readingRecord_->initPayload(input.subspan(processedLength));
+        const size_t payloadProcessed = readingRecord_->initCiphertext(input.subspan(processedLength));
         processedLength += payloadProcessed;
 
         if (readingRecord_->isFullyAssembled())

@@ -114,11 +114,6 @@ public:
         return plaintext_.size();
     }
 
-    void setPlaintext(nonstd::span<uint8_t> plaintext)
-    {
-        plaintext_ = plaintext;
-    }
-
     /// @brief Set data start offset.
     ///
     /// @param[in] offset Offset value.
@@ -128,7 +123,7 @@ public:
         dataStartOffset_ = offset;
     }
 
-    size_t initPayload(nonstd::span<const uint8_t> data) noexcept;
+    size_t initCiphertext(nonstd::span<const uint8_t> data) noexcept;
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
