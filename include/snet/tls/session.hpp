@@ -253,6 +253,8 @@ public:
 
     void constructCertificateVerify(const int8_t sideIndex, Record* record);
 
+    void constructFinished(const int8_t sideIndex, Record* record);
+
     inline nonstd::span<const uint8_t> getTranscriptHash(nonstd::span<uint8_t> buffer)
     {
         crypto::HashTraits::hashInit(hashCtx_, handshakeHashAlg_);

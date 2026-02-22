@@ -163,6 +163,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                             mitmClient);
                         break;
                     }
+                    case HandshakeType::FinishedCode:
+                    {
+                        mitmClient.constructFinished(sideIndex, modifiedRecord);
+                        break;
+                    }
                     default:
                     {
                         break;
@@ -261,11 +266,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     case HandshakeType::FinishedCode:
                     {
-                        Finished finished = record->getHandshake<Finished>();
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(finished), HandshakeType::FinishedCode),
-                            sideIndex, mitmServer);
+                        mitmServer.constructFinished(sideIndex, modifiedRecord);
                         break;
                     }
                     default:

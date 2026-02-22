@@ -901,6 +901,39 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
     }
 }
 
+void Session::constructFinished(const int8_t sideIndex, Record* record)
+{
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    {
+        Finished finished;
+
+        const auto& secret = (sideIndex == 0 ? keyInfo_.clientHndTrafficSecret : keyInfo_.serverHndTrafficSecret);
+        const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
+        const auto digestName = HashTraits::getName(digest);
+
+        crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> finishedKey;
+        size_t keySize = HashTraits::getSize(digest);
+
+        crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+
+        crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+        ThrowIfFalse(hmacKey);
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
+        auto transcriptHash = getTranscriptHash(hashBuffer);
+
+        std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
+        Signature::signInit(hashCtx_, digest, hmacKey);
+        Signature::signUpdate(hashCtx_, transcriptHash);
+        auto actual = Signature::signFinal(hashCtx_, sigBuffer);
+
+        finished.verifyData = actual;
+
+        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode),
+                                   sideIndex, *this);
+    }
+}
+
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
     KeyPtr publicKey{nullptr};
