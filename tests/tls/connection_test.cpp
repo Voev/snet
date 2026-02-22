@@ -213,7 +213,7 @@ TEST_F(HandshakeTest, PartialWriting)
     clientBufferSize = clientBuffer.size();
     ASSERT_EQ(Want::Nothing, client.handshake(serverBuffer.data(), serverBufferSize,
                                               clientBuffer.data(), &clientBufferSize, ec));
-    ASSERT_FALSE(ec);
+    ASSERT_FALSE(ec) << ec.message();
 }
 
 struct HandshakeProcessTestParam
@@ -239,7 +239,6 @@ public:
         auto serverKey = RsaAsymmKey::generate(2048);
         auto serverCert = ca_.sign("CN=Test Server", serverKey.get());
 
-        ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
         ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert.get()));
         ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey.get()));
     }
@@ -277,12 +276,12 @@ TEST_P(HandshakeProcessTest, IterativeHandshake)
         clientBufferSize = clientBuffer.size();
         ASSERT_EQ(Want::Nothing, client.handshake(serverBuffer.data(), serverBufferSize,
                                                   clientBuffer.data(), &clientBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing, server.handshake(clientBuffer.data(), clientBufferSize,
                                                   serverBuffer.data(), &serverBufferSize, ec));
-        ASSERT_FALSE(ec);
+        ASSERT_FALSE(ec) << ec.message();
 
     } while (!client.afterHandshake());
 

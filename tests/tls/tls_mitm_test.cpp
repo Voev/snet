@@ -38,7 +38,6 @@ public:
         serverKey_ = RsaAsymmKey::generate(2048);
         serverCert_ = ca_.sign("CN=Test Server", serverKey_);
 
-        ASSERT_NO_THROW(serverSettings_.setMaxVersion(ProtocolVersion::TLSv1_2));
         ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert_));
         ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey_));
 
@@ -108,7 +107,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     Session mitmServer(recordPool);
     mitmServer.setDebugKeys(true);
 
-    auto mitmKey = RsaAsymmKey::generate(2048);
+    auto mitmKey = RsaAsymmKey::generate(2048, true);
     auto mitmCert = certForger_->resign(mitmKey, serverCert_);
 
     mitmServer.setServerKey(mitmKey);
