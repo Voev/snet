@@ -15,6 +15,17 @@ std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, Exte
     case ExtensionCode::ServerNameIndication:
         return std::make_unique<ServerNameIndicator>(side, input);
 
+    /// @todo: support this.
+    /// case ExtensionCode::SupportedGroups:
+    ///    return std::make_unique<SupportedGroups>(side, input);
+
+    /// @todo: support this.
+    /// case ExtensionCode::ECPointFormats:
+    ///    return std::make_unique<ECPointFormats>(side, input);
+
+    case ExtensionCode::SignatureAlgorithms:
+        return std::make_unique<SignatureAlgorithms>(side, input);
+
     case ExtensionCode::AppLayerProtocolNegotiation:
         return std::make_unique<ALPN>(side, input);
 
@@ -24,23 +35,28 @@ std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, Exte
     case ExtensionCode::ServerCertificateType:
         return std::make_unique<ServerCertificateType>(side, input);
 
+    case ExtensionCode::EncryptThenMac:
+        return std::make_unique<EncryptThenMAC>(input);
+
     case ExtensionCode::ExtendedMasterSecret:
         return std::make_unique<ExtendedMasterSecret>(input);
 
     case ExtensionCode::RecordSizeLimit:
         return std::make_unique<RecordSizeLimit>(side, input);
 
-    case ExtensionCode::EncryptThenMac:
-        return std::make_unique<EncryptThenMAC>(input);
-
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(side, input);
 
-        // case ExtensionCode::SafeRenegotiation:
-        //     return std::make_unique<RenegotiationExtension>(side, input);
+    /// @todo: support this.
+    // case ExtensionCode::CertSignatureAlgorithms:
+    //     return std::make_unique<CertSignatureAlgorithms>(side, input);
 
     case ExtensionCode::KeyShare:
         return std::make_unique<KeyShare>(input, handshakeType);
+
+    /// @todo: support this.
+    // case ExtensionCode::SafeRenegotiation:
+    //     return std::make_unique<RenegotiationExtension>(side, input);
 
     default:
         break;

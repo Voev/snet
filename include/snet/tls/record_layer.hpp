@@ -101,7 +101,7 @@ public:
     /// @param[in] cipher Cipher algorithm.
     void prepareRecordForEncrypt(Record* record, const Cipher* cipher)
     {
-        int prefixLength = TLS_HEADER_SIZE;
+        int prefixLength = 0;
         if (aead_ && version_ <= ProtocolVersion::TLSv1_3)
         {
             prefixLength += crypto::CipherTraits::getExplicitNonceLength(cipher);

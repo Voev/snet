@@ -23,9 +23,10 @@ struct Finished final
 
     size_t serialize(nonstd::span<uint8_t> output, const Session& session) const
     {
-        (void)output;
         (void)session;
-        return 0;
+
+        std::copy(verifyData.begin(), verifyData.end(), output.begin());
+        return verifyData.size();
     }
 
     nonstd::span<const uint8_t> verifyData;

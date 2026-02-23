@@ -8,7 +8,7 @@ namespace snet::crypto
 class RsaAsymmKey final
 {
 public:
-    static KeyPtr generate(size_t bits);
+    static KeyPtr generate(size_t bits, bool usePss = false);
 
     static void setPssSettings(KeyCtx* ctx)
     {

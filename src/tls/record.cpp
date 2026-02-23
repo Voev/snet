@@ -3,6 +3,7 @@
 #include <limits>
 
 #include <snet/tls/record.hpp>
+#include <snet/tls/session.hpp>
 
 #include <casket/utils/exception.hpp>
 
@@ -15,11 +16,14 @@ void Record::reset()
     version_ = ProtocolVersion();
 
     std::memset(plaintextBuffer_.data(), 0, plaintextBuffer_.size());
+    plaintext_ = plaintextBuffer_;
+
     std::memset(ciphertextBuffer_.data(), 0, ciphertextBuffer_.size());
+    ciphertext_ = ciphertextBuffer_;
 
     currentLength_ = 0;
     expectedLength_ = 0;
-    isDecrypted_ = false;
+    isPlaintext_ = false;
 }
 
 void Record::deserializeHeader(nonstd::span<const uint8_t> data)
@@ -33,7 +37,7 @@ void Record::deserializeHeader(nonstd::span<const uint8_t> data)
     const size_t recordLength = casket::make_uint16(data[3], data[4]);
     casket::ThrowIfTrue(recordLength > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
     casket::ThrowIfTrue(recordLength == 0, "Received a empty record");
-    expectedLength_ = recordLength + TLS_HEADER_SIZE;
+    expectedLength_ = recordLength;
 }
 
 size_t Record::serializeHeader(nonstd::span<uint8_t> output)
@@ -52,7 +56,7 @@ size_t Record::serializeHeader(nonstd::span<uint8_t> output)
     return TLS_HEADER_SIZE;
 }
 
-size_t Record::initPayload(nonstd::span<const uint8_t> data) noexcept
+size_t Record::initCiphertext(nonstd::span<const uint8_t> data) noexcept
 {
     if (currentLength_ > 0 || expectedLength_ > data.size())
     {
@@ -75,6 +79,36 @@ size_t Record::initPayload(nonstd::span<const uint8_t> data) noexcept
 void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
     handshake_ = HandshakeMessage::deserialize(input, metaInfo);
+}
+
+inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session& session) noexcept
+{
+    ProtocolVersion version;
+    if (type == HandshakeType::ClientHelloCode)
+    {
+        version = ProtocolVersion::TLSv1_0;
+    }
+    else
+    {
+        version = session.getVersion();
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            version = ProtocolVersion::TLSv1_2;
+        }
+    }
+    return version;
+}
+
+size_t Record::serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session)
+{
+    handshake_ = std::move(handshake);
+    expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
+    version_ = GetRecordVersion(handshake_.getType(), session);
+    type_ = RecordType::Handshake;
+    plaintext_ = {plaintextBuffer_.data(), expectedLength_};
+    isPlaintext_ = true;
+    mustBeEncrypted_ = session.canDecrypt(sideIndex);
+    return expectedLength_;
 }
 
 } // namespace snet::tls

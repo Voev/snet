@@ -11,6 +11,8 @@ namespace snet::tls
 struct SecretNode
 {
     crypto::SecureArray<uint8_t, TLS_MASTER_SECRET_SIZE> masterSecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> earlySecret;
+    crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> handshakeSecret;
     crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientEarlyTrafficSecret;
     crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientHndTrafficSecret;
     crypto::SecureArray<uint8_t, TLS_MAX_KEY_LENGTH> clientAppTrafficSecret;

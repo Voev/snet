@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <casket/nonstd/span.hpp>
+
 #include <snet/crypto/signature_scheme.hpp>
 #include <snet/tls/meta_info.hpp>
 
@@ -17,8 +18,8 @@ struct CertificateVerify final
 
     size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
 
-    static nonstd::span<uint8_t> doTLSv13Sign(const crypto::SignatureScheme& scheme, const int8_t sideIndex, HashCtx* ctx,
-                                              Key* privateKey, nonstd::span<const uint8_t> transcriptHash,
+    static nonstd::span<uint8_t> doTLSv13Sign(const crypto::SignatureScheme& scheme, const int8_t sideIndex,
+                                              HashCtx* ctx, Key* privateKey, nonstd::span<const uint8_t> transcriptHash,
                                               nonstd::span<uint8_t> signatureBuffer);
 
     static void doTLSv13Verify(const CertificateVerify& certVerify, const int8_t sideIndex, HashCtx* ctx,
@@ -27,5 +28,26 @@ struct CertificateVerify final
     crypto::SignatureScheme scheme{0};
     nonstd::span<const uint8_t> signature;
 };
+
+template <typename T>
+inline bool ValueExists(nonstd::span<const T> values, const T& value)
+{
+    return std::find(values.begin(), values.end(), value) != values.end();
+}
+
+inline crypto::SignatureScheme ChooseSignatureScheme(const Key* key,
+                                                     nonstd::span<const crypto::SignatureScheme> allowedSchemes,
+                                                     nonstd::span<const crypto::SignatureScheme> peerAllowedSchemes)
+{
+    for (auto scheme : allowedSchemes)
+    {
+        if (scheme.isSuitableFor(key) && ValueExists(peerAllowedSchemes, scheme))
+        {
+            return scheme;
+        }
+    }
+
+    return crypto::SignatureScheme::NONE;
+}
 
 } // namespace snet::tls

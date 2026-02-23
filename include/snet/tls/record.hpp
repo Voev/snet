@@ -24,7 +24,8 @@ public:
         : type_(RecordType::Invalid)
         , currentLength_(0)
         , expectedLength_(0)
-        , isDecrypted_(false)
+        , isPlaintext_(false)
+        , mustBeEncrypted_(false)
     {
     }
 
@@ -32,7 +33,8 @@ public:
         : type_(type)
         , currentLength_(0)
         , expectedLength_(0)
-        , isDecrypted_(false)
+        , isPlaintext_(false)
+        , mustBeEncrypted_(false)
     {
     }
 
@@ -56,9 +58,14 @@ public:
         return currentLength_;
     }
 
-    inline bool isDecrypted() const noexcept
+    inline bool isPlaintext() const noexcept
     {
-        return isDecrypted_;
+        return isPlaintext_;
+    }
+
+    inline bool mustBeEncrypted() const noexcept
+    {
+        return mustBeEncrypted_;
     }
 
     inline nonstd::span<const uint8_t> getCiphertext() const noexcept
@@ -116,13 +123,15 @@ public:
         dataStartOffset_ = offset;
     }
 
-    size_t initPayload(nonstd::span<const uint8_t> data) noexcept;
+    size_t initCiphertext(nonstd::span<const uint8_t> data) noexcept;
 
     void deserializeHeader(nonstd::span<const uint8_t> data);
 
     size_t serializeHeader(nonstd::span<uint8_t> output);
 
     void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+
+    size_t serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session);
 
     inline HandshakeType getHandshakeType() const
     {
@@ -146,7 +155,8 @@ private:
     size_t dataStartOffset_ = 0;
     nonstd::span<const std::uint8_t> ciphertext_;
     nonstd::span<std::uint8_t> plaintext_;
-    bool isDecrypted_;
+    bool isPlaintext_;
+    bool mustBeEncrypted_;
 };
 
 } // namespace snet::tls

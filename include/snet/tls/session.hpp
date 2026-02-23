@@ -7,6 +7,8 @@
 #include <string>
 #include <cstddef>
 
+#include <casket/types/ring_buffer.hpp>
+
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/signature_scheme.hpp>
 
@@ -20,6 +22,7 @@
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/record_processor.hpp>
 #include <snet/tls/cipher_suite.hpp>
+#include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
 namespace snet::tls
@@ -41,11 +44,73 @@ public:
 
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
+    size_t readRecords(nonstd::span<const uint8_t> input);
+
+    size_t writeRecords(nonstd::span<uint8_t> output);
+
     size_t processRecords(const int8_t sideIndex, nonstd::span<const std::uint8_t> input);
 
-    void preprocessRecord(const int8_t sideIndex, Record* record);
+    /// @brief Processes all pending records in the queue with a custom handler.
+    /// @tparam Handler A callable type that handles individual records.
+    ///
+    /// @param[in] sideIndex Indicates which side's records to process (0 for client, 1 for server).
+    /// @param[in] recordHandler Callback function or functor that processes each record
+    ///                      Signature: void(const int8_t, Record*).
+    /// @throws std::exception Propagates any exception from preprocessing, handling,
+    ///                         postprocessing, or key scheduling.
+    template <class Handler>
+    void processPendingRecords(const int8_t sideIndex, Handler&& recordHandler)
+    {
+        while (!pendingRecords_.empty())
+        {
+            Record* record{nullptr};
 
-    void postprocessRecord(const int8_t sideIndex, Record* record);
+            if (!pendingRecords_.pop(record))
+            {
+                continue;
+            }
+
+            try
+            {
+                preprocessRecord(sideIndex, record);
+
+                recordHandler(sideIndex, record);
+
+                postprocessRecord(sideIndex, record);
+
+                keySchedule(sideIndex, record);
+            }
+            catch (const std::exception& e)
+            {
+                recordPool_.release(record);
+                throw;
+            }
+
+            recordPool_.release(record);
+        }
+    }
+
+    /// @brief Adds a record to the outgoing queue for transmission.
+    ///
+    /// @param[in] sideIndex Indicates which side is sending the record (0 for client, 1 for server).
+    /// @param[in] record Pointer to the record to be added (takes ownership).
+    bool addOutgoingRecord(const int8_t sideIndex, Record* record)
+    {
+        if (record)
+        {
+            postprocessRecord(sideIndex, record);
+
+            if (record->mustBeEncrypted())
+            {
+                encrypt(sideIndex, record);
+            }
+
+            keySchedule(sideIndex, record);
+
+            return outgoingRecords_.push(record);
+        }
+        return false;
+    }
 
     /// @brief Checks if the session can decrypt data.
     ///
@@ -77,12 +142,42 @@ public:
     void PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
+    /// @brief Generates the handshake secret using ECDHE key exchange.
+    ///
+    /// @param[in] publicKey The peer's public key for key agreement.
+    /// @param[in] privateKey The local private key for key agreement.
+    ///
+    void generateHandshakeSecret(Key* publicKey, Key* privateKey);
+
+    /// @brief Generates the TLS 1.3 master secret from the handshake secret.
+    /// @details Derives the master secret using HKDF-Extract and HKDF-Expand
+    ///          operations as specified in RFC 8446.
+    void generateTLSv13MasterSecret();
+
+    /// @brief Derives the handshake traffic secrets for encrypting handshake messages.
+    /// @details Generates the client_handshake_traffic_secret and
+    ///          server_handshake_traffic_secret used for encrypting handshake records.
+    void generateHandshakeTrafficSecrets();
+
+    /// @brief Derives the application traffic secrets for encrypting application data
+    /// @details Generates the client_application_traffic_secret_0 and
+    ///          server_application_traffic_secret_0 used for encrypting
+    ///          application data records.
+    void generateApplicationTrafficSecrets();
+
     /// @brief Generates key material for the session.
     /// @param sideIndex The index indicating the side (client or server).
     void generateKeyMaterial(const int8_t sideIndex);
 
-    /// @brief Generates key material for TLS 1.3.
-    void generateTLS13KeyMaterial();
+    /// @brief Generates the handshake keys and initialization vectors.
+    ///
+    void generateHandshakeKeyAndIv();
+
+    /// @brief Generates the application data keys and initialization vectors.
+    ///
+    /// @param[in] sideIndex Indicates which side's keys to generate (0 for client, 1 for server).
+    ///
+    void generateApplicationKeyAndIv(const int8_t sideIndex);
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
@@ -106,9 +201,11 @@ public:
     ///
     void setServerKey(Key* key);
 
-    void processClientHello(const ClientHello& clientHello);
+    template <typename ExtensionsHandler = std::nullptr_t>
+    void processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler = nullptr);
 
-    void processServerHello(const ServerHello& serverHello);
+    template <typename ExtensionsHandler = std::nullptr_t>
+    void processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler = nullptr);
 
     void processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions);
 
@@ -131,6 +228,15 @@ public:
     /// @brief Handles KeyUpdate message to update key material if it's necessary.
     /// @param sideIndex The side (client or server).
     void processKeyUpdate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+
+    void constructClientHello(ClientHello& clientHello);
+
+    void constructCertificate(const int8_t sideIndex, Record* record);
+
+    void constructCertificateVerify(const int8_t sideIndex, Record* record);
+
+    void constructFinished(const int8_t sideIndex, Record* record);
+
 
     void setDebugKeys(const bool debug)
     {
@@ -163,12 +269,20 @@ public:
         return serverEncExtensions_;
     }
 
+    void setPublicPeerKey(crypto::KeyPtr key)
+    {
+        publicPeerKey_ = std::move(key);
+    }
+
+    void setEphemeralPrivateKey(crypto::KeyPtr key)
+    {
+        ephemeralPrivateKey_ = std::move(key);
+    }
+
     X509Cert* getServerCert() const noexcept
     {
         return serverCert_.get();
     }
-
-    void constructCertificateVerify(const int8_t sideIndex, nonstd::span<uint8_t> output);
 
     inline nonstd::span<const uint8_t> getTranscriptHash(nonstd::span<uint8_t> buffer)
     {
@@ -176,11 +290,32 @@ public:
         crypto::HashTraits::hashUpdate(hashCtx_, handshakeBuffer_);
         return crypto::HashTraits::hashFinal(hashCtx_, buffer);
     }
-    
+
+    void postprocessRecord(const int8_t sideIndex, Record* record);
+
+    void keySchedule(const int8_t sideIndex, Record* record);
+
+    void setCertificate(const int8_t sideIndex, crypto::X509CertPtr cert)
+    {
+        if (sideIndex == 0)
+        {
+            clientCert_ = std::move(cert);
+        }
+        else
+        {
+            serverCert_ = std::move(cert);
+        }
+    }
+
+private:
+    void preprocessRecord(const int8_t sideIndex, Record* record);
+
 private:
     RecordPool& recordPool_;
+    Record* readingRecord_ = nullptr;             ///< Current reading record.
+    casket::RingBuffer<Record*> pendingRecords_;  ///< Incoming records queue.
+    casket::RingBuffer<Record*> outgoingRecords_; ///< Outgoing records queue.
     RecordLayer recordLayer_;
-    Record* readingRecord_ = nullptr;
     std::vector<uint8_t> handshakeBuffer_;
     crypto::HashCtxPtr hashCtx_;
     crypto::HashAlg handshakeHashAlg_ = nullptr;
@@ -192,6 +327,9 @@ private:
     crypto::X509CertPtr clientCert_;
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
+
+    crypto::KeyPtr ephemeralPrivateKey_;
+    crypto::KeyPtr publicPeerKey_;
     RecordProcessor processor_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;
@@ -207,5 +345,86 @@ private:
     uint8_t monitor_;
     uint8_t debugKeys_;
 };
+
+template <typename ExtensionsHandler>
+void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler)
+{
+    metaInfo_.version = clientHello.version;
+
+    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
+
+    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
+    {
+        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+
+        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
+        {
+            handler(this, clientExtensions_);
+        }
+    }
+
+    if (processor_)
+    {
+        for (const auto& handler : *processor_)
+        {
+            handler->handleClientHello(clientHello, this);
+        }
+    }
+}
+
+template <typename ExtensionsHandler>
+void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler)
+{
+    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
+
+    if (!serverHello.extensions.empty())
+    {
+        auto type =
+            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
+        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
+
+        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
+        {
+            handler(this, serverExtensions_);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
+        {
+            auto ext = serverExtensions_.get<tls::SupportedVersions>();
+            metaInfo_.version = std::move(ext->versions()[0]);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
+        {
+            recordLayer_.enableEncryptThenMAC();
+        }
+    }
+
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
+
+    if (!monitor_)
+    {
+        recordLayer_.setVersion(metaInfo_.version);
+        fetchAlgorithms();
+
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
+        {
+            if (publicPeerKey_)
+            {
+                /// We know public key by external way
+                generateHandshakeSecret(publicPeerKey_, ephemeralPrivateKey_);
+            }
+            else
+            {
+                /// We know public key by key share
+                auto keyShare = serverExtensions_.get<KeyShare>();
+                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
+            }
+        }
+    }
+}
 
 } // namespace snet::tls

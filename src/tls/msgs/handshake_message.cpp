@@ -78,9 +78,9 @@ size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& 
 
     output[0] = static_cast<uint8_t>(type);
     auto length = static_cast<uint32_t>(payloadSize);
-    output[1] = casket::get_byte<0>(length);
-    output[2] = casket::get_byte<1>(length);
-    output[3] = casket::get_byte<2>(length);
+    output[1] = casket::get_byte<1>(length);
+    output[2] = casket::get_byte<2>(length);
+    output[3] = casket::get_byte<3>(length);
 
     return TLS_HANDSHAKE_HEADER_SIZE + payloadSize;
 }

@@ -13,6 +13,8 @@ class AsymmKey
 public:
     static KeyPtr shallowCopy(Key* key);
 
+    static int getKeySize(const Key* key);
+
     static bool isAlgorithm(const Key* key, std::string_view alg);
 
     static bool isEqual(const Key* a, const Key* b);

@@ -12,6 +12,7 @@ enum class ExtensionCode : uint16_t
     ServerNameIndication = 0,         ///< Server Name Indication (SNI) extension.
     SupportedGroups = 10,             ///< Supported Groups Extension (RFC 7919).
     ECPointFormats = 11,              ///< Supported EC Point Formats.
+    SignatureAlgorithms = 13,         ///< Signature algorithms for server certificate.
     AppLayerProtocolNegotiation = 16, ///< Application Layer Protocol Negotiation (ALPN) extension.
     ClientCertificateType = 19,       ///< Client Certificate Type extension.
     ServerCertificateType = 20,       ///< Server Certificate Type extension.
@@ -19,6 +20,7 @@ enum class ExtensionCode : uint16_t
     ExtendedMasterSecret = 23,        ///< Extended Master Secret extension.
     RecordSizeLimit = 28,             ///< Record Size Limit extension.
     SupportedVersions = 43,           ///< Supported Versions extension.
+    CertSignatureAlgorithms = 50,     ///< @todo
     KeyShare = 51,                    ///< Key share extension.
     SafeRenegotiation = 65281,        ///< Safe Renegotiation extension.
 };

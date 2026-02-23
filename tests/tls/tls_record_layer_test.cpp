@@ -130,11 +130,10 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 
     std::vector<uint8_t> key(CipherTraits::getKeyLength(cipherAlg));
     std::vector<uint8_t> iv(CipherTraits::getIVLengthWithinKeyBlock(cipherAlg));
-    std::vector<uint8_t> plaintext(::get<RecordLayerFields::DataSize>(param));
+    std::vector<uint8_t> plaintext(::get<RecordLayerFields::DataSize>(param), 'A');
 
     Rand::generate(key);
     Rand::generate(iv);
-    Rand::generate(plaintext);
 
     CipherCtxPtr ctx;
     ASSERT_NO_THROW(ctx = CipherTraits::createContext());

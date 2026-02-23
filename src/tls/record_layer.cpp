@@ -48,8 +48,6 @@ void RecordLayer::encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     {
         doTLSv1Encrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
     }
-
-    record->isDecrypted_ = false;
 }
 
 void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
@@ -68,8 +66,6 @@ void RecordLayer::decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCt
     {
         doTLSv1Decrypt(cipherCtx, hmacCtx, hashCtx, hmacHash, record, seq, key, macKey, iv);
     }
-
-    record->isDecrypted_ = true;
 }
 
 void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
@@ -95,28 +91,25 @@ void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
     auto input = record->getCiphertext();
 
     record->plaintext_ = doTLSv1Process(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
-                                        input.subspan(TLS_HEADER_SIZE), record->plaintextBuffer_, false);
+                                        input, record->plaintextBuffer_, false);
 
-    record->isDecrypted_ = true;
+    record->isPlaintext_ = true;
 }
 
 void RecordLayer::doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq,
                                      nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
 {
     auto input = record->getPlaintext();
-    auto result = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE), true);
-
-    record->ciphertext_ = {input.data(), TLS_HEADER_SIZE + result.size()};
-    record->isDecrypted_ = false;
+    record->ciphertext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input, true);
+    record->isPlaintext_ = false;
 }
 
 void RecordLayer::doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq,
                                      nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
 {
     auto input = record->getCiphertext();
-    
-    record->plaintext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE), false);
-    record->isDecrypted_ = true;
+    record->plaintext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input, false);
+    record->isPlaintext_ = true;
 }
 
 nonstd::span<uint8_t> RecordLayer::doTLSv1AeadProcess(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
@@ -389,26 +382,25 @@ void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t
 
     record->plaintext_ = record->plaintext_.first(record->plaintext_.size() + 1);
     record->plaintext_.back() = static_cast<uint8_t>(record->getType());
+    record->type_ = RecordType::ApplicationData;
 
     nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
     auto encryptedData = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, record->plaintext_,
-                                         ciphertext.subspan(TLS_HEADER_SIZE), true);
+                                         ciphertext, true);
 
-    record->type_ = RecordType::ApplicationData;
-    record->ciphertext_ = {ciphertext.data(), TLS_HEADER_SIZE + encryptedData.size()};
-    record->isDecrypted_ = false;
+    record->ciphertext_ = {ciphertext.data(), encryptedData.size()};
+    record->expectedLength_ = encryptedData.size();
+    record->isPlaintext_ = false;
 }
 
 void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                                   nonstd::span<const uint8_t> iv)
 {
-    assert(record->getCiphertext().size() > TLS_HEADER_SIZE);
-
     casket::ThrowIfTrue(record->getType() != RecordType::ApplicationData,
                         "TLSv1.3 encrypted record must have outer type ApplicationData");
 
     auto input = record->getCiphertext();
-    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE),
+    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, input,
                                          record->plaintextBuffer_, false);
 
     uint8_t lastByte = record->plaintext_.back();
@@ -416,7 +408,7 @@ void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t
 
     record->type_ = static_cast<RecordType>(lastByte);
     record->plaintext_ = record->plaintext_.first(record->plaintext_.size() - 1);
-    record->isDecrypted_ = true;
+    record->isPlaintext_ = true;
 }
 
 nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
