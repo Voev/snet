@@ -37,12 +37,12 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
         auto session = test->sessions_.find(tcpData.getConnectionData().flowKey);
         if (session == test->sessions_.end())
         {
-            auto result = test->sessions_.emplace(
-                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>(test->recordPool_)));
+            auto flowKey = tcpData.getConnectionData().flowKey;
+            auto result =
+                test->sessions_.emplace(std::make_pair(flowKey, std::make_shared<Session>(test->recordPool_)));
             if (result.second)
             {
                 session = result.first;
-                session->second->setProcessor(test->processor_);
             }
         }
 
@@ -50,7 +50,33 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
         {
             try
             {
-                session->second->processRecords(sideIndex, {tcpData.getData(), tcpData.getDataLength()});
+                auto state = session->second;
+                state->readRecords({tcpData.getData(), tcpData.getDataLength()});
+                state->processPendingRecords(sideIndex,
+                                             [&test, &state](const int8_t sideIndex, Record* record)
+                                             {
+                                                 if (test->printRecords_)
+                                                 {
+                                                     PrintRecord(sideIndex, state.get(), record);
+                                                 }
+
+                                                 if (record->getHandshakeType() == HandshakeType::ClientHelloCode)
+                                                 {
+                                                     auto& clientHello = record->getHandshake<ClientHello>();
+                                                     ClientRandom random{clientHello.random.begin(),
+                                                                         clientHello.random.end()};
+                                                     auto secrets = test->secretManager_.getSecretNode(random);
+                                                     if (secrets)
+                                                     {
+                                                         state->setSecrets(secrets);
+                                                     }
+                                                 }
+
+                                                 if (record->isPlaintext())
+                                                 {
+                                                     test->actualDecryptedRecordCount_ += 1;
+                                                 }
+                                             });
             }
             catch (const std::exception& e)
             {
@@ -63,7 +89,6 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
 
 DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
     : recordPool_(1024)
-    , processor_(std::make_shared<tls::RecordHandlers>())
     , reassembler_(tcpReassemblyMsgReadyCallback, this)
 {
     auto found = section.find("keylog");
@@ -72,18 +97,15 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
         secretManager_.parseKeyLogFile(found->second);
     }
 
-    processor_->push_back(std::make_shared<tls::SnifferHandler>(secretManager_));
-    processor_->push_back(std::make_shared<RecordChecker>());
-
     found = section.find("print_records");
     if (found != section.end() && iequals(found->second, "yes"))
     {
-        processor_->push_back(std::make_shared<tls::RecordPrinter>());
+        printRecords_ = true;
     }
 
     found = section.find("decrypted_records_count");
     ThrowIfTrue(found == section.end(), "not found required option 'decrypted_records_count'");
-    to_number(found->second, decryptedRecordCount_);
+    to_number(found->second, expectedDecryptedRecordCount_);
 }
 
 void DecryptByKeylog::execute()
@@ -101,7 +123,7 @@ void DecryptByKeylog::execute()
         }
     } while (status == RecvStatus::Ok);
 
-    auto count = std::dynamic_pointer_cast<RecordChecker>((*processor_)[1])->decryptedRecordCount;
-    casket::ThrowIfFalse(count == decryptedRecordCount_, "actual: {}, expected: {}; mismatch decrypted records", count,
-                         decryptedRecordCount_);
+    casket::ThrowIfFalse(actualDecryptedRecordCount_ == expectedDecryptedRecordCount_,
+                         "actual: {}, expected: {}; mismatch decrypted records", actualDecryptedRecordCount_,
+                         expectedDecryptedRecordCount_);
 }
