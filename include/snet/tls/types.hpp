@@ -29,14 +29,6 @@ enum class RecordType : uint8_t
     Heartbeat = 24 ///< Heartbeat (RFC 6520 - TLS 1.3)
 };
 
-/// @brief Enum representing the record state.
-enum class RecordState : uint8_t
-{
-    Unknown = 0,
-    
-    Decrypted
-};
-
 /// @brief Enum representing size limits for TLS.
 enum SizeLimits : size_t
 {
