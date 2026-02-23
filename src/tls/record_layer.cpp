@@ -405,7 +405,7 @@ void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t
                         "TLSv1.3 encrypted record must have outer type ApplicationData");
 
     auto input = record->getCiphertext();
-    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE),
+    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, key, iv, input,
                                          record->plaintextBuffer_, false);
 
     uint8_t lastByte = record->plaintext_.back();

@@ -192,13 +192,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
             1,
-            [&recordPool, &mitmServer](const int8_t sideIndex, Record* record)
+            [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                /// 1. Modify
-                /// 2. Process
-                /// 3. Serialize
-                /// 4. Update hash (for handshake)
-                /// 5. Encryption (optional)
+                PrintRecord(sideIndex, &mitmClient, record);
 
                 auto modifiedRecord = recordPool.acquire();
 

@@ -37,7 +37,7 @@ void Record::deserializeHeader(nonstd::span<const uint8_t> data)
     const size_t recordLength = casket::make_uint16(data[3], data[4]);
     casket::ThrowIfTrue(recordLength > MAX_CIPHERTEXT_SIZE, "Received a record that exceeds maximum size");
     casket::ThrowIfTrue(recordLength == 0, "Received a empty record");
-    expectedLength_ = recordLength + TLS_HEADER_SIZE;
+    expectedLength_ = recordLength;
 }
 
 size_t Record::serializeHeader(nonstd::span<uint8_t> output)

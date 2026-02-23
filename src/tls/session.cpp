@@ -104,6 +104,7 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
             try
             {
                 readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+                processedLength += TLS_HEADER_SIZE;
             }
             catch (const std::exception& e)
             {
@@ -253,7 +254,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
     }
     else
     {
-        data = record->getCiphertext().subspan(TLS_HEADER_SIZE);
+        data = record->getCiphertext();
     }
 
     if (record->getType() == RecordType::ChangeCipherSpec)
@@ -375,7 +376,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
     else
     {
-        data = record->getCiphertext().subspan(TLS_HEADER_SIZE);
+        data = record->getCiphertext();
     }
 
     if (record->getType() == RecordType::Handshake)
