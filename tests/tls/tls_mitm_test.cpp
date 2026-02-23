@@ -85,9 +85,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     serverBufferSize = 0;
 
     RecordPool recordPool(64);
-    RecordProcessor proc(std::make_shared<RecordHandlers>());
-
-    proc->push_back(std::make_shared<RecordPrinter>());
 
     Session mitmClient(recordPool);
     Session mitmServer(recordPool);

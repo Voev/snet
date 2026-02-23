@@ -71,18 +71,16 @@ struct SnifferManager
 {
     SnifferManager()
         : recordPool(1024)
-        , proc(std::make_shared<tls::RecordHandlers>())
+        , printRecords(false)
     {
-        proc->push_back(std::make_shared<tls::SnifferHandler>(secretManager));
-        proc->push_back(std::make_shared<tls::RecordPrinter>());
     }
 
     tls::RecordPool recordPool;
-    tls::RecordProcessor proc;
     tls::SecretNodeManager secretManager;
     crypto::KeyPtr serverKey;
     SessionManager sessions;
     io::Controller controller;
+    bool printRecords;
 };
 
 void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData, void* userCookie)
@@ -99,7 +97,6 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
             if (result.second)
             {
                 session = result.first;
-                session->second->setProcessor(mgr->proc);
             }
         }
 
@@ -107,7 +104,25 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
         {
             try
             {
-                session->second->processRecords(sideIndex, {tcpData.getData(), tcpData.getDataLength()});
+                auto state = session->second;
+                state->readRecords({tcpData.getData(), tcpData.getDataLength()});
+                state->processPendingRecords(sideIndex,
+                                             [&mgr, &state](const int8_t sideIndex, tls::Record* record)
+                                             {
+                                                 PrintRecord(sideIndex, state.get(), record);
+
+                                                 if (record->getHandshakeType() == tls::HandshakeType::ClientHelloCode)
+                                                 {
+                                                     auto& clientHello = record->getHandshake<tls::ClientHello>();
+                                                     tls::ClientRandom random{clientHello.random.begin(),
+                                                                              clientHello.random.end()};
+                                                     auto secrets = mgr->secretManager.getSecretNode(random);
+                                                     if (secrets)
+                                                     {
+                                                         state->setSecrets(secrets);
+                                                     }
+                                                 }
+                                             });
             }
             catch (const std::exception& e)
             {

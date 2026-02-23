@@ -11,23 +11,6 @@ using namespace snet;
 using namespace snet::tls;
 using namespace casket;
 
-class RecordChecker final : public tls::IRecordHandler
-{
-public:
-    void handleRecord(const std::int8_t sideIndex, Session* session, Record* record) override
-    {
-        (void)sideIndex;
-        (void)session;
-
-        if (record->isPlaintext())
-        {
-            decryptedRecordCount += 1;
-        }
-    }
-
-    size_t decryptedRecordCount{0};
-};
-
 void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData, void* userCookie)
 {
     auto* test = static_cast<DecryptByKeylog*>(userCookie);

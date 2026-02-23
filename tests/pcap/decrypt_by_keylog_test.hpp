@@ -20,7 +20,6 @@ public:
 
 private:
     snet::tls::RecordPool recordPool_;
-    snet::tls::RecordProcessor processor_;
     snet::tls::SecretNodeManager secretManager_;
     snet::layers::TcpReassembly reassembler_;
     std::unordered_map<uint32_t, std::shared_ptr<snet::tls::Session>> sessions_;
