@@ -20,7 +20,6 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/record_pool.hpp>
 #include <snet/tls/record_layer.hpp>
-#include <snet/tls/record_processor.hpp>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
@@ -36,11 +35,6 @@ public:
     explicit Session(RecordPool& recordPool);
 
     void reset() noexcept;
-
-    void setProcessor(const RecordProcessor& processor)
-    {
-        processor_ = processor;
-    }
 
     bool getCipherState(const int8_t sideIndex) const noexcept;
 
@@ -330,7 +324,6 @@ private:
 
     crypto::KeyPtr ephemeralPrivateKey_;
     crypto::KeyPtr publicPeerKey_;
-    RecordProcessor processor_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;
     SecretNode keyInfo_;
@@ -361,14 +354,6 @@ void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandl
         if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
         {
             handler(this, clientExtensions_);
-        }
-    }
-
-    if (processor_)
-    {
-        for (const auto& handler : *processor_)
-        {
-            handler->handleClientHello(clientHello, this);
         }
     }
 }
