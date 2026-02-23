@@ -35,13 +35,17 @@ public:
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
 
-        serverKey_ = RsaAsymmKey::generate(2048);
-        serverCert_ = ca_.sign("CN=Test Server", serverKey_);
+        ASSERT_NO_THROW(serverKey_ = RsaAsymmKey::generate(2048));
+        ASSERT_NO_THROW(serverCert_ = ca_.sign("CN=Test Server", serverKey_));
 
         ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert_));
         ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey_));
 
         certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
+
+        ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, true));
+        ASSERT_NO_THROW(mitmCert_ = certForger_->resign(mitmKey_, serverCert_));
+
     }
 
     void TearDown() override
@@ -54,25 +58,9 @@ protected:
     ServerSettings serverSettings_;
     KeyPtr serverKey_;
     X509CertPtr serverCert_;
+    KeyPtr mitmKey_;
+    X509CertPtr mitmCert_;
     std::unique_ptr<CertForger> certForger_;
-};
-
-class MITMRecordHandler : public IRecordHandler
-{
-public:
-    void handleClientHello(const ClientHello& clientHello, Session* session) override
-    {
-        ClientHello modified = clientHello;
-
-        (void)modified;
-        (void)session;
-
-        // Record* record{nullptr};
-
-        // record= session->acquireRecord();
-
-        // record->serializeClientHello(modified);
-    }
 };
 
 TEST_P(TLSMitmTest, IterativeHandshake)
@@ -102,16 +90,10 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     proc->push_back(std::make_shared<RecordPrinter>());
 
     Session mitmClient(recordPool);
-    //mitmClient.setDebugKeys(true);
-
     Session mitmServer(recordPool);
-    mitmServer.setDebugKeys(true);
 
-    auto mitmKey = RsaAsymmKey::generate(2048, true);
-    auto mitmCert = certForger_->resign(mitmKey, serverCert_);
-
-    mitmServer.setServerKey(mitmKey);
-    mitmServer.setCertificate(1, std::move(mitmCert));
+    mitmServer.setServerKey(AsymmKey::shallowCopy(mitmKey_));
+    mitmServer.setCertificate(1, Cert::shallowCopy(mitmCert_));
 
     do
     {
@@ -120,10 +102,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
-        std::cout << "MITM SERVER:" << std::endl;
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
-
-        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Before MITM client:");
 
         mitmServer.processPendingRecords(
             0,
@@ -178,24 +157,17 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         clientBufferSize = mitmClient.writeRecords(clientBuffer);
-        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "After MITM client:");
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing,
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
-        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Before MITM server:");
-
-        std::cout << "MITM CLIENT:" << std::endl;
-
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
             1,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                PrintRecord(sideIndex, &mitmClient, record);
-
                 auto modifiedRecord = recordPool.acquire();
 
                 if (record->getType() == RecordType::Handshake)
@@ -206,7 +178,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
-                        std::cout << "MITM Server processing ServerHello:" << std::endl;
                         mitmServer.processServerHello(serverHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {
@@ -228,9 +199,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               extensions.add(std::move(keyShare));
                                                           }
                                                       });
-
-                        
-                        std::cout << "MITM Server processed ServerHello:" << std::endl;
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex,
@@ -284,7 +252,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         serverBufferSize = mitmServer.writeRecords(serverBuffer);
-        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "After MITM server:");
 
     } while (!client.afterHandshake());
 

@@ -189,6 +189,7 @@ size_t Session::processRecords(const int8_t sideIndex, nonstd::span<const uint8_
             try
             {
                 readingRecord_->deserializeHeader(input.subspan(processedLength, TLS_HEADER_SIZE));
+                processedLength += TLS_HEADER_SIZE;
             }
             catch (const std::exception& e)
             {

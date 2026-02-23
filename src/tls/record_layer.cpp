@@ -91,7 +91,7 @@ void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
     auto input = record->getCiphertext();
 
     record->plaintext_ = doTLSv1Process(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, key, macKey, iv,
-                                        input.subspan(TLS_HEADER_SIZE), record->plaintextBuffer_, false);
+                                        input, record->plaintextBuffer_, false);
 
     record->isPlaintext_ = true;
 }
@@ -100,9 +100,7 @@ void RecordLayer::doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint6
                                      nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
 {
     auto input = record->getPlaintext();
-    auto result = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE), true);
-
-    record->ciphertext_ = {input.data(), TLS_HEADER_SIZE + result.size()};
+    record->ciphertext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input, true);
     record->isPlaintext_ = false;
 }
 
@@ -110,8 +108,7 @@ void RecordLayer::doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint6
                                      nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv)
 {
     auto input = record->getCiphertext();
-    
-    record->plaintext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input.subspan(TLS_HEADER_SIZE), false);
+    record->plaintext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input, false);
     record->isPlaintext_ = true;
 }
 
@@ -399,8 +396,6 @@ void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t
 void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
                                   nonstd::span<const uint8_t> iv)
 {
-    assert(record->getCiphertext().size() > TLS_HEADER_SIZE);
-
     casket::ThrowIfTrue(record->getType() != RecordType::ApplicationData,
                         "TLSv1.3 encrypted record must have outer type ApplicationData");
 
