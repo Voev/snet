@@ -227,6 +227,8 @@ public:
 
     void constructServerKeyExchange(const int8_t sideIndex, Record* record);
 
+    void constructServerHelloDone(const int8_t sideIndex, Record* record);
+
     void constructFinished(const int8_t sideIndex, Record* record);
 
     void setDebugKeys(const bool debug)

@@ -39,8 +39,7 @@ size_t EcdheParams::serialize(nonstd::span<uint8_t> output)
 {
     size_t offset = 0;
 
-    /// @todo: give the name
-    output[offset++] = 3; /* Named curve */
+    output[offset++] = curveType;
 
     const uint16_t namedCurveID = curveID.wireCode();
     output[offset++] = casket::get_byte<0>(namedCurveID);

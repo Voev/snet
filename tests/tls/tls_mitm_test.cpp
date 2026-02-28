@@ -160,12 +160,16 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
+        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (before)", true);
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
             1,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                std::cout << "Original Server record:" << std::endl;
+                PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -228,6 +232,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
                         break;
                     }
+                    case HandshakeType::ServerHelloDoneCode:
+                    {
+                        mitmServer.constructServerHelloDone(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         mitmServer.constructFinished(sideIndex, modifiedRecord);
@@ -245,6 +254,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     } /// switch
 
+                    PrintRecord(1, &mitmServer, modifiedRecord);
                     mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
@@ -254,6 +264,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         serverBufferSize = mitmServer.writeRecords(serverBuffer);
+        snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (after)", true);
 
     } while (!client.afterHandshake());
 

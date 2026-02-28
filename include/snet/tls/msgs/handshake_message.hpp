@@ -11,6 +11,7 @@
 #include <snet/tls/msgs/certificate_verify.hpp>
 #include <snet/tls/msgs/finished.hpp>
 #include <snet/tls/msgs/new_session_ticket.hpp>
+#include <snet/tls/msgs/server_hello_done.hpp>
 
 namespace snet::tls
 {
@@ -21,8 +22,9 @@ struct HandshakeMessage final
 {
     using MessageType =
         std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, ClientKeyExchange, Certificate,
-                     CertificateRequest, CertificateVerify, Finished, NewSessionTicket>;
+                     CertificateRequest, CertificateVerify, Finished, NewSessionTicket, ServerHelloDone>;
 
+    /// @todo make 'message' and 'type' more consistent
     HandshakeMessage()
         : message(ClientHello())
         , type(HandshakeType::NoneCode)

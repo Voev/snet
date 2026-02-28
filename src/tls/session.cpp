@@ -166,8 +166,8 @@ size_t Session::writeRecords(nonstd::span<uint8_t> output)
         std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
 
         written += headerSize + data.size();
+        recordPool_.release(record);
     }
-    recordPool_.release(record);
 
     return written;
 }
@@ -236,8 +236,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         case HandshakeType::ServerHelloDoneCode:
         {
             casket::ThrowIfTrue(sideIndex != 1, "Incorrect side index");
-            utils::DataReader reader("Server Hello Done", data.subspan(TLS_HANDSHAKE_HEADER_SIZE));
-            reader.assert_done();
             break;
         }
         case HandshakeType::ServerKeyExchangeCode:
@@ -803,6 +801,22 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
         record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
                                    *this);
     }
+    else
+    {
+        TLSv1Certificate message;
+        TLSv1Certificate::Entry entry;
+
+        entry.cert = sideIndex == 0 ? clientCert_.get() : serverCert_.get();
+
+        message.entryList[0] = std::move(entry);
+        message.entryCount = 1;
+
+        certificate.message = std::move(message);
+
+        record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
+                                   *this);
+
+    }
 }
 
 void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
@@ -872,6 +886,12 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),
+                               sideIndex, *this);
+}
+
+void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
+{
+    record->serializeHandshake(HandshakeMessage(ServerHelloDone(), HandshakeType::ServerHelloDoneCode),
                                sideIndex, *this);
 }
 
