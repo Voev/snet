@@ -45,7 +45,7 @@ struct ServerKeyExchange final
 
     static ServerKeyExchange deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session);
 
     Params params;
     nonstd::span<const uint8_t> data;

@@ -223,6 +223,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
                         break;
                     }
+                    case HandshakeType::ServerKeyExchangeCode:
+                    {
+                        mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         mitmServer.constructFinished(sideIndex, modifiedRecord);
@@ -255,4 +260,4 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     ASSERT_TRUE(server.afterHandshake());
 }
 
-INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest, testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
+INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest, testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_2}));

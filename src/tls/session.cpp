@@ -26,6 +26,7 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
+#include <snet/tls/policy.hpp>
 
 #include <openssl/evp.h>
 
@@ -149,17 +150,24 @@ size_t Session::writeRecords(nonstd::span<uint8_t> output)
 
         if (!outgoingRecords_.pop(record))
         {
-            continue;
+            break;
         }
 
         nonstd::span<const uint8_t> data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
-        std::copy(data.begin(), data.end(), output.begin() + written + TLS_HEADER_SIZE);
+
+        size_t totalNeeded = TLS_HEADER_SIZE + data.size();
+        if (output.size() - written < totalNeeded)
+        {
+            break;
+        }
 
         size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
 
+        std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
+
         written += headerSize + data.size();
-        recordPool_.release(record);
     }
+    recordPool_.release(record);
 
     return written;
 }
@@ -628,12 +636,12 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
     {
         assert(!keyInfo_.clientAppTrafficSecret.empty());
         const auto digestName = HashTraits::getName(handshakeHashAlg_);
-        
+
         crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
         crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
-        
+
         seqnum_.resetClientSequence();
-        
+
         if (debugKeys_)
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
@@ -644,12 +652,12 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
     {
         assert(!keyInfo_.serverAppTrafficSecret.empty());
         const auto digestName = HashTraits::getName(handshakeHashAlg_);
-        
+
         crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
         crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
-        
+
         seqnum_.resetServerSequence();
-        
+
         if (debugKeys_)
         {
             utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
@@ -824,6 +832,47 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
         record->serializeHandshake(HandshakeMessage(std::move(certVerify), HandshakeType::CertificateVerifyCode),
                                    sideIndex, *this);
     }
+}
+
+void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
+{
+    ServerKeyExchange keyExchange;
+
+    const auto& supportedGroupsByPeer = clientExtensions_.get<SupportedGroups>();
+
+    GroupParams sharedGroup = choose_key_exchange_group(supportedGroupsByPeer->getEcGroups(), {});
+    casket::ThrowIfTrue(sharedGroup == GroupParams::NONE, "No shared ECC group with client");
+
+    ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroup);
+
+    std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(serverKey_));
+    std::vector<uint8_t> encodedKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
+    auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
+    if (kex == NID_kx_dhe) {}
+    else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
+    {
+        auto& ecdheParams = keyExchange.params.emplace<EcdheParams>();
+
+        ecdheParams.curveType = 3;
+        ecdheParams.curveID = sharedGroup;
+        ecdheParams.publicPoint = encodedKey;
+    }
+    else if (kex != NID_kx_psk)
+    {
+        throw std::runtime_error("ServerKeyExchange::serialize: Unsupported kex type");
+    }
+
+    auto auth = CipherSuiteGetAuth(metaInfo_.cipherSuite);
+    if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
+    {
+        if (metaInfo_.version == ProtocolVersion::TLSv1_2) {}
+        else /// < TLSv1.2
+        {
+        }
+    }
+
+    record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),
+                               sideIndex, *this);
 }
 
 void Session::constructFinished(const int8_t sideIndex, Record* record)

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <casket/nonstd/span.hpp>
 
+#include <snet/utils/algorithm.hpp>
 #include <snet/crypto/signature_scheme.hpp>
 #include <snet/tls/meta_info.hpp>
 
@@ -28,12 +29,6 @@ struct CertificateVerify final
     crypto::SignatureScheme scheme{0};
     nonstd::span<const uint8_t> signature;
 };
-
-template <typename T>
-inline bool ValueExists(nonstd::span<const T> values, const T& value)
-{
-    return std::find(values.begin(), values.end(), value) != values.end();
-}
 
 inline crypto::SignatureScheme ChooseSignatureScheme(const Key* key,
                                                      nonstd::span<const crypto::SignatureScheme> allowedSchemes,

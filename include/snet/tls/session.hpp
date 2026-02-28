@@ -177,10 +177,6 @@ public:
     /// @return The protocol version.
     const ProtocolVersion& getVersion() const noexcept;
 
-    /// @brief Gets the cipher suite of the session.
-    /// @return The cipher suite.
-    const CipherSuite& getCipherSuite() const noexcept;
-
     /// @brief Sets the secrets for the session.
     /// @param secrets The secrets to set.
     void setSecrets(const SecretNode* secrets);
@@ -229,8 +225,9 @@ public:
 
     void constructCertificateVerify(const int8_t sideIndex, Record* record);
 
-    void constructFinished(const int8_t sideIndex, Record* record);
+    void constructServerKeyExchange(const int8_t sideIndex, Record* record);
 
+    void constructFinished(const int8_t sideIndex, Record* record);
 
     void setDebugKeys(const bool debug)
     {
@@ -299,6 +296,11 @@ public:
         {
             serverCert_ = std::move(cert);
         }
+    }
+
+    inline const MetaInfo& getInfo() const noexcept
+    {
+        return metaInfo_;
     }
 
 private:
