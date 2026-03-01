@@ -815,7 +815,6 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
                                    *this);
-
     }
 }
 
@@ -859,10 +858,24 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
 
     ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroup);
 
+    /// @todo calculate size
+    std::vector<uint8_t> tbs;
+    tbs.reserve(2 * TLS_RANDOM_SIZE + 512);
+
+    tbs.insert(tbs.end(), clientRandom_.begin(), clientRandom_.end());
+    tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
+
     std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(serverKey_));
     std::vector<uint8_t> encodedKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
     auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
-    if (kex == NID_kx_dhe) {}
+
+    size_t length = 0;
+    if (kex == NID_kx_dhe)
+    {
+        auto& dheParams = keyExchange.params.emplace<DhParams>();
+    
+        dheParams.serialize(nonstd::span(tbs).subspan(2 * TLS_RANDOM_SIZE));
+    }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
         auto& ecdheParams = keyExchange.params.emplace<EcdheParams>();
@@ -870,6 +883,8 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
         ecdheParams.curveType = 3;
         ecdheParams.curveID = sharedGroup;
         ecdheParams.publicPoint = encodedKey;
+
+        length = ecdheParams.serialize(nonstd::span(tbs).subspan(2 * TLS_RANDOM_SIZE));
     }
     else if (kex != NID_kx_psk)
     {
@@ -879,10 +894,25 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     auto auth = CipherSuiteGetAuth(metaInfo_.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
-        if (metaInfo_.version == ProtocolVersion::TLSv1_2) {}
-        else /// < TLSv1.2
+        /// @todo: what to do if no extensions
+        const auto& peerSigAlgs = clientExtensions_.get<SignatureAlgorithms>();
+        const auto& supportedSigAlgs = SignatureScheme::supportedSchemes();
+        auto scheme = ChooseSignatureScheme(serverKey_, supportedSigAlgs, peerSigAlgs->supportedSchemes());
+
+        if (metaInfo_.version == ProtocolVersion::TLSv1_2)
         {
+            keyExchange.scheme = scheme;
         }
+
+        HashAlg hash{nullptr};
+
+        auto hashName = scheme.getHashAlgorithm();
+        if (!casket::equals(hashName, "UNDEF"))
+        {
+            hash = CryptoManager::getInstance().fetchDigest(hashName);
+        }
+
+        keyExchange.signature = Signature::signMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_, signatureBuffer, {tbs.data(), 2 * TLS_RANDOM_SIZE + length});
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),
@@ -891,8 +921,8 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
 
 void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
 {
-    record->serializeHandshake(HandshakeMessage(ServerHelloDone(), HandshakeType::ServerHelloDoneCode),
-                               sideIndex, *this);
+    record->serializeHandshake(HandshakeMessage(ServerHelloDone(), HandshakeType::ServerHelloDoneCode), sideIndex,
+                               *this);
 }
 
 void Session::constructFinished(const int8_t sideIndex, Record* record)
