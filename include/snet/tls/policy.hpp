@@ -5,21 +5,21 @@
 namespace snet::tls
 {
 
-crypto::GroupParams choose_key_exchange_group(nonstd::span<const crypto::GroupParams> supported_by_peer,
-                                              nonstd::span<const crypto::GroupParams> offered_by_peer)
+crypto::GroupParams ChooseKeyExchangeGroup(nonstd::span<const crypto::GroupParams> supportedByPeer,
+                                           nonstd::span<const crypto::GroupParams> offeredByPeer)
 {
-    if (supported_by_peer.empty())
+    if (supportedByPeer.empty())
     {
         return crypto::GroupParams::NONE;
     }
 
-    const auto our_groups = crypto::GroupParams::getSupported();
+    const auto ourGroups = crypto::GroupParams::getSupported();
 
     // Prefer groups that were offered by the peer for the sake of saving
     // an additional round trip. For TLS 1.2, this won't be used.
-    for (const auto& g : offered_by_peer)
+    for (const auto& g : offeredByPeer)
     {
-        if (ValueExists(our_groups, g))
+        if (ValueExists(ourGroups, g))
         {
             return g;
         }
@@ -27,9 +27,9 @@ crypto::GroupParams choose_key_exchange_group(nonstd::span<const crypto::GroupPa
 
     // If no pre-offered groups fit our supported set, we prioritize our
     // own preference.
-    for (auto g : our_groups)
+    for (auto g : ourGroups)
     {
-        if (ValueExists(supported_by_peer, g))
+        if (ValueExists(supportedByPeer, g))
         {
             return g;
         }

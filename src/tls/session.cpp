@@ -853,38 +853,51 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
 
     const auto& supportedGroupsByPeer = clientExtensions_.get<SupportedGroups>();
 
-    GroupParams sharedGroup = choose_key_exchange_group(supportedGroupsByPeer->getEcGroups(), {});
-    casket::ThrowIfTrue(sharedGroup == GroupParams::NONE, "No shared ECC group with client");
+    /// @todo 512 - it's magic number which must be replaced
+    std::array<uint8_t, 2 * TLS_RANDOM_SIZE + 512> tbsBuffer;
+    size_t tbsLength = 0;
+    size_t tbsParamsStart = 0;
 
-    ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroup);
+    std::copy(clientRandom_.begin(), clientRandom_.end(), tbsBuffer.data() + tbsLength);
+    tbsLength += TLS_RANDOM_SIZE;
 
-    /// @todo calculate size
-    std::vector<uint8_t> tbs;
-    tbs.reserve(2 * TLS_RANDOM_SIZE + 512);
+    std::copy(serverRandom_.begin(), serverRandom_.end(), tbsBuffer.data() + tbsLength);
+    tbsLength += TLS_RANDOM_SIZE;
 
-    tbs.insert(tbs.end(), clientRandom_.begin(), clientRandom_.end());
-    tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
+    tbsParamsStart = tbsLength;
 
     std::vector<uint8_t> signatureBuffer(crypto::AsymmKey::getKeySize(serverKey_));
-    std::vector<uint8_t> encodedKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
     auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
 
-    size_t length = 0;
     if (kex == NID_kx_dhe)
     {
         auto& dheParams = keyExchange.params.emplace<DhParams>();
-    
-        dheParams.serialize(nonstd::span(tbs).subspan(2 * TLS_RANDOM_SIZE));
+
+        /// @todo: get DH params
+
+        auto serializedLength =
+            dheParams.serialize({tbsBuffer.data() + tbsParamsStart, tbsBuffer.size() - tbsParamsStart});
+        keyExchange.data = {tbsBuffer.data() + tbsParamsStart, serializedLength};
+        tbsLength += serializedLength;
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
+        GroupParams sharedGroup = ChooseKeyExchangeGroup(supportedGroupsByPeer->getEcGroups(), {});
+        casket::ThrowIfTrue(sharedGroup == GroupParams::NONE, "No shared ECC group with client");
+
+        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroup);
+
         auto& ecdheParams = keyExchange.params.emplace<EcdheParams>();
+        auto encodedKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
 
         ecdheParams.curveType = 3;
         ecdheParams.curveID = sharedGroup;
         ecdheParams.publicPoint = encodedKey;
 
-        length = ecdheParams.serialize(nonstd::span(tbs).subspan(2 * TLS_RANDOM_SIZE));
+        auto serializedLength =
+            ecdheParams.serialize({tbsBuffer.data() + tbsParamsStart, tbsBuffer.size() - tbsParamsStart});
+        keyExchange.data = {tbsBuffer.data() + tbsParamsStart, serializedLength};
+        tbsLength += serializedLength;
     }
     else if (kex != NID_kx_psk)
     {
@@ -912,7 +925,8 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
             hash = CryptoManager::getInstance().fetchDigest(hashName);
         }
 
-        keyExchange.signature = Signature::signMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_, signatureBuffer, {tbs.data(), 2 * TLS_RANDOM_SIZE + length});
+        keyExchange.signature = Signature::signMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_,
+                                                       signatureBuffer, {tbsBuffer.data(), tbsLength});
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),

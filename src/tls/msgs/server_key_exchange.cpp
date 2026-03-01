@@ -99,24 +99,13 @@ ServerKeyExchange ServerKeyExchange::deserialize(nonstd::span<const uint8_t> inp
 
 size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session)
 {
-    size_t offset = 0;
     const auto& metaInfo = session.getInfo();
+    size_t offset = 0;
 
-    auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
-    if (kex == NID_kx_dhe)
-    {
-        auto& dhParams = std::get<DhParams>(params);
-        offset += dhParams.serialize(output.subspan(offset));
-    }
-    else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
-    {
-        auto& ecdheParams = std::get<EcdheParams>(params);
-        offset += ecdheParams.serialize(output.subspan(offset));
-    }
-    else if (kex != NID_kx_psk)
-    {
-        throw std::runtime_error("ServerKeyExchange::serialize: Unsupported kex type");
-    }
+    assert(output.size() > data.size());
+
+    std::copy(data.begin(), data.end(), output.begin());
+    offset += data.size();
 
     auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
@@ -126,13 +115,8 @@ size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session&
             uint16_t schemeCode = scheme.wireCode();
             output[offset++] = casket::get_byte<0>(schemeCode);
             output[offset++] = casket::get_byte<1>(schemeCode);
-
-            offset += append_length_and_value(output.subspan(offset), signature.data(), signature.size(), 2);
         }
-        else /// < TLSv1.2
-        {
-            offset += append_length_and_value(output.subspan(offset), signature.data(), signature.size(), 2);
-        }
+        offset += append_length_and_value(output.subspan(offset), signature.data(), signature.size(), 2);
     }
 
     return offset;
