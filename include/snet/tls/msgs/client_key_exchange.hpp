@@ -19,7 +19,7 @@ struct EncryptedPreMasterSecret final
 {
     void deserialize(utils::DataReader& reader);
 
-    size_t serialize(nonstd::span<uint8_t> output);
+    size_t serialize(nonstd::span<uint8_t> output) const;
 
     nonstd::span<const uint8_t> preMasterSecret;
 };
@@ -28,7 +28,7 @@ struct ClientDhPublic final
 {
     void deserialize(utils::DataReader& reader);
 
-    size_t serialize(nonstd::span<uint8_t> output);
+    size_t serialize(nonstd::span<uint8_t> output) const;
 
     nonstd::span<const uint8_t> dhPublic;
 };
@@ -37,7 +37,7 @@ struct ClientEcdhPublic final
 {
     void deserialize(utils::DataReader& reader);
 
-    size_t serialize(nonstd::span<uint8_t> output);
+    size_t serialize(nonstd::span<uint8_t> output) const;
 
     nonstd::span<const uint8_t> ecdhPublic;
 };

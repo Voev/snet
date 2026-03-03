@@ -189,11 +189,6 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
     if (record->getType() == RecordType::ChangeCipherSpec)
     {
         casket::ThrowIfFalse(data.size() == 1 && data[0] == 0x01, "Malformed Change Cipher Spec message");
-
-        if (getVersion() < ProtocolVersion::TLSv1_3)
-        {
-            generateKeyMaterial(sideIndex);
-        }
     }
     else if (record->getType() == RecordType::Alert)
     {
@@ -303,6 +298,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
     else
     {
+        /// @todo: does it really need???
         data = record->getCiphertext();
     }
 
@@ -359,8 +355,14 @@ void Session::keySchedule(const std::int8_t sideIndex, Record* record)
     {
         if (record->getType() == RecordType::ChangeCipherSpec)
         {
+            if (!monitor_)
+            {
+                generateMasterSecret();
+                generateKeyMaterial(sideIndex);
+            }
             cipherState_ |= (sideIndex == 0 ? 1 : 2);
         }
+        
     }
     else
     {
@@ -454,6 +456,27 @@ void Session::generateHandshakeTrafficSecrets()
     }
 }
 
+void Session::generateMasterSecret()
+{
+    /// If not setted
+    if (keyInfo_.masterSecret.empty())
+    {
+        ThrowIfTrue(PMS_.empty(), "Premaster secret not setted");
+        keyInfo_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
+
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        {
+            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+            auto transcriptHash = getTranscriptHash(buffer);
+            PRF(PMS_, "extended master secret", transcriptHash, {}, keyInfo_.masterSecret);
+        }
+        else
+        {
+            PRF(PMS_, "master secret", clientRandom_, serverRandom_, keyInfo_.masterSecret);
+        }
+    }
+}
+
 void Session::generateTLSv13MasterSecret()
 {
     if (!keyInfo_.handshakeSecret.empty())
@@ -486,23 +509,6 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
     if (!keyInfo_.isValid(ProtocolVersion::TLSv1_2))
     {
         return;
-    }
-
-    if (keyInfo_.masterSecret.empty())
-    {
-        ThrowIfTrue(PMS_.empty(), "Premaster secret not setted");
-        keyInfo_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
-
-        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
-        {
-            std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-            auto transcriptHash = getTranscriptHash(buffer);
-            PRF(PMS_, "extended master secret", transcriptHash, {}, keyInfo_.masterSecret);
-        }
-        else
-        {
-            PRF(PMS_, "master secret", clientRandom_, serverRandom_, keyInfo_.masterSecret);
-        }
     }
 
     if (debugKeys_)
@@ -882,16 +888,16 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        GroupParams sharedGroup = ChooseKeyExchangeGroup(supportedGroupsByPeer->getEcGroups(), {});
-        casket::ThrowIfTrue(sharedGroup == GroupParams::NONE, "No shared ECC group with client");
+        sharedGroupParams_ = ChooseKeyExchangeGroup(supportedGroupsByPeer->getEcGroups(), {});
+        casket::ThrowIfTrue(sharedGroupParams_ == GroupParams::NONE, "No shared ECC group with client");
 
-        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroup);
+        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);
 
         auto& ecdheParams = keyExchange.params.emplace<EcdheParams>();
         auto encodedKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
 
         ecdheParams.curveType = 3;
-        ecdheParams.curveID = sharedGroup;
+        ecdheParams.curveID = sharedGroupParams_;
         ecdheParams.publicPoint = encodedKey;
 
         auto serializedLength =
@@ -930,6 +936,29 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),
+                               sideIndex, *this);
+}
+
+void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
+{
+    ClientKeyExchange keyExchange;
+    std::vector<uint8_t> publicKey;
+
+    auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
+
+    if (kex == NID_kx_ecdhe)
+    {
+        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);
+        publicKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
+
+        auto& ecdh = keyExchange.params.emplace<ClientEcdhPublic>();
+        ecdh.ecdhPublic = publicKey;
+    }
+
+    
+    PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
+
+    record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
                                sideIndex, *this);
 }
 
@@ -1029,6 +1058,16 @@ void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExt
 
 void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
 {
+    if (std::holds_alternative<EcdheParams>(keyExchange.params))
+    {
+        const auto& ecdhe = std::get<EcdheParams>(keyExchange.params);
+        sharedGroupParams_ = ecdhe.curveID;
+
+        KeyPtr publicKey = GroupParams::generateParams(sharedGroupParams_);
+        AsymmKey::setEncodedPublicKey(publicKey, ecdhe.publicPoint);
+        peerPublicKey_ = std::move(publicKey);
+    }
+
     /// RFC 4492: section-5.4
     if (!keyExchange.signature.empty())
     {
@@ -1070,12 +1109,21 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
 
 void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 {
-    (void)keyExchange;
-
-    if (!serverKey_)
+    if (monitor_ || !keyInfo_.masterSecret.empty())
     {
         return;
     }
+
+    if (std::holds_alternative<ClientEcdhPublic>(keyExchange.params))
+    {
+        const auto& params = std::get<ClientEcdhPublic>(keyExchange.params);
+        KeyPtr publicKey = GroupParams::generateParams(sharedGroupParams_);
+        AsymmKey::setEncodedPublicKey(publicKey, params.ecdhPublic);
+        peerPublicKey_ = std::move(publicKey);
+    }
+
+    PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
+
 
     /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {

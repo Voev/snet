@@ -11,6 +11,7 @@
 
 #include <snet/crypto/secure_array.hpp>
 #include <snet/crypto/signature_scheme.hpp>
+#include <snet/crypto/group_params.hpp>
 
 #include <snet/tls/alert.hpp>
 #include <snet/tls/secret_node_manager.hpp>
@@ -23,6 +24,7 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
+
 
 namespace snet::tls
 {
@@ -143,6 +145,8 @@ public:
     ///
     void generateHandshakeSecret(Key* publicKey, Key* privateKey);
 
+    void generateMasterSecret();
+
     /// @brief Generates the TLS 1.3 master secret from the handshake secret.
     /// @details Derives the master secret using HKDF-Extract and HKDF-Expand
     ///          operations as specified in RFC 8446.
@@ -176,6 +180,16 @@ public:
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.
     const ProtocolVersion& getVersion() const noexcept;
+
+    ProtocolVersion getRecordVersion() const noexcept
+    {
+        auto version = getVersion();
+        if (version == ProtocolVersion::TLSv1_3)
+        {
+            version = ProtocolVersion::TLSv1_2;
+        }
+        return version;
+    }
 
     /// @brief Sets the secrets for the session.
     /// @param secrets The secrets to set.
@@ -227,6 +241,8 @@ public:
 
     void constructServerKeyExchange(const int8_t sideIndex, Record* record);
 
+    void constructClientKeyExchange(const int8_t sideIndex, Record* record);
+
     void constructServerHelloDone(const int8_t sideIndex, Record* record);
 
     void constructFinished(const int8_t sideIndex, Record* record);
@@ -264,7 +280,7 @@ public:
 
     void setPublicPeerKey(crypto::KeyPtr key)
     {
-        publicPeerKey_ = std::move(key);
+        peerPublicKey_ = std::move(key);
     }
 
     void setEphemeralPrivateKey(crypto::KeyPtr key)
@@ -326,8 +342,9 @@ private:
     crypto::X509CertPtr serverCert_;
     crypto::KeyPtr serverKey_;
 
+    crypto::GroupParams sharedGroupParams_;
     crypto::KeyPtr ephemeralPrivateKey_;
-    crypto::KeyPtr publicPeerKey_;
+    crypto::KeyPtr peerPublicKey_;
     MetaInfo metaInfo_;
     std::vector<uint8_t> PMS_;
     SecretNode keyInfo_;
@@ -401,10 +418,10 @@ void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandl
 
         if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
         {
-            if (publicPeerKey_)
+            if (peerPublicKey_)
             {
                 /// We know public key by external way
-                generateHandshakeSecret(publicPeerKey_, ephemeralPrivateKey_);
+                generateHandshakeSecret(peerPublicKey_, ephemeralPrivateKey_);
             }
             else
             {

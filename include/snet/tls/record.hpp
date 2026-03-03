@@ -133,6 +133,8 @@ public:
 
     size_t serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session);
 
+    size_t serializeChangeCipherSpec(const ProtocolVersion& version);
+
     inline HandshakeType getHandshakeType() const
     {
         return handshake_.type;

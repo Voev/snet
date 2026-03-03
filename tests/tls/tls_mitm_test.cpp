@@ -99,6 +99,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
+        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
         mitmServer.processPendingRecords(
@@ -106,6 +107,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                std::cout << "Original Client record:" << std::endl;
+                PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -138,6 +142,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                             mitmClient);
                         break;
                     }
+                    case HandshakeType::ClientKeyExchangeCode:
+                    {
+                        mitmClient.constructClientKeyExchange(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         mitmClient.constructFinished(sideIndex, modifiedRecord);
@@ -151,9 +160,15 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                     mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
+                else if(record->getType() == RecordType::ChangeCipherSpec)
+                {
+                    modifiedRecord->serializeChangeCipherSpec(mitmClient.getRecordVersion());
+                    mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
+                }
             });
 
         clientBufferSize = mitmClient.writeRecords(clientBuffer);
+        snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing,
