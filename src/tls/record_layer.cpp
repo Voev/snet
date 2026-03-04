@@ -101,6 +101,7 @@ void RecordLayer::doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint6
 {
     auto input = record->getPlaintext();
     record->ciphertext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, key, iv, input, true);
+    record->expectedLength_ = record->ciphertext_.size();
     record->isPlaintext_ = false;
 }
 

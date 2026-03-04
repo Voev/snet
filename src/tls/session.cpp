@@ -362,7 +362,6 @@ void Session::keySchedule(const std::int8_t sideIndex, Record* record)
             }
             cipherState_ |= (sideIndex == 0 ? 1 : 2);
         }
-        
     }
     else
     {
@@ -955,7 +954,6 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
         ecdh.ecdhPublic = publicKey;
     }
 
-    
     PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
@@ -970,7 +968,9 @@ void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
 
 void Session::constructFinished(const int8_t sideIndex, Record* record)
 {
-    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    switch (metaInfo_.version.code())
+    {
+    case ProtocolVersion::TLSv1_3:
     {
         Finished finished;
 
@@ -998,6 +998,31 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
                                    *this);
+        break;
+    }
+    case ProtocolVersion::TLSv1_2:
+    case ProtocolVersion::TLSv1_1:
+    case ProtocolVersion::TLSv1_0:
+    {
+        Finished finished;
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        auto transcriptHash = getTranscriptHash(buffer);
+
+        std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
+
+        PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+            actual);
+
+        finished.verifyData = actual;
+
+        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
+                                   *this);
+        break;
+    }
+    case ProtocolVersion::SSLv3_0:
+        /// @todo: do it.
+        break;
     }
 }
 
@@ -1123,7 +1148,6 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
     }
 
     PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
-
 
     /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
     {
