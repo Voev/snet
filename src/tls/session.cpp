@@ -294,7 +294,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 
     if (record->isPlaintext() && record->getType() != RecordType::ChangeCipherSpec)
     {
-        data = record->getPlaintext();
+        data = record->getPlaintextOffset();
     }
     else
     {

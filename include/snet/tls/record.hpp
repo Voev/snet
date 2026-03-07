@@ -95,6 +95,11 @@ public:
         return plaintext_;
     }
 
+    inline nonstd::span<uint8_t> getPlaintextOffset() noexcept
+    {
+        return plaintext_.subspan(dataStartOffset_);
+    }
+
     void reset();
 
     /// @brief Initialize plaintext buffer.

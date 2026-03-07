@@ -21,15 +21,15 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher)
+void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher, bool encrypt)
 {
-    crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, nullptr, nullptr, 0));
+    crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, nullptr, nullptr, static_cast<int>(encrypt)));
 }
 
 void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
-                       nonstd::span<const uint8_t> iv)
+                       nonstd::span<const uint8_t> iv, bool encrypt)
 {
-    crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, key.data(), iv.data(), 0));
+    crypto::ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, key.data(), iv.data(), static_cast<int>(encrypt)));
 }
 
 void RecordLayer::encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
@@ -122,17 +122,17 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1AeadProcess(CipherCtx* cipherCtx, Reco
 
     if (mode == EVP_CIPH_GCM_MODE)
     {
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), nullptr, static_cast<int>(encrypt)));
         crypto::ThrowIfFalse(
             0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_GCM_SET_IV_FIXED, iv.size(), const_cast<uint8_t*>(iv.data())));
-        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), nullptr, static_cast<int>(encrypt)));
     }
     else if (mode == EVP_CIPH_CCM_MODE)
     {
+        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), nullptr, static_cast<int>(encrypt)));
         crypto::ThrowIfFalse(
             0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_CCM_SET_IV_FIXED, iv.size(), const_cast<uint8_t*>(iv.data())));
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_IVLEN, EVP_CCM_TLS_IV_LEN, nullptr));
         crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, nullptr));
-        crypto::ThrowIfFalse(0 < EVP_CipherInit(cipherCtx, nullptr, key.data(), nullptr, static_cast<int>(encrypt)));
     }
     else
     {

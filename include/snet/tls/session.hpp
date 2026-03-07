@@ -321,6 +321,17 @@ public:
         return metaInfo_;
     }
 
+    inline size_t getWriteRecordOffset(const int8_t sideIndex) const
+    {
+        if (canDecrypt(sideIndex) && metaInfo_.version <= ProtocolVersion::TLSv1_2)
+        {
+            auto& ctx = (sideIndex == 0 ? clientCipherCtx_ : serverCipherCtx_);
+            auto cipher = EVP_CIPHER_CTX_cipher(ctx);
+            return crypto::CipherTraits::getExplicitNonceLength(cipher);
+        }
+        return 0;
+    }
+
 private:
     void preprocessRecord(const int8_t sideIndex, Record* record);
 

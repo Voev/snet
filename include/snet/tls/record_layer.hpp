@@ -44,10 +44,10 @@ public:
         aead_ = true;
     }
 
-    static void init(CipherCtx* ctx, const Cipher* cipher);
+    static void init(CipherCtx* ctx, const Cipher* cipher, bool encrypt = false);
 
     static void init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
-                     nonstd::span<const uint8_t> iv);
+                     nonstd::span<const uint8_t> iv, bool encrypt = false);
 
     void encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
                  uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,

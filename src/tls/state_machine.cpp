@@ -158,7 +158,7 @@ Want StateMachine::handshake(const std::uint8_t* bufferIn, const std::size_t buf
     if (ec)
         return Want::Nothing;
 
-    if (bufferOutSize && pendingOutputAfter > 0)
+    if (bufferOutSize)
     {
         if (pendingOutputAfter > *bufferOutSize)
         {

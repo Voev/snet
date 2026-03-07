@@ -19,6 +19,7 @@ enum class ExtensionCode : uint16_t
     EncryptThenMac = 22,              ///< Encrypt-then-MAC extension.
     ExtendedMasterSecret = 23,        ///< Extended Master Secret extension.
     RecordSizeLimit = 28,             ///< Record Size Limit extension.
+    SessionTicket = 35,               ///< Session Ticket (RFC 5077)
     SupportedVersions = 43,           ///< Supported Versions extension.
     CertSignatureAlgorithms = 50,     ///< @todo
     KeyShare = 51,                    ///< Key share extension.

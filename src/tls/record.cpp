@@ -98,7 +98,10 @@ inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session&
 size_t Record::serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session)
 {
     handshake_ = std::move(handshake);
-    expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
+    auto buffer = nonstd::span(plaintextBuffer_);
+    dataStartOffset_ = session.getWriteRecordOffset(sideIndex);
+    expectedLength_ = handshake_.serialize(buffer.subspan(dataStartOffset_), session);
+    expectedLength_ += dataStartOffset_;
     version_ = GetRecordVersion(handshake_.getType(), session);
     type_ = RecordType::Handshake;
     plaintext_ = {plaintextBuffer_.data(), expectedLength_};
