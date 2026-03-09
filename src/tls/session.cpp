@@ -290,62 +290,56 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
 
 void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
 {
+    if (record->getType() != RecordType::Handshake)
+    {
+        return;
+    }
+
     nonstd::span<const uint8_t> data;
 
-    if (record->isPlaintext() && record->getType() != RecordType::ChangeCipherSpec)
+    if (record->isPlaintext())
     {
         data = record->getPlaintextOffset();
     }
     else
     {
-        /// @todo: does it really need???
         data = record->getCiphertext();
     }
 
-    if (record->getType() == RecordType::Handshake)
+    switch (record->getHandshakeType())
     {
-        switch (record->getHandshakeType())
-        {
-        case HandshakeType::ClientHelloCode:
-        case HandshakeType::ServerHelloCode:
-        case HandshakeType::EncryptedExtensionsCode:
-        case HandshakeType::ServerHelloDoneCode:
-        case HandshakeType::ServerKeyExchangeCode:
-        case HandshakeType::ClientKeyExchangeCode:
-        case HandshakeType::CertificateCode:
-        case HandshakeType::CertificateRequestCode:
-        case HandshakeType::CertificateVerifyCode:
+    case HandshakeType::ClientHelloCode:
+    case HandshakeType::ServerHelloCode:
+    case HandshakeType::EncryptedExtensionsCode:
+    case HandshakeType::ServerHelloDoneCode:
+    case HandshakeType::ServerKeyExchangeCode:
+    case HandshakeType::ClientKeyExchangeCode:
+    case HandshakeType::CertificateCode:
+    case HandshakeType::CertificateRequestCode:
+    case HandshakeType::CertificateVerifyCode:
+    {
+        std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
+        break;
+    }
+    case HandshakeType::FinishedCode:
+    {
+        if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
         {
             std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
-            break;
         }
-        case HandshakeType::FinishedCode:
+        break;
+    }
+    case HandshakeType::NewSessionTicketCode:
+    {
+        if (metaInfo_.version < ProtocolVersion::TLSv1_3)
         {
-            if (metaInfo_.version == ProtocolVersion::TLSv1_3 || sideIndex == 0)
-            {
-                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
-            }
-            break;
+            // RFC 5077: 3.3 (must be included in transcript hash)
+            std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
         }
-        case HandshakeType::NewSessionTicketCode:
-        {
-            if (metaInfo_.version < ProtocolVersion::TLSv1_3)
-            {
-                // RFC 5077: 3.3 (must be included in transcript hash)
-                std::copy(data.begin(), data.end(), std::back_inserter(handshakeBuffer_));
-            }
-            break;
-        }
-        case HandshakeType::KeyUpdateCode:
-        case HandshakeType::HelloRequestCode:
-        case HandshakeType::HelloVerifyRequestCode:
-        case HandshakeType::EndOfEarlyDataCode:
-        case HandshakeType::HelloRetryRequestCode:
-        case HandshakeType::HandshakeCCSCode:
-        default:
-            /* Not implemented */
-            break;
-        }
+        break;
+    }
+    default:
+        break;
     }
 }
 
