@@ -9,6 +9,13 @@
 namespace snet::tls
 {
 
+/// @brief Parse a list of items from a byte buffer.
+///
+/// @tparam T Type of items to parse (must be constructible from uint16_t).
+/// @param[in] input Byte span containing the encoded list.
+/// @param[in] name Name of the list for error reporting.
+///
+/// @return Vector of parsed items.
 template <class T>
 inline std::vector<T> ParseListItems(nonstd::span<const uint8_t> input, const char* name)
 {
@@ -28,28 +35,36 @@ inline std::vector<T> ParseListItems(nonstd::span<const uint8_t> input, const ch
     return schemes;
 }
 
-/**
- * Supported Groups Extension (RFC 7919)
- */
+/// @brief Supported Groups Extension (RFC 7919).
 class SupportedGroups final : public Extension
 {
 public:
+    /// @brief Get the static extension code for Supported Groups.
+    ///
+    /// @return The extension code value for Supported Groups.
     static ExtensionCode staticType()
     {
         return ExtensionCode::SupportedGroups;
     }
 
+    /// @brief Get the extension type code.
+    ///
+    /// @return The extension type code for this instance.
     ExtensionCode type() const override
     {
         return staticType();
     }
 
+    /// @brief Get all supported groups.
+    ///
+    /// @return Reference to the list of all groups.
     const std::vector<crypto::GroupParams>& groups() const
     {
         return groups_;
     }
 
-    // Returns the list of groups we recognize as ECDH curves
+    /// @brief Get the list of groups that are ECDH curves
+    /// @return Vector containing only ECDH groups
     std::vector<crypto::GroupParams> getEcGroups() const
     {
         std::vector<crypto::GroupParams> ec;
@@ -63,7 +78,9 @@ public:
         return ec;
     }
 
-    // Returns the list of any groups in the FFDHE range
+    /// @brief Get the list of groups in the FFDHE range (finite field groups).
+    ///
+    /// @return Vector containing only FFDHE groups.
     std::vector<crypto::GroupParams> getDhGroups() const
     {
         std::vector<crypto::GroupParams> dh;
@@ -77,6 +94,12 @@ public:
         return dh;
     }
 
+    /// @brief Serialize the extension to a byte buffer.
+    ///
+    /// @param[in] side The side of the connection (client/server).
+    /// @param[in] output Buffer to write the serialized data to.
+    ///
+    /// @return size_t Number of bytes written to output buffer.
     size_t serialize(Side side, nonstd::span<uint8_t> output) const override
     {
         (void)side;
@@ -97,22 +120,34 @@ public:
         return i;
     }
 
+    /// @brief Construct a Supported Groups extension from a list of groups.
+    ///
+    /// @param[in] groups Vector of group parameters to include in the extension.
+    ///
     explicit SupportedGroups(std::vector<crypto::GroupParams> groups)
         : groups_(std::move(groups))
     {
     }
 
+    /// @brief Construct a Supported Groups extension from raw data.
+    ///
+    /// @param[in] side The side of the connection (client/server).
+    /// @param[in] input Raw bytes containing the supported groups data.
+    ///
     SupportedGroups(Side, nonstd::span<const uint8_t> input)
         : groups_(ParseListItems<crypto::GroupParams>(input, "SupportedGroups"))
-    {}
+    {
+    }
 
+    /// @brief Check if the extension is empty
+    /// @return bool True if no groups are supported, false otherwise
     bool empty() const override
     {
         return groups_.empty();
     }
 
 private:
-    std::vector<crypto::GroupParams> groups_;
+    std::vector<crypto::GroupParams> groups_; ///< List of supported cryptographic groups
 };
 
 } // namespace snet::tls
