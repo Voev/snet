@@ -74,7 +74,7 @@ public:
 
                 postprocessRecord(sideIndex, record);
 
-                keySchedule(sideIndex, record);
+                keySchedule(sideIndex, false, record);
             }
             catch (const std::exception& e)
             {
@@ -101,7 +101,7 @@ public:
                 encrypt(sideIndex, record);
             }
 
-            keySchedule(sideIndex, record);
+            keySchedule(sideIndex, true, record);
 
             return outgoingRecords_.push(record);
         }
@@ -164,12 +164,17 @@ public:
     void generateApplicationTrafficSecrets();
 
     /// @brief Generates key material for the session.
-    /// @param sideIndex The index indicating the side (client or server).
-    void generateKeyMaterial(const int8_t sideIndex);
+    ///
+    /// @param[in] sideIndex The index indicating the side (client or server).
+    /// @param[in] encrypt 
+    ///
+    void generateKeyMaterial(const int8_t sideIndex, bool encrypt);
 
     /// @brief Generates the handshake keys and initialization vectors.
     ///
-    void generateHandshakeKeyAndIv();
+    /// @param[in] encrypt 
+    ///
+    void generateHandshakeKeyAndIv(bool encrypt);
 
     /// @brief Generates the application data keys and initialization vectors.
     ///
@@ -278,6 +283,11 @@ public:
         return serverEncExtensions_;
     }
 
+    inline void setVersion(const ProtocolVersion& version) noexcept
+    {
+        metaInfo_.version = version;
+    }
+
     void setPublicPeerKey(crypto::KeyPtr key)
     {
         peerPublicKey_ = std::move(key);
@@ -302,7 +312,7 @@ public:
 
     void postprocessRecord(const int8_t sideIndex, Record* record);
 
-    void keySchedule(const int8_t sideIndex, Record* record);
+    void keySchedule(const int8_t sideIndex, bool encrypt, Record* record);
 
     void setCertificate(const int8_t sideIndex, crypto::X509CertPtr cert)
     {

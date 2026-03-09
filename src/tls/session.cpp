@@ -349,7 +349,7 @@ void Session::postprocessRecord(const std::int8_t sideIndex, Record* record)
     }
 }
 
-void Session::keySchedule(const std::int8_t sideIndex, Record* record)
+void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* record)
 {
     if (getVersion() < ProtocolVersion::TLSv1_3)
     {
@@ -358,7 +358,7 @@ void Session::keySchedule(const std::int8_t sideIndex, Record* record)
             if (!monitor_)
             {
                 generateMasterSecret();
-                generateKeyMaterial(sideIndex);
+                generateKeyMaterial(sideIndex, encrypt);
             }
             cipherState_ |= (sideIndex == 0 ? 1 : 2);
         }
@@ -372,7 +372,7 @@ void Session::keySchedule(const std::int8_t sideIndex, Record* record)
                 if (!monitor_)
                 {
                     generateHandshakeTrafficSecrets();
-                    generateHandshakeKeyAndIv();
+                    generateHandshakeKeyAndIv(encrypt);
                 }
             }
             else if (record->getHandshakeType() == HandshakeType::FinishedCode)
@@ -503,7 +503,7 @@ void Session::generateApplicationTrafficSecrets()
     }
 }
 
-void Session::generateKeyMaterial(const int8_t sideIndex)
+void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 {
     if (!keyInfo_.isValid(ProtocolVersion::TLSv1_2))
     {
@@ -552,12 +552,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            RecordLayer::init(clientCipherCtx_, cipherAlg_);
+            recordLayer_.doTLSv1AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
             canDecrypt_ |= 1;
         }
         else
         {
-            RecordLayer::init(serverCipherCtx_, cipherAlg_);
+            recordLayer_.doTLSv1AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
             canDecrypt_ |= 2;
         }
     }
@@ -595,18 +595,18 @@ void Session::generateKeyMaterial(const int8_t sideIndex)
 
         if (sideIndex == 0)
         {
-            RecordLayer::init(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV);
+            RecordLayer::init(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
             canDecrypt_ |= 1;
         }
         else
         {
-            RecordLayer::init(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV);
+            RecordLayer::init(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
             canDecrypt_ |= 2;
         }
     }
 }
 
-void Session::generateHandshakeKeyAndIv()
+void Session::generateHandshakeKeyAndIv(bool encrypt)
 {
     assert(!keyInfo_.clientHndTrafficSecret.empty());
     assert(!keyInfo_.serverHndTrafficSecret.empty());
@@ -627,8 +627,8 @@ void Session::generateHandshakeKeyAndIv()
         utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client Handshake IV"));
     }
 
-    RecordLayer::init(clientCipherCtx_, cipherAlg_);
-    RecordLayer::init(serverCipherCtx_, cipherAlg_);
+    RecordLayer::init(clientCipherCtx_, cipherAlg_, encrypt);
+    RecordLayer::init(serverCipherCtx_, cipherAlg_, encrypt);
 
     canDecrypt_ |= 3;
 }
