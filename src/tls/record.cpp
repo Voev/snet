@@ -90,11 +90,7 @@ inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session&
     }
     else
     {
-        version = session.getVersion();
-        if (version == ProtocolVersion::TLSv1_3)
-        {
-            version = ProtocolVersion::TLSv1_2;
-        }
+        version = session.getRecordVersion();
     }
     return version;
 }
@@ -102,12 +98,27 @@ inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session&
 size_t Record::serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session)
 {
     handshake_ = std::move(handshake);
-    expectedLength_ = handshake_.serialize(plaintextBuffer_, session);
+    auto buffer = nonstd::span(plaintextBuffer_);
+    dataStartOffset_ = session.getWriteRecordOffset(sideIndex);
+    expectedLength_ = handshake_.serialize(buffer.subspan(dataStartOffset_), session);
+    expectedLength_ += dataStartOffset_;
     version_ = GetRecordVersion(handshake_.getType(), session);
     type_ = RecordType::Handshake;
     plaintext_ = {plaintextBuffer_.data(), expectedLength_};
     isPlaintext_ = true;
     mustBeEncrypted_ = session.canDecrypt(sideIndex);
+    return expectedLength_;
+}
+
+size_t Record::serializeChangeCipherSpec(const ProtocolVersion& version)
+{
+    plaintextBuffer_[0] = 0x01;
+    expectedLength_ = 1;
+    version_ = version;
+    type_ = RecordType::ChangeCipherSpec;
+    plaintext_ = {plaintextBuffer_.data(), expectedLength_};
+    isPlaintext_ = true;
+    mustBeEncrypted_ = false;
     return expectedLength_;
 }
 

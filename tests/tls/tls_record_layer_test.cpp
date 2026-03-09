@@ -77,7 +77,6 @@ TEST_P(TLSv13AeadRecordLayerTest, EncryptDecrypt)
     CipherCtxPtr ctx;
 
     ASSERT_NO_THROW(ctx = CipherTraits::createContext());
-    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
     RecordLayer recordLayer;
 
@@ -88,8 +87,11 @@ TEST_P(TLSv13AeadRecordLayerTest, EncryptDecrypt)
     Record record(RecordType::ApplicationData);
     record.initPlaintext(plaintext);
 
-    ASSERT_NO_THROW(recordLayer.doTLSv13Encrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, nonce));
-    ASSERT_NO_THROW(recordLayer.doTLSv13Decrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, nonce));
+    ASSERT_NO_THROW(recordLayer.doTLSv13AeadInit(ctx, cipherAlg, key, true));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Encrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), nonce));
+
+    ASSERT_NO_THROW(recordLayer.doTLSv13AeadInit(ctx, cipherAlg, key, false));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Decrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), nonce));
 
     auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
@@ -137,7 +139,6 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 
     CipherCtxPtr ctx;
     ASSERT_NO_THROW(ctx = CipherTraits::createContext());
-    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
     RecordLayer recordLayer;
 
@@ -151,8 +152,11 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 
     record.initPlaintext(plaintext);
 
-    ASSERT_NO_THROW(recordLayer.doTLSv1AeadEncrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, iv));
-    ASSERT_NO_THROW(recordLayer.doTLSv1AeadDecrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, iv));
+    ASSERT_NO_THROW(recordLayer.doTLSv1AeadInit(ctx, cipherAlg, key, iv, true));
+    ASSERT_NO_THROW(recordLayer.doTLSv1AeadEncrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param)));
+
+    ASSERT_NO_THROW(recordLayer.doTLSv1AeadInit(ctx, cipherAlg, key, iv, false));
+    ASSERT_NO_THROW(recordLayer.doTLSv1AeadDecrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param)));
 
     auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));

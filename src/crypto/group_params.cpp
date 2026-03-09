@@ -59,10 +59,10 @@ static std::unordered_map<GroupParams::Code, GroupParamInfo> gGroupParams{
 const std::vector<GroupParams>& GroupParams::getSupported()
 {
     static std::vector<GroupParams> gSupportedGroups = {
+        GroupParams(GroupParams::X25519),         GroupParams(GroupParams::X448),
         GroupParams(GroupParams::SECP256R1),      GroupParams(GroupParams::SECP384R1),
         GroupParams(GroupParams::SECP521R1),      GroupParams(GroupParams::BRAINPOOL256R1),
         GroupParams(GroupParams::BRAINPOOL384R1), GroupParams(GroupParams::BRAINPOOL512R1),
-        //GroupParams(GroupParams::X25519),         GroupParams(GroupParams::X448),
     };
     return gSupportedGroups;
 }

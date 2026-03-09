@@ -45,7 +45,6 @@ public:
 
         ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, true));
         ASSERT_NO_THROW(mitmCert_ = certForger_->resign(mitmKey_, serverCert_));
-
     }
 
     void TearDown() override
@@ -99,6 +98,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
+        //snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
         mitmServer.processPendingRecords(
@@ -118,6 +118,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmClient.processClientHello(clientHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {
+                                                          extensions.removeExtension(ExtensionCode::SessionTicket);
+
                                                           if (extensions.has(ExtensionCode::KeyShare))
                                                           {
                                                               auto keyShare = extensions.take<KeyShare>();
@@ -138,6 +140,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                             mitmClient);
                         break;
                     }
+                    case HandshakeType::ClientKeyExchangeCode:
+                    {
+                        mitmClient.constructClientKeyExchange(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         mitmClient.constructFinished(sideIndex, modifiedRecord);
@@ -151,14 +158,22 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                     mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
+                else if (record->getType() == RecordType::ChangeCipherSpec)
+                {
+                    modifiedRecord->serializeChangeCipherSpec(mitmClient.getRecordVersion());
+                    mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
+                }
             });
 
         clientBufferSize = mitmClient.writeRecords(clientBuffer);
+        //snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing,
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
+
+        //snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (before)", true);
 
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
@@ -223,6 +238,16 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
                         break;
                     }
+                    case HandshakeType::ServerKeyExchangeCode:
+                    {
+                        mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
+                        break;
+                    }
+                    case HandshakeType::ServerHelloDoneCode:
+                    {
+                        mitmServer.constructServerHelloDone(sideIndex, modifiedRecord);
+                        break;
+                    }
                     case HandshakeType::FinishedCode:
                     {
                         mitmServer.constructFinished(sideIndex, modifiedRecord);
@@ -242,6 +267,11 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                     mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
+                else if (record->getType() == RecordType::ChangeCipherSpec)
+                {
+                    modifiedRecord->serializeChangeCipherSpec(mitmServer.getRecordVersion());
+                    mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                }
                 else if (record->getType() == RecordType::ApplicationData)
                 {
                     /// write decrypted data...
@@ -249,10 +279,13 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         serverBufferSize = mitmServer.writeRecords(serverBuffer);
+        //snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (after)", true);
 
     } while (!client.afterHandshake());
 
     ASSERT_TRUE(server.afterHandshake());
 }
 
-INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest, testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
+INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest,
+                         testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_2},
+                                         TLSMitmTestParam{ProtocolVersion::TLSv1_3}));

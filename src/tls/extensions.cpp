@@ -15,9 +15,8 @@ std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, Exte
     case ExtensionCode::ServerNameIndication:
         return std::make_unique<ServerNameIndicator>(side, input);
 
-    /// @todo: support this.
-    /// case ExtensionCode::SupportedGroups:
-    ///    return std::make_unique<SupportedGroups>(side, input);
+    case ExtensionCode::SupportedGroups:
+        return std::make_unique<SupportedGroups>(side, input);
 
     /// @todo: support this.
     /// case ExtensionCode::ECPointFormats:
@@ -43,6 +42,9 @@ std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, Exte
 
     case ExtensionCode::RecordSizeLimit:
         return std::make_unique<RecordSizeLimit>(side, input);
+
+    case ExtensionCode::SessionTicket:
+        return std::make_unique<SessionTicketExtension>(side, input);
 
     case ExtensionCode::SupportedVersions:
         return std::make_unique<SupportedVersions>(side, input);

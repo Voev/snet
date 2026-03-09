@@ -48,7 +48,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         message = Finished::deserialize(payload);
         break;
     case HandshakeType::ServerHelloDoneCode:
-        // Nothing to do.
+        message = ServerHelloDone::deserialize(payload);
         break;
     case HandshakeType::KeyUpdateCode:
         // Nothing to do.

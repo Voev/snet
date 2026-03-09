@@ -25,6 +25,8 @@
 #include <snet/tls/exts/key_share.hpp>
 #include <snet/tls/exts/unknown_extension.hpp>
 #include <snet/tls/exts/signature_algorithms.hpp>
+#include <snet/tls/exts/supported_groups.hpp>
+#include <snet/tls/exts/session_ticket_ext.hpp>
 
 namespace snet::tls {
 

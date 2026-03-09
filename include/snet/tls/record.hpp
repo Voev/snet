@@ -95,6 +95,11 @@ public:
         return plaintext_;
     }
 
+    inline nonstd::span<uint8_t> getPlaintextOffset() noexcept
+    {
+        return plaintext_.subspan(dataStartOffset_);
+    }
+
     void reset();
 
     /// @brief Initialize plaintext buffer.
@@ -132,6 +137,8 @@ public:
     void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
     size_t serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session);
+
+    size_t serializeChangeCipherSpec(const ProtocolVersion& version);
 
     inline HandshakeType getHandshakeType() const
     {
