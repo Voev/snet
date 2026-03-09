@@ -179,8 +179,9 @@ public:
     /// @brief Generates the application data keys and initialization vectors.
     ///
     /// @param[in] sideIndex Indicates which side's keys to generate (0 for client, 1 for server).
+    /// @param[in] encrypt 
     ///
-    void generateApplicationKeyAndIv(const int8_t sideIndex);
+    void generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt);
 
     /// @brief Gets the protocol version of the session.
     /// @return The protocol version.

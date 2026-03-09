@@ -87,11 +87,11 @@ TEST_P(TLSv13AeadRecordLayerTest, EncryptDecrypt)
     Record record(RecordType::ApplicationData);
     record.initPlaintext(plaintext);
 
-    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg, true));
-    ASSERT_NO_THROW(recordLayer.doTLSv13Encrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, nonce));
+    ASSERT_NO_THROW(recordLayer.doTLSv13AeadInit(ctx, cipherAlg, key, true));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Encrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), nonce));
 
-    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg, false));
-    ASSERT_NO_THROW(recordLayer.doTLSv13Decrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), key, nonce));
+    ASSERT_NO_THROW(recordLayer.doTLSv13AeadInit(ctx, cipherAlg, key, false));
+    ASSERT_NO_THROW(recordLayer.doTLSv13Decrypt(ctx, &record, ::get<RecordLayerFields::Seqnum>(param), nonce));
 
     auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));

@@ -44,18 +44,14 @@ public:
         aead_ = true;
     }
 
-    static void init(CipherCtx* ctx, const Cipher* cipher, bool encrypt);
-
     static void init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
                      nonstd::span<const uint8_t> iv, bool encrypt);
 
     void encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
-                 uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                 nonstd::span<const uint8_t> iv);
+                 uint64_t seq, nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv);
 
     void decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
-                 uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                 nonstd::span<const uint8_t> iv);
+                 uint64_t seq, nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv);
 
     ///
     /// @param[in] key Encryption/decryption key.
@@ -81,18 +77,18 @@ public:
     void doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq);
 
     void doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
-                        uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                        nonstd::span<const uint8_t> iv);
+                        uint64_t seq, nonstd::span<const uint8_t> macKey);
 
     void doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash, Record* record,
-                        uint64_t seq, nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> macKey,
-                        nonstd::span<const uint8_t> iv);
+                        uint64_t seq, nonstd::span<const uint8_t> macKey);
 
-    void doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
-                         nonstd::span<const uint8_t> iv);
+    void doTLSv13AeadInit(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key, bool encrypt);
 
-    void doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> key,
-                         nonstd::span<const uint8_t> iv);
+    void doTLSv13KeyUpdate(CipherCtx* ctx, nonstd::span<const uint8_t> key);
+
+    void doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> iv);
+
+    void doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> iv);
 
     /// @brief Prepare record for encryption.
     ///
@@ -120,9 +116,8 @@ private:
                       nonstd::span<const uint8_t> mac);
 
     nonstd::span<uint8_t> doTLSv1Process(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
-                                         RecordType rt, uint64_t seq, nonstd::span<const uint8_t> key,
-                                         nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
-                                         nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
+                                         RecordType rt, uint64_t seq, nonstd::span<const uint8_t> macKey,
+                                         nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out);
 
     /// @brief Process TLS 1.2 AEAD data.
     ///
@@ -137,8 +132,8 @@ private:
                                              nonstd::span<uint8_t> in, bool encrypt);
 
     nonstd::span<std::uint8_t> doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
-                                               nonstd::span<const uint8_t> key, nonstd::span<const uint8_t> iv,
-                                               nonstd::span<const uint8_t> in, nonstd::span<uint8_t> out, bool encrypt);
+                                               nonstd::span<const uint8_t> iv, nonstd::span<const uint8_t> in,
+                                               nonstd::span<uint8_t> out, bool encrypt);
 
 private:
     ProtocolVersion version_;

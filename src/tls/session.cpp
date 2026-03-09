@@ -381,7 +381,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
                 {
                     generateTLSv13MasterSecret();
                     generateApplicationTrafficSecrets();
-                    generateApplicationKeyAndIv(sideIndex);
+                    generateApplicationKeyAndIv(sideIndex, encrypt);
                 }
 
                 /// @todo: pay attention to the HelloRetryRequest
@@ -396,13 +396,13 @@ void Session::encrypt(const int8_t sideIndex, Record* record)
     if (sideIndex == 0)
     {
         recordLayer_.encrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
-                             keyInfo_.clientEncKey, keyInfo_.clientMacKey, keyInfo_.clientIV);
+                             keyInfo_.clientMacKey, keyInfo_.clientIV);
         seqnum_.acceptClientSequence();
     }
     else
     {
         recordLayer_.encrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
-                             keyInfo_.serverEncKey, keyInfo_.serverMacKey, keyInfo_.serverIV);
+                             keyInfo_.serverMacKey, keyInfo_.serverIV);
         seqnum_.acceptServerSequence();
     }
 }
@@ -412,13 +412,13 @@ void Session::decrypt(const int8_t sideIndex, Record* record)
     if (sideIndex == 0)
     {
         recordLayer_.decrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
-                             keyInfo_.clientEncKey, keyInfo_.clientMacKey, keyInfo_.clientIV);
+                             keyInfo_.clientMacKey, keyInfo_.clientIV);
         seqnum_.acceptClientSequence();
     }
     else
     {
         recordLayer_.decrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
-                             keyInfo_.serverEncKey, keyInfo_.serverMacKey, keyInfo_.serverIV);
+                             keyInfo_.serverMacKey, keyInfo_.serverIV);
         seqnum_.acceptServerSequence();
     }
 }
@@ -552,12 +552,14 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         if (sideIndex == 0)
         {
-            recordLayer_.doTLSv1AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
+            recordLayer_.doTLSv1AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV,
+                                         encrypt);
             canDecrypt_ |= 1;
         }
         else
         {
-            recordLayer_.doTLSv1AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
+            recordLayer_.doTLSv1AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV,
+                                         encrypt);
             canDecrypt_ |= 2;
         }
     }
@@ -627,13 +629,13 @@ void Session::generateHandshakeKeyAndIv(bool encrypt)
         utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client Handshake IV"));
     }
 
-    RecordLayer::init(clientCipherCtx_, cipherAlg_, encrypt);
-    RecordLayer::init(serverCipherCtx_, cipherAlg_, encrypt);
+    recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
+    recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
     canDecrypt_ |= 3;
 }
 
-void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
+void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
 {
     if (sideIndex == 0)
     {
@@ -644,6 +646,8 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
         crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
 
         seqnum_.resetClientSequence();
+
+        recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
 
         if (debugKeys_)
         {
@@ -660,6 +664,8 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex)
         crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
 
         seqnum_.resetServerSequence();
+
+        recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
         if (debugKeys_)
         {
@@ -1259,6 +1265,8 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
 
         seqnum_.resetClientSequence();
+
+        recordLayer_.doTLSv13KeyUpdate(clientCipherCtx_, keyInfo_.clientEncKey);
     }
     else
     {
@@ -1268,6 +1276,8 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const u
         crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
 
         seqnum_.resetServerSequence();
+
+        recordLayer_.doTLSv13KeyUpdate(serverCipherCtx_, keyInfo_.serverEncKey);
     }
 }
 
