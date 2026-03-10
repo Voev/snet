@@ -966,66 +966,6 @@ void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
                                *this);
 }
 
-void Session::constructFinished(const int8_t sideIndex, Record* record)
-{
-    switch (metaInfo_.version.code())
-    {
-    case ProtocolVersion::TLSv1_3:
-    {
-        Finished finished;
-
-        const auto& secret = (sideIndex == 0 ? keyInfo_.clientHndTrafficSecret : keyInfo_.serverHndTrafficSecret);
-        const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-        const auto digestName = HashTraits::getName(digest);
-
-        crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> finishedKey;
-        size_t keySize = HashTraits::getSize(digest);
-
-        crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
-
-        crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
-        ThrowIfFalse(hmacKey);
-
-        std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
-        auto transcriptHash = getTranscriptHash(hashBuffer);
-
-        std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
-        Signature::signInit(hashCtx_, digest, hmacKey);
-        Signature::signUpdate(hashCtx_, transcriptHash);
-        auto actual = Signature::signFinal(hashCtx_, sigBuffer);
-
-        finished.verifyData = actual;
-
-        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
-                                   *this);
-        break;
-    }
-    case ProtocolVersion::TLSv1_2:
-    case ProtocolVersion::TLSv1_1:
-    case ProtocolVersion::TLSv1_0:
-    {
-        Finished finished;
-
-        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        auto transcriptHash = getTranscriptHash(buffer);
-
-        std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
-
-        PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
-            actual);
-
-        finished.verifyData = actual;
-
-        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
-                                   *this);
-        break;
-    }
-    case ProtocolVersion::SSLv3_0:
-        /// @todo: do it.
-        break;
-    }
-}
-
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
 {
     KeyPtr publicKey{nullptr};
@@ -1176,6 +1116,27 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
     }*/
 }
 
+nonstd::span<uint8_t> ComputeTLSv13FinishedMac(nonstd::span<const uint8_t> secret,
+                                               nonstd::span<const uint8_t> transcriptHash,
+                                               nonstd::span<uint8_t> sigBuffer, HashCtx* hashCtx,
+                                               const MetaInfo& metaInfo)
+{
+    const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo.cipherSuite);
+    const auto digestName = HashTraits::getName(digest);
+
+    crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> finishedKey;
+    size_t keySize = HashTraits::getSize(digest);
+
+    crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
+
+    crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
+    ThrowIfFalse(hmacKey);
+
+    Signature::signInit(hashCtx, digest, hmacKey);
+    Signature::signUpdate(hashCtx, transcriptHash);
+    return Signature::signFinal(hashCtx, sigBuffer);
+}
+
 void Session::processFinished(const std::int8_t sideIndex, const Finished& finished)
 {
     /// Check Finished data
@@ -1184,27 +1145,14 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     {
     case ProtocolVersion::TLSv1_3:
     {
-        const auto& secret = (sideIndex == 0 ? keyInfo_.clientHndTrafficSecret : keyInfo_.serverHndTrafficSecret);
-        if (!secret.empty())
+        if (!keyInfo_.clientHndTrafficSecret.empty() || !keyInfo_.serverHndTrafficSecret.empty())
         {
-            const auto& digest = CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite);
-            const auto digestName = HashTraits::getName(digest);
-
-            crypto::SecureArray<uint8_t, TLS_MAX_MAC_LENGTH> finishedKey;
-            size_t keySize = HashTraits::getSize(digest);
-
-            crypto::DeriveFinishedKey(digestName, secret, {finishedKey.data(), keySize});
-
-            crypto::KeyPtr hmacKey(EVP_PKEY_new_raw_private_key(EVP_PKEY_HMAC, nullptr, finishedKey.data(), keySize));
-            ThrowIfFalse(hmacKey);
-
             std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
             auto transcriptHash = getTranscriptHash(hashBuffer);
 
             std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
-            Signature::signInit(hashCtx_, digest, hmacKey);
-            Signature::signUpdate(hashCtx_, transcriptHash);
-            auto actual = Signature::signFinal(hashCtx_, sigBuffer);
+            const auto& secret = (sideIndex == 0 ? keyInfo_.clientHndTrafficSecret : keyInfo_.serverHndTrafficSecret);
+            auto actual = ComputeTLSv13FinishedMac(secret, transcriptHash, sigBuffer, hashCtx_, metaInfo_);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
@@ -1230,6 +1178,52 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
                                      std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
                                  "Bad Finished MAC");
         }
+        break;
+    }
+    case ProtocolVersion::SSLv3_0:
+        /// @todo: do it.
+        break;
+    }
+}
+
+void Session::constructFinished(const int8_t sideIndex, Record* record)
+{
+    switch (metaInfo_.version.code())
+    {
+    case ProtocolVersion::TLSv1_3:
+    {
+        Finished finished;
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> hashBuffer;
+        auto transcriptHash = getTranscriptHash(hashBuffer);
+
+        std::array<uint8_t, TLS_MAX_MAC_LENGTH> sigBuffer;
+        const auto& secret = (sideIndex == 0 ? keyInfo_.clientHndTrafficSecret : keyInfo_.serverHndTrafficSecret);
+
+        finished.verifyData = ComputeTLSv13FinishedMac(secret, transcriptHash, sigBuffer, hashCtx_, metaInfo_);
+
+        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
+                                   *this);
+        break;
+    }
+    case ProtocolVersion::TLSv1_2:
+    case ProtocolVersion::TLSv1_1:
+    case ProtocolVersion::TLSv1_0:
+    {
+        Finished finished;
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        auto transcriptHash = getTranscriptHash(buffer);
+
+        std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
+
+        PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+            actual);
+
+        finished.verifyData = actual;
+
+        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
+                                   *this);
         break;
     }
     case ProtocolVersion::SSLv3_0:
