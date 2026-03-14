@@ -15,9 +15,20 @@ using namespace snet::tls;
 
 static constexpr std::size_t kDefaultBufferSize{4096};
 
+struct TLSMitmClientSideParam
+{
+};
+
+struct TLSMitmServerSideParam
+{
+    bool useRsaPss;
+};
+
 struct TLSMitmTestParam
 {
     ProtocolVersion version;
+    TLSMitmClientSideParam client;
+    TLSMitmServerSideParam server;
 };
 
 class TLSMitmTest : public testing::TestWithParam<TLSMitmTestParam>
@@ -35,7 +46,7 @@ public:
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
 
-        ASSERT_NO_THROW(serverKey_ = RsaAsymmKey::generate(2048));
+        ASSERT_NO_THROW(serverKey_ = RsaAsymmKey::generate(2048, GetParam().server.useRsaPss));
         ASSERT_NO_THROW(serverCert_ = ca_.sign("CN=Test Server", serverKey_));
 
         ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert_));
@@ -43,7 +54,7 @@ public:
 
         certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
 
-        ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, true));
+        ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, GetParam().server.useRsaPss));
         ASSERT_NO_THROW(mitmCert_ = certForger_->resign(mitmKey_, serverCert_));
     }
 
@@ -74,6 +85,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     std::vector<uint8_t> serverBuffer(serverBufferSize);
     std::vector<uint8_t> mitmBuffer(mitmBufferSize);
 
+    clientSettings_.setCipherList("AES128-GCM-SHA256");
     StateMachine client(clientSettings_);
     StateMachine server(serverSettings_);
 
@@ -106,6 +118,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                //PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -181,6 +195,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                //PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -287,5 +303,5 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 }
 
 INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest,
-                         testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_2},
-                                         TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
+                         testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_2, {}, {false}},
+                                         TLSMitmTestParam{ProtocolVersion::TLSv1_3, {}, {true}}));
