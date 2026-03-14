@@ -142,5 +142,6 @@ enum class SecurityLevel : int
 DEFINE_CUSTOM_UNIQUE_PTR(SslPtr, SSL, SSL_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslCtxPtr, SSL_CTX, SSL_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(SslSessionPtr, SSL_SESSION, SSL_SESSION_free);
+DEFINE_CUSTOM_UNIQUE_PTR(SslConfigPtr, SSL_CONF_CTX, SSL_CONF_CTX_free);
 
 } // namespace snet::tls

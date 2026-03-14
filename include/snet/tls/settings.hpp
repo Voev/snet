@@ -10,10 +10,14 @@
 namespace snet::tls
 {
 
+class ConfigBuilder;
+
 /// @brief Class for managing TLS settings.
 class Settings : public casket::NonCopyable
 {
 public:
+    friend class ConfigBuilder;
+
     /// @brief Constructor with side.
     /// @param side The side (client or server).
     explicit Settings(Side side);
