@@ -938,28 +938,6 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
                                sideIndex, *this);
 }
 
-void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
-{
-    ClientKeyExchange keyExchange;
-    std::vector<uint8_t> publicKey;
-
-    auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
-
-    if (kex == NID_kx_ecdhe)
-    {
-        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);
-        publicKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
-
-        auto& ecdh = keyExchange.params.emplace<ClientEcdhPublic>();
-        ecdh.ecdhPublic = publicKey;
-    }
-
-    PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
-
-    record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
-                               sideIndex, *this);
-}
-
 void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
 {
     record->serializeHandshake(HandshakeMessage(ServerHelloDone(), HandshakeType::ServerHelloDoneCode), sideIndex,
@@ -1085,12 +1063,12 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
         KeyPtr publicKey = GroupParams::generateParams(sharedGroupParams_);
         AsymmKey::setEncodedPublicKey(publicKey, params.ecdhPublic);
         peerPublicKey_ = std::move(publicKey);
+        PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
     }
-
-    PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
-
-    /*if (CipherSuiteGetKeyExchange(metaInfo_.cipherSuite) == NID_kx_rsa)
+    else if (std::holds_alternative<EncryptedPreMasterSecret>(keyExchange.params))
     {
+        const auto& msg = std::get<EncryptedPreMasterSecret>(keyExchange.params);
+
         auto ctx = crypto::CryptoManager::getInstance().createKeyContext(serverKey_);
         crypto::ThrowIfFalse(ctx != nullptr);
 
@@ -1105,15 +1083,64 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_params(ctx, params));
 
         size_t size{0};
-        crypto::ThrowIfFalse(0 < EVP_PKEY_decrypt(ctx, nullptr, &size, message.data(), message.size()));
+        crypto::ThrowIfFalse(
+            0 < EVP_PKEY_decrypt(ctx, nullptr, &size, msg.preMasterSecret.data(), msg.preMasterSecret.size()));
 
         std::vector<std::uint8_t> pms(size);
         crypto::ThrowIfFalse(
-            0 < EVP_PKEY_decrypt(ctx, pms.data(), &size, encryptedPreMaster.data(), encryptedPreMaster.size()));
+            0 < EVP_PKEY_decrypt(ctx, pms.data(), &size, msg.preMasterSecret.data(), msg.preMasterSecret.size()));
         pms.resize(size);
 
         setPremasterSecret(std::move(pms));
-    }*/
+    }
+}
+
+void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
+{
+    ClientKeyExchange keyExchange;
+
+    auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
+    if (kex == NID_kx_ecdhe)
+    {
+        std::vector<uint8_t> publicKey;
+        ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);
+        publicKey = AsymmKey::getEncodedPublicKey(ephemeralPrivateKey_);
+
+        auto& ecdh = keyExchange.params.emplace<ClientEcdhPublic>();
+        ecdh.ecdhPublic = publicKey;
+        PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
+        record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
+                                   sideIndex, *this);
+    }
+    else if (kex == NID_kx_rsa)
+    {
+        PMS_.resize(SSL_MAX_MASTER_KEY_LENGTH);
+        auto pms = nonstd::span<uint8_t>(PMS_);
+
+        uint16_t value = metaInfo_.version.code();
+        pms[0] = casket::get_byte<0>(value);
+        pms[1] = casket::get_byte<1>(value);
+        
+        Rand::generate(pms.subspan(2));
+
+        auto serverKey = X509_get0_pubkey(serverCert_);
+
+        auto ctx = crypto::CryptoManager::getInstance().createKeyContext(serverKey);
+        crypto::ThrowIfFalse(ctx != nullptr);
+
+        crypto::ThrowIfFalse(0 < EVP_PKEY_encrypt_init(ctx));
+        size_t size{0};
+        crypto::ThrowIfFalse(0 < EVP_PKEY_encrypt(ctx, nullptr, &size, PMS_.data(), PMS_.size()));
+
+        std::vector<std::uint8_t> encryptedData(size);
+        crypto::ThrowIfFalse(0 < EVP_PKEY_encrypt(ctx, encryptedData.data(), &size, PMS_.data(), PMS_.size()));
+        encryptedData.resize(size);
+
+        auto& params = keyExchange.params.emplace<EncryptedPreMasterSecret>();
+        params.preMasterSecret = encryptedData;
+        record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
+                                   sideIndex, *this);
+    }
 }
 
 nonstd::span<uint8_t> ComputeTLSv13FinishedMac(nonstd::span<const uint8_t> secret,

@@ -10,14 +10,23 @@
 
 #include <snet/utils/print_hex.hpp>
 
+#include <snet/tls_ex/config_builder.hpp>
+
 using namespace snet::crypto;
 using namespace snet::tls;
 
 static constexpr std::size_t kDefaultBufferSize{4096};
 
+struct TLSAsymmKeyParam
+{
+    bool useRsaPss;
+};
+
 struct TLSMitmTestParam
 {
-    ProtocolVersion version;
+    ConfigBuilder::CommandList clientCmds;
+    ConfigBuilder::CommandList serverCmds;
+    TLSAsymmKeyParam serverKey;
 };
 
 class TLSMitmTest : public testing::TestWithParam<TLSMitmTestParam>
@@ -35,15 +44,29 @@ public:
         clientSettings_.setSecurityLevel(SecurityLevel::Level0);
         serverSettings_.setSecurityLevel(SecurityLevel::Level0);
 
-        ASSERT_NO_THROW(serverKey_ = RsaAsymmKey::generate(2048));
+        ASSERT_NO_THROW(serverKey_ = RsaAsymmKey::generate(2048, GetParam().serverKey.useRsaPss));
         ASSERT_NO_THROW(serverCert_ = ca_.sign("CN=Test Server", serverKey_));
 
         ASSERT_NO_THROW(serverSettings_.useCertificate(serverCert_));
         ASSERT_NO_THROW(serverSettings_.usePrivateKey(serverKey_));
 
+        ConfigBuilder builder;
+        for (auto& param : GetParam().clientCmds)
+        {
+            builder.addCommand(param.name, param.value);
+        }
+        builder.apply(clientSettings_, SSL_CONF_FLAG_CLIENT|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+
+        builder.clear();
+        for (auto& param : GetParam().serverCmds)
+        {
+            builder.addCommand(param.name, param.value);
+        }
+        builder.apply(serverSettings_, SSL_CONF_FLAG_SERVER|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+
         certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
 
-        ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, true));
+        ASSERT_NO_THROW(mitmKey_ = RsaAsymmKey::generate(2048, GetParam().serverKey.useRsaPss));
         ASSERT_NO_THROW(mitmCert_ = certForger_->resign(mitmKey_, serverCert_));
     }
 
@@ -77,10 +100,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
     StateMachine client(clientSettings_);
     StateMachine server(serverSettings_);
 
-    const auto& param = GetParam();
-    ASSERT_NO_THROW(client.setVersion(param.version));
-    ASSERT_NO_THROW(server.setVersion(param.version));
-
     serverBufferSize = 0;
 
     RecordPool recordPool(64);
@@ -98,7 +117,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                   client.handshake(serverBuffer.data(), serverBufferSize, clientBuffer.data(), &clientBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
-        //snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
+        // snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
         ASSERT_EQ(clientBufferSize, mitmServer.readRecords({clientBuffer.data(), clientBufferSize}));
 
         mitmServer.processPendingRecords(
@@ -106,6 +125,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                // PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -166,14 +187,14 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         clientBufferSize = mitmClient.writeRecords(clientBuffer);
-        //snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
+        // snet::utils::printHex(std::cout, {clientBuffer.data(), clientBufferSize}, "Client Buffer (after)", true);
 
         serverBufferSize = serverBuffer.size();
         ASSERT_EQ(Want::Nothing,
                   server.handshake(clientBuffer.data(), clientBufferSize, serverBuffer.data(), &serverBufferSize, ec));
         ASSERT_FALSE(ec) << ec.message();
 
-        //snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (before)", true);
+        // snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (before)", true);
 
         ASSERT_EQ(serverBufferSize, mitmClient.readRecords({serverBuffer.data(), serverBufferSize}));
         mitmClient.processPendingRecords(
@@ -181,6 +202,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
                 auto modifiedRecord = recordPool.acquire();
+
+                // PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -279,13 +302,45 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             });
 
         serverBufferSize = mitmServer.writeRecords(serverBuffer);
-        //snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (after)", true);
+        // snet::utils::printHex(std::cout, {serverBuffer.data(), serverBufferSize}, "Server Buffer (after)", true);
 
     } while (!client.afterHandshake());
 
     ASSERT_TRUE(server.afterHandshake());
 }
 
-INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest,
-                         testing::Values(TLSMitmTestParam{ProtocolVersion::TLSv1_2},
-                                         TLSMitmTestParam{ProtocolVersion::TLSv1_3}));
+// clang-format off
+static std::vector<TLSMitmTestParam> gTestParams = {
+    {
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.2"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.2"},
+            ConfigBuilder::Command{"CipherString", "AES128-GCM-SHA256"},
+        },
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.2"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.2"}
+        },
+        {
+            false
+        }
+    },
+
+    {
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.3"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.3"}
+        }, 
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.3"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.3"}
+        },
+        {
+            true
+        }
+    },
+};
+
+// clang-format on
+
+INSTANTIATE_TEST_SUITE_P(TLSMitmTests, TLSMitmTest, testing::ValuesIn(gTestParams));
