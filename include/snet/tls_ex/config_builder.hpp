@@ -19,20 +19,20 @@ public:
     using CommandList = std::vector<Command>;
 
 private:
-    CommandList commands;
+    CommandList commands_;
 
 public:
     ConfigBuilder() = default;
 
     ConfigBuilder& addCommand(const std::string& cmd, const std::string& value)
     {
-        commands.push_back({cmd, value});
+        commands_.push_back({cmd, value});
         return *this;
     }
 
     void apply(Settings& settings, unsigned int flags) const
     {
-        if (commands.empty())
+        if (commands_.empty())
         {
             return;
         }
@@ -43,7 +43,7 @@ public:
         SSL_CONF_CTX_set_ssl_ctx(cctx, settings.ctx_);
         SSL_CONF_CTX_set_flags(cctx, flags);
 
-        for (const auto& cmd : commands)
+        for (const auto& cmd : commands_)
         {
             crypto::ThrowIfFalse(0 < SSL_CONF_cmd(cctx, cmd.name.c_str(), cmd.value.c_str()));
         }
@@ -53,12 +53,12 @@ public:
 
     void clear()
     {
-        commands.clear();
+        commands_.clear();
     }
 
     ConfigBuilder& copyFrom(const ConfigBuilder& other)
     {
-        commands.insert(commands.end(), other.commands.begin(), other.commands.end());
+        commands_.insert(commands_.end(), other.commands_.begin(), other.commands_.end());
         return *this;
     }
 };
