@@ -162,13 +162,6 @@ void Packet::clear()
     m_FrameLength = 0;
 }
 
-void Packet::appendData(const uint8_t* dataToAppend, size_t dataToAppendLen)
-{
-    memcpy((uint8_t*)m_RawData + m_RawDataLen, dataToAppend, dataToAppendLen);
-    m_RawDataLen += dataToAppendLen;
-    m_FrameLength = m_RawDataLen;
-}
-
 void Packet::insertData(int atIndex, const uint8_t* dataToInsert, size_t dataToInsertLen)
 {
     // memmove copies data as if there was an intermediate buffer in between -

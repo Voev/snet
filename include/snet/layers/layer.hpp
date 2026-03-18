@@ -4,16 +4,33 @@
 #include <stdio.h>
 #include <string>
 
+#include <casket/nonstd/optional.hpp>
+#include <casket/nonstd/span.hpp>
 #include <snet/layers/protocol.hpp>
 
-namespace snet::layers {
+namespace snet::layers
+{
+
+struct LayerInfo
+{
+    ProtocolType protocol;
+    uint32_t offset;
+    uint16_t headerLength;
+    uint16_t payloadOffset;
+
+    uint32_t getEndOffset() const noexcept
+    {
+        return offset + headerLength;
+    }
+};
 
 /**
  * @class IDataContainer
  * An interface (virtual abstract class) that indicates an object that holds a pointer to a buffer data. The Layer
  * class is an example of such object, hence it inherits this interface
  */
-class IDataContainer {
+class IDataContainer
+{
 public:
     /**
      * Get a pointer to the data
@@ -57,7 +74,8 @@ class Packet;
  * @endverbatim
  *
  */
-class Layer : public IDataContainer {
+class Layer : public IDataContainer
+{
     friend class Packet;
 
 public:
@@ -70,21 +88,24 @@ public:
     /**
      * @return A pointer to the next layer in the protocol stack or nullptr if the layer is the last one
      */
-    Layer* getNextLayer() const {
+    Layer* getNextLayer() const
+    {
         return m_NextLayer;
     }
 
     /**
      * @return A pointer to the previous layer in the protocol stack or nullptr if the layer is the first one
      */
-    Layer* getPrevLayer() const {
+    Layer* getPrevLayer() const
+    {
         return m_PrevLayer;
     }
 
     /**
      * @return The protocol enum
      */
-    ProtocolType getProtocol() const {
+    ProtocolType getProtocol() const
+    {
         return m_Protocol;
     }
 
@@ -98,28 +119,32 @@ public:
     /**
      * @return A pointer to the layer raw data. In most cases it'll be a pointer to the first byte of the header
      */
-    uint8_t* getData() const {
+    uint8_t* getData() const
+    {
         return m_Data;
     }
 
     /**
      * @return The length in bytes of the data from the first byte of the header until the end of the packet
      */
-    size_t getDataLen() const {
+    size_t getDataLen() const
+    {
         return m_DataLen;
     }
 
     /**
      * @return A pointer for the layer payload, meaning the first byte after the header
      */
-    uint8_t* getLayerPayload() const {
+    uint8_t* getLayerPayload() const
+    {
         return m_Data + getHeaderLen();
     }
 
     /**
      * @return The size in bytes of the payload
      */
-    size_t getLayerPayloadSize() const {
+    size_t getLayerPayloadSize() const
+    {
         return m_DataLen - getHeaderLen();
     }
 
@@ -134,7 +159,8 @@ public:
      * @return Returns true if the data was allocated by an external source (a packet) or false if it was allocated
      * by the layer itself
      */
-    bool isAllocatedToPacket() const {
+    bool isAllocatedToPacket() const
+    {
         return m_Packet != nullptr;
     }
 
@@ -146,7 +172,8 @@ public:
 
     // implement abstract methods
 
-    uint8_t* getDataPtr(size_t offset = 0) const override {
+    uint8_t* getDataPtr(size_t offset = 0) const override
+    {
         return static_cast<uint8_t*>(m_Data + offset);
     }
 
@@ -194,7 +221,8 @@ protected:
         , m_Protocol(UnknownProtocol)
         , m_NextLayer(nullptr)
         , m_PrevLayer(nullptr)
-        , m_IsAllocatedInPacket(false) {
+        , m_IsAllocatedInPacket(false)
+    {
     }
 
     Layer(uint8_t* data, size_t dataLen, Layer* prevLayer, Packet* packet, ProtocolType protocol = UnknownProtocol)
@@ -204,17 +232,20 @@ protected:
         , m_Protocol(protocol)
         , m_NextLayer(nullptr)
         , m_PrevLayer(prevLayer)
-        , m_IsAllocatedInPacket(false) {
+        , m_IsAllocatedInPacket(false)
+    {
     }
 
     // Copy c'tor
     Layer(const Layer& other);
     Layer& operator=(const Layer& other);
 
-    void setNextLayer(Layer* nextLayer) {
+    void setNextLayer(Layer* nextLayer)
+    {
         m_NextLayer = nextLayer;
     }
-    void setPrevLayer(Layer* prevLayer) {
+    void setPrevLayer(Layer* prevLayer)
+    {
         m_PrevLayer = prevLayer;
     }
 
@@ -224,7 +255,8 @@ protected:
 
 } // namespace snet::layers
 
-inline std::ostream& operator<<(std::ostream& os, const snet::layers::Layer& layer) {
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::Layer& layer)
+{
     os << layer.toString();
     return os;
 }

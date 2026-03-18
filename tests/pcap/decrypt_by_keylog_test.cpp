@@ -100,7 +100,7 @@ void DecryptByKeylog::execute()
         status = driver_->receivePacket(&packet);
         if (packet)
         {
-            packet->parsePacket(layers::TCP);
+            packet->parse();
             reassembler_.reassemblePacket(packet);
             driver_->finalizePacket(packet, Verdict::Pass);
         }
