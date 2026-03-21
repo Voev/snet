@@ -22,27 +22,27 @@ inline ProtocolType IPProtocolToProtocol(uint8_t ipProtocol) noexcept
 
 ProtocolType IPv4Header::getNextProtocol() const noexcept
 {
-    if (!m_Header)
+    if (!header_)
     {
         return UnknownProtocol;
     }
 
-    return IPProtocolToProtocol(m_Header->protocol);
+    return IPProtocolToProtocol(header_->protocol);
 }
 
 bool IPv4Header::initialize(const LayerInfo& layer, const Packet& packet) noexcept
 {
-    if (layer.protocol != protocol_type)
+    if (layer.protocol != g_ProtocolType)
     {
         return false;
     }
 
-    if (layer.offset + sizeof(raw_type) > packet.getDataLen())
+    if (layer.offset + sizeof(RawType) > packet.getDataLen())
     {
         return false;
     }
 
-    m_Header = reinterpret_cast<const raw_type*>(packet.getData() + layer.offset);
+    header_ = reinterpret_cast<const RawType*>(packet.getData() + layer.offset);
     return true;
 }
 

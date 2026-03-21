@@ -12,147 +12,124 @@
 namespace snet::layers
 {
 
-#pragma pack(push, 1)
-
-struct ethernet_header
+enum class EtherType : uint16_t
 {
-    uint8_t dst_mac[6];
-    uint8_t src_mac[6];
-    uint16_t ether_type;
+    IP = 0x0800,           ///< IP protocol version 4
+    ARP = 0x0806,          ///< ARP
+    ETHBRIDGE = 0x6558,    ///< Transparent Ethernet Bridging
+    REVARP = 0x8035,       ///< Reverse ARP
+    AT = 0x809B,           ///< AppleTalk protocol
+    AARP = 0x80F3,         ///< AppleTalk ARP
+    VLAN = 0x8100,         ///< IEEE 802.1Q VLAN tagging
+    IPX = 0x8137,          ///< IPX
+    IPV6 = 0x86dd,         ///< IP protocol version 6
+    LOOPBACK = 0x9000,     ///< Loopback
+    PPPOED = 0x8863,       ///< PPPoE discovery
+    PPPOES = 0x8864,       ///< PPPoE session
+    MPLS = 0x8847,         ///< MPLS
+    PPP = 0x880B,          ///< Point-to-point protocol (PPP)
+    ROCEV1 = 0x8915,       ///< RDMA over Converged Ethernet (RoCEv1)
+    IEEE_802_1AD = 0x88A8, ///< IEEE 802.1ad Provider Bridge, Q-in-Q
+    WAKE_ON_LAN = 0x0842,  ///< Wake on LAN
 };
 
+#pragma pack(push, 1)
+/// @brief Ethernet II header
+struct ethernet_header
+{
+    uint8_t dstMac[6];  ///< Destination MAC
+    uint8_t srcMac[6];  ///< Source MAC
+    uint16_t etherType; ///< EtherType
+};
 #pragma pack(pop)
 
 class Packet;
 
+/// @brief Represents an Ethernet frame header.
+///
+/// Provides access to Ethernet header fields including source/destination MAC addresses
+/// and EtherType. This class wraps a raw Ethernet header structure and provides
+/// convenient accessors and validation.
 class EthernetHeader
 {
 public:
-    static constexpr ProtocolType protocol_type = Ethernet;
-    using raw_type = ethernet_header;
+    /// @brief Protocol type identifier for this header.
+    static constexpr ProtocolType g_ProtocolType = Ethernet;
 
+    /// @brief Underlying raw header type.
+    using RawType = ethernet_header;
+
+    /// @brief Default constructor.
     EthernetHeader() = default;
 
+    /// @brief Gets the next protocol type after Ethernet.
+    /// @return Protocol type of the encapsulated payload.
     ProtocolType getNextProtocol() const noexcept;
 
+    /// @brief Initializes the header with layer and packet data.
+    /// @param[in] layer Layer information containing header location.
+    /// @param[in] packet Reference to the packet containing the header.
+    ///
+    /// @return true if initialization succeeded, false otherwise.
     bool initialize(const LayerInfo& layer, const Packet& packet) noexcept;
 
+    /// @brief Checks if the header is valid (non-null).
+    /// @return true if header points to valid data, false otherwise.
     explicit operator bool() const noexcept
     {
-        return m_Header != nullptr;
+        return header_ != nullptr;
     }
+
+    /// @brief Checks if the header is valid (non-null).
+    /// @return true if header points to valid data, false otherwise.
     bool isValid() const noexcept
     {
-        return m_Header != nullptr;
+        return header_ != nullptr;
     }
 
-    const raw_type* operator->() const noexcept
+    /// @brief Accesses the raw header structure via arrow operator.
+    /// @return Pointer to the raw Ethernet header.
+    const RawType* operator->() const noexcept
     {
-        return m_Header;
+        return header_;
     }
 
-    const raw_type& operator*() const noexcept
+    /// @brief Dereferences to the raw header structure.
+    /// @return Reference to the raw Ethernet header.
+    const RawType& operator*() const noexcept
     {
-        return *m_Header;
+        return *header_;
     }
 
+    /// @brief Gets the source MAC address.
+    /// @return Span of 6 bytes containing the source MAC address.
     nonstd::span<const uint8_t> srcMac() const noexcept
     {
-        return {m_Header->src_mac, 6};
+        return {header_->srcMac, 6};
     }
 
+    /// @brief Gets the destination MAC address.
+    /// @return Span of 6 bytes containing the destination MAC address.
     nonstd::span<const uint8_t> dstMac() const noexcept
     {
-        return {m_Header->dst_mac, 6};
+        return {header_->dstMac, 6};
     }
 
-    uint16_t etherType() const noexcept
+    /// @brief Gets the EtherType field in host byte order.
+    /// @return EtherType value indicating the payload protocol.
+    EtherType etherType() const noexcept
     {
-        return casket::be_to_host(m_Header->ether_type);
+        return static_cast<EtherType>(casket::be_to_host(header_->etherType));
     }
 
-    bool isVlan() const noexcept
-    {
-        return etherType() == 0x8100;
-    }
-
-    bool isQinQ() const noexcept
-    {
-        return etherType() == 0x88A8;
-    }
-
-    std::ostream& print(std::ostream& os) const noexcept
-    {
-        if (!m_Header)
-        {
-            os << "Ethernet Header: [invalid]";
-            return os;
-        }
-
-        auto printMac = [](std::ostream& os, nonstd::span<const uint8_t> mac) -> std::ostream&
-        {
-            for (size_t i = 0; i < mac.size(); ++i)
-            {
-                if (i > 0)
-                {
-                    os << ':';
-                }
-                os << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(mac[i]);
-            }
-            os << std::dec << std::setfill(' ');
-            return os;
-        };
-
-        os << "Ethernet: ";
-        printMac(os, srcMac());
-        os << " -> ";
-        printMac(os, dstMac());
-        os << "  EtherType: 0x" << std::hex << std::setw(4) << std::setfill('0') << etherType() << std::dec;
-
-        os << " (";
-        switch (etherType())
-        {
-        case 0x0800:
-            os << "IPv4";
-            break;
-        case 0x86DD:
-            os << "IPv6";
-            break;
-        case 0x0806:
-            os << "ARP";
-            break;
-        case 0x8035:
-            os << "RARP";
-            break;
-        case 0x8100:
-            os << "VLAN";
-            break;
-        case 0x88A8:
-            os << "Q-in-Q";
-            break;
-        case 0x8847:
-            os << "MPLS unicast";
-            break;
-        case 0x8848:
-            os << "MPLS multicast";
-            break;
-        case 0x8863:
-            os << "PPPoE Discovery";
-            break;
-        case 0x8864:
-            os << "PPPoE Session";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
-        os << ")";
-
-        return os;
-    }
+    /// @brief Prints the Ethernet header to an output stream.
+    /// @param [in,out] os Output stream to print to.
+    ///
+    /// @return Reference to the output stream for chaining.
+    std::ostream& print(std::ostream& os) const noexcept;
 
 private:
-    const raw_type* m_Header = nullptr;
+    const RawType* header_ = nullptr; ///< Pointer to raw Ethernet header data.
 };
 
 } // namespace snet::layers

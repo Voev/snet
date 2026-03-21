@@ -17,7 +17,7 @@ public:
 
     explicit IPv6Address(nonstd::span<const std::uint8_t> bytes);
     
-    explicit IPv6Address(std::string_view str);
+    explicit IPv6Address(nonstd::string_view str);
 
     IPv6Address(const IPv6Address& other) noexcept;
 
@@ -61,7 +61,7 @@ public:
 
     static IPv6Address any() noexcept;
 
-    static std::optional<IPv6Address> fromString(std::string_view str);
+    static std::optional<IPv6Address> fromString(nonstd::string_view str);
 
 private:
     In6AddrType addr_;

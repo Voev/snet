@@ -1,5 +1,6 @@
 #pragma once
 #include <snet/layers/l3/types.hpp>
+#include <casket/nonstd/string_view.hpp>
 
 namespace snet::layers
 {
@@ -15,7 +16,7 @@ public:
 
     explicit IPv4Address(nonstd::span<const std::uint8_t> bytes);
 
-    explicit IPv4Address(std::string_view str);
+    explicit IPv4Address(nonstd::string_view str);
 
     ~IPv4Address();
 
@@ -66,7 +67,7 @@ public:
 
     static IPv4Address any() noexcept;
 
-    static std::optional<IPv4Address> fromString(std::string_view str);
+    static std::optional<IPv4Address> fromString(nonstd::string_view str);
 
 private:
     InAddrType addr_;

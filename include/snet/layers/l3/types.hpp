@@ -2,10 +2,10 @@
 #include <arpa/inet.h>
 
 #include <cstdint>
-#include <optional>
-#include <casket/nonstd/span.hpp>
 #include <string>
-#include <string_view>
+#include <casket/nonstd/optional.hpp>
+#include <casket/nonstd/span.hpp>
+#include <casket/nonstd/string_view.hpp>
 
 namespace snet::layers
 {

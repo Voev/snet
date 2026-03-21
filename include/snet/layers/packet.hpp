@@ -85,14 +85,13 @@ private:
             info.headerLength = ETHERNET_LEN;
             info.payloadOffset = globalOffset + ETHERNET_LEN;
 
-            // Проверка VLAN
             auto eth = EthernetHeader();
             if (!eth.initialize(info, *this))
             {
                 return nonstd::nullopt;
             }
 
-            if (eth.etherType() == 0x8100 || eth.etherType() == 0x88A8)
+            if (eth.etherType() == EtherType::VLAN || eth.etherType() == EtherType::IEEE_802_1AD)
             {
                 if (remaining >= ETHERNET_LEN + 4)
                 {
@@ -111,7 +110,9 @@ private:
 
             auto ip = IPv4Header();
             if (!ip.initialize(info, *this))
+            {
                 return nonstd::nullopt;
+            }
 
             info.headerLength = ip.headerLength();
             info.payloadOffset = globalOffset + info.headerLength;
@@ -125,7 +126,6 @@ private:
                 return nonstd::nullopt;
 
             info.headerLength = IPV6_LEN;
-            // TODO: пропуск extension headers
             info.payloadOffset = globalOffset + IPV6_LEN;
             break;
         }
@@ -204,17 +204,16 @@ public:
         return 0;
     }
 
-    // Range-based for поддержка
     const LayerInfo* begin() const noexcept
     {
         return m_Layers.data();
     }
+
     const LayerInfo* end() const noexcept
     {
         return m_Layers.data() + m_LayerCount;
     }
 
-    // Получить первый слой определенного протокола
     const LayerInfo* findLayer(ProtocolType protocol) const noexcept
     {
         for (size_t i = 0; i < m_LayerCount; ++i)
@@ -227,7 +226,6 @@ public:
         return nullptr;
     }
 
-    // Удобные методы для получения заголовков
     template <typename HeaderType>
     HeaderType getHeader(const LayerInfo& layer) const noexcept
     {
@@ -316,25 +314,6 @@ public:
     {
         return m_RawDataLen;
     }
-
-    /**
-     * Each layer can print a string representation of the layer most important data using Layer#toString(). This
-     * method aggregates this string from all layers and print it to a complete string containing all packet's
-     * relevant data
-     * @param[in] timeAsLocalTime Print time as local time or GMT. Default (true value) is local time, for GMT set
-     * to false
-     * @return A string containing most relevant data from all layers (looks like the packet description in
-     * Wireshark)
-     */
-    std::string toString() const;
-
-    /**
-     * Similar to toString(), but instead of one string it outputs a list of strings, one string for every layer
-     * @param[out] result A string vector that will contain all strings
-     * @param[in] timeAsLocalTime Print time as local time or GMT. Default (true value) is local time, for GMT set
-     * to false
-     */
-    void toStringList(std::vector<std::string>& result) const;
 
     static bool isLinkTypeValid(int linkTypeValue);
 
