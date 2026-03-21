@@ -101,6 +101,7 @@ void DecryptByKeylog::execute()
         if (packet)
         {
             packet->parse();
+            std::cout << *packet << std::endl;
             reassembler_.reassemblePacket(packet);
             driver_->finalizePacket(packet, Verdict::Pass);
         }

@@ -16,6 +16,7 @@
 #include <snet/layers/l2/eth_header.hpp>
 #include <snet/layers/l3/ip_proto.hpp>
 #include <snet/layers/l3/ipv4_header.hpp>
+#include <snet/layers/l3/ip_address.hpp>
 #include <snet/layers/l4/tcp_header.hpp>
 
 namespace snet::layers
@@ -498,6 +499,78 @@ TLayer* Packet::getPrevLayerOfType(Layer* curLayer) const
 
 inline std::ostream& operator<<(std::ostream& os, const snet::layers::Packet& packet)
 {
-    os << packet.toString();
+    using namespace snet::layers;
+
+    if (packet.layerCount() == 0)
+    {
+        os << "Empty packet (no layers parsed)";
+        return os;
+    }
+
+    os << "Packet (" << packet.getDataLen() << " bytes):\n";
+
+    for (const auto& layer : packet)
+    {
+        os << "  [" << static_cast<int>(layer.protocol) << "] ";
+
+        switch (layer.protocol)
+        {
+        case Ethernet:
+        {
+            auto eth = packet.getHeader<EthernetHeader>(layer);
+            os << eth;
+            break;
+        }
+
+        case IPv4:
+        {
+            auto ip = packet.getHeader<IPv4Header>(layer);
+            if (ip)
+            {
+                os << "IPv4: " << ip.srcAddr() << " -> " << ip.dstAddr()
+                   << " (proto=" << static_cast<int>(ip.protocol()) << ", ttl=" << static_cast<int>(ip.ttl())
+                   << ", len=" << ip.totalLen() << ")";
+            }
+            break;
+        }
+
+        case TCP:
+        {
+            auto tcp = packet.getHeader<TCPHeader>(layer);
+            if (tcp)
+            {
+                os << "TCP: " << tcp.srcPort() << " -> " << tcp.dstPort() << " (seq=" << tcp.seqNum()
+                   << ", ack=" << tcp.ackNum() << ", flags=";
+                if (tcp.isSYN())
+                    os << "SYN ";
+                if (tcp.isACK())
+                    os << "ACK ";
+                if (tcp.isFIN())
+                    os << "FIN ";
+                if (tcp.isRST())
+                    os << "RST ";
+                if (tcp.isPSH())
+                    os << "PSH ";
+                if (tcp.isURG())
+                    os << "URG ";
+                os << ")";
+
+                if (tcp.optionsLength() > 0)
+                {
+                    os << " [options=" << tcp.optionsLength() << " bytes]";
+                }
+            }
+            break;
+        }
+
+        default:
+            os << "Unknown protocol: " << static_cast<int>(layer.protocol);
+            break;
+        }
+
+        size_t payloadSize = packet.getDataLen() - layer.payloadOffset;
+        os << " [payload=" << payloadSize << " bytes]\n";
+    }
+
     return os;
 }

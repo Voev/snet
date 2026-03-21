@@ -51,6 +51,11 @@ public:
 
     std::string toString() const;
 
+    uint8_t* asData() const noexcept
+    {
+        return (uint8_t*)&addr_.s_addr;
+    }
+
     bool isLoopback() const noexcept;
 
     bool isMulticast() const noexcept;

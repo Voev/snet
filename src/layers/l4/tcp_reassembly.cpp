@@ -125,7 +125,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     TcpReassemblyData* tcpReassemblyData = nullptr;
 
     // calculate flow key for this packet
-    uint32_t flowKey = layers::hash5Tuple(packet);
+    uint32_t flowKey = layers::hash5Tuple(srcIP, dstIP, tcpHeader.srcPort(), tcpHeader.dstPort(), ipHeader.protocol(), false);
 
     // time stamp for this packet
     auto currTime = packet->getTimestamp().toTimePoint();

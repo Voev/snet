@@ -74,7 +74,8 @@ uint32_t fnvHash(uint8_t* buffer, size_t bufSize);
  * @return The hash value calculated for this packet or 0 if the packet doesn't
  * contain 5-tuple
  */
-uint32_t hash5Tuple(Packet* packet, bool const& directionUnique = false);
+uint32_t hash5Tuple(const IPAddress& addrSrc, const IPAddress& addrDst, uint16_t portSrc, uint16_t portDst,
+                    uint8_t protocol, bool const& directionUnique = false);
 
 /**
  * A method that is given a packet and calculates a hash value by the packet's
@@ -84,6 +85,6 @@ uint32_t hash5Tuple(Packet* packet, bool const& directionUnique = false);
  * @return The hash value calculated for this packet or 0 if the packet isn't
  * IPv4/6
  */
-uint32_t hash2Tuple(Packet* packet);
+//uint32_t hash2Tuple(Packet* packet);
 
 } // namespace snet::layers

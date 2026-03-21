@@ -24,6 +24,8 @@ struct LayerInfo
     }
 };
 
+
+
 /**
  * @class IDataContainer
  * An interface (virtual abstract class) that indicates an object that holds a pointer to a buffer data. The Layer
