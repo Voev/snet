@@ -136,41 +136,8 @@ public:
                 auto status = tcpReassembly.reassemblePacket(packet);
                 if (status == layers::TcpReassembly::TcpMessageHandled)
                 {
-                    std::cout << "--handled--" << std::endl;
-
-                    utils::printHex(std::cout, nonstd::span{packet->getData(),
-                                                         (size_t)packet->getDataLen()});
-                    std::cout << "----" << std::endl;
-                    auto p = packet->getLayerOfType<layers::PayloadLayer>(true);
-                    if (p)
-                    {
-                        p->getData()[0] = 0xDE;
-
-                        auto ip = packet->getLayerOfType<layers::IPv4Layer>(true);
-                        ip->computeCalculateFields();
-
-                        auto tcp = packet->getLayerOfType<layers::TcpLayer>(true);
-                        tcp->computeCalculateFields();
-
-                        driver->finalizePacket(packet, Verdict::Replace);
-
-                        std::cout << "--replaced--" << std::endl;
-
-                        utils::printHex(std::cout, nonstd::span{packet->getData(),
-                                                             (size_t)packet->getDataLen()});
-                        std::cout << "----" << std::endl;
-                    }
-                    else
-                    {
-                        driver->finalizePacket(packet, Verdict::Pass);
-                    }
+                    driver->finalizePacket(packet, Verdict::Pass);
                 }
-                /*
-                else if (replaced)
-                {
-                    driver->finalizePacket(rawPacket, Verdict::Replace);
-                }
-                */
                 else
                 {
                     driver->finalizePacket(packet, Verdict::Block);

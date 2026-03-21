@@ -3,11 +3,6 @@
 
 #include <snet/layers/checksums.hpp>
 
-#include <snet/layers/l3/ipv4_layer.hpp>
-#include <snet/layers/l3/ipv6_layer.hpp>
-
-#include <snet/layers/l4/tcp_layer.hpp>
-
 using namespace casket;
 
 namespace snet::layers

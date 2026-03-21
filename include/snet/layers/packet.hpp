@@ -24,14 +24,10 @@ namespace snet::layers
 
 class Packet
 {
-    friend class Layer;
-
 private:
     Timestamp timestamp_;
 
     uint8_t* m_RawData{nullptr};
-    Layer* m_FirstLayer{nullptr};
-    Layer* m_LastLayer{nullptr};
 
     std::array<LayerInfo, 8> m_Layers;
     size_t m_LayerCount = 0;
@@ -294,12 +290,6 @@ public:
 
     void clear();
 
-    virtual void insertData(int atIndex, const uint8_t* dataToInsert, size_t dataToInsertLen);
-
-    virtual bool removeData(size_t atIndex, size_t numOfBytesToRemove);
-
-    virtual bool reallocateData(size_t newBufferLength);
-
     virtual bool setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength);
 
     void setTimestamp(Timestamp timestamp)
@@ -327,89 +317,6 @@ public:
         return m_RawDataLen;
     }
 
-    void parsePacket(ProtocolTypeFamily parseUntil = UnknownProtocol,
-                     OsiModelLayer parseUntilLayer = OsiModelLayerUnknown);
-
-    /**
-     * Get a pointer to the first (lowest) layer in the packet
-     * @return A pointer to the first (lowest) layer in the packet
-     */
-    Layer* getFirstLayer() const
-    {
-        return m_FirstLayer;
-    }
-
-    /**
-     * Get a pointer to the last (highest) layer in the packet
-     * @return A pointer to the last (highest) layer in the packet
-     */
-    Layer* getLastLayer() const
-    {
-        return m_LastLayer;
-    }
-
-    /**
-     * Get a pointer to the layer of a certain type (protocol). This method goes through the layers and returns a
-     * layer that matches the give protocol type
-     * @param[in] layerType The layer type (protocol) to fetch
-     * @param[in] index If there are multiple layers of the same type, indicate which instance to fetch. The default
-     * value is 0, meaning fetch the first layer of this type
-     * @return A pointer to the layer or nullptr if no such layer was found
-     */
-    Layer* getLayerOfType(ProtocolType layerType, int index = 0) const;
-
-    /**
-     * A templated method to get a layer of a certain type (protocol). If no layer of such type is found, nullptr is
-     * returned
-     * @param[in] reverseOrder The optional parameter that indicates that the lookup should run in reverse order,
-     * the default value is false
-     * @return A pointer to the layer of the requested type, nullptr if not found
-     */
-    template <class TLayer>
-    TLayer* getLayerOfType(bool reverseOrder = false) const;
-
-    /**
-     * A templated method to get the first layer of a certain type (protocol), start searching from a certain layer.
-     * For example: if a packet looks like: EthLayer -> VlanLayer(1) -> VlanLayer(2) -> VlanLayer(3) -> IPv4Layer
-     * and the user put VlanLayer(2) as a parameter and wishes to search for a VlanLayer, VlanLayer(3) will be
-     * returned If no layer of such type is found, nullptr is returned
-     * @param[in] startLayer A pointer to the layer to start search from
-     * @return A pointer to the layer of the requested type, nullptr if not found
-     */
-    template <class TLayer>
-    TLayer* getNextLayerOfType(Layer* startLayer) const;
-
-    /**
-     * A templated method to get the first layer of a certain type (protocol), start searching from a certain layer.
-     * For example: if a packet looks like: EthLayer -> VlanLayer(1) -> VlanLayer(2) -> VlanLayer(3) -> IPv4Layer
-     * and the user put VlanLayer(2) as a parameter and wishes to search for a VlanLayer, VlanLayer(1) will be
-     * returned If no layer of such type is found, nullptr is returned
-     * @param[in] startLayer A pointer to the layer to start search from
-     * @return A pointer to the layer of the requested type, nullptr if not found
-     */
-    template <class TLayer>
-    TLayer* getPrevLayerOfType(Layer* startLayer) const;
-
-    /**
-     * Check whether the packet contains a layer of a certain protocol
-     * @param[in] protocolType The protocol type to search
-     * @return True if the packet contains a layer of a certain protocol, false otherwise
-     */
-    bool isPacketOfType(ProtocolType protocolType) const;
-
-    /**
-     * Check whether the packet contains a layer of a certain protocol family
-     * @param[in] protocolTypeFamily The protocol type family to search
-     * @return True if the packet contains a layer of a certain protocol family, false otherwise
-     */
-    bool isPacketOfType(ProtocolTypeFamily protocolTypeFamily) const;
-
-    /**
-     * Each layer can have fields that can be calculate automatically from other fields using
-     * Layer#computeCalculateFields(). This method forces all layers to calculate these fields values
-     */
-    void computeCalculateFields();
-
     /**
      * Each layer can print a string representation of the layer most important data using Layer#toString(). This
      * method aggregates this string from all layers and print it to a complete string containing all packet's
@@ -434,66 +341,11 @@ public:
 private:
     void destructPacketData();
 
-    bool extendLayer(Layer* layer, int offsetInLayer, size_t numOfBytesToExtend);
-    bool shortenLayer(Layer* layer, int offsetInLayer, size_t numOfBytesToShorten);
-
     void reallocateRawData(size_t newSize);
 
     std::string printPacketInfo() const;
 
-    Layer* createFirstLayer(layers::LinkLayerType linkType);
-
 }; // class Packet
-
-// implementation of inline methods
-
-template <class TLayer>
-TLayer* Packet::getLayerOfType(bool reverse) const
-{
-    if (!reverse)
-    {
-        if (dynamic_cast<TLayer*>(getFirstLayer()) != nullptr)
-            return dynamic_cast<TLayer*>(getFirstLayer());
-
-        return getNextLayerOfType<TLayer>(getFirstLayer());
-    }
-
-    // lookup in reverse order
-    if (dynamic_cast<TLayer*>(getLastLayer()) != nullptr)
-        return dynamic_cast<TLayer*>(getLastLayer());
-
-    return getPrevLayerOfType<TLayer>(getLastLayer());
-}
-
-template <class TLayer>
-TLayer* Packet::getNextLayerOfType(Layer* curLayer) const
-{
-    if (curLayer == nullptr)
-        return nullptr;
-
-    curLayer = curLayer->getNextLayer();
-    while ((curLayer != nullptr) && (dynamic_cast<TLayer*>(curLayer) == nullptr))
-    {
-        curLayer = curLayer->getNextLayer();
-    }
-
-    return dynamic_cast<TLayer*>(curLayer);
-}
-
-template <class TLayer>
-TLayer* Packet::getPrevLayerOfType(Layer* curLayer) const
-{
-    if (curLayer == nullptr)
-        return nullptr;
-
-    curLayer = curLayer->getPrevLayer();
-    while (curLayer != nullptr && dynamic_cast<TLayer*>(curLayer) == nullptr)
-    {
-        curLayer = curLayer->getPrevLayer();
-    }
-
-    return dynamic_cast<TLayer*>(curLayer);
-}
 
 } // namespace snet::layers
 

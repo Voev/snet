@@ -1,9 +1,6 @@
 #include <sstream>
 
 #include <snet/layers/l3/ipv6_exts.hpp>
-#include <snet/layers/l3/ipv6_layer.hpp>
-#include <snet/layers/l3/ipv4_layer.hpp>
-#include <snet/layers/l4/tcp_layer.hpp>
 
 #include <casket/utils/endianness.hpp>
 
