@@ -6,15 +6,15 @@ namespace snet::layers
 
 bool TCPHeader::initialize(const LayerInfo& layer, const Packet& packet) noexcept
 {
-    if (layer.protocol != protocol_type)
+    if (layer.protocol != g_ProtocolType)
     {
         return false;
     }
-    if (layer.offset + sizeof(raw_type) > packet.getDataLen())
+    if (layer.offset + sizeof(RawType) > packet.getDataLen())
     {
         return false;
     }
-    m_Header = reinterpret_cast<const raw_type*>(packet.getData() + layer.offset);
+    header_ = reinterpret_cast<const RawType*>(packet.getData() + layer.offset);
     return true;
 }
 
