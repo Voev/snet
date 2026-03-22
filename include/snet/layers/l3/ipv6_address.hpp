@@ -63,6 +63,11 @@ public:
 
     static std::optional<IPv6Address> fromString(nonstd::string_view str);
 
+    const uint8_t* asData() const noexcept
+    {
+        return addr_.s6_addr;
+    }
+
 private:
     In6AddrType addr_;
 };

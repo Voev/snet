@@ -210,8 +210,20 @@ public:
         return headerLen() > 5 ? (headerLen() - 5) * 4 : 0;
     }
 
+    /// @brief Prints the IPv4 header to an output stream.
+    /// @param [in,out] os Output stream to print to.
+    ///
+    /// @return Reference to the output stream for chaining.
+    std::ostream& print(std::ostream& os) const noexcept;
+
 private:
     const RawType* header_ = nullptr; ///< Pointer to raw IPv4 header data.
 };
 
 } // namespace snet::layers
+
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::IPv4Header& header)
+{
+    header.print(os);
+    return os;
+}

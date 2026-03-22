@@ -46,4 +46,18 @@ bool IPv4Header::initialize(const LayerInfo& layer, const Packet& packet) noexce
     return true;
 }
 
+std::ostream& IPv4Header::print(std::ostream& os) const noexcept
+{
+    if (!header_)
+    {
+        os << "IPv4: [invalid]";
+        return os;
+    }
+
+    os << "IPv4: " << srcAddr() << " -> " << dstAddr() << " (proto=" << static_cast<int>(protocol())
+       << ", ttl=" << static_cast<int>(ttl()) << ", len=" << totalLen() << ")";
+
+    return os;
+}
+
 } // namespace snet::layers

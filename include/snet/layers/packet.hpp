@@ -38,7 +38,6 @@ private:
 
     LinkLayerType m_LinkLayerType{LINKTYPE_ETHERNET};
 
-    bool m_CanReallocateData{false};
     bool m_DeleteRawDataAtDestructor{false};
 
     static ProtocolType getProtocolFromLinkType(LinkLayerType linkType)
@@ -356,41 +355,14 @@ inline std::ostream& operator<<(std::ostream& os, const snet::layers::Packet& pa
         case IPv4:
         {
             auto ip = packet.getHeader<IPv4Header>(layer);
-            if (ip)
-            {
-                os << "IPv4: " << ip.srcAddr() << " -> " << ip.dstAddr()
-                   << " (proto=" << static_cast<int>(ip.protocol()) << ", ttl=" << static_cast<int>(ip.ttl())
-                   << ", len=" << ip.totalLen() << ")";
-            }
+            os << ip;
             break;
         }
 
         case TCP:
         {
             auto tcp = packet.getHeader<TCPHeader>(layer);
-            if (tcp)
-            {
-                os << "TCP: " << tcp.srcPort() << " -> " << tcp.dstPort() << " (seq=" << tcp.seqNum()
-                   << ", ack=" << tcp.ackNum() << ", flags=";
-                if (tcp.isSYN())
-                    os << "SYN ";
-                if (tcp.isACK())
-                    os << "ACK ";
-                if (tcp.isFIN())
-                    os << "FIN ";
-                if (tcp.isRST())
-                    os << "RST ";
-                if (tcp.isPSH())
-                    os << "PSH ";
-                if (tcp.isURG())
-                    os << "URG ";
-                os << ")";
-
-                if (tcp.optionsLength() > 0)
-                {
-                    os << " [options=" << tcp.optionsLength() << " bytes]";
-                }
-            }
+            os << tcp;
             break;
         }
 

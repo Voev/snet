@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ostream>
 #include <casket/utils/endianness.hpp>
 
 #include <snet/layers/protocol.hpp>
@@ -189,8 +190,20 @@ public:
         return headerLen() > 5 ? (headerLen() - 5) * 4 : 0;
     }
 
+    /// @brief Prints the TCP header to an output stream.
+    /// @param [in,out] os Output stream to print to.
+    ///
+    /// @return Reference to the output stream for chaining.
+    std::ostream& print(std::ostream& os) const noexcept;
+
 private:
     const RawType* header_ = nullptr; ///< Pointer to raw TCP header data.
 };
 
 } // namespace snet::layers
+
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::TCPHeader& header)
+{
+    header.print(os);
+    return os;
+}

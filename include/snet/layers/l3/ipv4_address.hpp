@@ -52,9 +52,9 @@ public:
 
     std::string toString() const;
 
-    uint8_t* asData() const noexcept
+    const uint8_t* asData() const noexcept
     {
-        return (uint8_t*)&addr_.s_addr;
+        return reinterpret_cast<const uint8_t*>(&addr_.s_addr);
     }
 
     bool isLoopback() const noexcept;

@@ -10,6 +10,24 @@ namespace snet::layers
 {
 
 /**
+ * @class IDataContainer
+ * An interface (virtual abstract class) that indicates an object that holds a pointer to a buffer data. The Layer
+ * class is an example of such object, hence it inherits this interface
+ */
+class IDataContainer
+{
+public:
+    /**
+     * Get a pointer to the data
+     * @param[in] offset Get a pointer in a certain offset. Default is 0 - get a pointer to start of data
+     * @return A pointer to the data
+     */
+    virtual uint8_t* getDataPtr(size_t offset = 0) const = 0;
+
+    virtual ~IDataContainer() = default;
+};
+
+/**
  * @class IPv6Extension
  * A base class for all supported IPv6 extensions. This class is abstract,
  * meaning it cannot be instantiated or copied (has private c'tor and copy
@@ -17,8 +35,6 @@ namespace snet::layers
  */
 class IPv6Extension
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * An enum representing all supported IPv6 extension types
@@ -130,8 +146,6 @@ private:
  */
 class IPv6FragmentationHeader : public IPv6Extension
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * @struct ipv6_frag_header
@@ -212,8 +226,6 @@ private:
  */
 class IPv6TLVOptionHeader : public IPv6Extension
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * @class IPv6Option
@@ -412,8 +424,6 @@ private:
  */
 class IPv6HopByHopHeader : public IPv6TLVOptionHeader
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * A c'tor for creating a new IPv6 Hop-By-Hop extension object not bounded
@@ -445,8 +455,6 @@ private:
  */
 class IPv6DestinationHeader : public IPv6TLVOptionHeader
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * A c'tor for creating a new IPv6 destination extension object not bounded
@@ -572,8 +580,6 @@ private:
  */
 class IPv6AuthenticationHeader : public IPv6Extension
 {
-    friend class IPv6Layer;
-
 public:
     /**
      * @struct ipv6_authentication_header

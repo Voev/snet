@@ -34,7 +34,6 @@ Packet::Packet(nonstd::span<const uint8_t> data, bool deleteRawDataAtDestructor,
 
 Packet::Packet(size_t maxPacketLen)
     : m_MaxPacketLen(maxPacketLen)
-    , m_CanReallocateData(true)
     , m_DeleteRawDataAtDestructor(true)
 {
     uint8_t* data = new uint8_t[maxPacketLen];

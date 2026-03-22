@@ -125,7 +125,7 @@ std::ostream& EthernetHeader::print(std::ostream& os) const noexcept
 {
     if (!header_)
     {
-        os << "Ethernet Header: [invalid]";
+        os << "Ethernet: [invalid]";
         return os;
     }
 

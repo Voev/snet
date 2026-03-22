@@ -1,45 +1,27 @@
 #pragma once
-
-#include <stdint.h>
-#include <stdio.h>
-#include <string>
-
-#include <casket/nonstd/optional.hpp>
-#include <casket/nonstd/span.hpp>
+#include <cstdint>
 #include <snet/layers/protocol.hpp>
 
 namespace snet::layers
 {
 
+/// @brief Represents information about a protocol layer in a packet.
+/// 
+/// Contains metadata about a specific protocol layer including its protocol type,
+/// offset within the packet, header length, and payload offset.
 struct LayerInfo
 {
-    ProtocolType protocol;
-    uint32_t offset;
-    uint16_t headerLength;
-    uint16_t payloadOffset;
+    ProtocolType protocol;      ///< Protocol type of this layer.
+    uint32_t offset;            ///< Offset from the start of the packet to the beginning of the layer header.
+    uint16_t headerLength;      ///< Length of the layer header in bytes.
+    uint16_t payloadOffset;     ///< Offset from the start of the packet to the beginning of the layer payload.
 
+    /// @brief Calculates the end offset of the layer header.
+    /// @return Offset from the start of the packet to the end of the layer header.
     uint32_t getEndOffset() const noexcept
     {
         return offset + headerLength;
     }
-};
-
-/**
- * @class IDataContainer
- * An interface (virtual abstract class) that indicates an object that holds a pointer to a buffer data. The Layer
- * class is an example of such object, hence it inherits this interface
- */
-class IDataContainer
-{
-public:
-    /**
-     * Get a pointer to the data
-     * @param[in] offset Get a pointer in a certain offset. Default is 0 - get a pointer to start of data
-     * @return A pointer to the data
-     */
-    virtual uint8_t* getDataPtr(size_t offset = 0) const = 0;
-
-    virtual ~IDataContainer() = default;
 };
 
 } // namespace snet::layers
