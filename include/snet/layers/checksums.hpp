@@ -64,26 +64,24 @@ uint32_t fnvHash(ScalarBuffer<uint8_t> vec[], size_t vecSize);
  */
 uint32_t fnvHash(uint8_t* buffer, size_t bufSize);
 
-/**
- * A method that is given a packet and calculates a hash value by the packet's
- * 5-tuple. Supports IPv4, IPv6, TCP and UDP. For packets which doesn't have
- * 5-tuple (for example: packets which aren't IPv4/6 or aren't TCP/UDP) the
- * value of 0 will be returned
- * @param[in] packet The packet to calculate hash for
- * @param[in] directionUnique Make hash value unique for each direction
- * @return The hash value calculated for this packet or 0 if the packet doesn't
- * contain 5-tuple
- */
-uint32_t hash5Tuple(Packet* packet, bool const& directionUnique = false);
-
-/**
- * A method that is given a packet and calculates a hash value by the packet's
- * 2-tuple (IP src + IP dst). Supports IPv4 and IPv6. For packets which aren't
- * IPv4/6 the value of 0 will be returned
- * @param[in] packet The packet to calculate hash for
- * @return The hash value calculated for this packet or 0 if the packet isn't
- * IPv4/6
- */
-uint32_t hash2Tuple(Packet* packet);
+/// @brief Computes a hash value from a 5-tuple network flow identifier.
+/// 
+/// Generates a hash based on the standard 5-tuple (source IP, destination IP,
+/// source port, destination port, protocol) used to uniquely identify network flows.
+/// The hash can optionally be made direction-agnostic by sorting the source and
+/// destination addresses and ports.
+/// 
+/// @param [in] addrSrc Source IP address.
+/// @param [in] addrDst Destination IP address.
+/// @param [in] portSrc Source port number.
+/// @param [in] portDst Destination port number.
+/// @param [in] protocol IP protocol number (e.g., TCP=6, UDP=17).
+/// @param [in] directionUnique When true, hash is direction-independent by swapping
+///                              source and destination fields to ensure the same
+///                              hash for both directions of a flow.
+///
+/// @return Hash value computed from the 5-tuple.
+uint32_t hash5Tuple(const IPAddress& addrSrc, const IPAddress& addrDst, uint16_t portSrc, uint16_t portDst,
+                    uint8_t protocol, bool const& directionUnique = false);
 
 } // namespace snet::layers

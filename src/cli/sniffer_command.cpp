@@ -230,7 +230,7 @@ public:
             }
             else if (packet)
             {
-                packet->parsePacket(layers::TCP);
+                packet->parse();
                 tcpReassembly.reassemblePacket(packet);
                 driver->finalizePacket(packet, Verdict::Pass);
             }

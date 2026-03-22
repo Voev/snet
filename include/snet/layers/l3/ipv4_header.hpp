@@ -1,288 +1,229 @@
 #pragma once
+
 #include <cstdint>
-#include <vector>
 #include <casket/utils/endianness.hpp>
+#include <snet/layers/protocol.hpp>
 #include <snet/layers/l3/ipv4_address.hpp>
+#include <snet/layers/layer.hpp>
 
 namespace snet::layers
 {
 
+/// @brief Raw IPv4 header structure as defined in RFC 791.
+///
+/// Represents the binary layout of an IPv4 header as it appears on the wire.
+/// This structure is packed to ensure correct alignment and no padding.
+#pragma pack(push, 1)
+struct ipv4_header
+{
+#if (BYTE_ORDER == LITTLE_ENDIAN)
+    uint8_t ihl : 4;     ///< Internet Header Length in 32-bit words.
+    uint8_t version : 4; ///< IP version (should be 4 for IPv4).
+#else
+    uint8_t version : 4; ///< IP version (should be 4 for IPv4).
+    uint8_t ihl : 4;     ///< Internet Header Length in 32-bit words.
+#endif
+    uint8_t tos;       ///< Type of Service field.
+    uint16_t tot_len;  ///< Total packet length in bytes.
+    uint16_t id;       ///< Identification field for fragmentation.
+    uint16_t frag_off; ///< Fragment offset and flags.
+    uint8_t ttl;       ///< Time To Live in hops.
+    uint8_t protocol;  ///< Protocol number of encapsulated payload.
+    uint16_t check;    ///< Header checksum.
+    uint32_t saddr;    ///< Source IPv4 address.
+    uint32_t daddr;    ///< Destination IPv4 address.
+};
+#pragma pack(pop)
+
+class Packet;
+
+/// @brief Represents an IPv4 header.
+///
+/// Provides access to IPv4 header fields including version, header length, TOS,
+/// total length, identification, fragmentation flags, offset, TTL, protocol,
+/// checksum, source/destination addresses, and optional options.
 class IPv4Header
 {
 public:
-    /**
-     * Type used to represent the different IP flags.
-     */
-    enum Flags
+    /// @brief Protocol type identifier for this header.
+    static constexpr ProtocolType g_ProtocolType = IPv4;
+
+    /// @brief Underlying raw header type.
+    using RawType = ipv4_header;
+
+    /// @brief IPv4 fragmentation flags.
+    enum Flags : uint16_t
     {
-        FLAG_RESERVED = 4,
-        DONT_FRAGMENT = 2,
-        MORE_FRAGMENTS = 1
+        FLAG_RESERVED = 4, ///< Reserved flag (must be zero).
+        DONT_FRAGMENT = 2, ///< Don't fragment flag.
+        MORE_FRAGMENTS = 1 ///< More fragments flag.
     };
 
-    /**
-     * \brief Constructor for building the IP PDU.
-     *
-     * Both the destination and source IP address can be supplied.
-     * By default, those fields are initialized using the IP
-     * address 0.0.0.0.
-     *
-     * \param ip_dst The destination ip address(optional).
-     * \param ip_src The source ip address(optional).
-     */
-    IPv4Header(const IPv4Address& ip_dst = IPv4Address(), const IPv4Address& ip_src = IPv4Address());
+    /// @brief Default constructor.
+    IPv4Header() = default;
 
-    /**
-     * \brief Constructs an IP object from a buffer and adds all
-     * identifiable PDUs found in the buffer as children of this
-     * one.
-     *
-     * If there is not enough size for an IP header, a
-     * malformed_packet exception is thrown.
-     *
-     * \param buffer The buffer from which this PDU will be constructed.
-     * \param total_sz The total size of the buffer.
-     */
-    IPv4Header(const uint8_t* buffer, uint32_t total_sz);
+    /// @brief Initializes the header with layer and packet data.
+    /// @param [in] layer Layer information containing header location.
+    /// @param [in] packet Reference to the packet containing the header.
+    ///
+    /// @return true if initialization succeeded, false otherwise.
+    bool initialize(const LayerInfo& layer, const Packet& packet) noexcept;
 
-    void read(const uint8_t* buffer, uint32_t total_sz);
+    /// @brief Gets the next protocol type after IPv4.
+    /// @return Protocol type of the encapsulated payload.
+    ProtocolType getNextProtocol() const noexcept;
 
-    /* Getters */
-    /**
-     * \brief Getter for the header length field.
-     *
-     * \return The number of dwords the header occupies in an uin8_t.
-     */
-    uint8_t headerLen() const
+    /// @brief Checks if the header is valid (non-null).
+    /// @return true if header points to valid data, false otherwise.
+    explicit operator bool() const noexcept
     {
-        return header_.ihl;
+        return header_ != nullptr;
     }
 
-    /**
-     * \brief Getter for the type of service field.
-     *
-     * \return The this IP PDU's type of service.
-     */
-    uint8_t tos() const
+    /// @brief Checks if the header is valid (non-null).
+    /// @return true if header points to valid data, false otherwise.
+    bool isValid() const noexcept
     {
-        return header_.tos;
+        return header_ != nullptr;
     }
 
-    /**
-     * \brief Getter for the total length field.
-     *
-     * \return The total length of this IP PDU.
-     */
-    uint16_t totalLen() const
+    /// @brief Gets the IP version (should be 4).
+    /// @return IP version number.
+    uint8_t version() const noexcept
     {
-        return casket::be_to_host(header_.tot_len);
+        return header_->version;
     }
 
-    /**
-     * \brief Getter for the id field.
-     *
-     * \return The id for this IP PDU.
-     */
-    uint16_t id() const
+    /// @brief Gets the header length in 32-bit words.
+    /// @return Header length in 32-bit words (IHL field).
+    uint8_t headerLen() const noexcept
     {
-        return casket::be_to_host(header_.id);
+        return header_->ihl;
     }
 
-    /**
-     * Indicates whether this PDU is fragmented.
-     *
-     * \return true if this PDU is fragmented, false otherwise.
-     */
-    bool isFragmented() const;
-
-    /**
-     * \brief Getter for the fragment offset field.
-     *
-     * This will return the fragment offset field, as present in the packet,
-     * which indicates the offset of this fragment in blocks of 8 bytes.
-     *
-     * \return The fragment offset, measured in units of 8 byte blocks
-     */
-    uint16_t fragmentOffset() const
+    /// @brief Gets the header length in bytes.
+    /// @return Header length in bytes.
+    uint8_t headerLength() const noexcept
     {
-        return casket::be_to_host(header_.frag_off) & 0x1fff;
+        return header_->ihl * 4;
     }
 
-    /**
-     * \brief Getter for the flags field.
-     *
-     * \return The IP flags field
-     */
-    Flags flags() const
+    /// @brief Gets the Type of Service (ToS) field.
+    /// @return ToS value.
+    uint8_t tos() const noexcept
     {
-        return static_cast<Flags>(casket::be_to_host(header_.frag_off) >> 13);
+        return header_->tos;
     }
 
-    /**
-     * \brief Getter for the time to live field.
-     *
-     * \return The time to live for this IP PDU.
-     */
-    uint8_t ttl() const
+    /// @brief Gets the total packet length in bytes.
+    /// @return Total length including header and payload.
+    uint16_t totalLen() const noexcept
     {
-        return header_.ttl;
+        return casket::be_to_host(header_->tot_len);
     }
 
-    /**
-     * \brief Getter for the protocol field.
-     *
-     * \return The protocol for this IP PDU.
-     */
-    uint8_t protocol() const
+    /// @brief Gets the identification field.
+    /// @return Identification value used for reassembly.
+    uint16_t id() const noexcept
     {
-        return header_.protocol;
+        return casket::be_to_host(header_->id);
     }
 
-    /**
-     * \brief Getter for the checksum field.
-     *
-     * \return The checksum for this IP PDU.
-     */
-    uint16_t checksum() const
+    /// @brief Gets the fragment offset in 8-byte units.
+    /// @return Fragment offset value.
+    uint16_t fragmentOffset() const noexcept
     {
-        return casket::be_to_host(header_.check);
+        return casket::be_to_host(header_->frag_off) & 0x1FFF;
     }
 
-    /**
-     * \brief Getter for the source address field.
-     *
-     * \return The source address for this IP PDU.
-     */
-    IPv4Address srcAddr() const
+    /// @brief Checks if more fragments follow.
+    /// @return true if more fragments follow, false otherwise.
+    bool isMoreFragments() const noexcept
     {
-        return IPv4Address(header_.saddr);
+        return (casket::be_to_host(header_->frag_off) & 0x2000) != 0;
     }
 
-    /**
-     * \brief Getter for the destination address field.
-     * \return The destination address for this IP PDU.
-     */
-    IPv4Address dstAddr() const
+    /// @brief Checks if the packet can be fragmented.
+    /// @return true if fragmentation is disabled, false otherwise.
+    bool dontFragment() const noexcept
     {
-        return IPv4Address(header_.daddr);
+        return (casket::be_to_host(header_->frag_off) & 0x4000) != 0;
     }
 
-    /**
-     * \brief Getter for the version field.
-     * \return The version for this IP PDU.
-     */
-    uint8_t version() const
+    /// @brief Gets the fragmentation flags.
+    /// @return Combination of fragmentation flags.
+    Flags flags() const noexcept
     {
-        return header_.version;
+        return static_cast<Flags>(casket::be_to_host(header_->frag_off) >> 13);
     }
 
-    /* Setters */
-    void initFields();
+    /// @brief Gets the Time To Live (TTL) value.
+    /// @return TTL value in hops.
+    uint8_t ttl() const noexcept
+    {
+        return header_->ttl;
+    }
 
-    /**
-     * \brief Setter for the version field.
-     *
-     * \param ver The version field to be set.
-     */
-    void version(uint8_t ver);
+    /// @brief Gets the protocol number of the encapsulated payload.
+    /// @return IP protocol number (e.g., TCP=6, UDP=17).
+    uint8_t protocol() const noexcept
+    {
+        return header_->protocol;
+    }
 
-    void headerLen(uint8_t new_head_len);
+    /// @brief Gets the header checksum.
+    /// @return Checksum value in host byte order.
+    uint16_t checksum() const noexcept
+    {
+        return casket::be_to_host(header_->check);
+    }
 
-    /**
-     * \brief Setter for the type of service field.
-     *
-     * \param new_tos The new type of service.
-     */
-    void tos(uint8_t new_tos);
+    /// @brief Gets the source IPv4 address.
+    /// @return Source IPv4 address.
+    IPv4Address srcAddr() const noexcept
+    {
+        return IPv4Address(casket::be_to_host(header_->saddr));
+    }
 
-    void totalLen(uint16_t new_tot_len);
+    /// @brief Gets the destination IPv4 address.
+    /// @return Destination IPv4 address.
+    IPv4Address dstAddr() const noexcept
+    {
+        return IPv4Address(casket::be_to_host(header_->daddr));
+    }
 
-    /**
-     * \brief Setter for the flags field.
-     *
-     * \param new_flags The new IP flags field value.
-     */
-    void flags(Flags new_flags);
+    /// @brief Gets the options data if present.
+    /// @return Pointer to options data, or nullptr if no options exist.
+    const uint8_t* options() const noexcept
+    {
+        if (headerLen() > 5)
+        {
+            return reinterpret_cast<const uint8_t*>(header_) + sizeof(RawType);
+        }
+        return nullptr;
+    }
 
-    /**
-     * \brief Setter for the id field.
-     *
-     * \param new_id The new id.
-     */
-    void id(uint16_t new_id);
+    /// @brief Gets the length of options in bytes.
+    /// @return Options length in bytes, or 0 if no options exist.
+    size_t optionsLength() const noexcept
+    {
+        return headerLen() > 5 ? (headerLen() - 5) * 4 : 0;
+    }
 
-    /**
-     * \brief Setter for the fragment offset field.
-     *
-     * The value provided is measured in units of 8 byte blocks. This means that
-     * if you want this packet to have a fragment offset of <i>X</i>,
-     * you need to provide <i>X / 8</i> as the argument to this method.
-     *
-     * \param new_frag_off The new fragment offset, measured in units of 8 byte blocks.
-     */
-    void fragmentOffset(uint16_t new_frag_off);
-
-    /**
-     * \brief Setter for the time to live field.
-     *
-     * \param new_ttl The new time to live.
-     */
-    void ttl(uint8_t new_ttl);
-
-    /**
-     * \brief Setter for the protocol field.
-     *
-     * Note that this protocol will be overwritten using the
-     * inner_pdu's protocol type during serialization unless the IP
-     * datagram is fragmented.
-     *
-     * If the packet is fragmented and was originally sniffed, the
-     * original protocol type will be kept when serialized.
-     *
-     * If this packet has been crafted manually and the inner_pdu
-     * is, for example, a RawPDU, then setting the protocol yourself
-     * is necessary.
-     *
-     * \param new_protocol The new protocol.
-     */
-    void protocol(uint8_t new_protocol);
-
-    void checksum(uint16_t new_check);
-
-    /**
-     * \brief Setter for the source address field.
-     *
-     * \param ip The source address to be set.
-     */
-    void srcAddr(const IPv4Address& ip);
-
-    /**
-     * \brief Setter for the destination address field.
-     *
-     * \param ip The destination address to be set.
-     */
-    void dstAddr(const IPv4Address& ip);
+    /// @brief Prints the IPv4 header to an output stream.
+    /// @param [in,out] os Output stream to print to.
+    ///
+    /// @return Reference to the output stream for chaining.
+    std::ostream& print(std::ostream& os) const noexcept;
 
 private:
-    struct ipv4_header
-    {
-#if SNET_IS_LITTLE_ENDIAN
-        uint8_t ihl : 4, version : 4;
-#else
-        uint8_t version : 4, ihl : 4;
-#endif
-        uint8_t tos;
-        uint16_t tot_len;
-        uint16_t id;
-        uint16_t frag_off;
-        uint8_t ttl;
-        uint8_t protocol;
-        uint16_t check;
-        uint32_t saddr;
-        uint32_t daddr;
-    } __attribute__((packed));
-
-    ipv4_header header_;
+    const RawType* header_ = nullptr; ///< Pointer to raw IPv4 header data.
 };
 
 } // namespace snet::layers
+
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::IPv4Header& header)
+{
+    header.print(os);
+    return os;
+}

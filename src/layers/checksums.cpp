@@ -3,11 +3,6 @@
 
 #include <snet/layers/checksums.hpp>
 
-#include <snet/layers/l3/ipv4_layer.hpp>
-#include <snet/layers/l3/ipv6_layer.hpp>
-
-#include <snet/layers/l4/tcp_layer.hpp>
-
 using namespace casket;
 
 namespace snet::layers
@@ -59,8 +54,8 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
     return host_to_be(result);
 }
 
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::Type ipAddrType,
-                                  uint8_t protocolType, IPAddress srcIPAddress, IPAddress dstIPAddress)
+uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::Type ipAddrType, uint8_t protocolType,
+                                  IPAddress srcIPAddress, IPAddress dstIPAddress)
 {
     uint16_t checksumRes = 0;
     ScalarBuffer<uint16_t> vec[2];
@@ -130,29 +125,12 @@ uint32_t fnvHash(uint8_t* buffer, size_t bufSize)
     return fnvHash(&scalarBuf, 1);
 }
 
-uint32_t hash5Tuple(Packet* packet, bool const& directionUnique)
+uint32_t hash5Tuple(const IPAddress& addrSrc, const IPAddress& addrDst, uint16_t portSrc, uint16_t portDst,
+                    uint8_t protocol, bool const& directionUnique)
 {
-    if (!packet->isPacketOfType(IPv4) && !packet->isPacketOfType(IPv6))
-        return 0;
-
-    if (packet->isPacketOfType(ICMP))
-        return 0;
-
-    if (!(packet->isPacketOfType(TCP)) && (!packet->isPacketOfType(UDP)))
-        return 0;
-
     ScalarBuffer<uint8_t> vec[5];
 
-    uint16_t portSrc = 0;
-    uint16_t portDst = 0;
     int srcPosition = 0;
-
-    TcpLayer* tcpLayer = packet->getLayerOfType<TcpLayer>(true); // lookup in reverse order
-    if (tcpLayer != nullptr)
-    {
-        portSrc = tcpLayer->getTcpHeader()->portSrc;
-        portDst = tcpLayer->getTcpHeader()->portDst;
-    }
 
     if (!directionUnique)
     {
@@ -165,71 +143,17 @@ uint32_t hash5Tuple(Packet* packet, bool const& directionUnique)
     vec[1 - srcPosition].buffer = (uint8_t*)&portDst;
     vec[1 - srcPosition].len = 2;
 
-    IPv4Layer* ipv4Layer = packet->getLayerOfType<IPv4Layer>();
-    if (ipv4Layer != nullptr)
-    {
-        if (!directionUnique && portSrc == portDst &&
-            ipv4Layer->getIPv4Header()->ipDst < ipv4Layer->getIPv4Header()->ipSrc)
-            srcPosition = 1;
+    if (!directionUnique && portSrc == portDst && addrDst < addrSrc)
+        srcPosition = 1;
 
-        vec[2 + srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
-        vec[2 + srcPosition].len = 4;
-        vec[3 - srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
-        vec[3 - srcPosition].len = 4;
-        vec[4].buffer = &(ipv4Layer->getIPv4Header()->protocol);
-        vec[4].len = 1;
-    }
-    else
-    {
-        IPv6Layer* ipv6Layer = packet->getLayerOfType<IPv6Layer>();
-        if (!directionUnique && portSrc == portDst &&
-            memcmp(ipv6Layer->getIPv6Header()->ipDst, ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
-            srcPosition = 1;
-
-        vec[2 + srcPosition].buffer = ipv6Layer->getIPv6Header()->ipSrc;
-        vec[2 + srcPosition].len = 16;
-        vec[3 - srcPosition].buffer = ipv6Layer->getIPv6Header()->ipDst;
-        vec[3 - srcPosition].len = 16;
-        vec[4].buffer = &(ipv6Layer->getIPv6Header()->nextHeader);
-        vec[4].len = 1;
-    }
+    vec[2 + srcPosition].buffer = const_cast<uint8_t*>(addrSrc.asData());
+    vec[2 + srcPosition].len = 4;
+    vec[3 - srcPosition].buffer = const_cast<uint8_t*>(addrDst.asData());
+    vec[3 - srcPosition].len = 4;
+    vec[4].buffer = &protocol;
+    vec[4].len = 1;
 
     return fnvHash(vec, 5);
-}
-
-uint32_t hash2Tuple(Packet* packet)
-{
-    if (!packet->isPacketOfType(IPv4) && !packet->isPacketOfType(IPv6))
-        return 0;
-
-    ScalarBuffer<uint8_t> vec[2];
-
-    IPv4Layer* ipv4Layer = packet->getLayerOfType<IPv4Layer>();
-    if (ipv4Layer != nullptr)
-    {
-        int srcPosition = 0;
-        if (ipv4Layer->getIPv4Header()->ipDst < ipv4Layer->getIPv4Header()->ipSrc)
-            srcPosition = 1;
-
-        vec[0 + srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipSrc;
-        vec[0 + srcPosition].len = 4;
-        vec[1 - srcPosition].buffer = (uint8_t*)&ipv4Layer->getIPv4Header()->ipDst;
-        vec[1 - srcPosition].len = 4;
-    }
-    else
-    {
-        IPv6Layer* ipv6Layer = packet->getLayerOfType<IPv6Layer>();
-        int srcPosition = 0;
-        if (memcmp(ipv6Layer->getIPv6Header()->ipDst, ipv6Layer->getIPv6Header()->ipSrc, 16) < 0)
-            srcPosition = 1;
-
-        vec[0 + srcPosition].buffer = ipv6Layer->getIPv6Header()->ipSrc;
-        vec[0 + srcPosition].len = 16;
-        vec[1 - srcPosition].buffer = ipv6Layer->getIPv6Header()->ipDst;
-        vec[1 - srcPosition].len = 16;
-    }
-
-    return fnvHash(vec, 2);
 }
 
 } // namespace snet::layers

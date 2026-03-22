@@ -60,6 +60,15 @@ public:
 
     static std::optional<IPAddress> fromString(const char* str);
 
+    const uint8_t* asData() const noexcept
+    {
+        if (type_ == IPv6)
+        {
+            return ipv6_.asData();
+        }
+        return ipv4_.asData();
+    }
+
 private:
     Type type_;
 

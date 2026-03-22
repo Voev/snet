@@ -1,7 +1,5 @@
-#include <snet/layers/l3/ipv4_layer.hpp>
-#include <snet/layers/l3/ipv6_layer.hpp>
+#include <cstring>
 #include <snet/layers/l4/tcp_reassembly.hpp>
-#include <snet/layers/l4/tcp_layer.hpp>
 #include <snet/layers/checksums.hpp>
 
 #include <casket/log/log_manager.hpp>
@@ -88,36 +86,36 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     // calculate packet's source and dest IP address
     IPAddress srcIP, dstIP;
 
-    if (packet->isPacketOfType(layers::IP))
+    auto ipHeader = packet->getHeader<IPv4Header>(IPv4);
+    if (ipHeader.isValid())
     {
-        const layers::IPLayer* ipLayer = packet->getLayerOfType<layers::IPLayer>();
-        srcIP = ipLayer->getSrcIPAddress();
-        dstIP = ipLayer->getDstIPAddress();
+        srcIP = IPAddress(ipHeader.srcAddr());
+        dstIP = IPAddress(ipHeader.dstAddr());
     }
     else
         return NonIpPacket;
 
     // Ignore non-TCP packets
-    layers::TcpLayer* tcpLayer =
-        packet->getLayerOfType<layers::TcpLayer>(true); // lookup in reverse order
-    if (tcpLayer == nullptr)
+    const auto* layer = packet->findLayer(TCP);
+    if (!layer)
     {
         return NonTcpPacket;
     }
+    auto tcpHeader = packet->getHeader<TCPHeader>(*layer);
 
     ReassemblyStatus status = TcpMessageHandled;
 
     // set the TCP payload size
-    size_t tcpPayloadSize = tcpLayer->getLayerPayloadSize();
+    size_t tcpPayloadSize = packet->getPayloadSize(layer);
 
     // calculate if this packet has FIN or RST flags
-    bool isFin = (tcpLayer->getTcpHeader()->finFlag == 1);
-    bool isRst = (tcpLayer->getTcpHeader()->rstFlag == 1);
+    bool isFin = tcpHeader.isFIN();
+    bool isRst = tcpHeader.isRST();
     bool isFinOrRst = isFin || isRst;
 
     // ignore ACK packets or TCP packets with no payload (except for SYN, FIN or
     // RST packets which we'll later need)
-    if (tcpPayloadSize == 0 && tcpLayer->getTcpHeader()->synFlag == 0 && !isFinOrRst)
+    if (tcpPayloadSize == 0 && !tcpHeader.isSYN() && !isFinOrRst)
     {
         return Ignore_PacketWithNoData;
     }
@@ -125,7 +123,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     TcpReassemblyData* tcpReassemblyData = nullptr;
 
     // calculate flow key for this packet
-    uint32_t flowKey = layers::hash5Tuple(packet);
+    uint32_t flowKey = layers::hash5Tuple(srcIP, dstIP, tcpHeader.srcPort(), tcpHeader.dstPort(), ipHeader.protocol(), false);
 
     // time stamp for this packet
     auto currTime = packet->getTimestamp().toTimePoint();
@@ -142,8 +140,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         tcpReassemblyData = &pair.first->second;
         tcpReassemblyData->connData.srcIP = srcIP;
         tcpReassemblyData->connData.dstIP = dstIP;
-        tcpReassemblyData->connData.srcPort = tcpLayer->getSrcPort();
-        tcpReassemblyData->connData.dstPort = tcpLayer->getDstPort();
+        tcpReassemblyData->connData.srcPort = tcpHeader.srcPort();
+        tcpReassemblyData->connData.dstPort = tcpHeader.dstPort();
         tcpReassemblyData->connData.flowKey = flowKey;
         tcpReassemblyData->connData.setStartTime(currTime);
 
@@ -176,7 +174,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     bool first = false;
 
     // calculate packet's source port
-    uint16_t srcPort = tcpLayer->getTcpHeader()->portSrc;
+    uint16_t srcPort = tcpHeader.srcPort();
 
     // if this is a new connection and it's the first packet we see on that
     // connection
@@ -308,7 +306,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     tcpReassemblyData->prevSide = sideIndex;
 
     // extract sequence value from packet
-    uint32_t sequence = be_to_host(tcpLayer->getTcpHeader()->sequenceNumber);
+    uint32_t sequence = tcpHeader.seqNum();
 
     // if it's the first packet we see on this side of the connection
     if (first)
@@ -317,14 +315,14 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 
         // set initial sequence
         tcpReassemblyData->twoSides[sideIndex].sequence = sequence + tcpPayloadSize;
-        if (tcpLayer->getTcpHeader()->synFlag != 0)
+        if (tcpHeader.isSYN())
             tcpReassemblyData->twoSides[sideIndex].sequence++;
 
         // send data to the callback
         if (tcpPayloadSize != 0 && m_OnMessageReadyCallback != nullptr)
         {
 
-            TcpStreamData streamData(tcpLayer->getLayerPayload(), tcpPayloadSize, 0,
+            TcpStreamData streamData(packet->getPayload(layer), tcpPayloadSize, 0,
                                      tcpReassemblyData->connData, currTime);
             m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
         }
@@ -365,7 +363,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             // send only the new data to the callback
             if (m_OnMessageReadyCallback != nullptr)
             {
-                TcpStreamData streamData(tcpLayer->getLayerPayload() + newLength,
+                TcpStreamData streamData(packet->getPayload(layer) + newLength,
                                          tcpPayloadSize - newLength, 0, tcpReassemblyData->connData,
                                          currTime);
                 m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
@@ -415,13 +413,13 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         tcpReassemblyData->twoSides[sideIndex].sequence += tcpPayloadSize;
 
         // if this is a SYN packet - add +1 to the sequence
-        if (tcpLayer->getTcpHeader()->synFlag != 0)
+        if (tcpHeader.isSYN())
             tcpReassemblyData->twoSides[sideIndex].sequence++;
 
         // send the data to the callback
         if (m_OnMessageReadyCallback != nullptr)
         {
-            TcpStreamData streamData(tcpLayer->getLayerPayload(), tcpPayloadSize, 0,
+            TcpStreamData streamData(packet->getPayload(layer), tcpPayloadSize, 0,
                                      tcpReassemblyData->connData, currTime);
             m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
         }
@@ -433,7 +431,9 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 
         // handle case where this packet is FIN or RST
         if (isFinOrRst)
+        {
             handleFinOrRst(tcpReassemblyData, sideIndex, flowKey, isRst);
+        }
 
         // return - nothing else to do here
         return status;
@@ -471,7 +471,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         newTcpFrag->dataLength = tcpPayloadSize;
         newTcpFrag->sequence = sequence;
         newTcpFrag->timestamp = currTime;
-        memcpy(newTcpFrag->data, tcpLayer->getLayerPayload(), tcpPayloadSize);
+        memcpy(newTcpFrag->data, packet->getPayload(layer), tcpPayloadSize);
         tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.pushBack(newTcpFrag);
 
         debug("Found out-of-order packet and added a new TCP fragment with size "
