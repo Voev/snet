@@ -24,6 +24,8 @@ public:
 
     RecvStatus receivePacket(layers::Packet** packet) override;
 
+    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+
     Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
     
     int getSnaplen() const override;

@@ -11,6 +11,7 @@
 
 #include "pcap_driver.hpp"
 #include "pcap_handle.hpp"
+#include "pcap_packet.hpp"
 
 #define PCAP_ROLLOVER_LIM 1000000000 // Check for rollover every billionth packet
 
@@ -96,7 +97,7 @@ struct Pcap::Impl
     }
 
     /* Configuration */
-    io::PacketPool<layers::Packet> pool;
+    std::unique_ptr<PacketPool> pool;
     std::string device;
     std::string filter_string;
     unsigned snaplen;
@@ -200,7 +201,7 @@ Status Pcap::configure(const io::Config& config)
     impl_->promisc_mode = true;
     impl_->immediate_mode = true;
     impl_->readback_timeout = false;
-    impl_->pool.allocatePool(16);
+    impl_->pool = std::make_unique<PacketPool>(config.getMsgPoolSize(), config.getSnaplen());
 
     if (impl_->mode == Mode::ReadFile)
     {
@@ -375,113 +376,138 @@ layers::LinkLayerType Pcap::getDataLinkType() const
     return layers::LINKTYPE_NULL;
 }
 
-RecvStatus Pcap::receivePacket(layers::Packet** pPacket)
+RecvStatus Pcap::receivePacket(layers::Packet**)
+{
+    return RecvStatus::Error;
+}
+
+RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount, uint16_t maxCount)
 {
     RecvStatus rstat{RecvStatus::Ok};
-    struct pcap_pkthdr* pcaphdr;
-    const u_char* data;
+    struct pcap_pkthdr* pcaphdr{nullptr};
+    const uint8_t* data{nullptr};
+    uint16_t i{};
+    PcapPacket* packet{nullptr};
 
-    if (impl_->interrupted)
+    for (i = 0; i < maxCount; ++i)
     {
-        impl_->interrupted = false;
-        return RecvStatus::Interrupted;
-    }
+        if (impl_->interrupted)
+        {
+            impl_->interrupted = false;
+            rstat = RecvStatus::Interrupted;
+            break;
+        }
 
-    /* When dealing with a live interface, try to get the first packet in non-blocking mode.
-            If there's nothing to receive, switch to blocking mode. */
-    int pcap_rval{};
-    if (impl_->mode != Mode::ReadFile)
-    {
-        if (impl_->setNonBlocking(true) != Status::Success)
+        /* Make sure that we have a packet descriptor available to populate *before*
+            calling into libpcap. */
+
+        packet = impl_->pool->acquire();
+        if (!packet)
+        {
+            rstat = RecvStatus::NoMemory;
+            break;
+        }
+
+        /* When dealing with a live interface, try to get the first packet in non-blocking mode.
+                If there's nothing to receive, switch to blocking mode. */
+        int pcap_rval{};
+
+        if (impl_->mode != Mode::ReadFile && i == 0)
+        {
+            if (impl_->setNonBlocking(true) != Status::Success)
+            {
+                rstat = RecvStatus::Error;
+            }
+            else
+            {
+                pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
+                if (pcap_rval == 0)
+                {
+                    if (impl_->setNonBlocking(false) != Status::Success)
+                    {
+                        rstat = RecvStatus::Error;
+                        break;
+                    }
+                    pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
+                }
+            }
+        }
+        else
+        {
+            pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
+        }
+
+        if (pcap_rval <= 0)
+        {
+            if (pcap_rval == 0)
+                rstat = RecvStatus::Timeout;
+            else if (pcap_rval == -1)
+            {
+                // SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
+                rstat = RecvStatus::Error;
+            }
+            else if (pcap_rval == -2)
+            {
+                /* LibPCAP brilliantly decides to return -2 if it hit EOF in readback OR
+                pcap_breakloop() was called.  Let's try to differentiate by checking to see if we
+                asked for a break. */
+                if (!impl_->interrupted && impl_->mode == Mode::ReadFile)
+                {
+                    /* Insert a final timeout receive status when readback timeout mode is enabled.
+                     */
+                    if (impl_->readback_timeout && !impl_->final_readback_timeout)
+                    {
+                        impl_->final_readback_timeout = true;
+                        rstat = RecvStatus::Timeout;
+                    }
+                    else
+                        rstat = RecvStatus::Eof;
+                }
+                else
+                {
+                    impl_->interrupted = false;
+                    rstat = RecvStatus::Interrupted;
+                }
+                break;
+            }
+        }
+
+        /* Update hw packet counters to make sure we detect counter overflow */
+        if (++impl_->hwupdate_count == PCAP_ROLLOVER_LIM)
+            impl_->updateHwStats();
+
+        struct timeval ts{};
+        ts.tv_sec = pcaphdr->ts.tv_sec;
+        ts.tv_usec = pcaphdr->ts.tv_usec;
+
+        packet->packet.setTimestamp(Timestamp(ts));
+
+        int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
+
+        memcpy(packet->data, data, caplen);
+
+        if (!packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType(), -1))
         {
             rstat = RecvStatus::Error;
         }
         else
         {
-            pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
-            if (pcap_rval == 0)
-            {
-                if (impl_->setNonBlocking(false) != Status::Success)
-                {
-                    rstat = RecvStatus::Error;
-                }
-                else
-                {
-                    pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
-                }
-            }
+            impl_->stats.packets_received++;
         }
-    }
-    else
-        pcap_rval = pcap_next_ex(impl_->handle, &pcaphdr, &data);
 
-    if (pcap_rval <= 0)
-    {
-        if (pcap_rval == 0)
-            rstat = RecvStatus::Timeout;
-        else if (pcap_rval == -1)
-        {
-            // SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle));
-            rstat = RecvStatus::Error;
-        }
-        else if (pcap_rval == -2)
-        {
-            /* LibPCAP brilliantly decides to return -2 if it hit EOF in readback OR
-               pcap_breakloop() was called.  Let's try to differentiate by checking to see if we
-               asked for a break. */
-            if (!impl_->interrupted && impl_->mode == Mode::ReadFile)
-            {
-                /* Insert a final timeout receive status when readback timeout mode is enabled.
-                 */
-                if (impl_->readback_timeout && !impl_->final_readback_timeout)
-                {
-                    impl_->final_readback_timeout = true;
-                    rstat = RecvStatus::Timeout;
-                }
-                else
-                    rstat = RecvStatus::Eof;
-            }
-            else
-            {
-                impl_->interrupted = false;
-                rstat = RecvStatus::Interrupted;
-            }
-        }
+        packets[i] = &packet->packet;
     }
 
-    /* Update hw packet counters to make sure we detect counter overflow */
-    if (++impl_->hwupdate_count == PCAP_ROLLOVER_LIM)
-        impl_->updateHwStats();
-
-    auto rawPacket = impl_->pool.acquirePacket();
-
-    struct timeval ts{};
-    ts.tv_sec = pcaphdr->ts.tv_sec;
-    ts.tv_usec = pcaphdr->ts.tv_usec;
-
-    rawPacket->setTimestamp(Timestamp(ts));
-
-    int caplen = (pcaphdr->caplen > impl_->snaplen) ? impl_->snaplen : pcaphdr->caplen;
-
-    if (!rawPacket->setRawData({data, (size_t)caplen}, getDataLinkType(), -1))
-    {
-        rstat = RecvStatus::Error;
-    }
-    else
-    {
-        impl_->stats.packets_received++;
-    }
-
-    *pPacket = rawPacket;
-
+    *packetCount = i;
     return rstat;
 }
 
-Status Pcap::finalizePacket(layers::Packet* rawPacket, Verdict verdict)
+Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
+    auto innerPacket = PcapPacket::fromPacket(packet);
     impl_->stats.verdicts[verdict]++;
-    rawPacket->clear();
-    impl_->pool.releasePacket(rawPacket);
+    packet->clear();
+    impl_->pool->release(innerPacket);
 
     return Status::Success;
 }

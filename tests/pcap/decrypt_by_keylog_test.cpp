@@ -94,15 +94,22 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 void DecryptByKeylog::execute()
 {
     RecvStatus status{RecvStatus::Ok};
-    snet::layers::Packet* packet{nullptr};
+    snet::layers::Packet* packets[32] = {};
+    uint16_t maxCount = 32;
+    uint16_t receivedPackets = 0;
+
     do
     {
-        status = driver_->receivePacket(&packet);
-        if (packet)
+        status = driver_->receivePackets(packets, &receivedPackets, maxCount);
+        for (uint16_t i = 0; i < receivedPackets; ++i)
         {
-            packet->parse();
-            reassembler_.reassemblePacket(packet);
-            driver_->finalizePacket(packet, Verdict::Pass);
+            snet::layers::Packet* packet = packets[i];
+            if (packet)
+            {
+                packet->parse();
+                reassembler_.reassemblePacket(packet);
+                driver_->finalizePacket(packet, Verdict::Pass);
+            }
         }
     } while (status == RecvStatus::Ok);
 

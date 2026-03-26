@@ -47,6 +47,8 @@ public:
 
     virtual RecvStatus receivePacket(layers::Packet** rawPacket) = 0;
 
+    virtual RecvStatus receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount) = 0;
+
     virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
 
     virtual Status getMsgPoolInfo(PacketPoolInfo* info) = 0;

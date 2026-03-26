@@ -634,6 +634,12 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
     return rstat;
 }
 
+RecvStatus NfQueue::receivePackets(layers::Packet**, uint16_t*, uint16_t)
+{
+    return RecvStatus::Error;
+}
+
+
 Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
     std::error_code ec;

@@ -56,4 +56,5 @@ enum class RecvStatus
     Eof,
     Interrupted,
     Error,
+    NoMemory,
 };
