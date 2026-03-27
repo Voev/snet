@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <unordered_map>
 #include <snet/io/types.hpp>
 
 namespace snet::io
@@ -8,6 +9,8 @@ namespace snet::io
 class Config
 {
 public:
+    using Parameters = std::unordered_map<std::string, std::string>;
+
     Config()
         : input_()
         , msgPoolSize_(0U)
@@ -71,7 +74,29 @@ public:
         return mode_;
     }
 
+    void setVariable(std::string key, std::string value)
+    {
+        parameters_[std::move(key)] = std::move(value);
+    }
+
+    std::string getVariable(const std::string& key) const
+    {
+        auto it = parameters_.find(key);
+        return it != parameters_.end() ? it->second : std::string();
+    }
+
+    const Parameters& getParameters() const
+    {
+        return parameters_;
+    }
+
+    void deleteVariable(const std::string& key)
+    {
+        parameters_.erase(key);
+    }
+
 private:
+    Parameters parameters_;
     std::string input_;
     std::size_t msgPoolSize_;
     std::size_t snaplen_;
