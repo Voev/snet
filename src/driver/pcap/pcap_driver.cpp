@@ -56,6 +56,10 @@ Pcap::Pcap(const io::DriverConfig& config)
 
 Pcap::~Pcap() noexcept
 {
+    if (fp_)
+    {
+        fclose(fp_);
+    }
 }
 
 std::shared_ptr<io::Driver> Pcap::create(const io::DriverConfig& config)
@@ -104,9 +108,6 @@ Status Pcap::configure(const io::Config& config)
             fp_ = fopen(fname.c_str(), "rb");
             if (!fp_)
             {
-                // SET_ERROR(modinst, "%s: Couldn't open file '%s' for reading: %s",
-                // __func__,
-                //           fname.c_str(), strerror(errno));
                 return Status::InvalidArgument;
             }
         }
@@ -116,8 +117,6 @@ Status Pcap::configure(const io::Config& config)
         device_ = config.getInput();
         if (device_.empty())
         {
-            // SET_ERROR(modinst, "%s: Couldn't allocate memory for the device string!",
-            //           __func__);
             return Status::InvalidArgument;
         }
     }
@@ -146,7 +145,7 @@ Status Pcap::stop()
 {
     if (handle_)
     {
-        /* Store the hardware stats for post-stop stat calls. */
+        /// Store the hardware stats for post-stop stat calls.
         updateHwStats();
         handle_.reset();
     }
@@ -166,6 +165,7 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
     const uint8_t* data{nullptr};
     uint16_t i{};
     PcapPacket* packet{nullptr};
+    int ret{};
 
     for (i = 0; i < maxCount; ++i)
     {
@@ -176,9 +176,6 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             break;
         }
 
-        /* Make sure that we have a packet descriptor available to populate *before*
-            calling into libpcap. */
-
         packet = pool_->acquire();
         if (!packet)
         {
@@ -186,9 +183,8 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             break;
         }
 
-        /* When dealing with a live interface, try to get the first packet in non-blocking mode.
-                If there's nothing to receive, switch to blocking mode. */
-        int pcap_rval{};
+        // When dealing with a live interface, try to get the first packet in non-blocking mode.
+        // If there's nothing to receive, switch to blocking mode.
 
         if (mode_ != Mode::ReadFile && i == 0)
         {
@@ -198,37 +194,35 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             }
             else
             {
-                pcap_rval = pcap_next_ex(handle_, &pcaphdr, &data);
-                if (pcap_rval == 0)
+                ret = pcap_next_ex(handle_, &pcaphdr, &data);
+                if (ret == 0)
                 {
                     if (setNonBlocking(false) != Status::Success)
                     {
                         rstat = RecvStatus::Error;
                         break;
                     }
-                    pcap_rval = pcap_next_ex(handle_, &pcaphdr, &data);
+                    ret = pcap_next_ex(handle_, &pcaphdr, &data);
                 }
             }
         }
         else
         {
-            pcap_rval = pcap_next_ex(handle_, &pcaphdr, &data);
+            ret = pcap_next_ex(handle_, &pcaphdr, &data);
         }
 
-        if (pcap_rval <= 0)
+        if (ret <= 0)
         {
-            if (pcap_rval == 0)
-                rstat = RecvStatus::Timeout;
-            else if (pcap_rval == -1)
+            if (ret == 0)
             {
-                // SET_ERROR(impl_->modinst, "%s", pcap_geterr(impl_->handle_));
+                rstat = RecvStatus::Timeout;
+            }
+            else if (ret == -1)
+            {
                 rstat = RecvStatus::Error;
             }
-            else if (pcap_rval == -2)
+            else if (ret == -2)
             {
-                /* LibPCAP brilliantly decides to return -2 if it hit EOF in readback OR
-                pcap_breakloop() was called.  Let's try to differentiate by checking to see if we
-                asked for a break. */
                 if (!interrupted_ && mode_ == Mode::ReadFile)
                 {
                     rstat = RecvStatus::Eof;
@@ -242,9 +236,10 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             }
         }
 
-        /* Update hw packet counters to make sure we detect counter overflow */
         if (++hwupdateCount_ == PCAP_ROLLOVER_LIM)
+        {
             updateHwStats();
+        }
 
         struct timeval ts{};
         ts.tv_sec = pcaphdr->ts.tv_sec;
@@ -358,35 +353,28 @@ Status Pcap::startLive()
     if (!handle_)
         return Status::Error;
 
-    if (pcap_set_immediate_mode(handle_, immediateMode_ ? 1 : 0) < 0)
+    if (0 > pcap_set_immediate_mode(handle_, immediateMode_ ? 1 : 0) || 0 > pcap_set_snaplen(handle_, snaplen_) ||
+        0 > pcap_set_promisc(handle_, promiscMode_ ? 1 : 0) || 0 > pcap_set_timeout(handle_, timeout_) ||
+        0 > pcap_set_buffer_size(handle_, bufferSize_) || 0 > pcap_activate(handle_))
+    {
         return Status::Error;
-
-    if (pcap_set_snaplen(handle_, snaplen_) < 0)
-        return Status::Error;
-
-    if (pcap_set_promisc(handle_, promiscMode_ ? 1 : 0) < 0)
-        return Status::Error;
-
-    if (pcap_set_timeout(handle_, timeout_) < 0)
-        return Status::Error;
-
-    if (pcap_set_buffer_size(handle_, bufferSize_) < 0)
-        return Status::Error;
-
-    if (pcap_activate(handle_) < 0)
-        return Status::Error;
+    }
 
     if (setNonBlocking(true) != Status::Success)
+    {
         return Status::Error;
+    }
 
     uint32_t localnet;
-    uint32_t netmask_val;
+    uint32_t netmask;
     uint32_t defaultnet = 0xFFFFFF00;
 
-    if (pcap_lookupnet(device_.c_str(), &localnet, &netmask_val, errbuf_) < 0)
-        netmask_val = htonl(defaultnet);
+    if (0 > pcap_lookupnet(device_.c_str(), &localnet, &netmask, errbuf_))
+    {
+        netmask = htonl(defaultnet);
+    }
 
-    netmask_ = netmask_val;
+    netmask_ = netmask;
 
     return applyFilterAndFinish();
 }
@@ -442,14 +430,12 @@ Status Pcap::installFilter(const std::string& filter)
     pthread_mutex_lock(&bpf_mutex);
     if (0 > pcap_compile(handle_.get(), fcode.get(), filter.c_str(), 1, netmask_))
     {
-        // SET_ERROR(modinst, "%s: pcap_compile: %s", __func__, pcap_geterr(handle_));
         return Status::Error;
     }
     pthread_mutex_unlock(&bpf_mutex);
 
     if (0 > pcap_setfilter(handle_.get(), fcode.get()))
     {
-        // SET_ERROR(modinst, "%s: pcap_setfilter: %s", __func__, pcap_geterr(handle_));
         return Status::Error;
     }
     return Status::Success;
@@ -467,7 +453,6 @@ Status Pcap::updateHwStats() noexcept
 
     if (0 > pcap_stats(handle_.get(), &ps))
     {
-        // SET_ERROR(modinst, "%s", pcap_geterr(handle_));
         return Status::Error;
     }
 

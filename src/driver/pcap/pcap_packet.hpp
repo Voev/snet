@@ -7,11 +7,17 @@
 namespace snet::driver
 {
 
+/// @brief PCAP packet wrapper with intrusive list support.
 struct PcapPacket final : public casket::IntrusiveListNode<PcapPacket>
 {
-    layers::Packet packet;
-    uint8_t* data{nullptr};
+    layers::Packet packet;   ///< Base packet.
+    uint8_t* data{nullptr};  ///< Raw packet data.
 
+    /// @brief Gets parent PcapPacket from embedded Packet pointer.
+    ///
+    /// @param[in] packet Embedded Packet pointer.
+    ///
+    /// @return Parent PcapPacket or nullptr.
     static PcapPacket* fromPacket(layers::Packet* packet)
     {
         if (!packet)

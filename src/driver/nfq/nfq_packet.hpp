@@ -7,17 +7,25 @@
 namespace snet::driver
 {
 
+/// @brief Netfilter queue packet wrapper with intrusive list support.
 struct NfqPacket final : public casket::IntrusiveListNode<NfqPacket>
 {
-    layers::Packet packet;
-    const nlmsghdr* mh{nullptr};
-    nfqnl_msg_packet_hdr* ph{nullptr};
-    uint8_t* data{nullptr};
+    layers::Packet packet;             ///< Base packet structure
+    const nlmsghdr* mh{nullptr};       ///< Netlink message header
+    nfqnl_msg_packet_hdr* ph{nullptr}; ///< Netfilter queue packet header
+    uint8_t* data{nullptr};            ///< Raw packet data pointer
 
+    /// @brief Converts a Packet pointer back to its containing NfqPacket.
+    ///
+    /// @param[in] packet Pointer to the embedded Packet structure.
+    ///
+    /// @return Pointer to the parent NfqPacket, or nullptr if input is nullptr.
     static NfqPacket* fromPacket(layers::Packet* packet)
     {
         if (!packet)
+        {
             return nullptr;
+        }
 
         static const size_t offset = []() -> size_t
         {
