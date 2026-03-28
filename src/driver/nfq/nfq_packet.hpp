@@ -1,27 +1,32 @@
 #pragma once
 #include <linux/netfilter.h>
+
 #include <snet/layers/packet.hpp>
+#include <casket/types/intrusive_list.hpp>
 
 namespace snet::driver
 {
 
-class NfqPacket final : public layers::Packet
+struct NfqPacket final : public casket::IntrusiveListNode<NfqPacket>
 {
-public:
-    NfqPacket()
-        : layers::Packet()
-        , buffer(nullptr)
-    {
-    }
+    layers::Packet packet;
+    const nlmsghdr* mh{nullptr};
+    nfqnl_msg_packet_hdr* ph{nullptr};
+    uint8_t* data{nullptr};
 
-    ~NfqPacket() noexcept
+    static NfqPacket* fromPacket(layers::Packet* packet)
     {
-        delete[] buffer;
-    }
+        if (!packet)
+            return nullptr;
 
-    uint8_t* buffer;
-    const nlmsghdr* mh;
-    nfqnl_msg_packet_hdr* ph;
+        static const size_t offset = []() -> size_t
+        {
+            NfqPacket dummy;
+            return reinterpret_cast<size_t>(&dummy.packet) - reinterpret_cast<size_t>(&dummy);
+        }();
+
+        return reinterpret_cast<NfqPacket*>(reinterpret_cast<char*>(packet) - offset);
+    }
 };
 
 } // namespace snet::driver

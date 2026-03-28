@@ -1,5 +1,6 @@
 #pragma once
 #include <snet/io.hpp>
+#include <snet/layers/packet_pool.hpp>
 
 namespace snet::driver
 {
@@ -33,7 +34,7 @@ public:
 
     layers::LinkLayerType getDataLinkType() const override;
     
-    Status getMsgPoolInfo(PacketPoolInfo* info) override;
+    Status getMsgPoolInfo(layers::PacketPoolInfo& info) override;
 
     const char* getName() const override;
 

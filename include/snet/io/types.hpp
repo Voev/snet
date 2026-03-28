@@ -31,13 +31,6 @@ struct Stats
     uint64_t verdicts[MaxVerdicts]; /* Counters of packets handled per-verdict. */
 };
 
-struct PacketPoolInfo
-{
-    uint32_t size;
-    uint32_t available;
-    size_t memorySize;
-};
-
 enum class Status
 {
     Success = 0,

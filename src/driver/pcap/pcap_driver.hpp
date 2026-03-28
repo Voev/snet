@@ -1,11 +1,12 @@
 #pragma once
 #include <snet/io.hpp>
+#include <snet/layers/packet_pool.hpp>
+
 #include "pcap_handle.hpp"
+#include "pcap_packet.hpp"
 
 namespace snet::driver
 {
-
-class PacketPool;
 
 class Pcap final : public io::Driver
 {
@@ -38,7 +39,7 @@ public:
 
     layers::LinkLayerType getDataLinkType() const override;
     
-    Status getMsgPoolInfo(PacketPoolInfo* info) override;
+    Status getMsgPoolInfo(layers::PacketPoolInfo& info) override;
 
     Status getStats(Stats* stats) override;
 
@@ -58,7 +59,7 @@ private:
     Status updateHwStats() noexcept;
 
 private:
-    std::unique_ptr<PacketPool> pool_;
+    std::unique_ptr<layers::PacketPool<PcapPacket>> pool_;
     Stats stats_;
     char errbuf_[PCAP_ERRBUF_SIZE];
     std::string device_;

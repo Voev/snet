@@ -9,7 +9,6 @@
 #include <casket/utils/to_number.hpp>
 
 #include <snet/utils/counter.hpp>
-#include <snet/io/packet_pool.hpp>
 
 #include "pcap_driver.hpp"
 #include "pcap_handle.hpp"
@@ -29,7 +28,6 @@ struct BpfProgramDeleter
         if (prog)
         {
             pcap_freecode(prog);
-            delete prog;
         }
     }
 };
@@ -92,7 +90,7 @@ Status Pcap::configure(const io::Config& config)
         }
     }
 
-    pool_ = std::make_unique<PacketPool>(config.getMsgPoolSize(), config.getSnaplen());
+    pool_ = std::make_unique<PacketPool<PcapPacket>>(config.getMsgPoolSize(), config.getSnaplen());
 
     if (mode_ == Mode::ReadFile)
     {
@@ -314,9 +312,9 @@ layers::LinkLayerType Pcap::getDataLinkType() const
     return layers::LINKTYPE_NULL;
 }
 
-Status Pcap::getMsgPoolInfo(PacketPoolInfo* info)
+Status Pcap::getMsgPoolInfo(PacketPoolInfo& info)
 {
-    (void)info;
+    pool_->getInfo(info);
     return Status::Success;
 }
 

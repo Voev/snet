@@ -11,7 +11,7 @@
 
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/packet.hpp>
-
+#include <snet/layers/packet_pool.hpp>
 
 namespace snet::io
 {
@@ -51,7 +51,7 @@ public:
 
     virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
 
-    virtual Status getMsgPoolInfo(PacketPoolInfo* info) = 0;
+    virtual Status getMsgPoolInfo(layers::PacketPoolInfo& info) = 0;
 
     const char* getLastError() const
     {
