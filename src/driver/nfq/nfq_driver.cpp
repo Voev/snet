@@ -7,7 +7,6 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink_queue.h>
 
-#include <snet/io/packet_pool.hpp>
 #include <snet/socket.hpp>
 
 #include <casket/utils/endianness.hpp>
@@ -228,11 +227,11 @@ static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* dat
     return ret;
 }
 
-static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
+static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* nfqPacket)
 {
     nlattr* attr[NFQA_MAX + 1] = {};
 
-    if (rawPacket->mh)
+    if (nfqPacket->mh)
     {
         return false;
     }
@@ -242,8 +241,8 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
         return false;
     }
 
-    rawPacket->mh = nlh;
-    rawPacket->ph = (nfqnl_msg_packet_hdr*)AttrGetPayload(attr[NFQA_PACKET_HDR]);
+    nfqPacket->mh = nlh;
+    nfqPacket->ph = (nfqnl_msg_packet_hdr*)AttrGetPayload(attr[NFQA_PACKET_HDR]);
 
     size_t pktlen;
     size_t framelen = AttrGetPayloadLen(attr[NFQA_PAYLOAD]);
@@ -256,12 +255,12 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* rawPacket)
         pktlen = framelen;
     }
 
-    rawPacket->setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW, framelen);
-    rawPacket->setTimestamp(Timestamp::currentTime());
+    nfqPacket->packet.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW, framelen);
+    nfqPacket->packet.setTimestamp(Timestamp::currentTime());
     return true;
 }
 
-int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, NfqPacket* rawPacket, std::error_code& ec)
+int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, NfqPacket* nfqPacket, std::error_code& ec)
 {
     const nlmsghdr* nlh = static_cast<const nlmsghdr*>(buffer);
     int len = numbytes;
@@ -283,7 +282,7 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, Nf
 
         if (nlh->nlmsg_type >= NLMSG_MIN_TYPE)
         {
-            if (!ProcessMessage(nlh, rawPacket))
+            if (!ProcessMessage(nlh, nfqPacket))
             {
                 return -1;
             }
@@ -407,7 +406,7 @@ struct NfQueue::Impl
         }
     }
 
-    io::PacketPool<NfqPacket> pool;
+    std::unique_ptr<layers::PacketPool<NfqPacket>> pool;
     uint8_t* buffer;
     size_t buffersize;
     socket::SocketType socket;
@@ -463,7 +462,7 @@ Status NfQueue::configure(const io::Config& config)
     impl_->buffersize = impl_->snaplen + 4096;
     impl_->buffer = new uint8_t[impl_->buffersize];
 
-    impl_->pool.allocatePool(::kDefaultPoolSize);
+    impl_->pool = std::make_unique<PacketPool<NfqPacket>>(config.getMsgPoolSize(), config.getSnaplen());
     impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
     impl_->timeout = config.getTimeout();
@@ -577,20 +576,17 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
         return RecvStatus::Interrupted;
     }
 
-    NfqPacket* rawPacket = impl_->pool.acquirePacket();
-    if (!rawPacket)
+    NfqPacket* nfqPacket = impl_->pool->acquire();
+    if (!nfqPacket)
     {
         setError("Failed to get new packet");
         return RecvStatus::Error;
     }
 
-    if (!rawPacket->buffer)
-        rawPacket->buffer = new uint8_t[impl_->buffersize];
-
     ssize_t ret;
     do
     {
-        ret = impl_->recvSocket(rawPacket->buffer, impl_->buffersize, true, ec);
+        ret = impl_->recvSocket(nfqPacket->data, impl_->buffersize, true, ec);
         if (ret < 0)
         {
             if (ec == std::errc::no_buffer_space)
@@ -618,7 +614,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
             break;
         }
 
-        ret = ProcessMessages(rawPacket->buffer, ret, impl_->portid, rawPacket, ec);
+        ret = ProcessMessages(nfqPacket->data, ret, impl_->portid, nfqPacket, ec);
         if (ret < 0)
         {
             setError(format("{}", ec.message()));
@@ -626,7 +622,7 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
         }
         else
         {
-            *pRawPacket = rawPacket;
+            *pRawPacket = &nfqPacket->packet;
         }
 
     } while (false);
@@ -634,13 +630,19 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
     return rstat;
 }
 
+RecvStatus NfQueue::receivePackets(layers::Packet**, uint16_t*, uint16_t)
+{
+    return RecvStatus::Error;
+}
+
+
 Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
     std::error_code ec;
     uint32_t plen = (verdict == Verdict::Replace) ? packet->getDataLen() : 0;
     int nfq_verdict = (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
 
-    auto nlPacket = dynamic_cast<NfqPacket*>(packet);
+    auto nlPacket = NfqPacket::fromPacket(packet);
 
     nlmsghdr* nlh = SetVerdict(impl_->buffer, ntohl(nlPacket->ph->packet_id), impl_->queueNumber, nfq_verdict, plen,
                                const_cast<uint8_t*>(packet->getData()));
@@ -653,7 +655,7 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
     nlPacket->mh = nullptr;
     nlPacket->ph = nullptr;
 
-    impl_->pool.releasePacket(nlPacket);
+    impl_->pool->release(nlPacket);
 
     return Status::Success;
 }
@@ -690,9 +692,9 @@ int NfQueue::getSnaplen() const
     return impl_->snaplen;
 }
 
-Status NfQueue::getMsgPoolInfo(PacketPoolInfo* info)
+Status NfQueue::getMsgPoolInfo(PacketPoolInfo& info)
 {
-    (void)info;
+    impl_->pool->getInfo(info);
     return Status::Success;
 }
 
