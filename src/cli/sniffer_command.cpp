@@ -220,19 +220,22 @@ public:
 
         layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
         RecvStatus status{RecvStatus::Ok};
-        layers::Packet* packet{nullptr};
+        constexpr uint16_t batchSize = 32;
+        snet::layers::Packet* packets[batchSize] = {};
+        uint16_t receivedPackets = 0;
+
         do
         {
-            status = driver->receivePacket(&packet);
-            if (status == RecvStatus::Error)
+            status = driver->receivePackets(packets, &receivedPackets, batchSize);
+            for (uint16_t i = 0; i < receivedPackets; ++i)
             {
-                std::cout << "Error occured: " << driver->getLastError() << std::endl;
-            }
-            else if (packet)
-            {
-                packet->parse();
-                tcpReassembly.reassemblePacket(packet);
-                driver->finalizePacket(packet, Verdict::Pass);
+                snet::layers::Packet* packet = packets[i];
+                if (packet)
+                {
+                    packet->parse();
+                    tcpReassembly.reassemblePacket(packet);
+                    driver->finalizePacket(packet, Verdict::Pass);
+                }
             }
         } while (status == RecvStatus::Ok);
 

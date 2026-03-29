@@ -69,11 +69,6 @@ public:
     /// @return LinkLayerType enumeration value.
     virtual layers::LinkLayerType getDataLinkType() const = 0;
 
-    /// @brief Receives single packet.
-    /// @param[out] rawPacket Pointer to receive captured packet.
-    /// @return RecvStatus indicating result.
-    virtual RecvStatus receivePacket(layers::Packet** rawPacket) = 0;
-
     /// @brief Receives multiple packets.
     /// @param[out] rawPacket Array of packet pointers.
     /// @param[in,out] packetCount On input: max packets; on output: actual received.

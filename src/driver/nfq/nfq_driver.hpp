@@ -43,23 +43,13 @@ public:
     /// @return Status indicating success or failure
     Status interrupt() override;
 
-    /// @brief Receives a single packet from the Netfilter queue
-    /// @param[out] packet Pointer to receive the captured packet
-    /// @return RecvStatus indicating result:
-    ///         - OK: Packet successfully received
-    ///         - WouldBlock: No packet available (non-blocking mode)
-    ///         - Interrupted: Capture was interrupted
-    ///         - Error: Error occurred during reception
-    RecvStatus receivePacket(layers::Packet** packet) override;
-
     /// @brief Receives multiple packets in a single operation
     /// @param[out] packet Array of packet pointers to fill
     /// @param[in,out] packetCount On input, maximum number of packets;
     ///                             on output, actual number received
     /// @param[in] maxCount Maximum number of packets to receive
     /// @return RecvStatus indicating result
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, 
-                              uint16_t maxCount) override;
+    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
 
     /// @brief Injects a raw packet through Netfilter
     /// @param[in] data Raw packet data buffer
@@ -81,7 +71,7 @@ public:
     /// @brief Gets the link layer type of the capture source
     /// @return LinkLayerType enumeration value
     layers::LinkLayerType getDataLinkType() const override;
-    
+
     /// @brief Retrieves packet pool statistics
     /// @param[out] info Structure to fill with pool information
     /// @return Status indicating success or failure
@@ -100,8 +90,8 @@ public:
     void resetStats() override;
 
 private:
-    struct Impl;                     ///< PIMPL forward declaration
-    std::unique_ptr<Impl> impl_;     ///< Pointer to implementation details
+    struct Impl;                 ///< PIMPL forward declaration
+    std::unique_ptr<Impl> impl_; ///< Pointer to implementation details
 };
 
 } // namespace snet::driver

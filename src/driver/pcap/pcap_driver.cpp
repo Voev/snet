@@ -263,13 +263,11 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
         packets[i] = &packet->packet;
     }
 
-    *packetCount = i;
+    if (packetCount)
+    {
+        *packetCount = i;
+    }
     return rstat;
-}
-
-RecvStatus Pcap::receivePacket(layers::Packet**)
-{
-    return RecvStatus::Error;
 }
 
 Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)

@@ -255,7 +255,8 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* nfqPacket)
         pktlen = framelen;
     }
 
-    nfqPacket->packet.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW, framelen);
+    nfqPacket->packet.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW,
+                                 framelen);
     nfqPacket->packet.setTimestamp(Timestamp::currentTime());
     return true;
 }
@@ -559,38 +560,37 @@ layers::LinkLayerType NfQueue::getDataLinkType() const
     return layers::LINKTYPE_RAW;
 }
 
-RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
+RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCount, uint16_t maxCount)
 {
     RecvStatus rstat{RecvStatus::Ok};
     std::error_code ec;
+    NfqPacket* nfqPacket{nullptr};
+    uint16_t i{};
+    ssize_t ret{};
 
-    if (pRawPacket == nullptr)
+    for (i = 0; i < maxCount; ++i)
     {
-        setError("Invalid input argument");
-        return RecvStatus::Error;
-    }
+        if (impl_->interrupted)
+        {
+            impl_->interrupted = false;
+            rstat = RecvStatus::Interrupted;
+            break;
+        }
 
-    if (impl_->interrupted)
-    {
-        impl_->interrupted = false;
-        return RecvStatus::Interrupted;
-    }
+        nfqPacket = impl_->pool->acquire();
+        if (!nfqPacket)
+        {
+            setError("Failed to get new packet");
+            rstat = RecvStatus::Error;
+            break;
+        }
 
-    NfqPacket* nfqPacket = impl_->pool->acquire();
-    if (!nfqPacket)
-    {
-        setError("Failed to get new packet");
-        return RecvStatus::Error;
-    }
-
-    ssize_t ret;
-    do
-    {
         ret = impl_->recvSocket(nfqPacket->data, impl_->buffersize, true, ec);
         if (ret < 0)
         {
             if (ec == std::errc::no_buffer_space)
             {
+                impl_->stats.hw_packets_dropped++;
                 continue;
             }
             else if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block)
@@ -619,22 +619,19 @@ RecvStatus NfQueue::receivePacket(layers::Packet** pRawPacket)
         {
             setError(format("{}", ec.message()));
             rstat = RecvStatus::Error;
-        }
-        else
-        {
-            *pRawPacket = &nfqPacket->packet;
+            break;
         }
 
-    } while (false);
+        packets[i] = &nfqPacket->packet;
+    }
+
+    if (packetCount)
+    {
+        *packetCount = i;
+    }
 
     return rstat;
 }
-
-RecvStatus NfQueue::receivePackets(layers::Packet**, uint16_t*, uint16_t)
-{
-    return RecvStatus::Error;
-}
-
 
 Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
