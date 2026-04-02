@@ -21,8 +21,9 @@
 
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
-#include <casket/log/log_manager.hpp>
 #include <casket/utils/error_code.hpp>
+
+#include <casket/log/log.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
 #include <snet/event/epoll.hpp>
@@ -106,7 +107,7 @@ public:
     {
         if (dt <= 0.0)
         {
-            error("Bad latency value - {}", dt);
+            CSK_LOG_ERROR("Bad latency value - %f", dt);
             return;
         }
 
@@ -269,7 +270,7 @@ public:
             epoll_.add(sh, sh->get(), events, ec);
         }
         if (ec)
-            error("add(): {}", ec.message());
+            CSK_LOG_ERROR("add(): %s", ec.message().c_str());
     }
 
     void del(Session* sh)
@@ -277,7 +278,7 @@ public:
         std::error_code ec;
         epoll_.del(sh->get(), ec);
         if (ec)
-            error("del(): {}", ec.message());
+            CSK_LOG_ERROR("del(): %s", ec.message().c_str());
     }
 
     std::unique_ptr<tls::Connection> makeConnection()
@@ -318,7 +319,7 @@ Session::Session(SessionManager& manager, Endpoint ep, bool reuseSession, std::s
     , reuseSession_(reuseSession)
     , id_(id)
 {
-    debug("peer {} created", id_);
+    CSK_LOG_DEBUG("peer %d created", id_);
 }
 
 Session::~Session() noexcept
@@ -352,7 +353,7 @@ void Session::handleWriteEvent()
 
 bool Session::handleEstablishedTcpConn()
 {
-    debug("peer {}: has established TCP connection", id_);
+    CSK_LOG_DEBUG("peer %d: has established TCP connection", id_);
     stat.tcpHandshakes--;
     stat.tcpConnections++;
     return doTlsHandshake();
@@ -440,7 +441,7 @@ bool Session::doTlsHandshake()
         const duration<double, std::milli> latency = Clock::now() - start_;
         gLocalLatencyStats.update(latency.count());
 
-        debug("peer {}: has completed TLS handshake", id_);
+        CSK_LOG_DEBUG("peer %d: has completed TLS handshake", id_);
         stat.tlsHandshakes--;
         stat.tlsConnections++;
         stat.totalHandshakes++;
@@ -698,10 +699,11 @@ public:
         }
         parser_.validate();
 
-        LogManager::Instance().enable(Type::Console);
+        LogWorker logWorker(std::make_unique<ConsoleSink>());
+
         if (parser_.isUsed("debug"))
         {
-            LogManager::Instance().setLevel(Level::Debug);
+            AsyncLogger::getInstance().setLevel(LogLevel::DEBUG);
         }
 
         signal(SIGTERM, sig_handler);
@@ -728,7 +730,7 @@ public:
         std::vector<std::thread> threads(options_.threadLimit);
         for (size_t i = 0; i < options_.threadLimit; ++i)
         {
-            debug("thread {}: created", i + 1);
+            CSK_LOG_DEBUG("thread %lu: created", i + 1);
             threads[i] = std::thread(
                 [&]()
                 {
@@ -770,6 +772,8 @@ public:
         {
             t.join();
         }
+
+        logWorker.stop();
 
         DumpStatistics();
     }

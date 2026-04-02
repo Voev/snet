@@ -3,9 +3,6 @@
 #include <typeinfo>
 #include <sstream>
 #include <ctime>
-
-#include <casket/log/log_manager.hpp>
-
 #include <snet/layers/packet.hpp>
 
 using namespace casket;
@@ -52,7 +49,6 @@ bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerTyp
 {
     if (data.empty() && data.data() == nullptr)
     {
-        error("Cannot set null data to packet");
         return false;
     }
 
@@ -62,7 +58,6 @@ bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerTyp
     }
     else if (frameLength < static_cast<int>(data.size()))
     {
-        error("Frame length {} cannot be smaller than data size {}", frameLength, data.size());
         return false;
     }
 
@@ -84,7 +79,6 @@ bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerTyp
         }
         catch (const std::bad_alloc&)
         {
-            error("Failed to allocate memory for packet data of size {}", data.size());
             m_RawData = nullptr;
             m_RawDataLen = 0;
             return false;

@@ -2,8 +2,6 @@
 #include <memory>
 #include <functional>
 #include <string>
-#include <string_view>
-#include <array>
 
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
@@ -16,8 +14,6 @@
 
 namespace snet::io
 {
-
-using DriverError = std::array<char, 256>;  ///< Buffer for error messages.
 
 /// @brief Abstract base class for network drivers.
 class Driver
@@ -87,25 +83,6 @@ public:
     /// @param[out] info Structure to fill with pool statistics.
     /// @return Status indicating success or failure.
     virtual Status getMsgPoolInfo(layers::PacketPoolInfo& info) = 0;
-
-    /// @brief Gets last error message.
-    /// @return Pointer to error string buffer.
-    const char* getLastError() const
-    {
-        return error_.data();
-    }
-
-protected:
-    /// @brief Sets error message.
-    /// @param[in] msg Error message string.
-    void setError(std::string_view msg)
-    {
-        strncpy(error_.data(), msg.empty() ? "" : msg.data(), error_.size() - 1);
-        error_.back() = '\0';
-    }
-
-protected:
-    DriverError error_;  ///< Error message buffer.
 };
 
 /// @brief Driver creation function type.

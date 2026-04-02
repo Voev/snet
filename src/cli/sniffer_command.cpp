@@ -1,11 +1,12 @@
 #include <iostream>
-#include <casket/log/log_manager.hpp>
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/utils/hexlify.hpp>
 #include <casket/utils/string.hpp>
 #include <casket/utils/error_code.hpp>
 #include <snet/utils/print_hex.hpp>
+
+#include <casket/log/log.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
 #include <snet/layers/l4/tcp_reassembly.hpp>
@@ -21,40 +22,6 @@ using namespace casket::opt;
 
 namespace snet::sniffer
 {
-
-static inline Level ParseLogLevel(std::string_view str)
-{
-    if (::iequals(str, "alert"))
-    {
-        return Level::Alert;
-    }
-    else if (::iequals(str, "crit"))
-    {
-        return Level::Critical;
-    }
-    else if (::iequals(str, "error"))
-    {
-        return Level::Error;
-    }
-    else if (::iequals(str, "warn"))
-    {
-        return Level::Warning;
-    }
-    else if (::iequals(str, "notice"))
-    {
-        return Level::Notice;
-    }
-    else if (::iequals(str, "info"))
-    {
-        return Level::Info;
-    }
-    else if (::iequals(str, "debug"))
-    {
-        return Level::Debug;
-    }
-
-    return Level::Emergency;
-}
 
 struct Options
 {
@@ -186,8 +153,9 @@ public:
         }
         parser_.validate();
 
-        LogManager::Instance().enable(Type::Console);
-        LogManager::Instance().setLevel(ParseLogLevel(options_.logLevel));
+        LogWorker logWorker(std::make_unique<ConsoleSink>());
+
+        AsyncLogger::getInstance().setLevel(StringToLevel(options_.logLevel));
 
         SnifferManager manager;
 
@@ -243,6 +211,8 @@ public:
 
         tcpReassembly.closeAllConnections();
         driver->stop();
+
+        logWorker.stop();
 
         std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }

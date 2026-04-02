@@ -1,9 +1,10 @@
 #include <iostream>
-#include <casket/log/log_manager.hpp>
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
 #include <casket/utils/hexlify.hpp>
 #include <casket/utils/error_code.hpp>
+
+#include <casket/log/log.hpp>
 
 #include <snet/utils/print_hex.hpp>
 #include <snet/cli/command_dispatcher.hpp>
@@ -103,7 +104,7 @@ public:
         }
         parser_.validate();
 
-        LogManager::Instance().enable(Type::Console);
+        LogWorker logWorker(std::make_unique<ConsoleSink>());
 
         SessionManager manager;
 
@@ -130,6 +131,8 @@ public:
 
         tcpReassembly.closeAllConnections();
         driver->stop();
+
+        logWorker.stop();
 
         std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }
