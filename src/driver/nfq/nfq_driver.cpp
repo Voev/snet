@@ -14,6 +14,8 @@
 #include <casket/utils/error_code.hpp>
 #include <casket/utils/to_number.hpp>
 
+#include <casket/log/async_logger.hpp>
+
 #include "nfq_driver.hpp"
 
 using namespace casket;
@@ -445,7 +447,7 @@ Status NfQueue::stop()
     nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_UNBIND, queueNumber_);
     if (sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
-        setError(format("{}", ec.message()));
+        CSK_LOG_ERROR("error sending data over socket: %s", ec.message());
         return Status::Error;
     }
 
@@ -478,7 +480,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
         nfqPacket = pool_->acquire();
         if (!nfqPacket)
         {
-            setError("Failed to get new packet");
+            CSK_LOG_ERROR("error taking packet from pool");
             rstat = RecvStatus::Error;
             break;
         }
@@ -506,7 +508,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             }
             else
             {
-                setError(format("{}", ec.message()));
+                CSK_LOG_ERROR("error receiving data from socket: %s", ec.message());
                 rstat = RecvStatus::Error;
             }
             break;
@@ -515,7 +517,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
         ret = ProcessMessages(nfqPacket->data, ret, portid_, nfqPacket, ec);
         if (ret < 0)
         {
-            setError(format("{}", ec.message()));
+            CSK_LOG_ERROR("error processing data from socket: %s", ec.message());
             rstat = RecvStatus::Error;
             break;
         }

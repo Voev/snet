@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstring>
 
-#include <casket/log/log_manager.hpp>
 #include <casket/utils/exception.hpp>
 #include <casket/utils/load_store.hpp>
 

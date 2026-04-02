@@ -1,4 +1,3 @@
-#include <casket/log/log_manager.hpp>
 #include <casket/utils/endianness.hpp>
 
 #include <snet/layers/checksums.hpp>
@@ -91,10 +90,6 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::T
         vec[1].buffer = pseudoHeader.data();
         vec[1].len = 36;
         checksumRes = computeChecksum(vec, 2);
-    }
-    else
-    {
-        casket::error("Compute pseudo header checksum failed, for unknown IPAddrType = {}", ipAddrType);
     }
 
     return checksumRes;

@@ -5,7 +5,6 @@
 
 #include <casket/utils/exception.hpp>
 #include <casket/utils/hexlify.hpp>
-#include <casket/log/color.hpp>
 #include <casket/utils/string.hpp>
 
 #include <snet/utils/print_hex.hpp>
@@ -32,9 +31,9 @@
 
 using namespace snet::crypto;
 
-inline std::string Colorize(std::string_view text, std::string_view color = casket::lRed)
+inline std::string Colorize(std::string_view text)
 {
-    return casket::format("[{}{}{}]", color, text, casket::resetColor);
+    return casket::format("[{}]", text);
 }
 
 namespace snet::tls

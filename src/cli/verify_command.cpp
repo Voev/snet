@@ -3,9 +3,10 @@
 #include <openssl/x509_vfy.h>
 #include <openssl/safestack.h>
 
-#include <casket/log/log_manager.hpp>
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/cmd_line_options_parser.hpp>
+
+#include <casket/log/log.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>
 
@@ -88,7 +89,7 @@ static CrlStack* LookupCRLs(const X509_STORE_CTX* ctx, const X509Name* name)
     }
     catch (const std::exception& e)
     {
-        casket::error("{}", e.what());
+        std::cout << "failed to lookup CRLs: " << e.what() << std::endl;
     }
     return crls.release();
 }
