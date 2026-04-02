@@ -222,7 +222,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         else
         {
             CSK_LOG_ERROR("Error occurred - packet doesn't match either side "
-                          "of the connection!!");
+                          "of the connection!");
             return Error_PacketDoesNotMatchFlow;
         }
     }
@@ -230,7 +230,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     // happen, but handled anyway. Packet will be ignored
     else
     {
-        CSK_LOG_ERROR("Error occurred - connection has more than 2 sides!!");
+        CSK_LOG_ERROR("Error occurred - connection has more than 2 sides!");
         return Error_PacketDoesNotMatchFlow;
     }
 
