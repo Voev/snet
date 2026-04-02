@@ -48,11 +48,6 @@ public:
     /// @return Status indicating success or failure
     Status interrupt() override;
 
-    /// @brief Receives a single packet from the capture source
-    /// @param[out] packet Pointer to receive the captured packet
-    /// @return RecvStatus indicating result (OK, WOULDBLOCK, INTERRUPTED, etc.)
-    RecvStatus receivePacket(layers::Packet** packet) override;
-
     /// @brief Receives multiple packets in a single operation
     /// @param[out] packet Array of packet pointers to fill
     /// @param[in,out] packetCount On input, maximum number of packets;

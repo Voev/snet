@@ -11,8 +11,6 @@
 #include <snet/utils/counter.hpp>
 
 #include "pcap_driver.hpp"
-#include "pcap_handle.hpp"
-#include "pcap_packet.hpp"
 
 #define PCAP_ROLLOVER_LIM 1000000000 // Check for rollover every billionth packet
 
@@ -263,13 +261,11 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
         packets[i] = &packet->packet;
     }
 
-    *packetCount = i;
+    if (packetCount)
+    {
+        *packetCount = i;
+    }
     return rstat;
-}
-
-RecvStatus Pcap::receivePacket(layers::Packet**)
-{
-    return RecvStatus::Error;
 }
 
 Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)

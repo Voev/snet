@@ -2,6 +2,8 @@
 #include <snet/io.hpp>
 #include <snet/layers/packet_pool.hpp>
 
+#include "nfq_packet.hpp"
+
 namespace snet::driver
 {
 
@@ -43,23 +45,13 @@ public:
     /// @return Status indicating success or failure
     Status interrupt() override;
 
-    /// @brief Receives a single packet from the Netfilter queue
-    /// @param[out] packet Pointer to receive the captured packet
-    /// @return RecvStatus indicating result:
-    ///         - OK: Packet successfully received
-    ///         - WouldBlock: No packet available (non-blocking mode)
-    ///         - Interrupted: Capture was interrupted
-    ///         - Error: Error occurred during reception
-    RecvStatus receivePacket(layers::Packet** packet) override;
-
     /// @brief Receives multiple packets in a single operation
     /// @param[out] packet Array of packet pointers to fill
     /// @param[in,out] packetCount On input, maximum number of packets;
     ///                             on output, actual number received
     /// @param[in] maxCount Maximum number of packets to receive
     /// @return RecvStatus indicating result
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, 
-                              uint16_t maxCount) override;
+    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
 
     /// @brief Injects a raw packet through Netfilter
     /// @param[in] data Raw packet data buffer
@@ -81,7 +73,7 @@ public:
     /// @brief Gets the link layer type of the capture source
     /// @return LinkLayerType enumeration value
     layers::LinkLayerType getDataLinkType() const override;
-    
+
     /// @brief Retrieves packet pool statistics
     /// @param[out] info Structure to fill with pool information
     /// @return Status indicating success or failure
@@ -100,8 +92,44 @@ public:
     void resetStats() override;
 
 private:
-    struct Impl;                     ///< PIMPL forward declaration
-    std::unique_ptr<Impl> impl_;     ///< Pointer to implementation details
+    /// Sends data through the socket.
+    /// @param[in] buf Pointer to the data buffer.
+    /// @param[in] len Size of the buffer in bytes.
+    /// @param[out] ec Error code reference.
+    /// @return Number of bytes sent, or -1 on error.
+    ssize_t sendSocket(const void* buf, size_t len, std::error_code& ec) noexcept;
+
+    /// Receives data from the socket.
+    /// @param[out] buffer Pointer to the receive buffer.
+    /// @param[in] bufferSize Size of the receive buffer in bytes.
+    /// @param[in] blocking If true, waits for data; if false, non-blocking mode.
+    /// @param[out] ec Error code reference.
+    /// @return Number of bytes received, or -1 on error.
+    ssize_t recvSocket(void* buffer, size_t bufferSize, bool blocking, std::error_code& ec) noexcept;
+
+    /// Binds an address to the socket.
+    /// @param[in] groups Bitmask of groups to bind.
+    /// @param[in] pid Process ID (0 for any).
+    /// @param[out] ec Error code reference.
+    void bindAddress(unsigned int groups, pid_t pid, std::error_code& ec) noexcept;
+
+    /// Closes the socket connection.
+    void closeSocket() noexcept;
+
+private:
+    std::unique_ptr<layers::PacketPool<NfqPacket>> pool_; ///< Smart pointer to packet pool.
+    Stats stats_;                                         ///< Statistics counters.
+    uint8_t* buffer_;                                     ///< Pointer to I/O buffer.
+    size_t bufferSize_;                                   ///< Buffer size in bytes.
+    socket::SocketType socket_;                           ///< Socket type.
+    sockaddr_nl address_;                                 ///< Netlink socket address.
+    unsigned int queueNumber_;                            ///< Queue number.
+    unsigned int queueMaxLength_;                         ///< Maximum queue length.
+    unsigned int portid_;                                 ///< Port identifier.
+    int snaplen_;                                         ///< Snapshot length.
+    int timeout_;                                         ///< Timeout value.
+    bool failOpen_;                                       ///< Fail-open flag.
+    volatile bool interrupted_;                           ///< Interruption flag.
 };
 
 } // namespace snet::driver

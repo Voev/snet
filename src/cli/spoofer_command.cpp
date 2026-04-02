@@ -126,25 +126,6 @@ public:
         driver->start();
         std::cout << "Starting reading '" << options_.input << "'..." << std::endl;
 
-        RecvStatus status{RecvStatus::Ok};
-        layers::Packet* packet{nullptr};
-        do
-        {
-            status = driver->receivePacket(&packet);
-            if (packet)
-            {
-                auto status = tcpReassembly.reassemblePacket(packet);
-                if (status == layers::TcpReassembly::TcpMessageHandled)
-                {
-                    driver->finalizePacket(packet, Verdict::Pass);
-                }
-                else
-                {
-                    driver->finalizePacket(packet, Verdict::Block);
-                }
-            }
-        } while (status == RecvStatus::Ok);
-
         size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
 
         tcpReassembly.closeAllConnections();

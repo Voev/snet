@@ -8,6 +8,7 @@
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver_config.hpp>
+#include <snet/io/config.hpp>
 
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/packet.hpp>
@@ -68,11 +69,6 @@ public:
     /// @brief Gets link layer type.
     /// @return LinkLayerType enumeration value.
     virtual layers::LinkLayerType getDataLinkType() const = 0;
-
-    /// @brief Receives single packet.
-    /// @param[out] rawPacket Pointer to receive captured packet.
-    /// @return RecvStatus indicating result.
-    virtual RecvStatus receivePacket(layers::Packet** rawPacket) = 0;
 
     /// @brief Receives multiple packets.
     /// @param[out] rawPacket Array of packet pointers.
