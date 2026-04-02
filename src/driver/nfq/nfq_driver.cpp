@@ -15,7 +15,6 @@
 #include <casket/utils/to_number.hpp>
 
 #include "nfq_driver.hpp"
-#include "nfq_packet.hpp"
 
 using namespace casket;
 using namespace snet::socket;
@@ -166,7 +165,9 @@ static bool ParseAttr(const nlattr* attr, void* data)
     int type = attr->nla_type & NLA_TYPE_MASK;
 
     if (type > NFQA_MAX)
+    {
         return true;
+    }
 
     switch (type)
     {
@@ -181,29 +182,37 @@ static bool ParseAttr(const nlattr* attr, void* data)
     case NFQA_UID:
     case NFQA_GID:
     case NFQA_CT_INFO:
+    {
         if (AttrGetPayloadLen(attr) != sizeof(uint32_t))
         {
             return false;
         }
         break;
+    }
     case NFQA_TIMESTAMP:
+    {
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_timestamp))
         {
             return false;
         }
         break;
+    }
     case NFQA_HWADDR:
+    {
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_hw))
         {
             return false;
         }
         break;
+    }
     case NFQA_PACKET_HDR:
+    {
         if (AttrGetPayloadLen(attr) != sizeof(nfqnl_msg_packet_hdr))
         {
             return false;
         }
         break;
+    }
     case NFQA_PAYLOAD:
     case NFQA_CT:
     case NFQA_EXP:
@@ -222,7 +231,9 @@ static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* dat
          AttrIsOk(attr, (char*)MessageGetPayloadTail(nlh) - (char*)(attr)); attr = AttrNext(attr))
     {
         if ((ret = ParseAttr(attr, data)) <= 0)
+        {
             return ret;
+        }
     }
     return ret;
 }
@@ -311,202 +322,94 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, Nf
     return 0;
 }
 
-struct NfQueue::Impl
+NfQueue::NfQueue(const io::DriverConfig& config)
+    : buffer_(nullptr)
+    , bufferSize_(0)
+    , queueNumber_(0)
+    , queueMaxLength_(::kDefaultQueueMaxLength)
+    , portid_(0)
+    , snaplen_(0)
+    , timeout_(0)
+    , failOpen_(true)
+    , interrupted_(false)
 {
-    Impl();
-    ~Impl() noexcept;
+    (void)config;
+}
 
-    ssize_t sendSocket(const void* buf, size_t len, std::error_code& ec) noexcept
-    {
-        sockaddr_nl snl{};
-        snl.nl_family = AF_NETLINK;
-        ssize_t ret;
-
-        ret = ::sendto(socket, buf, len, 0, (sockaddr*)&snl, sizeof(snl));
-        if (ret == -1)
-        {
-            ec = GetLastSystemError();
-        }
-        return ret;
-    }
-
-    ssize_t recvSocket(void* buffer, size_t bufferSize, bool blocking, std::error_code& ec) noexcept
-    {
-        ec.clear();
-
-        sockaddr_nl address;
-        ssize_t ret;
-
-        iovec iov{};
-        iov.iov_base = buffer;
-        iov.iov_len = bufferSize;
-
-        msghdr msg{};
-        msg.msg_name = &address;
-        msg.msg_namelen = sizeof(address);
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-        msg.msg_control = nullptr;
-        msg.msg_controllen = 0;
-        msg.msg_flags = 0;
-
-        ret = ::recvmsg(socket, &msg, blocking ? 0 : MSG_DONTWAIT);
-        if (ret == -1)
-        {
-            ec = GetLastSystemError();
-            return ret;
-        }
-
-        if (msg.msg_flags & MSG_TRUNC)
-        {
-            ec = std::make_error_code(std::errc::no_space_on_device);
-            return -1;
-        }
-        if (msg.msg_namelen != sizeof(sockaddr_nl))
-        {
-            ec = std::make_error_code(std::errc::invalid_argument);
-            return -1;
-        }
-
-        return ret;
-    }
-
-    void bindAddress(unsigned int groups, pid_t pid, std::error_code& ec) noexcept
-    {
-        address.nl_family = AF_NETLINK;
-        address.nl_groups = groups;
-        address.nl_pid = pid;
-
-        int ret = ::bind(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-        if (ret < 0)
-        {
-            ec = GetLastSystemError();
-            return;
-        }
-
-        socklen_t addressLength = sizeof(address);
-        ret = getsockname(socket, reinterpret_cast<sockaddr*>(&address), &addressLength);
-        if (ret < 0)
-        {
-            ec = GetLastSystemError();
-            return;
-        }
-
-        if (addressLength != sizeof(address) || address.nl_family != AF_NETLINK)
-        {
-            ec = std::make_error_code(std::errc::invalid_argument);
-        }
-    }
-
-    void closeSocket() noexcept
-    {
-        if (socket != InvalidSocket)
-        {
-            CloseSocket(socket);
-            socket = InvalidSocket;
-        }
-    }
-
-    std::unique_ptr<layers::PacketPool<NfqPacket>> pool;
-    uint8_t* buffer;
-    size_t buffersize;
-    socket::SocketType socket;
-    sockaddr_nl address;
-    unsigned int queueNumber;
-    unsigned int queueMaxLength;
-    unsigned int portid;
-    int snaplen;
-    int timeout;
-    bool failOpen;
-    volatile bool interrupted;
-    Stats stats;
-};
-
-NfQueue::Impl::~Impl()
+NfQueue::~NfQueue()
 {
     closeSocket();
-    delete[] buffer;
-}
-
-NfQueue::Impl::Impl()
-    : queueNumber(0)
-    , queueMaxLength(0)
-    , portid(0)
-    , snaplen(0)
-    , timeout(0)
-    , interrupted(false)
-{
-}
-
-NfQueue::NfQueue(const io::DriverConfig& config)
-    : impl_(std::make_unique<NfQueue::Impl>())
-{
-    for (const auto& [name, value] : config.getParameters())
-    {
-        if (iequals(name, "failOpen"))
-            impl_->failOpen = false;
-        else if (iequals(name, "queueMaxLength"))
-            to_number(value, impl_->queueMaxLength);
-    }
+    delete[] buffer_;
 }
 
 Status NfQueue::configure(const io::Config& config)
 {
     std::error_code ec;
 
-    impl_->snaplen = config.getSnaplen();
-    impl_->timeout = config.getTimeout();
-    impl_->queueMaxLength = ::kDefaultQueueMaxLength;
+    snaplen_ = config.getSnaplen();
+    timeout_ = config.getTimeout();
+    
+    for (const auto& [name, value] : config.getParameters())
+    {
+        if (iequals(name, "fail_open"))
+        {
+            failOpen_ = false;
+        }
+        else if (iequals(name, "queue_max_length"))
+        {
+            to_number(value, queueMaxLength_);
+        }
+    }
 
-    to_number(config.getInput(), impl_->queueNumber, ec);
+    to_number(config.getInput(), queueNumber_, ec);
 
-    impl_->buffersize = impl_->snaplen + 4096;
-    impl_->buffer = new uint8_t[impl_->buffersize];
+    bufferSize_ = snaplen_ + 4096;
+    buffer_ = new uint8_t[bufferSize_];
 
-    impl_->pool = std::make_unique<PacketPool<NfqPacket>>(config.getMsgPoolSize(), config.getSnaplen());
-    impl_->socket = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
+    pool_ = std::make_unique<PacketPool<NfqPacket>>(config.getMsgPoolSize(), config.getSnaplen());
+    socket_ = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
-    impl_->timeout = config.getTimeout();
-    if (impl_->timeout)
+    timeout_ = config.getTimeout();
+    if (timeout_)
     {
         timeval tv;
-        tv.tv_sec = impl_->timeout / 1000;
-        tv.tv_usec = (impl_->timeout % 1000) * 1000;
-        setsockopt(impl_->socket, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
+        tv.tv_sec = timeout_ / 1000;
+        tv.tv_usec = (timeout_ % 1000) * 1000;
+        setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
     }
 
-    unsigned int socket_rcvbuf_size = impl_->queueMaxLength * impl_->snaplen;
-    if (setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUFFORCE, &socket_rcvbuf_size, sizeof(socket_rcvbuf_size)) == -1)
+    unsigned int socketRcvBufSize = queueMaxLength_ * snaplen_;
+    if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUFFORCE, &socketRcvBufSize, sizeof(socketRcvBufSize)) == -1)
     {
-        setsockopt(impl_->socket, SOL_SOCKET, SO_RCVBUF, &socket_rcvbuf_size, sizeof(socket_rcvbuf_size));
+        setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &socketRcvBufSize, sizeof(socketRcvBufSize));
     }
 
-    impl_->bindAddress(0, 0, ec);
+    bindAddress(0, 0, ec);
 
     nlmsghdr* nlh;
 
-    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->buffer, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    nlh = SetCfgCommand(buffer_, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->buffer, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    nlh = SetCfgCommand(buffer_, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgCommand(impl_->buffer, AF_UNSPEC, NFQNL_CFG_CMD_BIND, impl_->queueNumber);
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    nlh = SetCfgCommand(buffer_, AF_UNSPEC, NFQNL_CFG_CMD_BIND, queueNumber_);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
 
-    nlh = SetCfgParams(impl_->buffer, NFQNL_COPY_PACKET, impl_->snaplen, impl_->queueNumber);
+    nlh = SetCfgParams(buffer_, NFQNL_COPY_PACKET, snaplen_, queueNumber_);
 
-    uint32_t value = htonl(impl_->queueMaxLength);
+    uint32_t value = htonl(queueMaxLength_);
     SetAttribute(nlh, NFQA_CFG_QUEUE_MAXLEN, sizeof(value), &value);
 
     value = htonl(NFQA_CFG_F_GSO);
-    if (impl_->failOpen)
+    if (failOpen_)
     {
         value |= htonl(NFQA_CFG_F_FAIL_OPEN);
     }
@@ -514,18 +417,13 @@ Status NfQueue::configure(const io::Config& config)
     SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
     SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
 
-    impl_->sendSocket(nlh, nlh->nlmsg_len, ec);
+    sendSocket(nlh, nlh->nlmsg_len, ec);
     return Status::Success;
 }
 
 std::shared_ptr<io::Driver> NfQueue::create(const io::DriverConfig& config)
 {
     return std::make_shared<NfQueue>(config);
-}
-
-NfQueue::~NfQueue() noexcept
-{
-    impl_.reset();
 }
 
 Status NfQueue::start()
@@ -535,7 +433,7 @@ Status NfQueue::start()
 
 Status NfQueue::interrupt()
 {
-    impl_->interrupted = true;
+    interrupted_ = true;
     return Status::Success;
 }
 
@@ -544,14 +442,14 @@ Status NfQueue::stop()
     nlmsghdr* nlh;
     std::error_code ec;
 
-    nlh = SetCfgCommand(impl_->buffer, AF_INET, NFQNL_CFG_CMD_UNBIND, impl_->queueNumber);
-    if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
+    nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_UNBIND, queueNumber_);
+    if (sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
         setError(format("{}", ec.message()));
         return Status::Error;
     }
 
-    impl_->closeSocket();
+    closeSocket();
     return Status::Success;
 }
 
@@ -570,14 +468,14 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
 
     for (i = 0; i < maxCount; ++i)
     {
-        if (impl_->interrupted)
+        if (interrupted_)
         {
-            impl_->interrupted = false;
+            interrupted_ = false;
             rstat = RecvStatus::Interrupted;
             break;
         }
 
-        nfqPacket = impl_->pool->acquire();
+        nfqPacket = pool_->acquire();
         if (!nfqPacket)
         {
             setError("Failed to get new packet");
@@ -585,12 +483,12 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             break;
         }
 
-        ret = impl_->recvSocket(nfqPacket->data, impl_->buffersize, true, ec);
+        ret = recvSocket(nfqPacket->data, bufferSize_, true, ec);
         if (ret < 0)
         {
             if (ec == std::errc::no_buffer_space)
             {
-                impl_->stats.hw_packets_dropped++;
+                stats_.hw_packets_dropped++;
                 continue;
             }
             else if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block)
@@ -599,11 +497,11 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             }
             else if (ec == std::errc::interrupted)
             {
-                if (!impl_->interrupted)
+                if (!interrupted_)
                 {
                     continue;
                 }
-                impl_->interrupted = false;
+                interrupted_ = false;
                 rstat = RecvStatus::Interrupted;
             }
             else
@@ -614,7 +512,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             break;
         }
 
-        ret = ProcessMessages(nfqPacket->data, ret, impl_->portid, nfqPacket, ec);
+        ret = ProcessMessages(nfqPacket->data, ret, portid_, nfqPacket, ec);
         if (ret < 0)
         {
             setError(format("{}", ec.message()));
@@ -637,14 +535,14 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
     std::error_code ec;
     uint32_t plen = (verdict == Verdict::Replace) ? packet->getDataLen() : 0;
-    int nfq_verdict = (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
+    int nfqVerdict = (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
 
     auto nlPacket = NfqPacket::fromPacket(packet);
 
-    nlmsghdr* nlh = SetVerdict(impl_->buffer, ntohl(nlPacket->ph->packet_id), impl_->queueNumber, nfq_verdict, plen,
+    nlmsghdr* nlh = SetVerdict(buffer_, ntohl(nlPacket->ph->packet_id), queueNumber_, nfqVerdict, plen,
                                const_cast<uint8_t*>(packet->getData()));
 
-    if (impl_->sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
+    if (sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
         return Status::Error;
     }
@@ -652,15 +550,15 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
     nlPacket->mh = nullptr;
     nlPacket->ph = nullptr;
 
-    impl_->pool->release(nlPacket);
+    pool_->release(nlPacket);
 
     return Status::Success;
 }
 
-Status NfQueue::inject(const uint8_t* data, uint32_t data_len)
+Status NfQueue::inject(const uint8_t* data, uint32_t dataLength)
 {
     (void)data;
-    (void)data_len;
+    (void)dataLength;
     return Status::NotSupported;
 }
 
@@ -671,28 +569,116 @@ const char* NfQueue::getName() const
 
 Status NfQueue::getStats(Stats* stats)
 {
-    /* There is no distinction between packets received by the hardware and those we saw. */
-    impl_->stats.hw_packets_received = impl_->stats.packets_received;
-
-    memcpy(stats, &impl_->stats, sizeof(Stats));
-
+    stats_.hw_packets_received = stats_.packets_received;
+    memcpy(stats, &stats_, sizeof(Stats));
     return Status::Success;
 }
 
 void NfQueue::resetStats()
 {
-    memset(&impl_->stats, 0, sizeof(Stats));
+    memset(&stats_, 0, sizeof(Stats));
 }
 
 int NfQueue::getSnaplen() const
 {
-    return impl_->snaplen;
+    return snaplen_;
 }
 
 Status NfQueue::getMsgPoolInfo(PacketPoolInfo& info)
 {
-    impl_->pool->getInfo(info);
+    pool_->getInfo(info);
     return Status::Success;
+}
+
+ssize_t NfQueue::sendSocket(const void* buf, size_t len, std::error_code& ec) noexcept
+{
+    sockaddr_nl snl{};
+    snl.nl_family = AF_NETLINK;
+    ssize_t ret;
+
+    ret = ::sendto(socket_, buf, len, 0, (sockaddr*)&snl, sizeof(snl));
+    if (ret == -1)
+    {
+        ec = GetLastSystemError();
+    }
+    return ret;
+}
+
+ssize_t NfQueue::recvSocket(void* buffer, size_t bufferSize, bool blocking, std::error_code& ec) noexcept
+{
+    ec.clear();
+
+    sockaddr_nl address;
+    ssize_t ret;
+
+    iovec iov{};
+    iov.iov_base = buffer;
+    iov.iov_len = bufferSize;
+
+    msghdr msg{};
+    msg.msg_name = &address;
+    msg.msg_namelen = sizeof(address);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = nullptr;
+    msg.msg_controllen = 0;
+    msg.msg_flags = 0;
+
+    ret = ::recvmsg(socket_, &msg, blocking ? 0 : MSG_DONTWAIT);
+    if (ret == -1)
+    {
+        ec = GetLastSystemError();
+        return ret;
+    }
+
+    if (msg.msg_flags & MSG_TRUNC)
+    {
+        ec = std::make_error_code(std::errc::no_space_on_device);
+        return -1;
+    }
+    if (msg.msg_namelen != sizeof(sockaddr_nl))
+    {
+        ec = std::make_error_code(std::errc::invalid_argument);
+        return -1;
+    }
+
+    return ret;
+}
+
+void NfQueue::bindAddress(unsigned int groups, pid_t pid, std::error_code& ec) noexcept
+{
+    address_.nl_family = AF_NETLINK;
+    address_.nl_groups = groups;
+    address_.nl_pid = pid;
+
+    int ret = ::bind(socket_, reinterpret_cast<sockaddr*>(&address_), sizeof(address_));
+    if (ret < 0)
+    {
+        ec = GetLastSystemError();
+        return;
+    }
+
+    socklen_t addressLength = sizeof(address_);
+    ret = getsockname(socket_, reinterpret_cast<sockaddr*>(&address_), &addressLength);
+    if (ret < 0)
+    {
+        ec = GetLastSystemError();
+        return;
+    }
+
+    if (addressLength != sizeof(address_) || address_.nl_family != AF_NETLINK)
+    {
+        ec = std::make_error_code(std::errc::invalid_argument);
+    }
+}
+
+void NfQueue::closeSocket() noexcept
+{
+    if (socket_ != InvalidSocket)
+    {
+        CloseSocket(socket_);
+        socket_ = InvalidSocket;
+    }
 }
 
 } // namespace snet::driver

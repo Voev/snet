@@ -8,6 +8,7 @@
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver_config.hpp>
+#include <snet/io/config.hpp>
 
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/packet.hpp>

@@ -2,6 +2,8 @@
 #include <snet/io.hpp>
 #include <snet/layers/packet_pool.hpp>
 
+#include "nfq_packet.hpp"
+
 namespace snet::driver
 {
 
@@ -90,8 +92,44 @@ public:
     void resetStats() override;
 
 private:
-    struct Impl;                 ///< PIMPL forward declaration
-    std::unique_ptr<Impl> impl_; ///< Pointer to implementation details
+    /// Sends data through the socket.
+    /// @param[in] buf Pointer to the data buffer.
+    /// @param[in] len Size of the buffer in bytes.
+    /// @param[out] ec Error code reference.
+    /// @return Number of bytes sent, or -1 on error.
+    ssize_t sendSocket(const void* buf, size_t len, std::error_code& ec) noexcept;
+
+    /// Receives data from the socket.
+    /// @param[out] buffer Pointer to the receive buffer.
+    /// @param[in] bufferSize Size of the receive buffer in bytes.
+    /// @param[in] blocking If true, waits for data; if false, non-blocking mode.
+    /// @param[out] ec Error code reference.
+    /// @return Number of bytes received, or -1 on error.
+    ssize_t recvSocket(void* buffer, size_t bufferSize, bool blocking, std::error_code& ec) noexcept;
+
+    /// Binds an address to the socket.
+    /// @param[in] groups Bitmask of groups to bind.
+    /// @param[in] pid Process ID (0 for any).
+    /// @param[out] ec Error code reference.
+    void bindAddress(unsigned int groups, pid_t pid, std::error_code& ec) noexcept;
+
+    /// Closes the socket connection.
+    void closeSocket() noexcept;
+
+private:
+    std::unique_ptr<layers::PacketPool<NfqPacket>> pool_; ///< Smart pointer to packet pool.
+    Stats stats_;                                         ///< Statistics counters.
+    uint8_t* buffer_;                                     ///< Pointer to I/O buffer.
+    size_t bufferSize_;                                   ///< Buffer size in bytes.
+    socket::SocketType socket_;                           ///< Socket type.
+    sockaddr_nl address_;                                 ///< Netlink socket address.
+    unsigned int queueNumber_;                            ///< Queue number.
+    unsigned int queueMaxLength_;                         ///< Maximum queue length.
+    unsigned int portid_;                                 ///< Port identifier.
+    int snaplen_;                                         ///< Snapshot length.
+    int timeout_;                                         ///< Timeout value.
+    bool failOpen_;                                       ///< Fail-open flag.
+    volatile bool interrupted_;                           ///< Interruption flag.
 };
 
 } // namespace snet::driver

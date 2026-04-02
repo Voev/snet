@@ -11,8 +11,6 @@
 #include <snet/utils/counter.hpp>
 
 #include "pcap_driver.hpp"
-#include "pcap_handle.hpp"
-#include "pcap_packet.hpp"
 
 #define PCAP_ROLLOVER_LIM 1000000000 // Check for rollover every billionth packet
 
