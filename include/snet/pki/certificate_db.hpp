@@ -89,7 +89,8 @@ public:
                               const crypto::KeyPtr& pkey, const crypto::X509CertPtr& orig);
 
     /// Create and initialize a database  under the  db_path
-    static void Create(std::string const& db_path);
+    void create();
+
     /// Check the database stored under the db_path.
     static void Check(std::string const& db_path, size_t max_db_size, size_t fs_block_size);
 
@@ -162,7 +163,7 @@ private:
     /// Min size of disk db. If real size < min_db_size the  db will be disabled.
     static const size_t min_db_size;
 
-    const std::string db_path;   ///< The database directory.
+    std::string dbPath_;   ///< The database directory.
     const std::string db_full;   ///< Full path of the database index file.
     const std::string cert_full; ///< Full path of the directory to store the certs.
     const std::string size_full; ///< Full path of the file to store the db size.

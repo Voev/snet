@@ -1,5 +1,5 @@
 
-#include <snet/cert_cache/cert_cache.hpp>
+#include <snet/pki/certificate_db.hpp>
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/bio.hpp>
@@ -242,7 +242,7 @@ const std::string CertificateDb::cert_dir("certs");
 const std::string CertificateDb::size_file("size");
 
 CertificateDb::CertificateDb(std::string const& aDb_path, size_t aMax_db_size, size_t aFs_block_size)
-    : db_path(aDb_path)
+    : dbPath_(aDb_path)
     , db_full(aDb_path + "/" + db_file)
     , cert_full(aDb_path + "/" + cert_dir)
     , size_full(aDb_path + "/" + size_file)
@@ -362,16 +362,13 @@ bool CertificateDb::addCertAndPrivateKey(std::string const& useKey, const X509Ce
     return true;
 }
 
-void CertificateDb::Create(std::string const& db_path)
+void CertificateDb::create()
 {
-    if (db_path == "")
+    if (dbPath_ == "")
         throw RuntimeError("Path to db is empty");
-    std::string db_full(db_path + "/" + db_file);
-    std::string cert_full(db_path + "/" + cert_dir);
-    std::string size_full(db_path + "/" + size_file);
 
-    if (mkdir(db_path.c_str(), 0750))
-        throw RuntimeError("Cannot create {}", db_path);
+    if (mkdir(dbPath_.c_str(), 0750))
+        throw RuntimeError("Cannot create {}", dbPath_);
 
     if (mkdir(cert_full.c_str(), 0750))
         throw RuntimeError("Cannot create {}", cert_full);
@@ -498,7 +495,7 @@ void CertificateDb::load()
     BioPtr in(BIO_new(BIO_s_file()));
     if (!in || BIO_read_filename(in.get(), db_full.c_str()) <= 0)
         throw RuntimeError("Uninitialized SSL certificate database directory: {}"
-                                   ". To initialize, run \"security_file_certgen -c -s {}.", db_path, db_path);
+                                   ". To initialize, run \"security_file_certgen -c -s {}.", dbPath_, dbPath_);
 
     bool corrupt = false;
     TxtDbPtr temp_db(TXT_DB_read(in.get(), cnlNumber));
@@ -515,7 +512,7 @@ void CertificateDb::load()
         corrupt = true;
 
     if (corrupt)
-        throw RuntimeError("The SSL certificate database ", db_path, " is corrupted. Please rebuild");
+        throw RuntimeError("The SSL certificate database ", dbPath_, " is corrupted. Please rebuild");
 
     db.reset(temp_db.release());
 }

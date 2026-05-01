@@ -41,7 +41,7 @@ bool Connect(const Endpoint& endpoint)
         if (ec == std::errc::operation_in_progress)
         {
             ec.clear();
-            WaitSocket(socket, false, 3s, ec);
+            WaitSocketSelect(socket, false, 3s, ec);
         }
         casket::ThrowIfError(ec);
     }
