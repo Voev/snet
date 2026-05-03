@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <snet/pki/cert_manager.hpp>
+#include <snet/crypto/crypto_manager.hpp>
 #include "message.hpp"
 
 #include <atomic>

@@ -176,7 +176,6 @@ private:
                     return false;
             }
 
-            // Сначала пишем во временный файл
             std::string tempPath = metadataPath_ + ".tmp";
             std::ofstream file(tempPath, std::ios::binary);
             if (!file)
@@ -190,7 +189,6 @@ private:
             if (!file.good())
                 return false;
 
-            // Атомарно заменяем файл
             namespace fs = std::filesystem;
             fs::rename(tempPath, metadataPath_);
 

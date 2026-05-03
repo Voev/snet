@@ -27,30 +27,30 @@ inline std::pair<std::string, std::string> splitIntoTwo(const std::string& str)
     {
         return {"", ""};
     }
-    
+
     size_t end = str.find_last_not_of(" \t\n\r");
     std::string trimmed = str.substr(start, end - start + 1);
-    
+
     // Find first space
     size_t spacePos = trimmed.find_first_of(" \t");
-    
+
     if (spacePos == std::string::npos)
     {
         // No arguments, just command
         return {trimmed, ""};
     }
-    
+
     // Split into command and args
     std::string command = trimmed.substr(0, spacePos);
     std::string args = trimmed.substr(spacePos + 1);
-    
+
     // Trim args
     size_t argsStart = args.find_first_not_of(" \t\n\r");
     if (argsStart != std::string::npos)
     {
         args = args.substr(argsStart);
     }
-    
+
     return {command, args};
 }
 
@@ -62,7 +62,7 @@ struct CommandOptions
     bool verbose{false};
 };
 
-class CertManagerInterpreter
+class CertManagerInterpreter final
 {
 public:
     CertManagerInterpreter()
@@ -91,11 +91,6 @@ public:
                 .build()
         );
         parser_.add(
-            OptionBuilder("async")
-                .setDescription("Asynchronous connection mode")
-                .build()
-        );
-        parser_.add(
             OptionBuilder("verbose")
                 .setDescription("Verbose output")
                 .build()
@@ -108,13 +103,15 @@ public:
         // clang-format on
     }
 
+    ~CertManagerInterpreter() = default;
+
     int run(int argc, char* argv[])
     {
         parser_.parse(argc, argv);
 
         if (parser_.isUsed("help"))
         {
-            printHelp(argv[0]);
+            parser_.help(std::cout, argv[0]);
             return EXIT_SUCCESS;
         }
 
@@ -143,7 +140,7 @@ public:
 
         // No command specified
         std::cerr << "No command specified. Use --command or --interactive mode." << std::endl;
-        printHelp(argv[0]);
+        parser_.help(std::cout, argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -228,10 +225,7 @@ private:
 
     void printResponse(const CertManagerResponse& response, int64_t latency)
     {
-        std::cout << "\n[Response] (latency: " << latency << " mcs)" << std::endl;
-
-        // Print status
-        std::cout << "Status: ";
+        std::cout << "[Response] (latency: " << latency << " mcs)" << std::endl;
         std::cout << response.retcode << std::endl;
     }
 
@@ -244,24 +238,19 @@ private:
             std::cout << "\n> ";
             std::getline(std::cin, commandLine);
 
-            // Trim whitespace
-            commandLine.erase(0, commandLine.find_first_not_of(" \t\n\r"));
-            commandLine.erase(commandLine.find_last_not_of(" \t\n\r") + 1);
+            trim(commandLine);
 
             if (commandLine.empty())
             {
                 continue;
             }
 
-            std::string cmd = commandLine;
-            std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
-            if (cmd == "Q")
+            if (iequals(commandLine, "Q"))
             {
-                std::cout << "Goodbye!" << std::endl;
+                std::cout << "Exiting interactive mode" << std::endl;
                 break;
             }
 
-            // Execute command
             if (!executeCommand(commandLine))
             {
                 if (options_.verbose)
@@ -272,19 +261,6 @@ private:
         }
 
         return EXIT_SUCCESS;
-    }
-
-    void printHelp(const char* programName)
-    {
-        std::cout << "Usage: " << programName << " [options] [--command <cmd>]" << std::endl;
-        std::cout << "\nOptions:" << std::endl;
-        std::cout << "  --connect <address>     Connection address (default: /tmp/cert_siner)" << std::endl;
-        std::cout << "  --timeout <ms>          Request timeout in milliseconds (default: 5000)" << std::endl;
-        std::cout << "  --interactive           Run in interactive mode" << std::endl;
-        std::cout << "  --command <cmd>         Execute single command and exit" << std::endl;
-        std::cout << "  --async                 Use asynchronous connection mode" << std::endl;
-        std::cout << "  --verbose               Enable verbose output" << std::endl;
-        std::cout << "  --help                  Show this help message" << std::endl;
     }
 
 private:

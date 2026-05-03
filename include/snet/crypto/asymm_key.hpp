@@ -4,6 +4,8 @@
 #include <string>
 #include <snet/crypto/pointers.hpp>
 #include <casket/nonstd/span.hpp>
+#include <casket/nonstd/string_view.hpp>
+#include <snet/crypto/bio.hpp>
 
 namespace snet::crypto
 {
@@ -32,6 +34,22 @@ public:
     static std::vector<uint8_t> getEncodedPublicKey(const Key* key);
 
     static void setEncodedPublicKey(Key* key, nonstd::span<const uint8_t> value);
+
+    static KeyPtr fromBase64(KeyType keyType, nonstd::string_view base64)
+    {
+        auto bio = BioTraits::createMemoryReader(base64);
+        BioTraits::attach(bio, BioTraits::createBase64Filter());
+        return AsymmKey::fromBio(keyType, bio, Encoding::DER);
+    }
+
+    static std::string toBase64(KeyType keyType, Key* key)
+    {
+        auto bio = BioTraits::createMemoryBuffer();
+        BioTraits::attach(bio, BioTraits::createBase64Filter());
+        AsymmKey::toBio(keyType, key, bio, Encoding::DER);
+        BioTraits::flush(bio);
+        return BioTraits::getMemoryDataAsString(bio);
+    }
 };
 
 } // namespace snet::crypto

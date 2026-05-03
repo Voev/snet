@@ -10,6 +10,8 @@ class CertAuthority final : public casket::NonCopyable
 public:
     CertAuthority(KeyPtr key, const std::string& name);
 
+    CertAuthority(KeyPtr key, X509CertPtr cert);
+
     ~CertAuthority() noexcept;
 
     Key* getKey() const;

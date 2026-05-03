@@ -1,3 +1,4 @@
+#pragma once
 #include <limits>
 #include <vector>
 #include <array>
@@ -6,6 +7,10 @@
 
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/exception.hpp>
+#include <snet/utils/cast_uchar.hpp>
+
+#include <casket/nonstd/span.hpp>
+#include <casket/utils/exception.hpp>
 
 namespace snet::crypto
 {
@@ -29,7 +34,7 @@ public:
         return result;
     }
 
-    static inline BioPtr createMemoryReader(const uint8_t* data, size_t size)
+    static inline BioPtr createMemoryReader(const void* data, size_t size)
     {
         constexpr auto limit = std::numeric_limits<int>::max();
         BioPtr bio{BIO_new_mem_buf(data, (size > limit ? limit : size))};
@@ -37,7 +42,17 @@ public:
         return bio;
     }
 
-    inline BioPtr createBase64Filter(bool noNewLine = false)
+    static inline BioPtr createMemoryReader(nonstd::string_view data)
+    {
+        return createMemoryReader(data.data(), data.size());
+    }
+
+    static inline BioPtr createMemoryReader(nonstd::span<uint8_t> data)
+    {
+        return createMemoryReader(data.data(), data.size());
+    }
+
+    static inline BioPtr createBase64Filter(bool noNewLine = false)
     {
         BioPtr bio{BIO_new(BIO_f_base64())};
         ThrowIfTrue(bio == nullptr);
@@ -46,6 +61,12 @@ public:
             BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
         }
         return bio;
+    }
+
+    static inline void attach(BioPtr& baseBio, BioPtr&& filterBio)
+    {
+        casket::ThrowIfTrue(baseBio == nullptr || filterBio == nullptr, "Invalid argument");
+        baseBio.reset(BIO_push(filterBio.release(), baseBio.release()));
     }
 
     static inline size_t writeData(Bio* bio, const uint8_t* data, size_t length)

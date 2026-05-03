@@ -14,6 +14,11 @@ enum class CertVersion
     V3 = 2, ///< X509v3
 };
 
+enum class CertReqVersion
+{
+    V1 = 0,
+};
+
 enum class KeyType
 {
     Public,

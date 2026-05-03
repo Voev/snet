@@ -5,6 +5,7 @@
 #include <snet/crypto/cert_authority.hpp>
 #include <snet/crypto/cert_builder.hpp>
 #include <snet/crypto/cert_name_builder.hpp>
+#include <snet/crypto/exception.hpp>
 
 namespace snet::crypto
 {
@@ -13,6 +14,14 @@ CertAuthority::CertAuthority(KeyPtr key, const std::string& name)
     : key_(std::move(key))
     , cert_(generateCert(key_.get(), key_.get(), nullptr, name))
 {
+}
+
+CertAuthority::CertAuthority(KeyPtr key, X509CertPtr cert)
+    : key_(std::move(key))
+    , cert_(std::move(cert))
+{
+    ThrowIfFalse(0 < X509_check_private_key(cert_, key_));
+    ThrowIfFalse(0 < X509_check_ca(cert_), "Certificate is not CA");
 }
 
 CertAuthority::~CertAuthority() noexcept

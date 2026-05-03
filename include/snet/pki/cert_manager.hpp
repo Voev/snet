@@ -5,6 +5,11 @@
 #include <casket/server/generic_server.hpp>
 #include <casket/utils/string.hpp>
 
+#include <snet/crypto/cert.hpp>
+#include <snet/crypto/cert_authority.hpp>
+#include <snet/crypto/asymm_key.hpp>
+#include <snet/crypto/cert_request.hpp>
+
 namespace snet
 {
 
@@ -167,14 +172,14 @@ public:
     std::string handleHelp()
     {
         return "Commands:\n"
-               "  init                    - Initialize database\n"
-               "  list-profiles           - List available renewal profiles\n"
-               "  renew <cert> <profile>  - Renew certificate with specified profile\n"
-               "  add-profile <name> <ca_cert> <ca_key> <days> - Add new profile\n"
-               "  help                    - Show this help";
+               "  init                                 - Initialize database\n"
+               "  info-policy <name>                   - Print information about existing policy\n"
+               "  add-policy <name> <ca_cert> <ca_key> - Add new policy\n"
+               "  rm-policy <name>                     - Remove existing policy\n"
+               "  help                                 - Show this help";
     }
 
-    std::string handleProfileInfo(const std::string& name)
+    std::string handlePolicyInfo(const std::string& name)
     {
         auto policy = getPolicy(name);
         if (!policy)
@@ -183,38 +188,73 @@ public:
         }
 
         std::ostringstream response;
-        response << "Profile: " << name << "\n";
+        response << "Policy: " << name << "\n";
         response << "  CA Certificate: " << policy->caCertPath << "\n";
         response << "  CA Key: " << policy->caKeyPath << "\n";
         return response.str();
     }
 
-    std::string handleAddProfile(const std::string& name, const std::string& caCertPath, const std::string& caKeyPath)
+    std::string handleSignCsr(const std::string& name, const std::string& base64csr)
     {
-        auto policy = std::make_shared<Policy>();
-
-        policy->caKeyPath = caKeyPath;
-        policy->caCertPath = caCertPath;
-
-        if (addPolicy(name, policy))
+        try
         {
-            return "OK: Profile '" + name + "' added and validated successfully";
+            auto policy = getPolicy(name);
+            if (!policy)
+            {
+                return "ERROR: Policy '" + name + "' not found";
+            }
+
+            auto ca = entities_.find(name);
+            if (ca != entities_.end())
+            {
+                return "ERROR: not found entity";
+            }
+
+            auto csr = crypto::CertRequest::fromBase64(base64csr);
+            (void)csr;
+
+            return "OK";
         }
-        else
+        catch (const std::exception& e)
         {
-            return "ERROR: Failed to add profile '" + name + "'. Check certificate and key files";
+            std::string err = "ERROR: Failed to sign request with profile '" + name + "': ";
+            return err + e.what();
         }
     }
 
-    std::string handleRemoveProfile(const std::string& name)
+    std::string handleAddPolicy(const std::string& name, const std::string& caCertPath, const std::string& caKeyPath)
+    {
+        try
+        {
+            auto cert = crypto::Cert::fromStorage(caCertPath);
+            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, caKeyPath);
+            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), std::move(cert));
+
+            auto policy = std::make_shared<Policy>();
+            policy->caCertPath = caCertPath;
+            policy->caKeyPath = caKeyPath;
+
+            policyManager_->addPolicy(name, policy);
+            entities_[name] = std::move(entity);
+
+            return "OK: Policy '" + name + "' added and validated successfully";
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "ERROR: Failed to add profile '" + name + "': ";
+            return err + e.what();
+        }
+    }
+
+    std::string handleRemovePolicy(const std::string& name)
     {
         if (removePolicy(name))
         {
-            return "OK: Profile '" + name + "' removed successfully";
+            return "OK: Policy '" + name + "' removed successfully";
         }
         else
         {
-            return "ERROR: Profile '" + name + "' not found";
+            return "ERROR: Policy '" + name + "' not found";
         }
     }
 
@@ -232,7 +272,7 @@ public:
                 auto result = initDatabase();
                 resp.retcode = result ? "SUCCESS: database is initialized" : "ERROR: failed to init database";
             }
-            else if (req.value().command == "add-profile")
+            else if (req.value().command == "add-policy")
             {
                 if (req.value().args.empty())
                 {
@@ -247,11 +287,11 @@ public:
                     }
                     else
                     {
-                        resp.retcode = handleAddProfile(tokens[0], tokens[1], tokens[2]);
+                        resp.retcode = handleAddPolicy(tokens[0], tokens[1], tokens[2]);
                     }
                 }
             }
-            else if (req.value().command == "rm-profile")
+            else if (req.value().command == "rm-policy")
             {
                 if (req.value().args.empty())
                 {
@@ -267,11 +307,11 @@ public:
                     else
                     {
                         auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handleRemoveProfile(tokens[0]);
+                        resp.retcode = handleRemovePolicy(tokens[0]);
                     }
                 }
             }
-            else if (req.value().command == "info-profile")
+            else if (req.value().command == "info-policy")
             {
                 if (req.value().args.empty())
                 {
@@ -287,7 +327,27 @@ public:
                     else
                     {
                         auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handleProfileInfo(tokens[0]);
+                        resp.retcode = handlePolicyInfo(tokens[0]);
+                    }
+                }
+            }
+            else if (req.value().command == "sign-csr")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 2)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        auto tokens = casket::split(req.value().args, " ");
+                        resp.retcode = handleSignCsr(tokens[0], tokens[1]);
                     }
                 }
             }
@@ -307,6 +367,7 @@ public:
 private:
     std::string storageDir_;
     std::unique_ptr<PolicyManager> policyManager_;
+    std::map<std::string, std::shared_ptr<crypto::CertAuthority>> entities_;
     std::unique_ptr<CertificateDb> certDatabase_;
 };
 
