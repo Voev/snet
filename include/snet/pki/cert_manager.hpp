@@ -194,7 +194,7 @@ public:
         return response.str();
     }
 
-    std::string handleSignCsr(const std::string& name, const std::string& base64csr)
+    std::string handleResign(const std::string& name, const std::string& base64Cert, const std::string& base64PublicKey)
     {
         try
         {
@@ -205,15 +205,18 @@ public:
             }
 
             auto ca = entities_.find(name);
-            if (ca != entities_.end())
+            if (ca == entities_.end())
             {
                 return "ERROR: not found entity";
             }
 
-            auto csr = crypto::CertRequest::fromBase64(base64csr);
-            (void)csr;
+            auto cert = crypto::Cert::fromBase64(base64Cert);
+            auto publicKey = crypto::AsymmKey::fromBase64(KeyType::Public, base64PublicKey);
 
-            return "OK";
+            auto res = ca->second->resign(publicKey, cert);
+            auto base64Result = crypto::Cert::toBase64(res);
+
+            return base64Result;
         }
         catch (const std::exception& e)
         {
@@ -340,14 +343,14 @@ public:
                 else
                 {
                     auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 2)
+                    if (tokens.size() != 3)
                     {
                         resp.retcode = "ERROR: invalid count of parameters";
                     }
                     else
                     {
                         auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handleSignCsr(tokens[0], tokens[1]);
+                        resp.retcode = handleResign(tokens[0], tokens[1], tokens[2]);
                     }
                 }
             }

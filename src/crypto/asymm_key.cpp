@@ -135,14 +135,14 @@ KeyPtr AsymmKey::fromBio(KeyType keyType, Bio* in, Encoding inEncoding)
     default:
     {
         throw CryptoException(TranslateError(ERR_R_PASSED_INVALID_ARGUMENT),
-                              "CertBuilder parse error: unsupported input BIO format");
+                              "parse error: unsupported input BIO format");
     }
     break;
     }
 
     if (!result)
     {
-        throw CryptoException(GetLastError(), "Failed to parse certificate");
+        throw CryptoException(GetLastError(), "failed to parse key");
     }
 
     return result;

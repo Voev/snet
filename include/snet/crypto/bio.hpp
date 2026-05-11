@@ -52,7 +52,7 @@ public:
         return createMemoryReader(data.data(), data.size());
     }
 
-    static inline BioPtr createBase64Filter(bool noNewLine = false)
+    static inline BioPtr createBase64Filter(bool noNewLine = true)
     {
         BioPtr bio{BIO_new(BIO_f_base64())};
         ThrowIfTrue(bio == nullptr);

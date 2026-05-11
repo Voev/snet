@@ -138,7 +138,7 @@ std::time_t Cert::notAfter(X509Cert* cert)
 
 X509CertPtr Cert::fromStorage(std::string_view uri)
 {
-    auto storeLoader = StoreLoader(uri, nullptr, nullptr);
+        auto storeLoader = StoreLoader(uri, nullptr, nullptr);
     auto storeInfo = storeLoader.load(OSSL_STORE_INFO_CERT);
     auto result = X509CertPtr{OSSL_STORE_INFO_get1_CERT(storeInfo)};
     crypto::ThrowIfTrue(result == nullptr);

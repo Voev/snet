@@ -1,8 +1,11 @@
 #pragma once
 #include <ctime>
-#include <string_view>
 #include <filesystem>
+
 #include <snet/crypto/pointers.hpp>
+#include <snet/crypto/bio.hpp>
+
+#include <casket/nonstd/string_view.hpp>
 #include <casket/nonstd/span.hpp>
 
 namespace snet::crypto
@@ -44,6 +47,22 @@ public:
     static X509CertPtr fromBuffer(nonstd::span<const uint8_t> input);
 
     static int toBuffer(OSSL_CONST_COMPAT X509Cert* cert, nonstd::span<uint8_t> output);
+
+    static inline X509CertPtr fromBase64(nonstd::string_view base64)
+    {
+        auto bio = BioTraits::createMemoryReader(base64);
+        BioTraits::attach(bio, BioTraits::createBase64Filter());
+        return fromBio(bio, Encoding::DER);
+    }
+
+    static inline std::string toBase64(X509Cert* cert)
+    {
+        auto bio = BioTraits::createMemoryBuffer();
+        BioTraits::attach(bio, BioTraits::createBase64Filter());
+        toBio(cert, bio, Encoding::DER);
+        BioTraits::flush(bio);
+        return BioTraits::getMemoryDataAsString(bio);
+    }
 };
 
 } // namespace snet::crypto

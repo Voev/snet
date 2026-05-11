@@ -20,6 +20,8 @@ public:
 
     X509CertPtr sign(const std::string& name, Key* publicKey);
 
+    X509CertPtr resign(Key* forgedKey, X509Cert* originCert);
+
     CertAuthority(CertAuthority&& other) = default;
 
     CertAuthority& operator=(CertAuthority&& other) = default;
