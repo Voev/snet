@@ -1,268 +1,358 @@
 #pragma once
 #include <chrono>
 #include <memory>
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <functional>
+#include <iostream>
+#include <cassert>
 #include <casket/types/ttl_cache.hpp>
+#include <casket/lock_free/queue.hpp>
 #include <snet/crypto/cert.hpp>
+/// @todo
+#include <snet/pki/ttl_cache.hpp>
 
 namespace snet::pki
 {
 
-class WorkerPool {
-private:
-    using Clock = std::chrono::steady_clock;
-    using EnricherFunc = std::function<crypto::X509CertPtr(const Key&)>;
-    
-    struct EnrichmentTask {
-        uint64_t key;
-        std::string base64Request;
-        std::chrono::steady_clock::time_point enqueue_time;
-        uint64_t attempt = 0;
-    };
-    
-    moodycamel::ConcurrentQueue<Key> request_queue;
-    std::vector<std::thread> workers;
-    std::atomic<bool> running{true};
-    
-    EnricherFunc enricher;
-    L2Cache<Key, Value>* l2_cache;
-    CacheMetrics* metrics;
-    CacheConfig config;
-    
-public:
-    EnrichmentWorkerPool(EnricherFunc enricher, 
-                         L2Cache<Key, Value>* l2,
-                         CacheMetrics* metrics,
-                         const CacheConfig& config)
-        : enricher(std::move(enricher)), l2_cache(l2), metrics(metrics), config(config) {
-        
-        for (size_t i = 0; i < config.worker_threads; ++i) {
-            workers.emplace_back([this](std::stop_token stoken) {
-                worker_loop(stoken);
-            });
-        }
-    }
-    
-    ~EnrichmentWorkerPool() {
-        running = false;
-        workers.clear();  // jthread автоматически join'ятся
-    }
-    
-    // Отправить запрос на обогащение
-    void enrich_async(const Key& key) {
-        request_queue.enqueue(key);
-        metrics->enrichments_requested++;
-    }
-    
-private:
-    void worker_loop(std::stop_token stoken) {
-        std::vector<Key> batch;
-        batch.reserve(config.batch_size);
-        
-        while (!stoken.stop_requested() && running) {
-            // Собираем батч
-            batch.clear();
-            Key key;
-            size_t collected = 0;
-            
-            while (collected < config.batch_size && request_queue.try_dequeue(key)) {
-                batch.push_back(std::move(key));
-                collected++;
-            }
-            
-            if (batch.empty()) {
-                std::this_thread::sleep_for(config.worker_poll_interval);
-                continue;
-            }
-            
-            // Обрабатываем батч
-            process_batch(batch);
-        }
-    }
-    
-    void process_batch(const std::vector<Key>& batch) {
-        for (const auto& key : batch) {
-            auto start = std::chrono::steady_clock::now();
-            
-            try {
-                // ВЫЗОВ ПОЛЬЗОВАТЕЛЬСКОГО ЭНРИЧЕРА (сеть, диск, CPU)
-                if (auto enriched_value = enricher(key)) {
-                    auto expiry = Clock::now() + config.default_ttl;
-                    auto stale_until = expiry + config.stale_ttl;
-                    
-                    l2_cache->put(key, std::move(*enriched_value), expiry, stale_until);
-                    metrics->enrichments_completed++;
-                    
-                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now() - start);
-                    
-                    // Exponential moving average
-                    auto old_avg = metrics->avg_enrichment_time.load();
-                    auto new_avg = old_avg + (duration - old_avg) / 100;
-                    metrics->avg_enrichment_time.store(new_avg);
-                } else {
-                    metrics->enrichments_failed++;
-                }
-            } catch (const std::exception& e) {
-                metrics->enrichments_failed++;
-                if (config.enable_tracing) {
-                    std::cerr << "Enrichment failed for key: " << key << ", error: " << e.what() << std::endl;
-                }
-            }
-        }
-    }
+using CacheKey = uint64_t;
+
+using L1Cache = casket::TtlCache<CacheKey, crypto::X509CertPtr>;
+
+using L2Cache = casket::concurrency::TtlCache<CacheKey, crypto::X509CertPtr>;
+
+struct CacheConfig
+{
+    std::chrono::seconds l1Ttl{3600};     // L1 cache TTL
+    std::chrono::seconds l2Ttl{300};      // L2 cache TTL
+    std::chrono::seconds staleTtl{86400}; // Stale TTL для fallback
+    size_t workerThreads{4};
+    size_t batchSize{8};
+    std::chrono::milliseconds queueTimeout{100};
+    std::chrono::milliseconds popTimeout{10}; // Таймаут для pop операции
 };
 
-template <typename Key, typename Value>
-class EnterpriseAsyncCache
+class WorkerPool
+{
+public:
+    using Clock = std::chrono::steady_clock;
+    using EnricherFunc =
+        std::function<crypto::X509CertPtr(const CacheKey&, const std::string& policy, const std::string& originCert)>;
+
+    struct EnrichmentTask
+    {
+        CacheKey key;
+        std::string policy;
+        std::string originCert;
+        Clock::time_point enqueueTime;
+        uint64_t attempt = 0;
+
+        EnrichmentTask() = default;
+        EnrichmentTask(CacheKey k, std::string p, std::string cert)
+            : key(k)
+            , policy(std::move(p))
+            , originCert(std::move(cert))
+            , enqueueTime(Clock::now())
+        {
+        }
+    };
+
+    WorkerPool(EnricherFunc enricher, L2Cache* l2, const CacheConfig& cfg = CacheConfig{})
+        : enricher(std::move(enricher))
+        , l2Cache(l2)
+        , config(cfg)
+    {
+        for (size_t i = 0; i < config.workerThreads; ++i)
+        {
+            workers.emplace_back([this] { workerLoop(); });
+        }
+    }
+
+    ~WorkerPool()
+    {
+        running = false;
+        for (auto& worker : workers)
+        {
+            if (worker.joinable())
+                worker.join();
+        }
+    }
+
+    // Отправить запрос на обогащение
+    void enrichAsync(const CacheKey& key, const std::string& policy, const std::string& cert)
+    {
+        if (!running)
+            return;
+
+        EnrichmentTask task(key, policy, cert);
+        requestQueue.push(task);
+    }
+
+    uint64_t getProcessedCount() const
+    {
+        return totalProcessed.load();
+    }
+    uint64_t getFailedCount() const
+    {
+        return totalFailed.load();
+    }
+
+private:
+    void workerLoop()
+    {
+        std::vector<EnrichmentTask> batch;
+        batch.reserve(config.batchSize);
+
+        while (running)
+        {
+            batch.clear();
+
+            // Собираем батч с таймаутом
+            auto startTime = Clock::now();
+
+            while (batch.size() < config.batchSize)
+            {
+                // Используем pop с небольшим таймаутом через периодическую проверку
+                auto popResult = requestQueue.pop();
+                if (popResult.has_value())
+                {
+                    batch.push_back(std::move(popResult.value()));
+                }
+
+                // Если очередь пуста и прошло достаточно времени - выходим
+                if (Clock::now() - startTime > config.queueTimeout && !batch.empty())
+                    break;
+
+                if (batch.empty())
+                {
+                    std::this_thread::sleep_for(config.popTimeout);
+                    continue;
+                }
+            }
+
+            if (batch.empty())
+                continue;
+
+            processBatch(batch);
+        }
+    }
+
+    void processBatch(std::vector<EnrichmentTask>& batch)
+    {
+        for (auto& task : batch)
+        {
+            auto start = Clock::now();
+
+            try
+            {
+                // Проверяем дубликаты (key может обрабатываться другим воркером)
+                auto now = Clock::now();
+                auto existing = l2Cache->get(task.key, now);
+                if (existing)
+                {
+                    // Уже есть в кэше - пропускаем
+                    continue;
+                }
+
+                if (auto enrichedValue = enricher(task.key, task.policy, task.originCert))
+                {
+                    auto expiry = now + config.l2Ttl;
+
+                    l2Cache->put(task.key, std::move(enrichedValue), expiry);
+                    totalProcessed++;
+                }
+                else
+                {
+                    totalFailed++;
+                    std::cerr << "Enricher returned null for key: " << task.key << std::endl;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                totalFailed++;
+                std::cerr << "Enrichment failed for key: " << task.key << ", attempt: " << task.attempt
+                          << ", error: " << e.what() << std::endl;
+
+                // Retry logic with exponential backoff
+                if (task.attempt < 3)
+                {
+                    task.attempt++;
+                    task.enqueueTime = Clock::now();
+                    requestQueue.push(task);
+
+                    // Экспоненциальная задержка перед повторной попыткой
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100 * (1 << task.attempt)));
+                }
+            }
+
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start);
+
+            if (duration > std::chrono::seconds(5))
+            {
+                std::cerr << "Slow enrichment for key: " << task.key << ", took " << duration.count() << "ms"
+                          << std::endl;
+            }
+        }
+    }
+
+private:
+    casket::lock_free::Queue<EnrichmentTask> requestQueue;
+    std::vector<std::thread> workers;
+    std::atomic<bool> running{true};
+
+    EnricherFunc enricher;
+    L2Cache* l2Cache;
+    CacheConfig config;
+
+    // Статистика
+    std::atomic<uint64_t> totalProcessed{0};
+    std::atomic<uint64_t> totalFailed{0};
+};
+
+class CertCache
 {
 private:
     using Clock = std::chrono::steady_clock;
 
+    L2Cache l2Cache;
+    WorkerPool workerPool;
     CacheConfig config;
-    CacheMetrics metrics;
 
-    casket::TtlCache<uint64_t, crypto::X509CertPtr> l2_cache;
-    EnrichmentWorkerPool<Key, Value> worker_pool;
+    // Thread-local storage для L1 кэша
+    static inline thread_local std::unique_ptr<L1Cache> tL1Cache;
+    static inline thread_local Clock::time_point tLastL2Refresh;
+    static inline thread_local bool tL1Initialized = false;
 
-    // Thread-local storage
-    static inline thread_local std::unique_ptr<casket::TtlCache<uint64_t, crypto::X509CertPtr>> t_l1_cache;
-    static inline thread_local Clock::time_point t_last_l2_refresh;
+    void ensureL1Cache()
+    {
+        if (!tL1Initialized)
+        {
+            tL1Cache = std::make_unique<L1Cache>(1024); // 1024 entries
+            tL1Initialized = true;
+            tLastL2Refresh = Clock::now();
+        }
+    }
 
 public:
-    EnterpriseAsyncCache(CacheConfig cfg = {}, std::function<std::optional<Value>(const Key&)> enricher = nullptr)
-        : config(std::move(cfg))
-        , l2_cache(config.l2_cache_size, config.eviction_policy)
-        , worker_pool(std::move(enricher), &l2_cache, &metrics, config)
+    CertCache(const CacheConfig& cfg = CacheConfig{})
+        : l2Cache(256, cfg.l2Ttl)
+        , workerPool([this](const CacheKey& key, const std::string& policy, const std::string& cert)
+                     { return enrichCertificate(key, policy, cert); }, &l2Cache, cfg)
+        , config(cfg)
     {
-
-        static_assert(std::is_copy_constructible<Key>::value, "Key must be copy constructible");
-
-        if (config.enable_metrics)
-        {
-            start_metrics_reporter();
-        }
     }
 
-    // ========================================================================
-    // PUBLIC API for worker threads
-    // ========================================================================
-
-    // Основной метод получения данных (non-blocking)
-    X509CertPtr get(X509Cert* originCert)
+    crypto::X509CertPtr get(X509Cert* originCert, const std::string& policy, const std::string& cert)
     {
-        X509_NAME_hash
+        if (!originCert)
+            return nullptr;
 
-        // L1 lookup (zero-contention, ~5ns)
-        init_thread_cache();
+        ensureL1Cache();
+
+        auto key = crypto::Cert::computeHash(originCert, EVP_sha1());
         auto now = Clock::now();
 
-        if (auto* val = t_l1_cache->get(key, now))
+        // L1 lookup (очень быстрый)
+        if (auto value = tL1Cache->get(key, now))
         {
-            metrics.l1_hits++;
-            return *val;
+            return crypto::Cert::shallowCopy(*value);
         }
-        metrics.l1_misses++;
 
-        // L2 lookup (shared_lock, ~50ns)
-        auto [val, is_hit] = l2_cache.get(key, now);
-        if (val)
+        // L2 lookup
+        if (auto val = l2Cache.get(key, now))
         {
-            metrics.l2_hits++;
-            promote_to_l1(key, *val, now);
-            return *val;
+            // Продвигаем в L1 для быстрого доступа
+            promoteToL1(key, crypto::Cert::shallowCopy(*val), now);
+            return crypto::Cert::shallowCopy(*val);
         }
-        metrics.l2_misses++;
 
-        /// origin -> csr
-        /// get policy
+        workerPool.enrichAsync(key, policy, cert);
 
-        // Cache miss - отправляем запрос на обогащение
-        worker_pool.enrich_async(csr, policy);
-
-        return std::nullopt;
+        return nullptr;
     }
 
-    // Версия с ожиданием (blocking, для синхронных сценариев)
-    std::optional<Value> get_blocking(const Key& key, std::chrono::milliseconds timeout)
+    crypto::X509CertPtr getBlocking(X509Cert* originCert, const std::string& policy, const std::string& cert,
+                                    std::chrono::milliseconds timeout)
     {
         auto start = Clock::now();
 
         while (true)
         {
-            if (auto val = get(key))
+            if (auto val = get(originCert, policy, cert))
             {
                 return val;
             }
 
             if (Clock::now() - start > timeout)
             {
-                return std::nullopt;
+                std::cerr << "Timeout waiting for certificate enrichment" << std::endl;
+                return nullptr;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Минимальный sleep для предотвращения busy-waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }
 
-    // Предзагрузка данных (fire-and-forget)
-    void prefetch(const Key& key)
+    // Получение статистики
+    struct CacheStats
     {
-        worker_pool.enrich_async(key);
+        size_t l2Size;
+        uint64_t workerProcessed;
+        uint64_t workerFailed;
+    };
+
+    CacheStats getStats() const
+    {
+        return {.l2Size = l2Cache.size(),
+                .workerProcessed = workerPool.getProcessedCount(),
+                .workerFailed = workerPool.getFailedCount()};
     }
 
-    // Инвалидация
-    void invalidate(const Key& key)
+    // Очистка thread-local кэша для текущего потока
+    static void clearThreadLocalCache()
     {
-        // В реальном коде нужно очистить и L1, и L2
-        // L1 чистим через паттерн "генерационный номер"
+        if (tL1Initialized)
+        {
+            tL1Cache.reset();
+            tL1Initialized = false;
+        }
     }
 
-    // Метрики
-    CacheMetrics get_metrics() const
+    // Принудительное обновление из L2 в L1 для текущего потока
+    void refreshL1FromL2()
     {
-        metrics.current_l2_size = l2_cache.size();
-        return metrics;
+        ensureL1Cache();
+
+        // TODO: Реализовать логику обновления L1 из L2
+        // Например, можно пройтись по горячим ключам
     }
 
 private:
-    void init_thread_cache()
+    crypto::X509CertPtr enrichCertificate(const CacheKey& key, const std::string& policy, const std::string& publicKey)
     {
-        if (!t_l1_cache)
-        {
-            t_l1_cache = std::make_unique<L1Cache<Key, Value>>(config.l1_cache_size);
-        }
+        // Реальная логика переподписи сертификата
+        // TODO: Implement certificate re-signing logic
 
-        // Периодически обновляем L1 из L2 (для синхронизации)
-        auto now = Clock::now();
-        if (now - t_last_l2_refresh > std::chrono::seconds(1))
-        {
-            t_last_l2_refresh = now;
-            // В production: инкрементальное обновление L1 из L2
-        }
+        static_cast<void>(key);
+        static_cast<void>(policy);
+        static_cast<void>(publicKey);
+
+        // Пример реализации:
+        // 1. Получить оригинальный сертификат из хранилища по key
+        // 2. Создать CSR из оригинального сертификата
+        // 3. Переподписать с использованием policy
+        // 4. Вернуть новый сертификат
+
+        // Пока возвращаем nullptr
+        return nullptr;
     }
 
-    void promote_to_l1(const Key& key, const Value& value, Clock::time_point now)
+    void promoteToL1(const CacheKey& key, crypto::X509CertPtr value, Clock::time_point now)
     {
-        Value copy = value; // Копируем в L1 (или move, если возможно)
-        auto expiry = now + config.default_ttl;
-        t_l1_cache->put(key, std::move(copy), expiry);
-    }
-
-    void start_metrics_reporter()
-    {
-        static std::jthread reporter(
-            [this](std::stop_token stoken)
-            {
-                while (!stoken.stop_requested())
-                {
-                    std::this_thread::sleep_for(config.metrics_report_interval);
-
-                    if (config.enable_tracing)
-                    {
-                        auto stats = get_metrics();
-                        std::cout << stats.to_prometheus() << std::endl;
-                    }
-                }
-            });
+        auto expiry = now + config.l1Ttl;
+        tL1Cache->put(key, std::move(value), expiry);
     }
 };
 

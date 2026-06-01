@@ -11,4 +11,4 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 add_executable(${TARGET_NAME} ${SOURCES})
 
 # Dependencies
-target_link_libraries(${TARGET_NAME} PUBLIC snet_cert_cache)
+target_link_libraries(${TARGET_NAME} PUBLIC snet_pki)

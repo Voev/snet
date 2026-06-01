@@ -71,3 +71,4 @@ if (ENABLE_WERROR)
     add_compiler_flag(-Werror)
 endif (ENABLE_WERROR)
 
+add_compiler_flag(-Wno-error=unused-value)

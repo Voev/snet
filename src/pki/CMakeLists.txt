@@ -1,5 +1,5 @@
 # Target name
-set(TARGET_NAME snet_cert_cache)
+set(TARGET_NAME snet_pki)
 
 # Sources
 file(GLOB_RECURSE SOURCES *.cpp)

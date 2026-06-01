@@ -2,11 +2,15 @@
 #include <ctime>
 #include <filesystem>
 
+#include <openssl/evp.h>
+
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/bio.hpp>
 
 #include <casket/nonstd/string_view.hpp>
 #include <casket/nonstd/span.hpp>
+
+#include <snet/utils/bytes_to_number.hpp>
 
 namespace snet::crypto
 {
@@ -17,6 +21,15 @@ public:
     static X509CertPtr shallowCopy(X509Cert* cert);
 
     static X509CertPtr deepCopy(X509Cert* cert);
+
+    static inline uint64_t computeHash(X509Cert* cert, const Hash* hash)
+    {
+        uint8_t digest[EVP_MAX_MD_SIZE] = {};
+        uint32_t digestLength = 0;
+
+        ThrowIfFalse(0 < X509_digest(cert, hash, digest, &digestLength));
+        return BytesToNumber<uint64_t>(digest, digestLength);
+    }
 
     static bool isEqual(const X509Cert* op1, const X509Cert* op2);
 
