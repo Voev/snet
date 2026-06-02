@@ -90,9 +90,12 @@ class PolicyManager final
 {
 public:
     PolicyManager(const std::string& storageDir)
-        : metadataPath_(storageDir + "/policies.bin")
     {
         namespace fs = std::filesystem;
+        if (storageDir.empty())
+        {
+            throw std::runtime_error("Invalid path to storage");
+        }
         if (fs::exists(storageDir))
         {
             loadPolicies();
@@ -101,6 +104,7 @@ public:
         {
             fs::create_directories(storageDir);
         }
+        metadataPath_ = storageDir + "/policies.bin";
     }
 
     ~PolicyManager() noexcept

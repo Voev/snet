@@ -30,7 +30,7 @@ struct CacheConfig
     size_t workerThreads{4};
     size_t batchSize{8};
     std::chrono::milliseconds queueTimeout{100};
-    std::chrono::milliseconds popTimeout{10}; // Таймаут для pop операции
+    std::chrono::milliseconds popTimeout{10};
 };
 
 class WorkerPool
@@ -79,7 +79,6 @@ public:
         }
     }
 
-    // Отправить запрос на обогащение
     void enrichAsync(const CacheKey& key, const std::string& policy, const std::string& cert)
     {
         if (!running)
@@ -108,19 +107,16 @@ private:
         {
             batch.clear();
 
-            // Собираем батч с таймаутом
             auto startTime = Clock::now();
 
             while (batch.size() < config.batchSize)
             {
-                // Используем pop с небольшим таймаутом через периодическую проверку
                 auto popResult = requestQueue.pop();
                 if (popResult.has_value())
                 {
                     batch.push_back(std::move(popResult.value()));
                 }
 
-                // Если очередь пуста и прошло достаточно времени - выходим
                 if (Clock::now() - startTime > config.queueTimeout && !batch.empty())
                     break;
 
@@ -146,12 +142,10 @@ private:
 
             try
             {
-                // Проверяем дубликаты (key может обрабатываться другим воркером)
                 auto now = Clock::now();
                 auto existing = l2Cache->get(task.key, now);
                 if (existing)
                 {
-                    // Уже есть в кэше - пропускаем
                     continue;
                 }
 
@@ -181,7 +175,6 @@ private:
                     task.enqueueTime = Clock::now();
                     requestQueue.push(task);
 
-                    // Экспоненциальная задержка перед повторной попыткой
                     std::this_thread::sleep_for(std::chrono::milliseconds(100 * (1 << task.attempt)));
                 }
             }
@@ -205,7 +198,6 @@ private:
     L2Cache* l2Cache;
     CacheConfig config;
 
-    // Статистика
     std::atomic<uint64_t> totalProcessed{0};
     std::atomic<uint64_t> totalFailed{0};
 };
@@ -219,7 +211,6 @@ private:
     WorkerPool workerPool;
     CacheConfig config;
 
-    // Thread-local storage для L1 кэша
     static inline thread_local std::unique_ptr<L1Cache> tL1Cache;
     static inline thread_local Clock::time_point tLastL2Refresh;
     static inline thread_local bool tL1Initialized = false;
@@ -228,7 +219,7 @@ private:
     {
         if (!tL1Initialized)
         {
-            tL1Cache = std::make_unique<L1Cache>(1024); // 1024 entries
+            tL1Cache = std::make_unique<L1Cache>(1024);
             tL1Initialized = true;
             tLastL2Refresh = Clock::now();
         }
@@ -259,10 +250,8 @@ public:
             return crypto::Cert::shallowCopy(*value);
         }
 
-        // L2 lookup
         if (auto val = l2Cache.get(key, now))
         {
-            // Продвигаем в L1 для быстрого доступа
             promoteToL1(key, crypto::Cert::shallowCopy(*val), now);
             return crypto::Cert::shallowCopy(*val);
         }
@@ -290,12 +279,10 @@ public:
                 return nullptr;
             }
 
-            // Минимальный sleep для предотвращения busy-waiting
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }
 
-    // Получение статистики
     struct CacheStats
     {
         size_t l2Size;
@@ -310,7 +297,6 @@ public:
                 .workerFailed = workerPool.getFailedCount()};
     }
 
-    // Очистка thread-local кэша для текущего потока
     static void clearThreadLocalCache()
     {
         if (tL1Initialized)
@@ -320,32 +306,20 @@ public:
         }
     }
 
-    // Принудительное обновление из L2 в L1 для текущего потока
     void refreshL1FromL2()
     {
         ensureL1Cache();
-
-        // TODO: Реализовать логику обновления L1 из L2
-        // Например, можно пройтись по горячим ключам
     }
 
 private:
     crypto::X509CertPtr enrichCertificate(const CacheKey& key, const std::string& policy, const std::string& publicKey)
     {
-        // Реальная логика переподписи сертификата
         // TODO: Implement certificate re-signing logic
 
         static_cast<void>(key);
         static_cast<void>(policy);
         static_cast<void>(publicKey);
 
-        // Пример реализации:
-        // 1. Получить оригинальный сертификат из хранилища по key
-        // 2. Создать CSR из оригинального сертификата
-        // 3. Переподписать с использованием policy
-        // 4. Вернуть новый сертификат
-
-        // Пока возвращаем nullptr
         return nullptr;
     }
 

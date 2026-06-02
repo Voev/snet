@@ -14,6 +14,8 @@
 #include <casket/opt/option_builder.hpp>
 #include <casket/opt/option_value_handler.hpp>
 
+#include "config/config_manager.hpp"
+
 using namespace casket;
 using namespace casket::opt;
 using namespace snet;
@@ -24,6 +26,7 @@ class CmdLineProcessor final
 public:
     struct Parameters
     {
+        std::string configPath{"/home/voev/.snet"};
         std::string address;
         std::string dbPath;
         size_t fsBlockSize{0};
@@ -36,6 +39,11 @@ public:
         parser_.add(
             OptionBuilder("help")
                 .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("config", Value(&args_.configPath))
+                .setDescription("Path to configuration file")
                 .build()
         ); 
         parser_.add(
@@ -86,6 +94,7 @@ int main(int argc, char* argv[])
 {
     try
     {
+
         std::vector<std::string_view> args(argv + 1, argv + argc);
         CmdLineProcessor cli;
 
@@ -98,6 +107,9 @@ int main(int argc, char* argv[])
 
         cli.getParser().validate();
         const auto& params = cli.getParameters();
+
+        ConfigManager config;
+        config.initialize(params.configPath);
 
         SignalHandler signalHandler;
 
@@ -112,7 +124,7 @@ int main(int argc, char* argv[])
                                           interrupted = true;
                                       });
 
-        CertificateManager proc(params.dbPath);
+        CertificateManager proc(config.generic()->policyDirectory);
 
         GenericServerConfig conf;
         conf.idleTimeout = std::chrono::seconds(300);
@@ -132,9 +144,10 @@ int main(int argc, char* argv[])
 
         std::error_code ec{};
 
-        if (!server.listen(params.address, -1, 128, ec))
+        if (!server.listen(config.generic()->socketName, -1, 128, ec))
         {
-            std::cerr << "Failed to listen on " << params.address << ", error: " << ec.message() << std::endl;
+            std::cerr << "Failed to listen on " << config.generic()->socketName << ", error: " << ec.message()
+                      << std::endl;
             return false;
         }
 
