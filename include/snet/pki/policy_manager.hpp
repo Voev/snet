@@ -92,19 +92,21 @@ public:
     PolicyManager(const std::string& storageDir)
     {
         namespace fs = std::filesystem;
+
         if (storageDir.empty())
         {
             throw std::runtime_error("Invalid path to storage");
         }
+
         if (fs::exists(storageDir))
         {
-            loadPolicies();
+            metadataPath_ = storageDir + "/policies.bin";
+            loadPolicies(metadataPath_);
         }
         else
         {
             fs::create_directories(storageDir);
         }
-        metadataPath_ = storageDir + "/policies.bin";
     }
 
     ~PolicyManager() noexcept
@@ -204,11 +206,11 @@ private:
         }
     }
 
-    bool loadPolicies() noexcept
+    bool loadPolicies(const std::string& metadataPath) noexcept
     {
         try
         {
-            std::ifstream file(metadataPath_, std::ios::binary);
+            std::ifstream file(metadataPath, std::ios::binary);
             if (!file)
                 return true;
 

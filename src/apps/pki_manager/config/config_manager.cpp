@@ -68,9 +68,10 @@ void ConfigManager::createDefaultConfig(const std::string& configPath)
     section->validate();
 
     const auto* generic = options_.get<GenericSection>();
-    configFile << "[generic]\n";
-    configFile << "policy_dir = " << generic->getOption("policy_dir").get<std::string>() + "\n\n";
-    configFile << "socket_path = " << generic->getOption("socket_path").get<std::string>() + "\n\n";
+    configFile << "generic {\n";
+    configFile << "\tpolicy_dir = " << generic->getOption("policy_dir").get<std::string>() + "\n";
+    configFile << "\tsocket_path = " << generic->getOption("socket_path").get<std::string>() + "\n";
+    configFile << "}\n";
     configFile.close();
 
     chmod(configPath.c_str(), 0644);

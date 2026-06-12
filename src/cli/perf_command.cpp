@@ -19,8 +19,7 @@
 #include <openssl/err.h>
 #include <openssl/tls1.h>
 
-#include <casket/opt/option_builder.hpp>
-#include <casket/opt/cmd_line_options_parser.hpp>
+#include <casket/opt/opt.hpp>
 #include <casket/utils/error_code.hpp>
 
 #include <casket/log/log.hpp>

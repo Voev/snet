@@ -27,10 +27,6 @@ public:
     struct Parameters
     {
         std::string configPath{"/home/voev/.snet"};
-        std::string address;
-        std::string dbPath;
-        size_t fsBlockSize{0};
-        size_t maxDbSize{0};
     };
 
     CmdLineProcessor()
@@ -44,32 +40,6 @@ public:
         parser_.add(
             OptionBuilder("config", Value(&args_.configPath))
                 .setDescription("Path to configuration file")
-                .build()
-        ); 
-        parser_.add(
-            OptionBuilder("address", Value(&args_.address))
-                .setDescription("Listening address")
-                .build()
-        );       
-        parser_.add(
-            OptionBuilder("create-db")
-                .setDescription("Init database directory and exit")
-                .build()
-        );        
-        parser_.add(
-            OptionBuilder("db-path", Value(&args_.dbPath))
-                .setDescription("Directory path of SSL storage database")
-                .build()
-        );        
-        parser_.add(
-            OptionBuilder("max-db-size", Value(&args_.maxDbSize))
-                .setDescription("Maximum size of disk storage")
-                .build()
-        );        
-        parser_.add(
-            OptionBuilder("fs-block-size", Value(&args_.fsBlockSize))
-                .setDescription("File system block size in bytes")
-                .setDefaultValue(2048)
                 .build()
         );
         // clang-format on

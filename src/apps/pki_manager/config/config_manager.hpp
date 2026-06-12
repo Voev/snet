@@ -11,10 +11,10 @@ public:
     GenericSection()
     {
         addOption(casket::opt::OptionBuilder("policy_dir", casket::opt::Value(&policyDirectory))
-                      .setDefaultValue("/home/voev/.pki_manager/")
+                      .setDefaultValue("${HOME}/.snet_pkimgr/")
                       .build());
-        addOption(casket::opt::OptionBuilder("socket_path", casket::opt::Value(&policyDirectory))
-                      .setDefaultValue("/tmp/pki_manager.sock")
+        addOption(casket::opt::OptionBuilder("socket_path", casket::opt::Value(&socketName))
+                      .setDefaultValue("${HOME}/snet_pkimgr.sock")
                       .build());
     }
 
