@@ -9,6 +9,8 @@
 #include <snet/crypto/cert_authority.hpp>
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/cert_request.hpp>
+#include <snet/crypto/rsa_asymm_key.hpp>
+#include <snet/crypto/bio.hpp>
 
 namespace snet
 {
@@ -172,7 +174,9 @@ public:
     std::string handleHelp()
     {
         return "Commands:\n"
-               "  init                                 - Initialize database\n"
+               "  create-policy <name>                 - Create a new policy with name\n"
+               "  gen-key <name>                       - Generate private key for policy\n"
+               "  gen-ss-cert <name>                   - Generate self-signed certificate for policy\n"
                "  info-policy <name>                   - Print information about existing policy\n"
                "  add-policy <name> <ca_cert> <ca_key> - Add new policy\n"
                "  rm-policy <name>                     - Remove existing policy\n"
@@ -225,6 +229,140 @@ public:
         }
     }
 
+    std::string handleCreatePolicy(const std::string& name)
+    {
+        try
+        {
+            std::filesystem::path p = policyManager_->storage();
+            p /= name;
+            std::filesystem::create_directory(p);
+
+            auto policy = std::make_shared<Policy>();
+            policyManager_->addPolicy(name, policy);
+            policyManager_->savePolicies();
+
+            return "OK: policy '" + name + "' was created successfully";
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "ERROR: Failed to add profile '" + name + "': ";
+            return err + e.what();
+        }
+    }
+
+    std::string handleGenerateKey(const std::string& name)
+    {
+        try
+        {
+            auto policy = getPolicy(name);
+            if (!policy)
+            {
+                return "ERROR: Policy '" + name + "' not found";
+            }
+
+            if (!policy->caKeyPath.empty())
+            {
+                return "ERROR: private key already generated for '" + name + "'";
+            }
+
+            std::filesystem::path p = policyManager_->storage();
+            p /= name;
+
+            std::filesystem::path privateKeyPath = p / "private_key.pem";
+            policy->caKeyPath = privateKeyPath.string();
+            
+            auto key = crypto::RsaAsymmKey::generate(2048, false);
+
+            auto filename = crypto::BioTraits::openFile(policy->caKeyPath, "wb");
+            crypto::AsymmKey::toBio(KeyType::Private, key, filename, Encoding::PEM);
+
+            policyManager_->savePolicies();
+
+            return "OK: private key successfully generated for policy '" + name + "'";
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "ERROR: failed to generate private key for policy '" + name + "': ";
+            return err + e.what();
+        }
+    }
+
+    std::string handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn)
+    {
+        try
+        {
+            auto policy = getPolicy(name);
+            if (!policy)
+            {
+                return "ERROR: Policy '" + name + "' not found";
+            }
+
+            if (!policy->caCertPath.empty())
+            {
+                return "ERROR: certificate already setted for '" + name + "'";
+            }
+
+            std::filesystem::path p = policyManager_->storage();
+            p /= name;
+
+            std::filesystem::path certificatePath = p / "certificate.pem";
+            policy->caCertPath = certificatePath.string();
+
+            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
+            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
+
+            auto filename = crypto::BioTraits::openFile(policy->caCertPath, "wb");
+            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
+
+            policyManager_->savePolicies();
+
+            return "OK: self-signed certificate successfully generated for policy '" + name + "'";
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "ERROR: failed to generate self-signed certificate for policy '" + name + "': ";
+            return err + e.what();
+        }
+    }
+
+    /*std::string handleGenerateCertRequest(const std::string& name, const std::string& certDn)
+    {
+        try
+        {
+            auto policy = getPolicy(name);
+            if (!policy)
+            {
+                return "ERROR: Policy '" + name + "' not found";
+            }
+
+            if (!policy->caCertPath.empty())
+            {
+                return "ERROR: certificate already setted for '" + name + "'";
+            }
+
+            std::filesystem::path p = policyManager_->storage();
+            p /= name;
+
+            std::filesystem::path certificatePath = p / "certificate.pem";
+            policy->caCertPath = certificatePath.string();
+
+            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
+            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
+
+            auto filename = crypto::BioTraits::openFile(policy->caCertPath, "wb");
+            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
+
+            policyManager_->savePolicies();
+
+            return "OK: self-signed certificate successfully generated for policy '" + name + "'";
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "ERROR: failed to generate self-signed certificate for policy '" + name + "': ";
+            return err + e.what();
+        }
+    }*/
+
     std::string handleAddPolicy(const std::string& name, const std::string& caCertPath, const std::string& caKeyPath)
     {
         try
@@ -270,7 +408,64 @@ public:
 
         if (req.has_value())
         {
-            if (req.value().command == "init")
+            if (req.value().command == "create-policy")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 1)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        resp.retcode = handleCreatePolicy(tokens[0]);
+                    }
+                }
+            }
+            else if (req.value().command == "gen-key")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 1)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        resp.retcode = handleGenerateKey(tokens[0]);
+                    }
+                }
+            }
+            else if (req.value().command == "gen-ss-cert")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 2)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        resp.retcode = handleGenerateSelfSignedCert(tokens[0], tokens[1]);
+                    }
+                }
+            }
+            else if (req.value().command == "init")
             {
                 auto result = initDatabase();
                 resp.retcode = result ? "SUCCESS: database is initialized" : "ERROR: failed to init database";

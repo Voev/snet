@@ -13,6 +13,7 @@ namespace snet
 
 struct Policy
 {
+    std::string name;
     std::string caCertPath;
     std::string caKeyPath;
 
@@ -90,6 +91,7 @@ class PolicyManager final
 {
 public:
     PolicyManager(const std::string& storageDir)
+        : storagePath_(storageDir)
     {
         namespace fs = std::filesystem;
 
@@ -117,7 +119,7 @@ public:
     bool addPolicy(const std::string& name, std::shared_ptr<Policy> policy)
     {
         policies_[name] = policy;
-        return savePolicies();
+        return true;
     }
 
     bool removePolicy(const std::string& name)
@@ -159,7 +161,11 @@ public:
         savePolicies();
     }
 
-private:
+    const std::string& storage() const
+    {
+        return storagePath_;
+    }
+
     bool savePolicies() noexcept
     {
         try
@@ -255,6 +261,7 @@ private:
 
 private:
     std::map<std::string, std::shared_ptr<Policy>> policies_;
+    std::string storagePath_;
     std::string metadataPath_;
 };
 
