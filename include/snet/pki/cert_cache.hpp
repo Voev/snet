@@ -7,20 +7,24 @@
 #include <functional>
 #include <iostream>
 #include <cassert>
+
 #include <casket/types/ttl_cache.hpp>
 #include <casket/lock_free/queue.hpp>
-#include <snet/crypto/cert.hpp>
-/// @todo
+
+/// @todo move to casket
 #include <snet/pki/ttl_cache.hpp>
+
+
+#include <snet/crypto/cert.hpp>
+#include <snet/pki/cert_fingerprint.hpp>
+
 
 namespace snet::pki
 {
 
-using CacheKey = uint64_t;
+using L1CertCache = casket::TtlCache<CertFingerprint, crypto::X509CertPtr>;
 
-using L1Cache = casket::TtlCache<CacheKey, crypto::X509CertPtr>;
-
-using L2Cache = casket::concurrency::TtlCache<CacheKey, crypto::X509CertPtr>;
+using L2CertCache = casket::concurrency::TtlCache<CertFingerprint, crypto::X509CertPtr>;
 
 struct CacheConfig
 {
@@ -38,19 +42,19 @@ class WorkerPool
 public:
     using Clock = std::chrono::steady_clock;
     using EnricherFunc =
-        std::function<crypto::X509CertPtr(const CacheKey&, const std::string& policy, const std::string& originCert)>;
+        std::function<crypto::X509CertPtr(const CertFingerprint&, const std::string& policy, const std::string& originCert)>;
 
     struct EnrichmentTask
     {
-        CacheKey key;
+        CertFingerprint fingerprint;
         std::string policy;
         std::string originCert;
         Clock::time_point enqueueTime;
         uint64_t attempt = 0;
 
         EnrichmentTask() = default;
-        EnrichmentTask(CacheKey k, std::string p, std::string cert)
-            : key(k)
+        EnrichmentTask(CertFingerprint fp, std::string p, std::string cert)
+            : fingerprint(fp)
             , policy(std::move(p))
             , originCert(std::move(cert))
             , enqueueTime(Clock::now())
@@ -58,7 +62,7 @@ public:
         }
     };
 
-    WorkerPool(EnricherFunc enricher, L2Cache* l2, const CacheConfig& cfg = CacheConfig{})
+    WorkerPool(EnricherFunc enricher, L2CertCache* l2, const CacheConfig& cfg = CacheConfig{})
         : enricher(std::move(enricher))
         , l2Cache(l2)
         , config(cfg)
@@ -79,7 +83,7 @@ public:
         }
     }
 
-    void enrichAsync(const CacheKey& key, const std::string& policy, const std::string& cert)
+    void enrichAsync(const CertFingerprint key, const std::string& policy, const std::string& cert)
     {
         if (!running)
             return;
@@ -143,29 +147,29 @@ private:
             try
             {
                 auto now = Clock::now();
-                auto existing = l2Cache->get(task.key, now);
+                auto existing = l2Cache->get(task.fingerprint, now);
                 if (existing)
                 {
                     continue;
                 }
 
-                if (auto enrichedValue = enricher(task.key, task.policy, task.originCert))
+                if (auto enrichedValue = enricher(task.fingerprint, task.policy, task.originCert))
                 {
                     auto expiry = now + config.l2Ttl;
 
-                    l2Cache->put(task.key, std::move(enrichedValue), expiry);
+                    l2Cache->put(task.fingerprint, std::move(enrichedValue), expiry);
                     totalProcessed++;
                 }
                 else
                 {
                     totalFailed++;
-                    std::cerr << "Enricher returned null for key: " << task.key << std::endl;
+                    std::cerr << "Enricher returned null for key: " << task.fingerprint.hash << std::endl;
                 }
             }
             catch (const std::exception& e)
             {
                 totalFailed++;
-                std::cerr << "Enrichment failed for key: " << task.key << ", attempt: " << task.attempt
+                std::cerr << "Enrichment failed for key: " << task.fingerprint.hash << " " << task.attempt
                           << ", error: " << e.what() << std::endl;
 
                 // Retry logic with exponential backoff
@@ -183,7 +187,7 @@ private:
 
             if (duration > std::chrono::seconds(5))
             {
-                std::cerr << "Slow enrichment for key: " << task.key << ", took " << duration.count() << "ms"
+                std::cerr << "Slow enrichment for key: " << task.fingerprint.toString() << ", took " << duration.count() << "ms"
                           << std::endl;
             }
         }
@@ -195,7 +199,7 @@ private:
     std::atomic<bool> running{true};
 
     EnricherFunc enricher;
-    L2Cache* l2Cache;
+    L2CertCache* l2Cache;
     CacheConfig config;
 
     std::atomic<uint64_t> totalProcessed{0};
@@ -207,29 +211,29 @@ class CertCache
 private:
     using Clock = std::chrono::steady_clock;
 
-    L2Cache l2Cache;
+    L2CertCache l2Cache;
     WorkerPool workerPool;
     CacheConfig config;
 
-    static inline thread_local std::unique_ptr<L1Cache> tL1Cache;
-    static inline thread_local Clock::time_point tLastL2Refresh;
-    static inline thread_local bool tL1Initialized = false;
+    static inline thread_local std::unique_ptr<L1CertCache> tl_L1Cache;
+    static inline thread_local Clock::time_point tl_L2Refresh;
+    static inline thread_local bool tl_L1Initialized = false;
 
     void ensureL1Cache()
     {
-        if (!tL1Initialized)
+        if (!tl_L1Initialized)
         {
-            tL1Cache = std::make_unique<L1Cache>(1024);
-            tL1Initialized = true;
-            tLastL2Refresh = Clock::now();
+            tl_L1Cache = std::make_unique<L1CertCache>(1024);
+            tl_L1Initialized = true;
+            tl_L2Refresh = Clock::now();
         }
     }
 
 public:
     CertCache(const CacheConfig& cfg = CacheConfig{})
         : l2Cache(256, cfg.l2Ttl)
-        , workerPool([this](const CacheKey& key, const std::string& policy, const std::string& cert)
-                     { return enrichCertificate(key, policy, cert); }, &l2Cache, cfg)
+        , workerPool([this](const CertFingerprint& fp, const std::string& policy, const std::string& cert)
+                     { return enrichCertificate(fp, policy, cert); }, &l2Cache, cfg)
         , config(cfg)
     {
     }
@@ -241,11 +245,11 @@ public:
 
         ensureL1Cache();
 
-        auto key = crypto::Cert::computeHash(originCert, EVP_sha1());
+        auto key = CertFingerprintGenerator::generate(originCert, EVP_sha1());
         auto now = Clock::now();
 
         // L1 lookup (очень быстрый)
-        if (auto value = tL1Cache->get(key, now))
+        if (auto value = tl_L1Cache->get(key, now))
         {
             return crypto::Cert::shallowCopy(*value);
         }
@@ -299,10 +303,10 @@ public:
 
     static void clearThreadLocalCache()
     {
-        if (tL1Initialized)
+        if (tl_L1Initialized)
         {
-            tL1Cache.reset();
-            tL1Initialized = false;
+            tl_L1Cache.reset();
+            tl_L1Initialized = false;
         }
     }
 
@@ -312,21 +316,21 @@ public:
     }
 
 private:
-    crypto::X509CertPtr enrichCertificate(const CacheKey& key, const std::string& policy, const std::string& publicKey)
+    crypto::X509CertPtr enrichCertificate(const CertFingerprint& fingerprint, const std::string& policy, const std::string& publicKey)
     {
         // TODO: Implement certificate re-signing logic
 
-        static_cast<void>(key);
+        static_cast<void>(fingerprint);
         static_cast<void>(policy);
         static_cast<void>(publicKey);
 
         return nullptr;
     }
 
-    void promoteToL1(const CacheKey& key, crypto::X509CertPtr value, Clock::time_point now)
+    void promoteToL1(const CertFingerprint& fingerprint, crypto::X509CertPtr value, Clock::time_point now)
     {
         auto expiry = now + config.l1Ttl;
-        tL1Cache->put(key, std::move(value), expiry);
+        tl_L1Cache->put(fingerprint, std::move(value), expiry);
     }
 };
 

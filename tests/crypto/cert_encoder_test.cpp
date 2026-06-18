@@ -71,18 +71,13 @@ TEST_F(CertTest, ToBase64ConvertsCorrectly)
 
 TEST_F(CertTest, FromBase64InvalidInput)
 {
-    // Тест с некорректной base64 строкой
     std::string invalidBase64 = "This is not a valid base64 certificate";
-
-    X509CertPtr cert = Cert::fromBase64(invalidBase64);
-    EXPECT_EQ(cert, nullptr);
+    ASSERT_THROW(Cert::fromBase64(invalidBase64), std::runtime_error);
 }
 
 TEST_F(CertTest, FromBase64EmptyInput)
 {
-    // Тест с пустой строкой
-    X509CertPtr cert = Cert::fromBase64("");
-    EXPECT_EQ(cert, nullptr);
+    ASSERT_THROW(Cert::fromBase64(""), std::runtime_error);
 }
 
 TEST_F(CertTest, CertPropertiesExtraction)
@@ -158,13 +153,8 @@ TEST_F(CertTest, FromBufferRoundTrip)
 
 TEST_F(CertTest, FromStorageAndFileThrowOrFail)
 {
-    // Эти функции могут выбросить исключение или вернуть nullptr
-    // Тестируем их поведение с некорректными параметрами
-
-    EXPECT_THROW({ Cert::fromStorage("invalid://uri"); }, std::exception);
-
-    X509CertPtr fileCert = Cert::fromFile("/nonexistent/path/to/cert.pem");
-    EXPECT_EQ(fileCert, nullptr);
+    EXPECT_THROW(Cert::fromStorage("invalid://uri"), std::exception);
+    EXPECT_THROW(Cert::fromFile("/nonexistent/path/to/cert.pem"), std::exception);
 }
 
 TEST_F(CertTest, IsEqualForSameAndDifferentCerts)

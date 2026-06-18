@@ -1,572 +1,308 @@
 #pragma once
-#include <snet/pki/certificate_db.hpp>
+#include <cstdint>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <optional>
+#include <random>
+
 #include <snet/pki/policy_manager.hpp>
 
-#include <casket/server/generic_server.hpp>
-#include <casket/utils/string.hpp>
+#include <snet/pki/cert_fingerprint.hpp>
+#include <snet/pki/cert_status.hpp>
+#include <snet/pki/cert_cache.hpp>
 
+#include <snet/utils/file_db.hpp>
 #include <snet/crypto/cert.hpp>
-#include <snet/crypto/cert_authority.hpp>
-#include <snet/crypto/asymm_key.hpp>
-#include <snet/crypto/cert_request.hpp>
-#include <snet/crypto/rsa_asymm_key.hpp>
-#include <snet/crypto/bio.hpp>
 
-namespace snet
+namespace snet::pki
 {
 
-struct CertificateInfo
+struct CertificateRecord
 {
+    CertFingerprint fingerprint;
+    std::string policyName;
     std::string serialNumber;
-    std::string subject;
-    std::string notBefore;
-    std::string notAfter;
-    std::string originalPath;
-    std::string renewedPath;
-};
+    std::string subjectDN;
+    std::string issuerDN;
+    SystemTimePoint notBefore;
+    SystemTimePoint notAfter;
+    CertStatus status;
+    std::string certPath;
 
-struct CertManagerCommand
-{
-    std::string command;
-    std::string args;
-
-    casket::PackResult<casket::Packer*> pack(casket::Packer& packer) const
+    CertificateRecord()
+        : status(CertStatus::UNKNOWN)
     {
-        auto res = packer.packMapStart(2);
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack("cmd");
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack(command);
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack("args");
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack(args);
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        return casket::PackResult<casket::Packer*>(&packer);
     }
 
-    static casket::UnpackResult<CertManagerCommand> unpack(casket::Unpacker& unpacker)
+    Row toRow() const
     {
-        auto mapSizeResult = unpacker.unpackMapSize();
-        if (!mapSizeResult)
-            return casket::UnpackResult<CertManagerCommand>(mapSizeResult.error());
-
-        size_t mapSize = *mapSizeResult;
-        CertManagerCommand request;
-
-        for (size_t i = 0; i < mapSize; ++i)
-        {
-            auto keyResult = unpacker.unpackString();
-            if (!keyResult)
-                return casket::UnpackResult<CertManagerCommand>(keyResult.error());
-
-            std::string_view key = *keyResult;
-
-            if (key == "cmd")
-            {
-                auto valueResult = unpacker.unpackString();
-                if (!valueResult)
-                    return casket::UnpackResult<CertManagerCommand>(valueResult.error());
-                request.command = *valueResult;
-            }
-            else if (key == "args")
-            {
-                auto valueResult = unpacker.unpackString();
-                if (!valueResult)
-                    return casket::UnpackResult<CertManagerCommand>(valueResult.error());
-                request.args = *valueResult;
-            }
-            else
-            {
-                auto skipResult = unpacker.unpackString();
-                if (!skipResult)
-                    return casket::UnpackResult<CertManagerCommand>(skipResult.error());
-            }
-        }
-
-        return casket::UnpackResult<CertManagerCommand>(request);
-    }
-};
-
-struct CertManagerResponse
-{
-    std::string retcode;
-
-    casket::PackResult<casket::Packer*> pack(casket::Packer& packer) const
-    {
-        auto res = packer.packMapStart(1);
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack("retcode");
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        res = packer.pack(retcode);
-        if (!res)
-            return casket::PackResult<casket::Packer*>(res.error());
-
-        return casket::PackResult<casket::Packer*>(&packer);
+        Row row(9);
+        row[0] = makeFieldValue(fingerprint.toString());
+        row[1] = makeFieldValue(serialNumber);
+        row[2] = makeFieldValue(policyName);
+        row[3] = makeFieldValue(subjectDN);
+        row[4] = makeFieldValue(issuerDN);
+        row[5] = makeFieldValue(formatTimePoint(notBefore));
+        row[6] = makeFieldValue(formatTimePoint(notAfter));
+        row[7] = makeFieldValue(CertStatusToString(status));
+        row[8] = makeFieldValue(certPath);
+        return row;
     }
 
-    static casket::UnpackResult<CertManagerResponse> unpack(casket::Unpacker& unpacker)
+    static CertificateRecord fromRow(const Row& row)
     {
-        auto mapSizeResult = unpacker.unpackMapSize();
-        if (!mapSizeResult)
-            return casket::UnpackResult<CertManagerResponse>(mapSizeResult.error());
-
-        size_t mapSize = *mapSizeResult;
-        CertManagerResponse resp;
-
-        for (size_t i = 0; i < mapSize; ++i)
+        CertificateRecord cert;
+        if (row.size() >= 9)
         {
-            auto keyResult = unpacker.unpackString();
-            if (!keyResult)
-                return casket::UnpackResult<CertManagerResponse>(keyResult.error());
-
-            std::string_view key = *keyResult;
-
-            if (key == "retcode")
-            {
-                auto valueResult = unpacker.unpackString();
-                if (!valueResult)
-                    return casket::UnpackResult<CertManagerResponse>(valueResult.error());
-                resp.retcode = *valueResult;
-            }
-            else
-            {
-                auto skipResult = unpacker.unpackString();
-                if (!skipResult)
-                    return casket::UnpackResult<CertManagerResponse>(skipResult.error());
-            }
+            cert.fingerprint = CertFingerprint::fromString(getFieldValue<std::string>(row[0]));
+            cert.policyName = getFieldValue<std::string>(row[1]);
+            cert.serialNumber = getFieldValue<std::string>(row[2]);
+            cert.subjectDN = getFieldValue<std::string>(row[3]);
+            cert.issuerDN = getFieldValue<std::string>(row[4]);
+            cert.notBefore = parseTimePoint(getFieldValue<std::string>(row[5]));
+            cert.notAfter = parseTimePoint(getFieldValue<std::string>(row[6]));
+            cert.status = StringToCertStatus(getFieldValue<std::string>(row[7]));
+            cert.certPath = getFieldValue<std::string>(row[8]);
         }
-
-        return casket::UnpackResult<CertManagerResponse>(resp);
-    }
-};
-
-class CertificateManager
-{
-public:
-    explicit CertificateManager(const std::string& storageDir);
-
-    bool initDatabase();
-    bool databaseExists() const;
-
-    std::shared_ptr<Policy> getPolicy(const std::string& name) const
-    {
-        return policyManager_->getPolicy(name);
+        return cert;
     }
 
-    bool addPolicy(const std::string& name, std::shared_ptr<Policy> policy);
-    bool removePolicy(const std::string& name);
-
-    std::string handleHelp()
+    bool isValid() const
     {
-        return "Commands:\n"
-               "  create-policy <name>                 - Create a new policy with name\n"
-               "  gen-key <name>                       - Generate private key for policy\n"
-               "  gen-ss-cert <name>                   - Generate self-signed certificate for policy\n"
-               "  info-policy <name>                   - Print information about existing policy\n"
-               "  add-policy <name> <ca_cert> <ca_key> - Add new policy\n"
-               "  rm-policy <name>                     - Remove existing policy\n"
-               "  help                                 - Show this help";
+        return status == CertStatus::VALID;
     }
 
-    std::string handlePolicyInfo(const std::string& name)
+    bool isExpired() const
     {
-        auto policy = getPolicy(name);
-        if (!policy)
-        {
-            return "ERROR: Policy '" + name + "' not found";
-        }
-
-        std::ostringstream response;
-        response << "Policy: " << name << "\n";
-        response << "  CA Certificate: " << policy->caCertPath << "\n";
-        response << "  CA Key: " << policy->caKeyPath << "\n";
-        return response.str();
+        auto now = std::chrono::system_clock::now();
+        return now > notAfter;
     }
 
-    std::string handleResign(const std::string& name, const std::string& base64Cert, const std::string& base64PublicKey)
+    bool isRevoked() const
     {
-        try
-        {
-            auto policy = getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            auto ca = entities_.find(name);
-            if (ca == entities_.end())
-            {
-                return "ERROR: not found entity";
-            }
-
-            auto cert = crypto::Cert::fromBase64(base64Cert);
-            auto publicKey = crypto::AsymmKey::fromBase64(KeyType::Public, base64PublicKey);
-
-            auto res = ca->second->resign(publicKey, cert);
-            auto base64Result = crypto::Cert::toBase64(res);
-
-            return base64Result;
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: Failed to sign request with profile '" + name + "': ";
-            return err + e.what();
-        }
+        return status == CertStatus::REVOKED;
     }
 
-    std::string handleCreatePolicy(const std::string& name)
+    bool isActive() const
     {
-        try
-        {
-            std::filesystem::path p = policyManager_->storage();
-            p /= name;
-            std::filesystem::create_directory(p);
-
-            auto policy = std::make_shared<Policy>();
-            policyManager_->addPolicy(name, policy);
-            policyManager_->savePolicies();
-
-            return "OK: policy '" + name + "' was created successfully";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: Failed to add profile '" + name + "': ";
-            return err + e.what();
-        }
+        auto now = std::chrono::system_clock::now();
+        return status == CertStatus::VALID && now >= notBefore && now <= notAfter;
     }
 
-    std::string handleGenerateKey(const std::string& name)
+    int getDaysUntilExpiry() const
     {
-        try
-        {
-            auto policy = getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            if (!policy->caKeyPath.empty())
-            {
-                return "ERROR: private key already generated for '" + name + "'";
-            }
-
-            std::filesystem::path p = policyManager_->storage();
-            p /= name;
-
-            std::filesystem::path privateKeyPath = p / "private_key.pem";
-            policy->caKeyPath = privateKeyPath.string();
-            
-            auto key = crypto::RsaAsymmKey::generate(2048, false);
-
-            auto filename = crypto::BioTraits::openFile(policy->caKeyPath, "wb");
-            crypto::AsymmKey::toBio(KeyType::Private, key, filename, Encoding::PEM);
-
-            policyManager_->savePolicies();
-
-            return "OK: private key successfully generated for policy '" + name + "'";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: failed to generate private key for policy '" + name + "': ";
-            return err + e.what();
-        }
-    }
-
-    std::string handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn)
-    {
-        try
-        {
-            auto policy = getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            if (!policy->caCertPath.empty())
-            {
-                return "ERROR: certificate already setted for '" + name + "'";
-            }
-
-            std::filesystem::path p = policyManager_->storage();
-            p /= name;
-
-            std::filesystem::path certificatePath = p / "certificate.pem";
-            policy->caCertPath = certificatePath.string();
-
-            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
-
-            auto filename = crypto::BioTraits::openFile(policy->caCertPath, "wb");
-            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
-
-            policyManager_->savePolicies();
-
-            return "OK: self-signed certificate successfully generated for policy '" + name + "'";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: failed to generate self-signed certificate for policy '" + name + "': ";
-            return err + e.what();
-        }
-    }
-
-    /*std::string handleGenerateCertRequest(const std::string& name, const std::string& certDn)
-    {
-        try
-        {
-            auto policy = getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            if (!policy->caCertPath.empty())
-            {
-                return "ERROR: certificate already setted for '" + name + "'";
-            }
-
-            std::filesystem::path p = policyManager_->storage();
-            p /= name;
-
-            std::filesystem::path certificatePath = p / "certificate.pem";
-            policy->caCertPath = certificatePath.string();
-
-            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
-
-            auto filename = crypto::BioTraits::openFile(policy->caCertPath, "wb");
-            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
-
-            policyManager_->savePolicies();
-
-            return "OK: self-signed certificate successfully generated for policy '" + name + "'";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: failed to generate self-signed certificate for policy '" + name + "': ";
-            return err + e.what();
-        }
-    }*/
-
-    std::string handleAddPolicy(const std::string& name, const std::string& caCertPath, const std::string& caKeyPath)
-    {
-        try
-        {
-            auto cert = crypto::Cert::fromStorage(caCertPath);
-            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, caKeyPath);
-            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), std::move(cert));
-
-            auto policy = std::make_shared<Policy>();
-            policy->caCertPath = caCertPath;
-            policy->caKeyPath = caKeyPath;
-
-            policyManager_->addPolicy(name, policy);
-            entities_[name] = std::move(entity);
-
-            return "OK: Policy '" + name + "' added and validated successfully";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: Failed to add profile '" + name + "': ";
-            return err + e.what();
-        }
-    }
-
-    std::string handleRemovePolicy(const std::string& name)
-    {
-        if (removePolicy(name))
-        {
-            return "OK: Policy '" + name + "' removed successfully";
-        }
-        else
-        {
-            return "ERROR: Policy '" + name + "' not found";
-        }
-    }
-
-    bool processCommand(casket::Context<casket::UnixSocket>& ctx)
-    {
-        std::error_code ec{};
-        CertManagerResponse resp{};
-
-        auto req = ctx.readThenUnpack<CertManagerCommand>(ec);
-
-        if (req.has_value())
-        {
-            if (req.value().command == "create-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleCreatePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "gen-key")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleGenerateKey(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "gen-ss-cert")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 2)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleGenerateSelfSignedCert(tokens[0], tokens[1]);
-                    }
-                }
-            }
-            else if (req.value().command == "init")
-            {
-                auto result = initDatabase();
-                resp.retcode = result ? "SUCCESS: database is initialized" : "ERROR: failed to init database";
-            }
-            else if (req.value().command == "add-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 3)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleAddPolicy(tokens[0], tokens[1], tokens[2]);
-                    }
-                }
-            }
-            else if (req.value().command == "rm-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handleRemovePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "info-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handlePolicyInfo(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "sign-csr")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 3)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        auto tokens = casket::split(req.value().args, " ");
-                        resp.retcode = handleResign(tokens[0], tokens[1], tokens[2]);
-                    }
-                }
-            }
-            else if (req.value().command == "help" || req.value().command == "?")
-            {
-                resp.retcode = handleHelp();
-            }
-        }
-        else
-        {
-            resp.retcode = "ERROR: Unknown command. Type 'help' for available commands";
-        }
-
-        return ctx.packThenSend<CertManagerResponse>(resp, ec);
+        auto now = std::chrono::system_clock::now();
+        if (now >= notAfter)
+            return 0;
+        auto diff = std::chrono::duration_cast<std::chrono::hours>(notAfter - now);
+        return diff.count() / 24;
     }
 
 private:
-    std::string storageDir_;
-    std::unique_ptr<PolicyManager> policyManager_;
-    std::map<std::string, std::shared_ptr<crypto::CertAuthority>> entities_;
-    std::unique_ptr<CertificateDb> certDatabase_;
+    static std::string formatTimePoint(const std::chrono::system_clock::time_point& tp)
+    {
+        auto time_t = std::chrono::system_clock::to_time_t(tp);
+        std::stringstream ss;
+        ss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
+        return ss.str();
+    }
+
+    static std::chrono::system_clock::time_point parseTimePoint(const std::string& dateStr)
+    {
+        std::tm tm = {};
+        std::stringstream ss(dateStr);
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (ss.fail())
+        {
+            ss.clear();
+            ss.str(dateStr);
+            ss >> std::get_time(&tm, "%Y-%m-%d");
+        }
+        return std::chrono::system_clock::from_time_t(std::mktime(&tm));
+    }
+
+    template <typename T>
+    static T getFieldValue(const std::shared_ptr<FieldValue>& field)
+    {
+        auto typed = std::dynamic_pointer_cast<TypedFieldValue<T>>(field);
+        if (typed)
+        {
+            return typed->getValue();
+        }
+        return T{};
+    }
 };
 
-} // namespace snet
+// ============================================================================
+// Обновленный CertManager с использованием fingerprint как ключа
+// ============================================================================
+
+class CertManager
+{
+private:
+    PolicyManager& policyManager_;
+    std::unique_ptr<TXTDatabase> db_;
+    L1CertCache certCache_;
+    std::string metadataPath_;
+
+    void createIndices()
+    {
+        db_->createIndex(0);
+        db_->createIndex(1);
+    }
+
+    void rebuildCache()
+    {
+        certCache_.clear();
+
+        for (size_t i = 0; i < db_->size(); i++)
+        {
+            const auto& row = db_->getRow(i);
+            auto record = CertificateRecord::fromRow(row);
+
+            auto cert = crypto::Cert::fromStorage(record.certPath);
+            certCache_.put(record.fingerprint, std::move(cert), SystemToSteady(record.notAfter));
+        }
+    }
+
+    static std::vector<std::type_index> getFieldTypes()
+    {
+
+        return {
+            typeid(std::string), // fingerprint (как строка)
+            typeid(std::string), // policyName
+            typeid(std::string), // serialNumber
+            typeid(std::string), // subjectDN
+            typeid(std::string), // issuerDN
+            typeid(std::string), // notBefore
+            typeid(std::string), // notAfter
+            typeid(std::string), // status
+            typeid(std::string)  // certPath};
+        };
+    }
+
+public:
+    CertManager(PolicyManager& policyManager, const std::string& storageDir)
+        : policyManager_(policyManager)
+        , certCache_(1024)
+    {
+        namespace fs = std::filesystem;
+
+        if (storageDir.empty())
+        {
+            throw std::runtime_error("Invalid path to storage");
+        }
+
+        metadataPath_ = storageDir + "/certificates.db";
+
+        if (fs::exists(storageDir) && fs::exists(metadataPath_))
+        {
+            try
+            {
+                db_ = std::make_unique<TXTDatabase>(TXTDatabase::readFromFile(metadataPath_, getFieldTypes()));
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Warning: Could not load database, creating new one: " << e.what() << std::endl;
+                db_ = std::make_unique<TXTDatabase>(getFieldTypes());
+            }
+        }
+        else
+        {
+            db_ = std::make_unique<TXTDatabase>(getFieldTypes());
+        }
+
+        createIndices();
+        rebuildCache();
+    }
+
+    ~CertManager() noexcept
+    {
+    }
+
+    void insertCertificate(const std::string& policyName, const CertFingerprint& fingerprint, X509Cert* cert)
+    {
+        casket::ThrowIfFalse(cert, "invalid certificate");
+
+        auto path = policyManager_.getPolicyPath(policyName);
+        path /= fingerprint.toString() + ".crt";
+        std::string certPath = path.string();
+
+        CertificateRecord record;
+        record.fingerprint = fingerprint;
+        record.policyName = policyName;
+        record.serialNumber = crypto::Cert::serialNumberString(cert);
+        record.subjectDN = crypto::Cert::subjectNameString(cert);
+        record.issuerDN = crypto::Cert::issuerNameString(cert);
+        record.notBefore = crypto::Cert::notBeforeTimePoint(cert);
+        record.notAfter = crypto::Cert::notAfterTimePoint(cert);
+        record.status = CertStatus::VALID;
+        record.certPath = certPath;
+
+        auto bio = crypto::BioTraits::openFile(certPath, "wb");
+        crypto::Cert::toBio(cert, bio, Encoding::PEM);
+
+        try
+        {
+            casket::ThrowIfFalse(db_->insert(record.toRow()), "Failed to insert certificate: " + db_->getLastError());
+
+            db_->writeToFile(metadataPath_);
+
+            certCache_.put(fingerprint, crypto::Cert::shallowCopy(cert), SystemToSteady(record.notAfter));
+        }
+        catch (...)
+        {
+            std::error_code ec;
+            std::filesystem::remove(certPath, ec);
+            throw;
+        }
+    }
+
+    crypto::X509CertPtr findByFingerprint(const CertFingerprint& fp, const SteadyTimePoint& tp)
+    {
+        if (auto val = certCache_.get(fp, tp))
+        {
+            return crypto::Cert::shallowCopy(*val);
+        }
+        return nullptr;
+    }
+
+    std::vector<CertificateRecord> findByPolicy(const std::string& policyName) const
+    {
+        std::vector<CertificateRecord> result;
+
+        auto fieldValue = makeFieldValue(policyName);
+        const Row* row = db_->findByIndex(1, fieldValue);
+        if (row)
+        {
+            result.push_back(CertificateRecord::fromRow(*row));
+        }
+        return result;
+    }
+
+    size_t size() const
+    {
+        return certCache_.size();
+    }
+
+    const L1CertCache& getAllCerts() const
+    {
+        return certCache_;
+    }
+
+private:
+    template <typename T>
+    static T getFieldValue(const std::shared_ptr<FieldValue>& field)
+    {
+        auto typed = std::dynamic_pointer_cast<TypedFieldValue<T>>(field);
+        if (typed)
+        {
+            return typed->getValue();
+        }
+        return T{};
+    }
+};
+
+} // namespace snet::pki

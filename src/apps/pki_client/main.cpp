@@ -13,9 +13,10 @@
 #include <casket/opt/opt.hpp>
 #include <casket/utils/timer.hpp>
 
-#include <snet/pki/cert_manager.hpp>
+#include <snet/pki/pki_manager.hpp>
 
 using namespace snet;
+using namespace snet::pki;
 using namespace casket;
 using namespace casket::opt;
 
@@ -169,7 +170,7 @@ private:
 
     bool executeCommand(const std::string& commandLine)
     {
-        CertManagerCommand command;
+        PKIManagerCommand command;
 
         // Parse command line
         if (!parseCommand(commandLine, command))
@@ -194,7 +195,7 @@ private:
         }
 
         // Receive response
-        auto response = client_.receive<CertManagerResponse>(ec);
+        auto response = client_.receive<PKIManagerResponse>(ec);
         timer.stop();
 
         if (!response)
@@ -209,7 +210,7 @@ private:
         return true;
     }
 
-    bool parseCommand(const std::string& cmdLine, CertManagerCommand& command)
+    bool parseCommand(const std::string& cmdLine, PKIManagerCommand& command)
     {
         auto result = splitIntoTwo(cmdLine);
         command.command = std::move(result.first);
@@ -217,13 +218,13 @@ private:
         return true;
     }
 
-    void printCommand(const CertManagerCommand& cmd)
+    void printCommand(const PKIManagerCommand& cmd)
     {
         std::cout << "\n[DEBUG] Sending command:" << std::endl;
         std::cout << "  Type:" << cmd.command << ":" << cmd.args;
     }
 
-    void printResponse(const CertManagerResponse& response, int64_t latency)
+    void printResponse(const PKIManagerResponse& response, int64_t latency)
     {
         std::cout << "[Response] (latency: " << latency << " mcs)" << std::endl;
         std::cout << response.retcode << std::endl;

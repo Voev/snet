@@ -6,11 +6,13 @@
 
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/bio.hpp>
+#include <snet/crypto/cert_name.hpp>
+
+#include <snet/utils/time.hpp>
 
 #include <casket/nonstd/string_view.hpp>
 #include <casket/nonstd/span.hpp>
-
-#include <snet/utils/bytes_to_number.hpp>
+#include <casket/nonstd/optional.hpp>
 
 namespace snet::crypto
 {
@@ -22,32 +24,54 @@ public:
 
     static X509CertPtr deepCopy(X509Cert* cert);
 
-    static inline uint64_t computeHash(X509Cert* cert, const Hash* hash)
-    {
-        uint8_t digest[EVP_MAX_MD_SIZE] = {};
-        uint32_t digestLength = 0;
-
-        ThrowIfFalse(0 < X509_digest(cert, hash, digest, &digestLength));
-        return BytesToNumber<uint64_t>(digest, digestLength);
-    }
-
     static bool isEqual(const X509Cert* op1, const X509Cert* op2);
 
-    //static bool isSelfSigned(X509Cert* cert, bool verifySignature) noexcept;
+    // static bool isSelfSigned(X509Cert* cert, bool verifySignature) noexcept;
 
     static CertVersion version(X509Cert* cert);
+
+    static inline std::string subjectNameString(const X509Cert* cert)
+    {
+        auto subjectName = X509_get_subject_name(cert);
+        return CertName::toString(subjectName);
+    }
 
     static X509NamePtr subjectName(X509Cert* cert);
 
     static X509NamePtr issuerName(X509Cert* cert);
 
+    static inline std::string issuerNameString(const X509Cert* cert)
+    {
+        auto issuerName = X509_get_issuer_name(cert);
+        return CertName::toString(issuerName);
+    }
+
     static BigNumPtr serialNumber(X509Cert* cert);
+
+    static inline std::string serialNumberString(X509Cert* cert)
+    {
+        auto bio = BioTraits::createMemoryBuffer();
+        BN_print(bio, serialNumber(cert));
+        return BioTraits::getMemoryDataAsString(bio);
+    }
 
     static KeyPtr publicKey(X509Cert* cert);
 
     static std::time_t notBefore(X509Cert* cert);
 
     static std::time_t notAfter(X509Cert* cert);
+
+    static inline SystemTimePoint notBeforeTimePoint(X509Cert* cert)
+    {
+        auto time = notBefore(cert);
+        return SystemClock::from_time_t(time);
+    }
+
+    static inline SystemTimePoint notAfterTimePoint(X509Cert* cert)
+    {
+        auto time = notAfter(cert);
+        return SystemClock::from_time_t(time);
+    }
 
     static X509CertPtr fromStorage(std::string_view uri);
 

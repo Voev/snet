@@ -40,13 +40,13 @@ public:
 
         CacheEntry(const CacheEntry&) = delete;
         CacheEntry& operator=(const CacheEntry&) = delete;
-        
+
         CacheEntry(CacheEntry&&) = default;
         CacheEntry& operator=(CacheEntry&&) = default;
     };
 
     explicit TtlCache(size_t maxSize = 256, Duration defaultTtl = std::chrono::seconds(300))
-        : cache_(maxSize * 2)  // Увеличиваем размер пула для хранения
+        : cache_(maxSize * 2) // Увеличиваем размер пула для хранения
         , maxSize_(maxSize)
         , defaultTtl_(defaultTtl)
     {
@@ -64,12 +64,13 @@ public:
     {
         // Сначала проверяем существование и удаляем если есть
         remove(key);
-        
+
         // Проверяем размер и делаем eviction если нужно
-        if (cache_.size() >= maxSize_) {
+        if (cache_.size() >= maxSize_)
+        {
             evictOne();
         }
-        
+
         // Вставляем новое значение
         cache_.put(key, CacheEntry(std::move(value), expiry));
     }
@@ -78,19 +79,21 @@ public:
     Value* get(const Key& key)
     {
         auto now = Clock::now();
-        
+
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return nullptr;
         }
-        
+
         // Проверяем не истекло ли значение
-        if (now > entry->expiry) {
+        if (now > entry->expiry)
+        {
             // Асинхронное удаление (не блокирует)
             cache_.remove(key);
             return nullptr;
         }
-        
+
         return &entry->value;
     }
 
@@ -98,25 +101,27 @@ public:
     Value* get(const Key& key, TimePoint now)
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return nullptr;
         }
-        
-        if (now > entry->expiry) {
+
+        if (now > entry->expiry)
+        {
             cache_.remove(key);
             return nullptr;
         }
-        
+
         return &entry->value;
     }
 
     // Получение с копированием (только для copyable типов)
     template <typename U = Value>
-    std::enable_if_t<std::is_copy_constructible_v<U>, std::optional<U>> 
-    getCopy(const Key& key)
+    std::enable_if_t<std::is_copy_constructible_v<U>, std::optional<U>> getCopy(const Key& key)
     {
         auto* value = get(key);
-        if (value) {
+        if (value)
+        {
             return *value;
         }
         return std::nullopt;
@@ -126,16 +131,18 @@ public:
     std::optional<Value> take(const Key& key)
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return std::nullopt;
         }
-        
+
         auto now = Clock::now();
-        if (now > entry->expiry) {
+        if (now > entry->expiry)
+        {
             cache_.remove(key);
             return std::nullopt;
         }
-        
+
         // Перемещаем значение
         Value value = std::move(entry->value);
         cache_.remove(key);
@@ -153,19 +160,23 @@ public:
     {
         auto now = Clock::now();
         std::vector<Key> toRemove;
-        
+
         // Собираем ключи для удаления
-        cache_.forEach([&](const Key& key, CacheEntry& entry) {
-            if (now > entry.expiry) {
-                toRemove.push_back(key);
-            }
-        });
-        
+        cache_.forEach(
+            [&](const Key& key, CacheEntry& entry)
+            {
+                if (now > entry.expiry)
+                {
+                    toRemove.push_back(key);
+                }
+            });
+
         // Удаляем истекшие записи
-        for (const auto& key : toRemove) {
+        for (const auto& key : toRemove)
+        {
             cache_.remove(key);
         }
-        
+
         return toRemove.size();
     }
 
@@ -185,10 +196,11 @@ public:
     bool contains(const Key& key) const
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return false;
         }
-        
+
         auto now = Clock::now();
         return now <= entry->expiry;
     }
@@ -197,10 +209,11 @@ public:
     bool touch(const Key& key, Duration newTtl)
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return false;
         }
-        
+
         auto now = Clock::now();
         entry->expiry = now + newTtl;
         return true;
@@ -210,15 +223,17 @@ public:
     std::optional<Duration> getRemainingTtl(const Key& key) const
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return std::nullopt;
         }
-        
+
         auto now = Clock::now();
-        if (now >= entry->expiry) {
+        if (now >= entry->expiry)
+        {
             return std::nullopt;
         }
-        
+
         return entry->expiry - now;
     }
 
@@ -226,10 +241,11 @@ public:
     bool exists(const Key& key) const
     {
         auto* entry = cache_.get(key);
-        if (!entry) {
+        if (!entry)
+        {
             return false;
         }
-        
+
         auto now = Clock::now();
         return now <= entry->expiry;
     }
@@ -240,14 +256,17 @@ private:
         // Простая стратегия - удаляем самую старую запись
         Key oldestKey{};
         TimePoint oldestExpiry = Clock::now() + std::chrono::hours(24); // Очень большое значение
-        
-        cache_.forEach([&](const Key& key, CacheEntry& entry) {
-            if (entry.expiry < oldestExpiry) {
-                oldestExpiry = entry.expiry;
-                oldestKey = key;
-            }
-        });
-        
+
+        cache_.forEach(
+            [&](const Key& key, CacheEntry& entry)
+            {
+                if (entry.expiry < oldestExpiry)
+                {
+                    oldestExpiry = entry.expiry;
+                    oldestKey = key;
+                }
+            });
+
         cache_.remove(oldestKey);
     }
 

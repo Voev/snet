@@ -1,10 +1,6 @@
 #include <iostream>
 
-#include <snet/pki/cert_manager.hpp>
-#include <snet/crypto/crypto_manager.hpp>
-#include "message.hpp"
-
-#include <atomic>
+#include <snet/pki/pki_manager.hpp>
 
 #include <casket/transport/unix_socket.hpp>
 #include <casket/server/generic_server.hpp>
@@ -42,6 +38,11 @@ public:
                 .setDescription("Path to configuration file")
                 .build()
         );
+        parser_.add(
+            OptionBuilder("no-stats")
+                .setDescription("Disable statistics collection")
+                .build()
+        );
         // clang-format on
     }
 
@@ -65,8 +66,9 @@ int main(int argc, char* argv[])
     try
     {
 
-        std::vector<std::string_view> args(argv + 1, argv + argc);
+        std::vector<nonstd::string_view> args(argv + 1, argv + argc);
         CmdLineProcessor cli;
+        bool disableStats{false};
 
         cli.getParser().parse(args);
         if (cli.getParser().isUsed("help"))
@@ -77,6 +79,7 @@ int main(int argc, char* argv[])
 
         cli.getParser().validate();
         const auto& params = cli.getParameters();
+        disableStats = cli.getParser().isUsed("no-stats");
 
         ConfigManager config;
         config.initialize(params.configPath);
@@ -94,7 +97,7 @@ int main(int argc, char* argv[])
                                           interrupted = true;
                                       });
 
-        CertificateManager proc(config.generic()->policyDirectory);
+        pki::PKIManager proc(config.generic()->policyDirectory);
 
         GenericServerConfig conf;
         conf.idleTimeout = std::chrono::seconds(300);
@@ -136,7 +139,10 @@ int main(int argc, char* argv[])
                 std::cerr << "Error processing signals: " << ec.message() << std::endl;
             }
 
-            enablePeriodicStats(server, std::chrono::seconds(3), std::cout);
+            if (!disableStats)
+            {
+                enablePeriodicStats(server, std::chrono::seconds(3), std::cout);
+            }
         }
 
         server.stop();
