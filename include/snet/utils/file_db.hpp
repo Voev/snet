@@ -342,25 +342,64 @@ private:
     Row errorRowData;
     std::vector<std::type_index> fieldTypes;
 
-    // Вспомогательная функция для преобразования строки в значение поля
     std::shared_ptr<FieldValue> parseField(const std::string& str, std::type_index type)
     {
         if (type == typeid(std::string))
         {
             return makeFieldValue(str);
         }
+        else if (type == typeid(bool))
+        {
+            return makeFieldValue(str == "true" || str == "1");
+        }
+        // Character types
+        else if (type == typeid(char))
+        {
+            return makeFieldValue(str.empty() ? '\0' : str[0]);
+        }
+        else if (type == typeid(signed char))
+        {
+            return makeFieldValue(str.empty() ? '\0' : str[0]);
+        }
+        else if (type == typeid(unsigned char))
+        {
+            // Parse as number, not as character
+            return makeFieldValue(static_cast<unsigned char>(std::stoul(str)));
+        }
+        // Integer types
+        else if (type == typeid(short))
+        {
+            return makeFieldValue(static_cast<short>(std::stoi(str)));
+        }
+        else if (type == typeid(unsigned short))
+        {
+            return makeFieldValue(static_cast<unsigned short>(std::stoul(str)));
+        }
         else if (type == typeid(int))
         {
             return makeFieldValue(std::stoi(str));
+        }
+        else if (type == typeid(unsigned int))
+        {
+            return makeFieldValue(static_cast<unsigned int>(std::stoul(str)));
         }
         else if (type == typeid(long))
         {
             return makeFieldValue(std::stol(str));
         }
+        else if (type == typeid(unsigned long))
+        {
+            return makeFieldValue(std::stoul(str));
+        }
         else if (type == typeid(long long))
         {
             return makeFieldValue(std::stoll(str));
         }
+        else if (type == typeid(unsigned long long))
+        {
+            return makeFieldValue(std::stoull(str));
+        }
+        // Floating point types
         else if (type == typeid(float))
         {
             return makeFieldValue(std::stof(str));
@@ -369,17 +408,10 @@ private:
         {
             return makeFieldValue(std::stod(str));
         }
-        else if (type == typeid(bool))
-        {
-            return makeFieldValue(str == "true" || str == "1");
-        }
-        else if (type == typeid(char))
-        {
-            return makeFieldValue(str.empty() ? '\0' : str[0]);
-        }
         else
         {
-            throw TXTDBException(TXTDBException::INVALID_CONVERSION, "Unsupported type for parsing");
+            throw TXTDBException(TXTDBException::INVALID_CONVERSION,
+                                 "Unsupported type for parsing: " + std::string(type.name()));
         }
     }
 

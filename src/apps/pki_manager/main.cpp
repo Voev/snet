@@ -62,9 +62,11 @@ private:
 
 int main(int argc, char* argv[])
 {
+    LogWorker logWorker(std::make_unique<ConsoleSink>());
+    int ret{EXIT_SUCCESS};
+
     try
     {
-
         std::vector<nonstd::string_view> args(argv + 1, argv + argc);
         CmdLineProcessor cli;
         bool disableStats{false};
@@ -83,7 +85,6 @@ int main(int argc, char* argv[])
         ConfigManager config;
         config.initialize(params.configPath);
 
-        LogWorker logWorker(std::make_unique<ConsoleSink>());
         AsyncLogger::getInstance().setLevel(LogLevel::DEBUG);
 
         SignalHandler signalHandler;
@@ -148,13 +149,13 @@ int main(int argc, char* argv[])
         }
 
         server.stop();
-        logWorker.stop();
     }
     catch (std::exception& e)
     {
         std::cout << "Error: " << e.what() << std::endl;
-        return EXIT_FAILURE;
+        ret = EXIT_FAILURE;
     }
 
-    return EXIT_SUCCESS;
+    logWorker.stop();
+    return ret;
 }

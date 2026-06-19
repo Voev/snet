@@ -8,14 +8,10 @@ PKIManager::PKIManager(const StorageConfig& storageConfig)
     , policyManager_(std::make_unique<PolicyManager>(storageConfig))
     , certManager_(std::make_unique<CertManager>(storageConfig))
 {
-    auto policies = policyManager_->getActivePolicies();
+    auto policies = policyManager_->getReadyPolicies();
     for (const auto& policy : policies)
     {
-        auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-        auto cert = crypto::Cert::fromStorage(policy->caCertPath);
-
-        auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), std::move(cert));
-        entities_[policy->name] = entity;
+        loadEntity(policy);
     }
 }
 
@@ -42,6 +38,42 @@ std::string PKIManager::handleRemovePolicy(const std::string& name)
     catch (const std::exception& e)
     {
         return "ERROR: failed to remove policy '" + name + "': " + e.what();
+    }
+}
+
+std::string PKIManager::handleEnablePolicy(const std::string& name)
+{
+    try
+    {
+        auto policy = policyManager_->getPolicy(name);
+        casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
+
+        loadEntity(policy);
+
+        policyManager_->enablePolicy(policy);
+        return "OK: policy '" + name + "' successfully enabled";
+    }
+    catch (const std::exception& e)
+    {
+        return "ERROR: failed to enable policy '" + name + "': " + e.what();
+    }
+}
+
+std::string PKIManager::handleDisablePolicy(const std::string& name)
+{
+    try
+    {
+        auto policy = policyManager_->getPolicy(name);
+        casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
+
+        unloadEntity(name);
+
+        policyManager_->disablePolicy(policy);
+        return "OK: policy '" + name + "' successfully removed";
+    }
+    catch (const std::exception& e)
+    {
+        return "ERROR: failed to disable policy '" + name + "': " + e.what();
     }
 }
 
@@ -124,6 +156,7 @@ std::string PKIManager::handleGenerateSelfSignedCert(const std::string& name, co
         auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
 
         /// @todo: consistency for cert file if throws exception
+        /// @todo: does we need to auto enabling policy?
         auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
         entities_[name] = entity;
 
@@ -183,6 +216,20 @@ std::string PKIManager::handleResign(const std::string& name, const std::string&
         std::string err = "ERROR: Failed to sign request with policy '" + name + "': ";
         return err + e.what();
     }
+}
+
+void PKIManager::loadEntity(const std::shared_ptr<Policy>& policy)
+{
+    auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
+    auto cert = crypto::Cert::fromStorage(policy->caCertPath);
+
+    auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), std::move(cert));
+    entities_[policy->name] = entity;
+}
+
+void PKIManager::unloadEntity(const std::string& name)
+{
+    entities_.erase(name);
 }
 
 } // namespace snet::pki

@@ -15,7 +15,8 @@ static std::vector<std::type_index> getFieldTypes()
     return {
         typeid(std::string), // name
         typeid(std::string), // caCertPath
-        typeid(std::string)  // caKeyPath
+        typeid(std::string), // caKeyPath
+        typeid(std::uint32_t) // status
     };
 }
 
@@ -153,12 +154,8 @@ void PolicyManager::removePolicy(const std::string& name)
     chain.execute();
 }
 
-void PolicyManager::activatePolicy(const std::string& name)
+void PolicyManager::enablePolicy(std::shared_ptr<Policy> policy)
 {
-    auto policy = getPolicy(name);
-    casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
-    casket::ThrowIfTrue(!policy->isComplete(), "cannot activate incomplete policy '{}'", name);
-
     ActionChain chain;
 
     auto oldStatus = policy->status;
@@ -166,28 +163,30 @@ void PolicyManager::activatePolicy(const std::string& name)
     chain.addAction(
         [&]()
         {
-            CSK_LOG_DEBUG("activating policy '{}'", name.c_str());
-            policy->status = "active";
+            CSK_LOG_DEBUG("enabling policy '%s'", policy->name.c_str());
+            policy->enable();
         },
         [&]()
         {
-            CSK_LOG_DEBUG("rollback: restoring status for policy '{}' to '{}'", name.c_str(), oldStatus.c_str());
+            CSK_LOG_DEBUG("rollback: restoring status for policy '%s' to '%d'", policy->name.c_str(), (int)oldStatus);
             policy->status = oldStatus;
         });
 
     chain.addAction(
         [&]()
         {
-            CSK_LOG_DEBUG("updating policy '{}' in database", name.c_str());
-            casket::ThrowIfFalse(updatePolicy(name, *policy), "failed to update policy '{}' in database", name.c_str());
+            CSK_LOG_DEBUG("updating policy '%s' in database", policy->name.c_str());
+            casket::ThrowIfFalse(
+                updatePolicy(policy->name, *policy), "failed to update policy '%s' in database", policy->name.c_str());
         },
         [&]()
         {
-            CSK_LOG_DEBUG("rollback: restoring policy '{}' in database", name.c_str());
+            CSK_LOG_DEBUG("rollback: restoring policy '%s' in database", policy->name.c_str());
             auto oldPolicy = *policy;
             oldPolicy.status = oldStatus;
-            casket::ThrowIfFalse(
-                updatePolicy(name, oldPolicy), "failed to rollback policy '{}' in database", name.c_str());
+            casket::ThrowIfFalse(updatePolicy(policy->name, oldPolicy),
+                                 "failed to rollback policy '{}' in database",
+                                 policy->name.c_str());
         });
 
     chain.addAction(
@@ -200,15 +199,11 @@ void PolicyManager::activatePolicy(const std::string& name)
 
     chain.execute();
 
-    CSK_LOG_INFO("policy '{}' activated successfully", name.c_str());
+    CSK_LOG_INFO("policy '%s' enabled successfully", policy->name.c_str());
 }
 
-void PolicyManager::deactivatePolicy(const std::string& name)
+void PolicyManager::disablePolicy(std::shared_ptr<Policy> policy)
 {
-    auto policy = getPolicy(name);
-    casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
-    casket::ThrowIfTrue(!policy->isActive(), "policy '{}' is not active", name);
-
     ActionChain chain;
 
     auto oldStatus = policy->status;
@@ -216,28 +211,30 @@ void PolicyManager::deactivatePolicy(const std::string& name)
     chain.addAction(
         [&]()
         {
-            CSK_LOG_DEBUG("deactivating policy '{}'", name.c_str());
-            policy->status = "inactive";
+            CSK_LOG_DEBUG("disabling policy '%s'", policy->name.c_str());
+            policy->disable();
         },
         [&]()
         {
-            CSK_LOG_DEBUG("rollback: restoring status for policy '{}' to '{}'", name.c_str(), oldStatus.c_str());
+            CSK_LOG_DEBUG("rollback: restoring status for policy '%s' to '%d'", policy->name.c_str(), (int)oldStatus);
             policy->status = oldStatus;
         });
 
     chain.addAction(
         [&]()
         {
-            CSK_LOG_DEBUG("updating policy '{}' in database", name.c_str());
-            casket::ThrowIfFalse(updatePolicy(name, *policy), "failed to update policy '{}' in database", name.c_str());
+            CSK_LOG_DEBUG("updating policy '%s' in database", policy->name.c_str());
+            casket::ThrowIfFalse(
+                updatePolicy(policy->name, *policy), "failed to update policy '{}' in database", policy->name.c_str());
         },
         [&]()
         {
-            CSK_LOG_DEBUG("rollback: restoring policy '{}' in database", name.c_str());
+            CSK_LOG_DEBUG("rollback: restoring policy '%s' in database", policy->name.c_str());
             auto oldPolicy = *policy;
             oldPolicy.status = oldStatus;
-            casket::ThrowIfFalse(
-                updatePolicy(name, oldPolicy), "failed to rollback policy '{}' in database", name.c_str());
+            casket::ThrowIfFalse(updatePolicy(policy->name, oldPolicy),
+                                 "failed to rollback policy '{}' in database",
+                                 policy->name.c_str());
         });
 
     chain.addAction(
@@ -250,7 +247,7 @@ void PolicyManager::deactivatePolicy(const std::string& name)
 
     chain.execute();
 
-    CSK_LOG_INFO("policy '{}' deactivated successfully", name.c_str());
+    CSK_LOG_INFO("policy '%s' deactivated successfully", policy->name.c_str());
 }
 
 void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::string& keyPath)
@@ -263,8 +260,7 @@ void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::st
     chain.addAction(
         [&]()
         {
-            policy->caKeyPath = keyPath;
-            policy->status = (!policy->caCertPath.empty()) ? "active" : "inactive";
+            policy->addKey(keyPath);
         },
         [&]()
         {
@@ -298,8 +294,7 @@ void PolicyManager::addCertificateToPolicy(std::shared_ptr<Policy> policy, const
     chain.addAction(
         [&]()
         {
-            policy->caCertPath = certPath;
-            policy->status = (!policy->caKeyPath.empty()) ? "active" : "inactive";
+            policy->addCertificate(certPath);
         },
         [&]()
         {
@@ -344,59 +339,24 @@ std::shared_ptr<Policy> PolicyManager::getPolicy(const std::string& name) const
     return nullptr;
 }
 
-std::vector<std::shared_ptr<Policy>> PolicyManager::getActivePolicies() const
-{
-    std::vector<std::shared_ptr<Policy>> result;
-
-    for (const auto& [name, policy] : policies_)
-    {
-        if (policy && policy->isActive())
-        {
-            result.push_back(policy);
-        }
-    }
-
-    return result;
-}
-
-std::vector<std::shared_ptr<Policy>> PolicyManager::getDraftPolicies() const
-{
-    std::vector<std::shared_ptr<Policy>> result;
-
-    for (const auto& [name, policy] : policies_)
-    {
-        if (policy && !policy->isComplete())
-        {
-            result.push_back(policy);
-        }
-    }
-
-    return result;
-}
-
-PolicyManager::Stats PolicyManager::getStats() const
-{
-    Stats stats{0, 0, 0, 0, 0, 0};
-    for (const auto& [name, policy] : policies_)
-    {
-        stats.totalPolicies++;
-
-        if (policy->status == "active")
-            stats.activePolicies++;
-        else if (policy->status == "inactive")
-            stats.inactivePolicies++;
-        else if (policy->status == "draft")
-            stats.draftPolicies++;
-
-        if (policy->isComplete())
-            stats.completePolicies++;
-    }
-    return stats;
-}
-
 bool PolicyManager::hasPolicy(const std::string& name) const
 {
     return policies_.find(name) != policies_.end();
+}
+
+std::vector<std::shared_ptr<Policy>> PolicyManager::getReadyPolicies() const
+{
+    std::vector<std::shared_ptr<Policy>> result;
+
+    for (const auto& [name, policy] : policies_)
+    {
+        if (policy && policy->isReady())
+        {
+            result.push_back(policy);
+        }
+    }
+
+    return result;
 }
 
 void PolicyManager::loadPolicies()

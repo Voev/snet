@@ -169,6 +169,10 @@ public:
 
     std::string handleRemovePolicy(const std::string& name);
 
+    std::string handleEnablePolicy(const std::string& name);
+
+    std::string handleDisablePolicy(const std::string& name);
+
     std::string handlePolicyInfo(const std::string& name);
 
     std::string handleGenerateKey(const std::string& name);
@@ -282,6 +286,44 @@ public:
                     }
                 }
             }
+            else if (req.value().command == "enable-policy")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 1)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        resp.retcode = handleEnablePolicy(tokens[0]);
+                    }
+                }
+            }
+            else if (req.value().command == "disable-policy")
+            {
+                if (req.value().args.empty())
+                {
+                    resp.retcode = "ERROR: invalid parameters";
+                }
+                else
+                {
+                    auto tokens = casket::split(req.value().args, " ");
+                    if (tokens.size() != 1)
+                    {
+                        resp.retcode = "ERROR: invalid count of parameters";
+                    }
+                    else
+                    {
+                        resp.retcode = handleDisablePolicy(tokens[0]);
+                    }
+                }
+            }
             else if (req.value().command == "sign-csr")
             {
                 if (req.value().args.empty())
@@ -313,6 +355,11 @@ public:
 
         return ctx.packThenSend<PKIManagerResponse>(resp, ec);
     }
+
+private:
+    void loadEntity(const std::shared_ptr<Policy>& policy);
+
+    void unloadEntity(const std::string& name);
 
 private:
     const StorageConfig& storageConfig_;
