@@ -11,9 +11,6 @@ class GenericSection : public casket::opt::Section
 public:
     GenericSection()
     {
-        addOption(casket::opt::OptionBuilder("policy_dir", casket::opt::Value(&policyDirectory))
-                      .setDefaultValue("${HOME}/.snet_pkimgr/")
-                      .build());
         addOption(casket::opt::OptionBuilder("socket_path", casket::opt::Value(&socketName))
                       .setDefaultValue("${HOME}/snet_pkimgr.sock")
                       .build());
@@ -24,7 +21,6 @@ public:
         return "generic";
     }
 
-    std::string policyDirectory;
     std::string socketName;
 };
 

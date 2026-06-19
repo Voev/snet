@@ -9,7 +9,6 @@ class CertTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        // Тестовый сертификат в base64 (предоставленный вами)
         testCertBase64 =
             "MIIHsjCCBzigAwIBAgIMf1VEXlbr1oIbD1ZfMAoGCCqGSM49BAMDMFAxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LX"
             "NhMSYwJAYDVQQDEx1HbG9iYWxTaWduIEVDQyBPViBTU0wgQ0EgMjAxODAeFw0yNjAyMDYwNjU4MDhaFw0yNjA4MDYyMDU5NTlaMFoxCzAJ"
@@ -46,7 +45,6 @@ protected:
 
 TEST_F(CertTest, FromBase64CreatesValidCert)
 {
-    // Тест создания сертификата из base64
     X509CertPtr cert = Cert::fromBase64(testCertBase64);
 
     ASSERT_NE(cert, nullptr);
@@ -55,14 +53,12 @@ TEST_F(CertTest, FromBase64CreatesValidCert)
 
 TEST_F(CertTest, ToBase64ConvertsCorrectly)
 {
-    // Тест преобразования сертификата обратно в base64
     X509CertPtr originalCert = Cert::fromBase64(testCertBase64);
     ASSERT_NE(originalCert, nullptr);
 
     std::string convertedBase64 = Cert::toBase64(originalCert.get());
     EXPECT_FALSE(convertedBase64.empty());
 
-    // Проверяем, что из полученного base64 можно восстановить сертификат
     X509CertPtr recoveredCert = Cert::fromBase64(convertedBase64);
     ASSERT_NE(recoveredCert, nullptr);
 
@@ -82,26 +78,21 @@ TEST_F(CertTest, FromBase64EmptyInput)
 
 TEST_F(CertTest, CertPropertiesExtraction)
 {
-    // Тест извлечения свойств сертификата
     X509CertPtr cert = Cert::fromBase64(testCertBase64);
     ASSERT_NE(cert, nullptr);
 
-    // Проверяем извлечение subject name и issuer name
     X509NamePtr subject = Cert::subjectName(cert.get());
     EXPECT_NE(subject, nullptr);
 
     X509NamePtr issuer = Cert::issuerName(cert.get());
     EXPECT_NE(issuer, nullptr);
 
-    // Проверяем серийный номер
     BigNumPtr serialNum = Cert::serialNumber(cert.get());
     EXPECT_NE(serialNum, nullptr);
 
-    // Проверяем публичный ключ
     KeyPtr publicKey = Cert::publicKey(cert.get());
     EXPECT_NE(publicKey, nullptr);
 
-    // Проверяем даты валидности
     std::time_t notBefore = Cert::notBefore(cert.get());
     std::time_t notAfter = Cert::notAfter(cert.get());
 
@@ -109,7 +100,6 @@ TEST_F(CertTest, CertPropertiesExtraction)
     EXPECT_GT(notBefore, 0);
     EXPECT_GT(notAfter, 0);
 
-    // Проверяем версию
     CertVersion version = Cert::version(cert.get());
     EXPECT_GE(version, CertVersion::V1);
     EXPECT_LE(version, CertVersion::V3);
@@ -117,7 +107,6 @@ TEST_F(CertTest, CertPropertiesExtraction)
 
 TEST_F(CertTest, ShallowCopyAndDeepCopy)
 {
-    // Тест копирования сертификата
     X509CertPtr originalCert = Cert::fromBase64(testCertBase64);
     ASSERT_NE(originalCert, nullptr);
 
@@ -132,18 +121,15 @@ TEST_F(CertTest, ShallowCopyAndDeepCopy)
 
 TEST_F(CertTest, FromBufferRoundTrip)
 {
-    // Тест преобразования в буфер и обратно
     X509CertPtr originalCert = Cert::fromBase64(testCertBase64);
     ASSERT_NE(originalCert, nullptr);
 
-    // Сначала получаем размер буфера (вызов с пустым span)
     std::array<uint8_t, 8192> buffer;
     nonstd::span<uint8_t> outputSpan(buffer);
 
     int result = Cert::toBuffer(originalCert.get(), outputSpan);
     EXPECT_GT(result, 0);
 
-    // Восстанавливаем сертификат из буфера
     nonstd::span<const uint8_t> inputSpan(buffer.data(), result);
     X509CertPtr recoveredCert = Cert::fromBuffer(inputSpan);
     ASSERT_NE(recoveredCert, nullptr);

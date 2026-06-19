@@ -26,8 +26,6 @@ public:
 
     static bool isEqual(const X509Cert* op1, const X509Cert* op2);
 
-    // static bool isSelfSigned(X509Cert* cert, bool verifySignature) noexcept;
-
     static CertVersion version(X509Cert* cert);
 
     static inline std::string subjectNameString(const X509Cert* cert)

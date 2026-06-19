@@ -59,12 +59,6 @@ bool Cert::isEqual(const X509Cert* a, const X509Cert* b)
     return res == 0;
 }
 
-
-/*bool Cert::isSelfSigned(X509Cert* cert, bool verifySignature) noexcept
-{
-    return X509_self_signed(cert, verifySignature);
-}*/
-
 CertVersion Cert::version(X509Cert* cert)
 {
     long value = X509_get_version(cert);
