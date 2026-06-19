@@ -3,6 +3,7 @@
 #include <casket/utils/string.hpp>
 #include <casket/nonstd/optional.hpp>
 
+#include <snet/pki/storage_config.hpp>
 #include <snet/pki/cert_manager.hpp>
 #include <snet/pki/policy_manager.hpp>
 
@@ -150,15 +151,7 @@ struct PKIManagerResponse
 class PKIManager
 {
 public:
-    explicit PKIManager(const std::string& storageDir);
-
-    std::shared_ptr<Policy> getPolicy(const std::string& name) const
-    {
-        return policyManager_->getPolicy(name);
-    }
-
-    bool addPolicy(const std::string& name, std::shared_ptr<Policy> policy);
-    bool removePolicy(const std::string& name);
+    explicit PKIManager(const StorageConfig& storageDir);
 
     std::string handleHelp()
     {
@@ -172,300 +165,18 @@ public:
                "  help                                 - Show this help";
     }
 
-    std::string handlePolicyInfo(const std::string& name)
-    {
-        auto policy = getPolicy(name);
-        if (!policy)
-        {
-            return "ERROR: Policy '" + name + "' not found";
-        }
+    std::string handleCreatePolicy(const std::string& name);
 
-        std::ostringstream response;
-        response << "Policy: " << name << "\n";
-        response << "  CA Certificate: " << policy->caCertPath << "\n";
-        response << "  CA Key: " << policy->caKeyPath << "\n";
-        return response.str();
-    }
+    std::string handleRemovePolicy(const std::string& name);
 
-    std::string handleResign(const std::string& name, const std::string& base64Cert, const std::string& base64PublicKey)
-    {
-        try
-        {
-            auto policy = policyManager_->getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
+    std::string handlePolicyInfo(const std::string& name);
 
-            auto cert = crypto::Cert::fromBase64(base64Cert);
-            auto fingerprint = CertFingerprintGenerator::generate(cert, EVP_sha1());
+    std::string handleGenerateKey(const std::string& name);
 
-            auto resignedCert = certManager_->findByFingerprint(fingerprint, SteadyClock::now());
-            if (resignedCert)
-            {
-                std::cout << "GOT CACHED!" << std::endl;
-                return crypto::Cert::toBase64(resignedCert);
-            }
+    std::string handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn);
 
-            auto ca = entities_.find(name);
-            if (ca == entities_.end())
-            {
-                return "ERROR: not found entity";
-            }
-
-            auto publicKey = crypto::AsymmKey::fromBase64(KeyType::Public, base64PublicKey);
-
-            auto res = ca->second->resign(publicKey, cert);
-            auto base64Result = crypto::Cert::toBase64(res);
-
-            certManager_->insertCertificate(name, fingerprint, res);
-
-            return base64Result;
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: Failed to sign request with profile '" + name + "': ";
-            return err + e.what();
-        }
-    }
-
-    std::string handleCreatePolicy(const std::string& name)
-    {
-        try
-        {
-            if (!policyManager_->createPolicy(name))
-            {
-                return "ERROR: " + policyManager_->getLastError();
-            }
-            return "OK: policy '" + name + "' was created successfully";
-        }
-        catch (const std::exception& e)
-        {
-            return e.what();
-        }
-    }
-
-    std::string handleGenerateKey(const std::string& name)
-    {
-        try
-        {
-            // Проверяем существование политики
-            if (!policyManager_->hasPolicy(name))
-            {
-                return "ERROR: policy '" + name + "' not found";
-            }
-
-            // Получаем путь к ключу
-            auto keyPath = policyManager_->getDefaultKeyPath(name);
-
-            // Проверяем, не существует ли уже ключ
-            if (std::filesystem::exists(keyPath))
-            {
-                return "ERROR: private key already exists for policy '" + name + "' at: " + keyPath;
-            }
-
-            // Генерируем ключевую пару
-            auto key = crypto::RsaAsymmKey::generate(2048, false);
-
-            // Сохраняем ключ в файл
-            auto filename = crypto::BioTraits::openFile(keyPath, "wb");
-            if (!filename)
-            {
-                return "ERROR: failed to open file for writing: " + keyPath;
-            }
-
-            crypto::AsymmKey::toBio(KeyType::Private, key, filename, Encoding::PEM);
-
-            // Добавляем ключ к политике
-            if (!policyManager_->addKeyToPolicy(name, keyPath))
-            {
-                // В случае ошибки удаляем созданный файл
-                std::error_code ec;
-                std::filesystem::remove(keyPath, ec);
-                return "ERROR: failed to add key to policy: " + policyManager_->getLastError();
-            }
-
-            return "OK: private key successfully generated for policy '" + name + "' at: " + keyPath;
-        }
-        catch (const std::filesystem::filesystem_error& e)
-        {
-            return "ERROR: filesystem error for policy '" + name + "': " + e.what();
-        }
-        catch (const std::exception& e)
-        {
-            return "ERROR: failed to generate private key for policy '" + name + "': " + e.what();
-        }
-    }
-
-    std::string handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn)
-    {
-        try
-        {
-            // Проверяем существование политики
-            auto policy = policyManager_->getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            // Проверяем, не существует ли уже сертификат
-            if (!policy->caCertPath.empty())
-            {
-                return "ERROR: certificate already set for policy '" + name + "' at: " + policy->caCertPath;
-            }
-
-            // Проверяем наличие ключа
-            if (policy->caKeyPath.empty())
-            {
-                return "ERROR: private key not found for policy '" + name + "'. Generate key first.";
-            }
-
-            // Проверяем существование файла ключа
-            if (!std::filesystem::exists(policy->caKeyPath))
-            {
-                return "ERROR: private key file not found: " + policy->caKeyPath;
-            }
-
-            // Проверяем существование директории политики
-            if (!policyManager_->hasPolicyDirectory(name))
-            {
-                if (!policyManager_->createPolicyDirectory(name))
-                {
-                    return "ERROR: failed to create policy directory: " + policyManager_->getLastError();
-                }
-            }
-
-            // Используем стандартный путь для сертификата
-            auto certificatePath = policyManager_->getDefaultCertPath(name);
-
-            // Проверяем, не существует ли уже файл сертификата
-            if (std::filesystem::exists(certificatePath))
-            {
-                return "ERROR: certificate file already exists: " + certificatePath;
-            }
-
-            // Загружаем приватный ключ
-            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-            if (!key)
-            {
-                return "ERROR: failed to load private key from: " + policy->caKeyPath;
-            }
-
-            // Создаем CA entity
-            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
-            entities_[name] = entity;
-
-            // Сохраняем сертификат в файл
-            auto filename = crypto::BioTraits::openFile(certificatePath, "wb");
-            if (!filename)
-            {
-                return "ERROR: failed to open file for writing: " + certificatePath;
-            }
-
-            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
-
-            // Добавляем сертификат к политике
-            if (!policyManager_->addCertificateToPolicy(name, certificatePath))
-            {
-                // В случае ошибки удаляем созданный файл
-                std::error_code ec;
-                std::filesystem::remove(certificatePath, ec);
-                return "ERROR: failed to add certificate to policy: " + policyManager_->getLastError();
-            }
-
-            // Сохраняем изменения
-            if (!policyManager_->savePolicies())
-            {
-                return "ERROR: failed to save policies: " + policyManager_->getLastError();
-            }
-
-            return "OK: self-signed certificate successfully generated for policy '" + name +
-                   "' at: " + certificatePath;
-        }
-        catch (const std::filesystem::filesystem_error& e)
-        {
-            return "ERROR: filesystem error for policy '" + name + "': " + e.what();
-        }
-        catch (const std::exception& e)
-        {
-            return "ERROR: failed to generate self-signed certificate for policy '" + name + "': " + e.what();
-        }
-    }
-
-    /*std::string handleGenerateCertRequest(const std::string& name, const std::string& certDn)
-    {
-        try
-        {
-            auto policy = getPolicy(name);
-            if (!policy)
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            if (!policy->caCertPath.empty())
-            {
-                return "ERROR: certificate already setted for '" + name + "'";
-            }
-
-            std::filesystem::path p = policyManager_->storage();
-            p /= name;
-
-            std::filesystem::path certificatePath = p / "certificate.pem";
-            policy->caCertPath = certificatePath.string();
-
-            auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-            auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
-
-            auto filename = crypto::BioTraits::openFile(policy->caCertPath, "wb");
-            crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
-
-            policyManager_->savePolicies();
-
-            return "OK: self-signed certificate successfully generated for policy '" + name + "'";
-        }
-        catch (const std::exception& e)
-        {
-            std::string err = "ERROR: failed to generate self-signed certificate for policy '" + name + "': ";
-            return err + e.what();
-        }
-    }*/
-
-    std::string handleRemovePolicy(const std::string& name)
-    {
-        try
-        {
-            if (!policyManager_->hasPolicy(name))
-            {
-                return "ERROR: Policy '" + name + "' not found";
-            }
-
-            auto policy = policyManager_->getPolicy(name);
-            if (policy && policy->isActive())
-            {
-                return "ERROR: Cannot remove active policy '" + name + "'. Deactivate it first.";
-            }
-
-            auto policyPath = policyManager_->getPolicyPath(name);
-
-            if (!policyManager_->removePolicy(name))
-            {
-                return "ERROR: Failed to remove policy '" + name + "': " + policyManager_->getLastError();
-            }
-
-            std::string result = "OK: Policy '" + name + "' removed successfully";
-
-            if (!std::filesystem::exists(policyPath))
-            {
-                result += " (directory removed)";
-            }
-
-            return result;
-        }
-        catch (const std::exception& e)
-        {
-            return "ERROR: failed to remove policy '" + name + "': " + e.what();
-        }
-    }
+    std::string handleResign(const std::string& name, const std::string& base64Cert,
+                             const std::string& base64PublicKey);
 
     bool processCommand(casket::Context<casket::UnixSocket>& ctx)
     {
@@ -604,7 +315,7 @@ public:
     }
 
 private:
-    std::string storageDir_;
+    const StorageConfig& storageConfig_;
     std::unique_ptr<PolicyManager> policyManager_;
     std::unique_ptr<CertManager> certManager_;
     std::map<std::string, std::shared_ptr<crypto::CertAuthority>> entities_;

@@ -16,7 +16,6 @@
 #include <typeinfo>
 #include <variant>
 
-// Класс исключений для TXT DB
 class TXTDBException : public std::exception
 {
 private:
@@ -1202,9 +1201,10 @@ public:
     }
 
     // Очистка базы данных
-    void clear()
+    void clear() noexcept
     {
         data.clear();
+
         for (auto& idx : indices)
         {
             if (idx.hashIndex)
@@ -1257,84 +1257,11 @@ public:
     }
 };
 
-/*
-// Пример использования
-int main()
+template <typename T>
+T getFieldValue(const std::shared_ptr<FieldValue>& field)
 {
-    try
-    {
-        // Создаем базу данных с типами полей
-        std::vector<std::type_index> types = {
-            typeid(int),         // ID
-            typeid(std::string), // Name
-            typeid(double),      // Salary
-            typeid(bool)         // IsActive
-        };
-
-        TXTDatabase db(types);
-
-        // Создаем индексы
-        db.createIndex(0);       // Хеш-индекс по ID
-        db.createSortedIndex(2); // Сортированный индекс по зарплате
-
-        // Вставляем записи с разными типами
-        db.insert(1, std::string("Alice"), 75000.5, true);
-        db.insert(2, std::string("Bob"), 68000.0, true);
-        db.insert(3, std::string("Charlie"), 82000.75, false);
-        db.insert(4, std::string("Diana"), 71000.0, true);
-        db.insert(5, std::string("Eve"), 65000.0, true);
-
-        std::cout << "All records:\n";
-        db.print(std::cout);
-
-        // Поиск по хеш-индексу
-        auto* row = db.findByIndex(0, 3);
-        if (row)
-        {
-            std::cout << "\nFound by ID=3:\n";
-            std::cout << "ID: " << db.getField<int>(*row, 0) << "\n";
-            std::cout << "Name: " << db.getField<std::string>(*row, 1) << "\n";
-            std::cout << "Salary: " << db.getField<double>(*row, 2) << "\n";
-            std::cout << "Active: " << (db.getField<bool>(*row, 3) ? "Yes" : "No") << "\n";
-        }
-
-        // Поиск по диапазону зарплат
-        auto rangeRows = db.findRange(2, 68000.0, 75000.0);
-        std::cout << "\nEmployees with salary between 68000 and 75000:\n";
-        for (const auto* r : rangeRows)
-        {
-            std::cout << "  " << db.getField<std::string>(*r, 1) << " - $" << db.getField<double>(*r, 2) << "\n";
-        }
-
-        // Запись в файл
-        db.writeToFile("test_db.txt");
-        std::cout << "\nDatabase written to test_db.txt\n";
-
-        // Чтение из файла
-        auto db2 = TXTDatabase::readFromFile("test_db.txt", types);
-        std::cout << "\nRead " << db2.size() << " rows from file\n";
-
-        // Автоматическое определение типов
-        std::stringstream ss;
-        ss << "1\tAlice\t75000.5\ttrue\n";
-        ss << "2\tBob\t68000.0\tfalse\n";
-        ss << "3\tCharlie\t82000.75\ttrue\n";
-
-        auto db3 = TXTDatabase::readAuto(ss, 4);
-        std::cout << "\nAuto-parsed database:\n";
-        db3.print(std::cout);
-
-        // Вывод типов полей
-        for (int i = 0; i < db3.getNumFields(); i++)
-        {
-            std::cout << "Field " << i << " type: " << db3.getFieldType(i).name() << "\n";
-        }
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
-
-    return 0;
-}*/
+    auto typed = std::dynamic_pointer_cast<TypedFieldValue<T>>(field);
+    if (typed)
+        return typed->getValue();
+    return T{};
+}

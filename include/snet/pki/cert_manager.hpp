@@ -5,15 +5,15 @@
 #include <sstream>
 #include <string>
 #include <optional>
-#include <random>
-
-#include <snet/pki/policy_manager.hpp>
 
 #include <snet/pki/cert_fingerprint.hpp>
 #include <snet/pki/cert_status.hpp>
 #include <snet/pki/cert_cache.hpp>
 
+#include <snet/pki/storage_config.hpp>
+
 #include <snet/utils/file_db.hpp>
+#include <snet/utils/action_chain.hpp>
 #include <snet/crypto/cert.hpp>
 
 namespace snet::pki
@@ -69,37 +69,6 @@ struct CertificateRecord
         return cert;
     }
 
-    bool isValid() const
-    {
-        return status == CertStatus::VALID;
-    }
-
-    bool isExpired() const
-    {
-        auto now = std::chrono::system_clock::now();
-        return now > notAfter;
-    }
-
-    bool isRevoked() const
-    {
-        return status == CertStatus::REVOKED;
-    }
-
-    bool isActive() const
-    {
-        auto now = std::chrono::system_clock::now();
-        return status == CertStatus::VALID && now >= notBefore && now <= notAfter;
-    }
-
-    int getDaysUntilExpiry() const
-    {
-        auto now = std::chrono::system_clock::now();
-        if (now >= notAfter)
-            return 0;
-        auto diff = std::chrono::duration_cast<std::chrono::hours>(notAfter - now);
-        return diff.count() / 24;
-    }
-
 private:
     static std::string formatTimePoint(const std::chrono::system_clock::time_point& tp)
     {
@@ -122,36 +91,14 @@ private:
         }
         return std::chrono::system_clock::from_time_t(std::mktime(&tm));
     }
-
-    template <typename T>
-    static T getFieldValue(const std::shared_ptr<FieldValue>& field)
-    {
-        auto typed = std::dynamic_pointer_cast<TypedFieldValue<T>>(field);
-        if (typed)
-        {
-            return typed->getValue();
-        }
-        return T{};
-    }
 };
 
-// ============================================================================
-// Обновленный CertManager с использованием fingerprint как ключа
-// ============================================================================
-
-class CertManager
+class CertManager final
 {
 private:
-    PolicyManager& policyManager_;
+    const StorageConfig& config_;
     std::unique_ptr<TXTDatabase> db_;
     L1CertCache certCache_;
-    std::string metadataPath_;
-
-    void createIndices()
-    {
-        db_->createIndex(0);
-        db_->createIndex(1);
-    }
 
     void rebuildCache()
     {
@@ -171,7 +118,7 @@ private:
     {
 
         return {
-            typeid(std::string), // fingerprint (как строка)
+            typeid(std::string), // fingerprint
             typeid(std::string), // policyName
             typeid(std::string), // serialNumber
             typeid(std::string), // subjectDN
@@ -179,54 +126,38 @@ private:
             typeid(std::string), // notBefore
             typeid(std::string), // notAfter
             typeid(std::string), // status
-            typeid(std::string)  // certPath};
+            typeid(std::string)  // certPath
         };
     }
 
 public:
-    CertManager(PolicyManager& policyManager, const std::string& storageDir)
-        : policyManager_(policyManager)
-        , certCache_(1024)
+    explicit CertManager(const StorageConfig& config)
+        : config_(config)
+        , certCache_(config.certCacheSize)
     {
-        namespace fs = std::filesystem;
+        auto metadataPath = config_.getCertsMetadataPath();
 
-        if (storageDir.empty())
+        if (std::filesystem::exists(metadataPath))
         {
-            throw std::runtime_error("Invalid path to storage");
-        }
-
-        metadataPath_ = storageDir + "/certificates.db";
-
-        if (fs::exists(storageDir) && fs::exists(metadataPath_))
-        {
-            try
-            {
-                db_ = std::make_unique<TXTDatabase>(TXTDatabase::readFromFile(metadataPath_, getFieldTypes()));
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << "Warning: Could not load database, creating new one: " << e.what() << std::endl;
-                db_ = std::make_unique<TXTDatabase>(getFieldTypes());
-            }
+            db_ = std::make_unique<TXTDatabase>(TXTDatabase::readFromFile(metadataPath, getFieldTypes()));
+            rebuildCache();
         }
         else
         {
             db_ = std::make_unique<TXTDatabase>(getFieldTypes());
         }
 
-        createIndices();
-        rebuildCache();
+        db_->createIndex(0); // by fingerprint
+        db_->createIndex(1); // by policy name
     }
 
-    ~CertManager() noexcept
-    {
-    }
+    ~CertManager() noexcept = default;
 
     void insertCertificate(const std::string& policyName, const CertFingerprint& fingerprint, X509Cert* cert)
     {
         casket::ThrowIfFalse(cert, "invalid certificate");
 
-        auto path = policyManager_.getPolicyPath(policyName);
+        auto path = config_.getPolicyPath(policyName);
         path /= fingerprint.toString() + ".crt";
         std::string certPath = path.string();
 
@@ -241,23 +172,63 @@ public:
         record.status = CertStatus::VALID;
         record.certPath = certPath;
 
-        auto bio = crypto::BioTraits::openFile(certPath, "wb");
-        crypto::Cert::toBio(cert, bio, Encoding::PEM);
+        ActionChain chain;
 
-        try
-        {
-            casket::ThrowIfFalse(db_->insert(record.toRow()), "Failed to insert certificate: " + db_->getLastError());
+        chain.addAction(
+            [&cert, &certPath]()
+            {
+                auto bio = crypto::BioTraits::openFile(certPath, "wb");
+                crypto::Cert::toBio(cert, bio, Encoding::PEM);
+            },
+            [&certPath]()
+            {
+                std::filesystem::remove(certPath);
+            });
 
-            db_->writeToFile(metadataPath_);
+        chain.addAction(
+            [&]()
+            {
+                casket::ThrowIfFalse(db_->insert(record.toRow()),
+                                     "Failed to insert certificate: " + db_->getLastError());
+            },
+            [&]()
+            {
+                auto fieldValue = makeFieldValue(fingerprint.toString());
+                db_->removeByIndex(0, fieldValue);
+            });
 
-            certCache_.put(fingerprint, crypto::Cert::shallowCopy(cert), SystemToSteady(record.notAfter));
-        }
-        catch (...)
-        {
-            std::error_code ec;
-            std::filesystem::remove(certPath, ec);
-            throw;
-        }
+        chain.addAction(
+            [&]()
+            {
+                casket::ThrowIfFalse(db_->insert(record.toRow()),
+                                     "Failed to insert certificate: " + db_->getLastError());
+            },
+            [&]()
+            {
+                auto fieldValue = makeFieldValue(fingerprint.toString());
+                db_->removeByIndex(0, fieldValue);
+            });
+
+        chain.addAction(
+            [&]()
+            {
+                certCache_.put(fingerprint, crypto::Cert::shallowCopy(cert), SystemToSteady(record.notAfter));
+            },
+            [&]()
+            {
+                certCache_.erase(fingerprint);
+            });
+
+        chain.addAction(
+            [&]()
+            {
+                db_->writeToFile(config_.getCertsMetadataPath());
+            },
+            []()
+            {
+            });
+
+        chain.execute();
     }
 
     crypto::X509CertPtr findByFingerprint(const CertFingerprint& fp, const SteadyTimePoint& tp)
@@ -282,26 +253,14 @@ public:
         return result;
     }
 
-    size_t size() const
+    size_t size() const noexcept
     {
         return certCache_.size();
     }
 
-    const L1CertCache& getAllCerts() const
+    const L1CertCache& getAllCerts() const noexcept
     {
         return certCache_;
-    }
-
-private:
-    template <typename T>
-    static T getFieldValue(const std::shared_ptr<FieldValue>& field)
-    {
-        auto typed = std::dynamic_pointer_cast<TypedFieldValue<T>>(field);
-        if (typed)
-        {
-            return typed->getValue();
-        }
-        return T{};
     }
 };
 

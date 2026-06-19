@@ -1,0 +1,431 @@
+#include <snet/pki/policy_manager.hpp>
+
+#include <snet/utils/action_chain.hpp>
+
+#include <casket/log/log.hpp>
+#include <casket/utils/exception.hpp>
+
+namespace fs = std::filesystem;
+
+namespace snet::pki
+{
+
+static std::vector<std::type_index> getFieldTypes()
+{
+    return {
+        typeid(std::string), // name
+        typeid(std::string), // caCertPath
+        typeid(std::string)  // caKeyPath
+    };
+}
+
+PolicyManager::PolicyManager(const StorageConfig& config)
+    : config_(config)
+{
+    auto metadataPath = config.getPolicyMetadataPath();
+
+    if (fs::exists(metadataPath))
+    {
+        db_ = std::make_unique<TXTDatabase>(TXTDatabase::readFromFile(metadataPath, getFieldTypes()));
+        loadPolicies();
+    }
+    else
+    {
+        db_ = std::make_unique<TXTDatabase>(getFieldTypes());
+    }
+
+    db_->createIndex(0);
+}
+
+PolicyManager::~PolicyManager() noexcept
+{
+}
+
+void PolicyManager::createPolicy(const std::string& name)
+{
+    casket::ThrowIfTrue(policies_.find(name) != policies_.end(), "policy '{}' already created", name);
+    ActionChain chain;
+
+    auto path = config_.getPolicyPath(name);
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("creating directory '%s'", path.string().c_str());
+            std::filesystem::create_directories(path);
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("removing directory '%s'", path.string().c_str());
+            std::error_code ec;
+            std::filesystem::remove_all(path, ec);
+        });
+
+    auto policy = std::make_shared<Policy>(name);
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("inserting entry '%s'", name.c_str());
+            casket::ThrowIfFalse(db_->insert(policy->toRow()),
+                                 "{} row: {}, field: {}",
+                                 db_->getLastError(),
+                                 db_->getErrorRow(),
+                                 db_->getErrorField());
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("removing entry '%s'", name.c_str());
+            auto fieldValue = makeFieldValue(name);
+            casket::ThrowIfFalse(db_->removeByIndex(0, fieldValue), "{}", db_->getLastError());
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("inserting entry into cache '%s'", name.c_str());
+            policies_[name] = policy;
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("removing entry from cache '%s'", name.c_str());
+            policies_.erase(name);
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("writing entry into database '%s'", name.c_str());
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.execute();
+}
+
+void PolicyManager::removePolicy(const std::string& name)
+{
+    casket::ThrowIfTrue(policies_.find(name) == policies_.end(), "policy '{}' does not exist", name);
+
+    auto policy = policies_[name];
+    auto policyRow = policy->toRow();
+    auto policyPath = config_.getPolicyPath(name);
+    bool dirExists = fs::exists(policyPath);
+
+    ActionChain chain;
+
+    chain.addAction(
+        [&]()
+        {
+            policies_.erase(name);
+        },
+        [&]()
+        {
+            policies_[name] = policy;
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            auto fieldValue = makeFieldValue(name);
+            casket::ThrowIfFalse(db_->removeByIndex(0, fieldValue), "{}", db_->getLastError());
+        },
+        [&]()
+        {
+            db_->insert(policyRow);
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            if (dirExists)
+            {
+                std::error_code ec;
+                fs::remove_all(policyPath, ec);
+            }
+        });
+
+    chain.execute();
+}
+
+void PolicyManager::activatePolicy(const std::string& name)
+{
+    auto policy = getPolicy(name);
+    casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
+    casket::ThrowIfTrue(!policy->isComplete(), "cannot activate incomplete policy '{}'", name);
+
+    ActionChain chain;
+
+    auto oldStatus = policy->status;
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("activating policy '{}'", name.c_str());
+            policy->status = "active";
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("rollback: restoring status for policy '{}' to '{}'", name.c_str(), oldStatus.c_str());
+            policy->status = oldStatus;
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("updating policy '{}' in database", name.c_str());
+            casket::ThrowIfFalse(updatePolicy(name, *policy), "failed to update policy '{}' in database", name.c_str());
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("rollback: restoring policy '{}' in database", name.c_str());
+            auto oldPolicy = *policy;
+            oldPolicy.status = oldStatus;
+            casket::ThrowIfFalse(
+                updatePolicy(name, oldPolicy), "failed to rollback policy '{}' in database", name.c_str());
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("saving policies to file");
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.execute();
+
+    CSK_LOG_INFO("policy '{}' activated successfully", name.c_str());
+}
+
+void PolicyManager::deactivatePolicy(const std::string& name)
+{
+    auto policy = getPolicy(name);
+    casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
+    casket::ThrowIfTrue(!policy->isActive(), "policy '{}' is not active", name);
+
+    ActionChain chain;
+
+    auto oldStatus = policy->status;
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("deactivating policy '{}'", name.c_str());
+            policy->status = "inactive";
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("rollback: restoring status for policy '{}' to '{}'", name.c_str(), oldStatus.c_str());
+            policy->status = oldStatus;
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("updating policy '{}' in database", name.c_str());
+            casket::ThrowIfFalse(updatePolicy(name, *policy), "failed to update policy '{}' in database", name.c_str());
+        },
+        [&]()
+        {
+            CSK_LOG_DEBUG("rollback: restoring policy '{}' in database", name.c_str());
+            auto oldPolicy = *policy;
+            oldPolicy.status = oldStatus;
+            casket::ThrowIfFalse(
+                updatePolicy(name, oldPolicy), "failed to rollback policy '{}' in database", name.c_str());
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            CSK_LOG_DEBUG("saving policies to file");
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.execute();
+
+    CSK_LOG_INFO("policy '{}' deactivated successfully", name.c_str());
+}
+
+void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::string& keyPath)
+{
+    ActionChain chain;
+
+    auto oldKeyPath = policy->caKeyPath;
+    auto oldStatus = policy->status;
+
+    chain.addAction(
+        [&]()
+        {
+            policy->caKeyPath = keyPath;
+            policy->status = (!policy->caCertPath.empty()) ? "active" : "inactive";
+        },
+        [&]()
+        {
+            policy->caKeyPath = oldKeyPath;
+            policy->status = oldStatus;
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            casket::ThrowIfFalse(updatePolicy(policy->name, *policy), "failed to update policy in database");
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.execute();
+}
+
+void PolicyManager::addCertificateToPolicy(std::shared_ptr<Policy> policy, const std::string& certPath)
+{
+    ActionChain chain;
+
+    auto oldCertPath = policy->caCertPath;
+    auto oldStatus = policy->status;
+
+    chain.addAction(
+        [&]()
+        {
+            policy->caCertPath = certPath;
+            policy->status = (!policy->caKeyPath.empty()) ? "active" : "inactive";
+        },
+        [&]()
+        {
+            policy->caCertPath = oldCertPath;
+            policy->status = oldStatus;
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            casket::ThrowIfFalse(updatePolicy(policy->name, *policy), "failed to update policy in database");
+        });
+
+    chain.addAction(
+        [&]()
+        {
+            auto metadataPath = config_.getPolicyMetadataPath();
+            db_->writeToFile(metadataPath);
+        });
+
+    chain.execute();
+}
+
+std::shared_ptr<Policy> PolicyManager::getPolicy(const std::string& name) const
+{
+    auto it = policies_.find(name);
+    if (it != policies_.end())
+    {
+        return it->second;
+    }
+
+    auto fieldValue = makeFieldValue(name);
+    const Row* row = db_->findByIndex(0, fieldValue);
+    if (row)
+    {
+        Policy policy = Policy::fromRow(*row);
+        auto sharedPolicy = std::make_shared<Policy>(policy);
+        const_cast<PolicyManager*>(this)->policies_[name] = sharedPolicy;
+        return sharedPolicy;
+    }
+
+    return nullptr;
+}
+
+std::vector<std::shared_ptr<Policy>> PolicyManager::getActivePolicies() const
+{
+    std::vector<std::shared_ptr<Policy>> result;
+
+    for (const auto& [name, policy] : policies_)
+    {
+        if (policy && policy->isActive())
+        {
+            result.push_back(policy);
+        }
+    }
+
+    return result;
+}
+
+std::vector<std::shared_ptr<Policy>> PolicyManager::getDraftPolicies() const
+{
+    std::vector<std::shared_ptr<Policy>> result;
+
+    for (const auto& [name, policy] : policies_)
+    {
+        if (policy && !policy->isComplete())
+        {
+            result.push_back(policy);
+        }
+    }
+
+    return result;
+}
+
+PolicyManager::Stats PolicyManager::getStats() const
+{
+    Stats stats{0, 0, 0, 0, 0, 0};
+    for (const auto& [name, policy] : policies_)
+    {
+        stats.totalPolicies++;
+
+        if (policy->status == "active")
+            stats.activePolicies++;
+        else if (policy->status == "inactive")
+            stats.inactivePolicies++;
+        else if (policy->status == "draft")
+            stats.draftPolicies++;
+
+        if (policy->isComplete())
+            stats.completePolicies++;
+    }
+    return stats;
+}
+
+bool PolicyManager::hasPolicy(const std::string& name) const
+{
+    return policies_.find(name) != policies_.end();
+}
+
+void PolicyManager::loadPolicies()
+{
+    policies_.clear();
+
+    for (size_t i = 0; i < db_->size(); i++)
+    {
+        const auto& row = db_->getRow(i);
+        Policy policy = Policy::fromRow(row);
+        policies_[policy.name] = std::make_shared<Policy>(policy);
+    }
+}
+
+bool PolicyManager::updatePolicy(const std::string& name, const Policy& policy)
+{
+    for (size_t i = 0; i < db_->size(); i++)
+    {
+        const auto& row = db_->getRow(i);
+        if (row.size() >= 1)
+        {
+            auto rowName = getFieldValue<std::string>(row[0]);
+            if (rowName == name)
+            {
+                return db_->updateRow(i, policy.toRow());
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace snet::pki

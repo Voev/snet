@@ -29,6 +29,8 @@ public:
 
     static KeyPtr fromBio(KeyType keyType, Bio* in, Encoding inEncoding);
 
+    static bool checkExistence(KeyType keyType, const std::string& uri, const UiMethod* meth, void* data);
+
     static void toBio(KeyType keyType, Key* key, Bio* bio, Encoding encoding = Encoding::PEM);
 
     static std::vector<uint8_t> getEncodedPublicKey(const Key* key);

@@ -1,6 +1,7 @@
 #pragma once
 #include <casket/opt/opt.hpp>
 #include <casket/opt/config_options_reader.hpp>
+#include <snet/pki/storage_config.hpp>
 
 namespace snet
 {
@@ -39,6 +40,8 @@ public:
     void read(const std::string& configPath);
 
     const GenericSection* generic() const;
+
+    const pki::StorageConfig* storage() const;
 
 private:
     void createDefaultConfig(const std::string& configPath);

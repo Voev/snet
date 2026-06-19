@@ -16,6 +16,7 @@ static inline bool fileExists(const std::string& path)
 ConfigManager::ConfigManager()
 {
     options_.add<GenericSection>();
+    options_.add<pki::StorageConfig>();
 }
 
 ConfigManager::~ConfigManager()
@@ -46,6 +47,11 @@ const GenericSection* ConfigManager::generic() const
     return options_.get<GenericSection>();
 }
 
+const pki::StorageConfig* ConfigManager::storage() const
+{
+    return options_.get<pki::StorageConfig>();
+}
+
 void ConfigManager::createDefaultConfig(const std::string& configPath)
 {
     std::string dirPath = configPath.substr(0, configPath.find_last_of('/'));
@@ -69,8 +75,19 @@ void ConfigManager::createDefaultConfig(const std::string& configPath)
 
     const auto* generic = options_.get<GenericSection>();
     configFile << "generic {\n";
-    configFile << "\tpolicy_dir = " << generic->getOption("policy_dir").get<std::string>() + "\n";
     configFile << "\tsocket_path = " << generic->getOption("socket_path").get<std::string>() + "\n";
+    configFile << "}\n\n";
+
+    section = options_.find("storage");
+    section->validate();
+
+    const auto* storage = options_.get<pki::StorageConfig>();
+    configFile << "storage {\n";
+    configFile << "\tstorage_dir = " << storage->getOption("storage_dir").get<std::string>() + "\n";
+    configFile << "\tpolicy_metadata = " << storage->getOption("policy_metadata").get<std::string>() + "\n";
+    configFile << "\tcerts_metadata = " << storage->getOption("certs_metadata").get<std::string>() + "\n";
+    configFile << "\tca_cert_filename = " << storage->getOption("ca_cert_filename").get<std::string>() + "\n";
+    configFile << "\tca_key_filename = " << storage->getOption("ca_key_filename").get<std::string>() + "\n";
     configFile << "}\n";
     configFile.close();
 

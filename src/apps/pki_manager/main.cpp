@@ -6,9 +6,8 @@
 #include <casket/server/generic_server.hpp>
 #include <casket/signal/signal_handler.hpp>
 
-#include <casket/opt/cmd_line_options_parser.hpp>
-#include <casket/opt/option_builder.hpp>
-#include <casket/opt/option_value_handler.hpp>
+#include <casket/opt/opt.hpp>
+#include <casket/log/log.hpp>
 
 #include "config/config_manager.hpp"
 
@@ -84,6 +83,9 @@ int main(int argc, char* argv[])
         ConfigManager config;
         config.initialize(params.configPath);
 
+        LogWorker logWorker(std::make_unique<ConsoleSink>());
+        AsyncLogger::getInstance().setLevel(LogLevel::DEBUG);
+
         SignalHandler signalHandler;
 
         std::atomic_bool interrupted{false};
@@ -97,7 +99,7 @@ int main(int argc, char* argv[])
                                           interrupted = true;
                                       });
 
-        pki::PKIManager proc(config.generic()->policyDirectory);
+        pki::PKIManager proc(*config.storage());
 
         GenericServerConfig conf;
         conf.idleTimeout = std::chrono::seconds(300);
@@ -146,6 +148,7 @@ int main(int argc, char* argv[])
         }
 
         server.stop();
+        logWorker.stop();
     }
     catch (std::exception& e)
     {
