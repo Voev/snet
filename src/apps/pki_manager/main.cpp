@@ -16,12 +16,14 @@ using namespace casket::opt;
 using namespace snet;
 using namespace snet::crypto;
 
+namespace fs = std::filesystem;
+
 class CmdLineProcessor final
 {
 public:
     struct Parameters
     {
-        std::string configPath{"/home/voev/.snet"};
+        std::string configPath;
     };
 
     CmdLineProcessor()
@@ -60,6 +62,18 @@ private:
     Parameters args_;
 };
 
+std::string getDefaultConfigPath()
+{
+    const char* home = std::getenv("HOME");
+    if (home == nullptr)
+    {
+        throw std::runtime_error("HOME environment variable is not set");
+    }
+    
+    fs::path configPath = fs::path(home) / ".snet";
+    return configPath.string();
+}
+
 int main(int argc, char* argv[])
 {
     LogWorker logWorker(std::make_unique<ConsoleSink>());
@@ -82,8 +96,14 @@ int main(int argc, char* argv[])
         const auto& params = cli.getParameters();
         disableStats = cli.getParser().isUsed("no-stats");
 
+        std::string configPath = params.configPath;
+        if (configPath.empty())
+        {
+            configPath = getDefaultConfigPath();
+        }
+
         ConfigManager config;
-        config.initialize(params.configPath);
+        config.initialize(configPath);
 
         AsyncLogger::getInstance().setLevel(LogLevel::DEBUG);
 

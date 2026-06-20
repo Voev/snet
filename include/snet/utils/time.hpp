@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
-#include <optional>
+#include <casket/nonstd/optional.hpp>
 
 namespace snet
 {
@@ -22,7 +22,7 @@ using Days = std::chrono::days;
 using Milliseconds = std::chrono::milliseconds;
 using Microseconds = std::chrono::microseconds;
 
-inline std::string format_time(const SystemTimePoint& time, const std::string& format = "%Y-%m-%d %H:%M:%S")
+inline std::string FormatTime(const SystemTimePoint& time, const std::string& format = "%Y-%m-%d %H:%M:%S")
 {
     auto time_t = SystemClock::to_time_t(time);
     std::stringstream ss;
@@ -30,12 +30,12 @@ inline std::string format_time(const SystemTimePoint& time, const std::string& f
     return ss.str();
 }
 
-inline std::string to_iso8601(const SystemTimePoint& time)
+inline std::string ToIso8601(const SystemTimePoint& time)
 {
-    return format_time(time, "%Y-%m-%dT%H:%M:%SZ");
+    return FormatTime(time, "%Y-%m-%dT%H:%M:%SZ");
 }
 
-inline std::optional<SystemTimePoint> from_iso8601(const std::string& iso_string)
+inline nonstd::optional<SystemTimePoint> FromIso8601(const std::string& iso_string)
 {
     std::tm tm = {};
     std::stringstream ss(iso_string);

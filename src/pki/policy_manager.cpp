@@ -9,7 +9,7 @@ namespace fs = std::filesystem;
 namespace snet::pki
 {
 
-static std::vector<std::type_index> getFieldTypes()
+static inline std::vector<std::type_index> GetFieldTypes()
 {
     return {
         typeid(std::string), // name
@@ -19,22 +19,25 @@ static std::vector<std::type_index> getFieldTypes()
     };
 }
 
-PolicyManager::PolicyManager(const StorageConfig& config)
-    : config_(config)
+static inline TXTDatabase CreateDatabase(const StorageConfig& config)
 {
     auto metadataPath = config.getPolicyMetadataPath();
 
     if (fs::exists(metadataPath))
     {
-        db_ = std::make_unique<TXTDatabase>(TXTDatabase::readFromFile(metadataPath, getFieldTypes()));
-        loadPolicies();
+        return TXTDatabase::readFromFile(metadataPath, GetFieldTypes());
     }
     else
     {
-        db_ = std::make_unique<TXTDatabase>(getFieldTypes());
+        return TXTDatabase(GetFieldTypes());
     }
+}
 
-    db_->createIndex(0);
+PolicyManager::PolicyManager(const StorageConfig& config)
+    : config_(config)
+    , db_(CreateDatabase(config))
+{
+    db_.createIndex(0);
 }
 
 PolicyManager::~PolicyManager() noexcept
@@ -51,13 +54,13 @@ void PolicyManager::createPolicy(const std::string& name)
         [&]()
         {
             CSK_LOG_DEBUG("creating directory '%s'", path.string().c_str());
-            std::filesystem::create_directories(path);
+            fs::create_directories(path);
         },
         [&]()
         {
             CSK_LOG_DEBUG("removing directory '%s'", path.string().c_str());
             std::error_code ec;
-            std::filesystem::remove_all(path, ec);
+            fs::remove_all(path, ec);
         });
 
     auto policy = std::make_shared<Policy>(name);
@@ -65,17 +68,17 @@ void PolicyManager::createPolicy(const std::string& name)
         [&]()
         {
             CSK_LOG_DEBUG("inserting entry '%s'", name.c_str());
-            casket::ThrowIfFalse(db_->insert(policy->toRow()),
+            casket::ThrowIfFalse(db_.insert(policy->toRow()),
                                  "{} row: {}, field: {}",
-                                 db_->getLastError(),
-                                 db_->getErrorRow(),
-                                 db_->getErrorField());
+                                 db_.getLastError(),
+                                 db_.getErrorRow(),
+                                 db_.getErrorField());
         },
         [&]()
         {
             CSK_LOG_DEBUG("removing entry '%s'", name.c_str());
             auto fieldValue = makeFieldValue(name);
-            casket::ThrowIfFalse(db_->removeByIndex(0, fieldValue), "{}", db_->getLastError());
+            casket::ThrowIfFalse(db_.removeByIndex(0, fieldValue), "{}", db_.getLastError());
         });
 
     chain.addAction(
@@ -95,7 +98,7 @@ void PolicyManager::createPolicy(const std::string& name)
         {
             CSK_LOG_DEBUG("writing entry into database '%s'", name.c_str());
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -126,18 +129,18 @@ void PolicyManager::removePolicy(const std::string& name)
         [&]()
         {
             auto fieldValue = makeFieldValue(name);
-            casket::ThrowIfFalse(db_->removeByIndex(0, fieldValue), "{}", db_->getLastError());
+            casket::ThrowIfFalse(db_.removeByIndex(0, fieldValue), "{}", db_.getLastError());
         },
         [&]()
         {
-            db_->insert(policyRow);
+            db_.insert(policyRow);
         });
 
     chain.addAction(
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.addAction(
@@ -193,7 +196,7 @@ void PolicyManager::enablePolicy(std::shared_ptr<Policy> policy)
         {
             CSK_LOG_DEBUG("saving policies to file");
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -241,7 +244,7 @@ void PolicyManager::disablePolicy(std::shared_ptr<Policy> policy)
         {
             CSK_LOG_DEBUG("saving policies to file");
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -277,7 +280,7 @@ void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::st
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -311,7 +314,7 @@ void PolicyManager::addCertificateToPolicy(std::shared_ptr<Policy> policy, const
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_->writeToFile(metadataPath);
+            db_.writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -326,7 +329,7 @@ std::shared_ptr<Policy> PolicyManager::getPolicy(const std::string& name) const
     }
 
     auto fieldValue = makeFieldValue(name);
-    const Row* row = db_->findByIndex(0, fieldValue);
+    const Row* row = db_.findByIndex(0, fieldValue);
     if (row)
     {
         Policy policy = Policy::fromRow(*row);
@@ -362,9 +365,9 @@ void PolicyManager::loadPolicies()
 {
     policies_.clear();
 
-    for (size_t i = 0; i < db_->size(); i++)
+    for (size_t i = 0; i < db_.size(); i++)
     {
-        const auto& row = db_->getRow(i);
+        const auto& row = db_.getRow(i);
         Policy policy = Policy::fromRow(row);
         policies_[policy.name] = std::make_shared<Policy>(policy);
     }
@@ -372,15 +375,15 @@ void PolicyManager::loadPolicies()
 
 bool PolicyManager::updatePolicy(const std::string& name, const Policy& policy)
 {
-    for (size_t i = 0; i < db_->size(); i++)
+    for (size_t i = 0; i < db_.size(); i++)
     {
-        const auto& row = db_->getRow(i);
+        const auto& row = db_.getRow(i);
         if (row.size() >= 1)
         {
             auto rowName = getFieldValue<std::string>(row[0]);
             if (rowName == name)
             {
-                return db_->updateRow(i, policy.toRow());
+                return db_.updateRow(i, policy.toRow());
             }
         }
     }

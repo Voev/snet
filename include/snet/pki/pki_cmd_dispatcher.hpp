@@ -10,7 +10,8 @@
 namespace snet::pki
 {
 
-enum class CommandErrorCode{
+enum class CommandErrorCode
+{
     None = 0,
     InvalidArguments,
     CommandNotFound,

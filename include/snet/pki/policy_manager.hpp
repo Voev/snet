@@ -55,7 +55,7 @@ private:
 
 private:
     const StorageConfig& config_;
-    std::unique_ptr<TXTDatabase> db_;
+    TXTDatabase db_;
     std::map<std::string, std::shared_ptr<Policy>> policies_;
 };
 
