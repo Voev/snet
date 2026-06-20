@@ -49,7 +49,6 @@ struct CommandError
         return code != CommandErrorCode::None;
     }
 
-    // Конвертация в строку
     std::string toString() const
     {
         if (message.empty())
