@@ -7,7 +7,6 @@
 
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/exception.hpp>
-#include <snet/utils/cast_uchar.hpp>
 
 #include <casket/nonstd/span.hpp>
 #include <casket/utils/exception.hpp>

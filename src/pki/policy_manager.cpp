@@ -1,8 +1,7 @@
 #include <snet/pki/policy_manager.hpp>
 
-#include <snet/utils/action_chain.hpp>
-
 #include <casket/log/log.hpp>
+#include <casket/utils/action_chain.hpp>
 #include <casket/utils/exception.hpp>
 
 namespace fs = std::filesystem;
@@ -45,7 +44,7 @@ PolicyManager::~PolicyManager() noexcept
 void PolicyManager::createPolicy(const std::string& name)
 {
     casket::ThrowIfTrue(policies_.find(name) != policies_.end(), "policy '{}' already created", name);
-    ActionChain chain;
+    casket::ActionChain chain;
 
     auto path = config_.getPolicyPath(name);
     chain.addAction(
@@ -111,7 +110,7 @@ void PolicyManager::removePolicy(const std::string& name)
     auto policyPath = config_.getPolicyPath(name);
     bool dirExists = fs::exists(policyPath);
 
-    ActionChain chain;
+    casket::ActionChain chain;
 
     chain.addAction(
         [&]()
@@ -156,7 +155,7 @@ void PolicyManager::removePolicy(const std::string& name)
 
 void PolicyManager::enablePolicy(std::shared_ptr<Policy> policy)
 {
-    ActionChain chain;
+    casket::ActionChain chain;
 
     auto oldStatus = policy->status;
 
@@ -204,7 +203,7 @@ void PolicyManager::enablePolicy(std::shared_ptr<Policy> policy)
 
 void PolicyManager::disablePolicy(std::shared_ptr<Policy> policy)
 {
-    ActionChain chain;
+    casket::ActionChain chain;
 
     auto oldStatus = policy->status;
 
@@ -252,7 +251,7 @@ void PolicyManager::disablePolicy(std::shared_ptr<Policy> policy)
 
 void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::string& keyPath)
 {
-    ActionChain chain;
+    casket::ActionChain chain;
 
     auto oldKeyPath = policy->caKeyPath;
     auto oldStatus = policy->status;
@@ -286,7 +285,7 @@ void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::st
 
 void PolicyManager::addCertificateToPolicy(std::shared_ptr<Policy> policy, const std::string& certPath)
 {
-    ActionChain chain;
+    casket::ActionChain chain;
 
     auto oldCertPath = policy->caCertPath;
     auto oldStatus = policy->status;

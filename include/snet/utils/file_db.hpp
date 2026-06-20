@@ -75,7 +75,6 @@ public:
     }
 };
 
-// Базовый класс для значений полей
 class FieldValue
 {
 public:
@@ -88,7 +87,6 @@ public:
     virtual size_t hash() const = 0;
 };
 
-// Шаблонный класс для конкретных типов полей
 template <typename T>
 class TypedFieldValue : public FieldValue
 {
@@ -169,14 +167,12 @@ public:
         return value;
     }
 
-    // Для удобства преобразования
     operator T() const
     {
         return value;
     }
 };
 
-// Специализация для bool
 template <>
 class TypedFieldValue<bool> : public FieldValue
 {
@@ -243,17 +239,14 @@ public:
     }
 };
 
-// Тип строки с поддержкой разных типов полей
 using Row = std::vector<std::shared_ptr<FieldValue>>;
 
-// Вспомогательные функции для создания значений полей
 template <typename T>
 std::shared_ptr<FieldValue> makeFieldValue(const T& value)
 {
     return std::make_shared<TypedFieldValue<T>>(value);
 }
 
-// Класс для хеширования FieldValue
 struct FieldValueHash
 {
     size_t operator()(const std::shared_ptr<FieldValue>& fv) const
@@ -262,7 +255,6 @@ struct FieldValueHash
     }
 };
 
-// Класс для сравнения FieldValue
 struct FieldValueEqual
 {
     bool operator()(const std::shared_ptr<FieldValue>& a, const std::shared_ptr<FieldValue>& b) const
@@ -275,7 +267,6 @@ struct FieldValueEqual
     }
 };
 
-// Класс для сравнения FieldValue (для map)
 struct FieldValueCompare
 {
     bool operator()(const std::shared_ptr<FieldValue>& a, const std::shared_ptr<FieldValue>& b) const
@@ -290,7 +281,6 @@ struct FieldValueCompare
     }
 };
 
-// Шаблонный класс для текстовой базы данных
 class TXTDatabase
 {
 private:
@@ -352,7 +342,6 @@ private:
         {
             return makeFieldValue(str == "true" || str == "1");
         }
-        // Character types
         else if (type == typeid(char))
         {
             return makeFieldValue(str.empty() ? '\0' : str[0]);
@@ -363,10 +352,8 @@ private:
         }
         else if (type == typeid(unsigned char))
         {
-            // Parse as number, not as character
             return makeFieldValue(static_cast<unsigned char>(std::stoul(str)));
         }
-        // Integer types
         else if (type == typeid(short))
         {
             return makeFieldValue(static_cast<short>(std::stoi(str)));
@@ -399,7 +386,6 @@ private:
         {
             return makeFieldValue(std::stoull(str));
         }
-        // Floating point types
         else if (type == typeid(float))
         {
             return makeFieldValue(std::stof(str));
@@ -415,7 +401,6 @@ private:
         }
     }
 
-    // Вспомогательная функция для экранирования строки
     std::string escapeString(const std::string& str) const
     {
         std::string result;
@@ -430,7 +415,6 @@ private:
         return result;
     }
 
-    // Вспомогательная функция для декодирования строки
     std::string unescapeString(const std::string& str) const
     {
         std::string result;
@@ -455,7 +439,6 @@ private:
     }
 
 public:
-    // Конструктор
     explicit TXTDatabase(int fields)
         : numFields(fields)
         , errorField(-1)
@@ -466,10 +449,9 @@ public:
             throw TXTDBException(TXTDBException::INDEX_OUT_OF_RANGE, "Fields count must be positive");
         }
         indices.resize(fields);
-        fieldTypes.resize(fields, typeid(std::string)); // По умолчанию строки
+        fieldTypes.resize(fields, typeid(std::string));
     }
 
-    // Конструктор с указанием типов полей
     TXTDatabase(const std::vector<std::type_index>& types)
         : numFields(types.size())
         , errorField(-1)
@@ -483,15 +465,12 @@ public:
         indices.resize(numFields);
     }
 
-    // Запрещаем копирование
     TXTDatabase(const TXTDatabase&) = delete;
     TXTDatabase& operator=(const TXTDatabase&) = delete;
 
-    // Разрешаем перемещение
     TXTDatabase(TXTDatabase&&) = default;
     TXTDatabase& operator=(TXTDatabase&&) = default;
 
-    // Установка типа поля
     void setFieldType(int field, std::type_index type)
     {
         if (field < 0 || field >= numFields)
@@ -499,8 +478,6 @@ public:
             throw TXTDBException(TXTDBException::INDEX_OUT_OF_RANGE, "Field index out of range");
         }
         fieldTypes[field] = type;
-        // Если уже есть данные, их нужно переконвертировать
-        // В реальном приложении здесь может быть более сложная логика
     }
 
     bool updateRow(size_t index, const Row& newRow)
@@ -517,7 +494,6 @@ public:
             return false;
         }
 
-        // Проверяем типы
         for (int i = 0; i < numFields; i++)
         {
             if (!newRow[i] || newRow[i]->getType() != fieldTypes[i])
@@ -527,10 +503,8 @@ public:
             }
         }
 
-        // Сохраняем старую строку для обновления индексов
         Row oldRow = data[index];
 
-        // Проверяем индексы на дубликаты (кроме самой обновляемой строки)
         for (int i = 0; i < numFields; i++)
         {
             if (indices[i].hashIndex && i < (int)newRow.size())
@@ -570,7 +544,6 @@ public:
             }
         }
 
-        // Удаляем старую строку из индексов
         for (int i = 0; i < numFields; i++)
         {
             if (i < (int)oldRow.size() && oldRow[i])
@@ -592,10 +565,8 @@ public:
             }
         }
 
-        // Обновляем строку
         data[index] = newRow;
 
-        // Добавляем новую строку в индексы
         for (int i = 0; i < numFields; i++)
         {
             if (i < (int)newRow.size() && newRow[i])
@@ -620,7 +591,6 @@ public:
         return true;
     }
 
-    // Чтение базы данных из потока
     static TXTDatabase read(std::istream& in, const std::vector<std::type_index>& fieldTypes)
     {
         TXTDatabase db(fieldTypes);
@@ -690,7 +660,6 @@ public:
         return db;
     }
 
-    // Чтение из файла
     static TXTDatabase readFromFile(const std::string& filename, const std::vector<std::type_index>& fieldTypes)
     {
         std::ifstream file(filename);
@@ -701,116 +670,6 @@ public:
         return read(file, fieldTypes);
     }
 
-    // Чтение базы данных с автоматическим определением типов
-    static TXTDatabase readAuto(std::istream& in, int numFields)
-    {
-        std::vector<std::type_index> types(numFields, typeid(std::string));
-        TXTDatabase db(types);
-        std::string line;
-        int lineNum = 0;
-
-        while (std::getline(in, line))
-        {
-            lineNum++;
-
-            if (line.empty() || line[0] == '#')
-            {
-                continue;
-            }
-
-            if (!line.empty() && line.back() == '\r')
-            {
-                line.pop_back();
-            }
-
-            Row row;
-            std::string field;
-            bool escape = false;
-
-            for (char c : line)
-            {
-                if (escape)
-                {
-                    field += c;
-                    escape = false;
-                }
-                else if (c == '\\')
-                {
-                    escape = true;
-                }
-                else if (c == '\t')
-                {
-                    // Автоматически определяем тип
-                    std::shared_ptr<FieldValue> value = db.parseFieldAuto(field);
-                    row.push_back(value);
-                    field.clear();
-                }
-                else
-                {
-                    field += c;
-                }
-            }
-
-            if (!field.empty())
-            {
-                row.push_back(db.parseFieldAuto(field));
-            }
-
-            if ((int)row.size() != numFields)
-            {
-                throw TXTDBException(TXTDBException::WRONG_NUM_FIELDS,
-                                     "Line " + std::to_string(lineNum) + ": expected " + std::to_string(numFields) +
-                                         " fields, got " + std::to_string(row.size()));
-            }
-
-            db.data.push_back(std::move(row));
-        }
-
-        return db;
-    }
-
-    // Автоматический парсинг поля
-    std::shared_ptr<FieldValue> parseFieldAuto(const std::string& str)
-    {
-        // Пробуем парсить как int
-        try
-        {
-            size_t pos;
-            int val = std::stoi(str, &pos);
-            if (pos == str.length())
-            {
-                return makeFieldValue(val);
-            }
-        }
-        catch (...)
-        {
-        }
-
-        // Пробуем парсить как double
-        try
-        {
-            size_t pos;
-            double val = std::stod(str, &pos);
-            if (pos == str.length())
-            {
-                return makeFieldValue(val);
-            }
-        }
-        catch (...)
-        {
-        }
-
-        // Пробуем парсить как bool
-        if (str == "true" || str == "false" || str == "1" || str == "0")
-        {
-            return makeFieldValue(str == "true" || str == "1");
-        }
-
-        // По умолчанию - строка
-        return makeFieldValue(str);
-    }
-
-    // Запись базы данных в поток
     void write(std::ostream& out) const
     {
         for (const auto& row : data)
@@ -829,7 +688,6 @@ public:
         }
     }
 
-    // Запись в файл
     void writeToFile(const std::string& filename) const
     {
         std::ofstream file(filename);
@@ -840,7 +698,6 @@ public:
         write(file);
     }
 
-    // Создание индекса по полю (хеш-индекс)
     bool createIndex(int field, std::function<bool(const Row&)> qualifier = nullptr)
     {
         if (field < 0 || field >= numFields)
@@ -884,7 +741,6 @@ public:
         return true;
     }
 
-    // Создание сортированного индекса по полю
     bool createSortedIndex(int field, std::function<bool(const Row&)> qualifier = nullptr)
     {
         if (field < 0 || field >= numFields)
@@ -917,7 +773,6 @@ public:
         return true;
     }
 
-    // Поиск по хеш-индексу
     const Row* findByIndex(int field, const std::shared_ptr<FieldValue>& value) const
     {
         if (field < 0 || field >= numFields)
@@ -947,7 +802,6 @@ public:
         return &data[it->second];
     }
 
-    // Поиск по хеш-индексу с типизированным значением
     template <typename T>
     const Row* findByIndex(int field, const T& value) const
     {
@@ -955,7 +809,6 @@ public:
         return findByIndex(field, fieldValue);
     }
 
-    // Поиск по сортированному индексу (диапазон)
     std::vector<const Row*> findRange(int field, const std::shared_ptr<FieldValue>& start,
                                       const std::shared_ptr<FieldValue>& end) const
     {
@@ -988,7 +841,6 @@ public:
         return result;
     }
 
-    // Поиск по сортированному индексу с типизированными значениями
     template <typename T>
     std::vector<const Row*> findRange(int field, const T& start, const T& end) const
     {
@@ -997,7 +849,6 @@ public:
         return findRange(field, startVal, endVal);
     }
 
-    // Вставка строки
     bool insert(Row row)
     {
         if ((int)row.size() != numFields)
@@ -1006,7 +857,6 @@ public:
             return false;
         }
 
-        // Проверяем типы полей
         for (int i = 0; i < numFields; i++)
         {
             if (!row[i] || row[i]->getType() != fieldTypes[i])
@@ -1016,7 +866,6 @@ public:
             }
         }
 
-        // Проверяем индексы на дубликаты
         for (int i = 0; i < numFields; i++)
         {
             if (indices[i].hashIndex && i < (int)row.size())
@@ -1056,12 +905,10 @@ public:
             }
         }
 
-        // Добавляем строку
         size_t newIndex = data.size();
         data.push_back(std::move(row));
         const Row& newRow = data.back();
 
-        // Обновляем индексы
         for (int i = 0; i < numFields; i++)
         {
             if (i < (int)newRow.size() && newRow[i])
@@ -1086,7 +933,6 @@ public:
         return true;
     }
 
-    // Вставка строки с типизированными значениями
     template <typename... Args>
     bool insert(Args... args)
     {
@@ -1095,7 +941,6 @@ public:
         return insert(row);
     }
 
-    // Удаление строки по индексу
     bool removeByIndex(int field, const std::shared_ptr<FieldValue>& value)
     {
         if (field < 0 || field >= numFields)
@@ -1123,7 +968,6 @@ public:
             return false;
         }
 
-        // Удаляем из всех индексов
         const Row& row = data[rowIndex];
         for (int i = 0; i < numFields; i++)
         {
@@ -1146,10 +990,8 @@ public:
             }
         }
 
-        // Удаляем строку
         data.erase(data.begin() + rowIndex);
 
-        // Обновляем индексы для строк после удаленной
         for (size_t i = rowIndex; i < data.size(); i++)
         {
             const Row& updatedRow = data[i];
@@ -1183,7 +1025,6 @@ public:
         return true;
     }
 
-    // Получение строки по индексу
     const Row& getRow(size_t index) const
     {
         if (index >= data.size())
@@ -1193,7 +1034,6 @@ public:
         return data[index];
     }
 
-    // Получение значения поля с преобразованием типа
     template <typename T>
     T getField(const Row& row, int field) const
     {
@@ -1210,19 +1050,16 @@ public:
         return typedField->getValue();
     }
 
-    // Получение количества строк
     size_t size() const
     {
         return data.size();
     }
 
-    // Получение количества полей
     int getNumFields() const
     {
         return numFields;
     }
 
-    // Получение типа поля
     std::type_index getFieldType(int field) const
     {
         if (field < 0 || field >= numFields)
@@ -1232,7 +1069,6 @@ public:
         return fieldTypes[field];
     }
 
-    // Очистка базы данных
     void clear() noexcept
     {
         data.clear();
@@ -1250,27 +1086,26 @@ public:
         }
     }
 
-    // Получение последней ошибки
     std::string getLastError() const
     {
         return lastError;
     }
 
-    // Получение информации об ошибке индекса
     int getErrorField() const
     {
         return errorField;
     }
+    
     size_t getErrorRow() const
     {
         return errorRow;
     }
+    
     Row getErrorRowData() const
     {
         return errorRowData;
     }
 
-    // Вывод базы данных в читаемом виде
     void print(std::ostream& out) const
     {
         for (const auto& row : data)

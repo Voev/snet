@@ -9,12 +9,12 @@
 #include <snet/pki/cert_fingerprint.hpp>
 #include <snet/pki/cert_status.hpp>
 #include <snet/pki/cert_cache.hpp>
-
 #include <snet/pki/storage_config.hpp>
 
 #include <snet/utils/file_db.hpp>
-#include <snet/utils/action_chain.hpp>
 #include <snet/crypto/cert.hpp>
+
+#include <casket/utils/action_chain.hpp>
 
 namespace snet::pki
 {
@@ -172,7 +172,7 @@ public:
         record.status = CertStatus::VALID;
         record.certPath = certPath;
 
-        ActionChain chain;
+        casket::ActionChain chain;
 
         chain.addAction(
             [&cert, &certPath]()
