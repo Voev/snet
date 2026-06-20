@@ -8,6 +8,8 @@ PKIManager::PKIManager(const StorageConfig& storageConfig)
     , policyManager_(std::make_unique<PolicyManager>(storageConfig))
     , certManager_(std::make_unique<CertManager>(storageConfig))
 {
+    registerCommands();
+
     auto policies = policyManager_->getReadyPolicies();
     for (const auto& policy : policies)
     {
@@ -15,84 +17,97 @@ PKIManager::PKIManager(const StorageConfig& storageConfig)
     }
 }
 
-std::string PKIManager::handleCreatePolicy(const std::string& name)
+CommandResult<std::string> PKIManager::handleHelp()
+{
+    std::ostringstream oss;
+    dispatcher_.printCommands(oss);
+    return success(oss.str());
+}
+
+CommandResult<std::string> PKIManager::handleCreatePolicy(const std::string& name)
 {
     try
     {
         policyManager_->createPolicy(name);
-        return "OK: policy '" + name + "' was created successfully";
+        return success("OK: policy '" + name + "' was created successfully");
     }
     catch (const std::exception& e)
     {
-        return "ERROR: " + std::string(e.what());
+        return error("ERROR: failed to create policy '" + name + "': " + std::string(e.what()));
     }
 }
 
-std::string PKIManager::handleRemovePolicy(const std::string& name)
+CommandResult<std::string> PKIManager::handleRemovePolicy(const std::string& name)
 {
     try
     {
         policyManager_->removePolicy(name);
-        return "OK: policy '" + name + "' successfully removed";
+        return success("OK: policy '" + name + "' successfully removed");
     }
     catch (const std::exception& e)
     {
-        return "ERROR: failed to remove policy '" + name + "': " + e.what();
+        return error("ERROR: failed to remove policy '" + name + "': " + e.what());
     }
 }
 
-std::string PKIManager::handleEnablePolicy(const std::string& name)
+CommandResult<std::string> PKIManager::handleEnablePolicy(const std::string& name)
 {
     try
     {
         auto policy = policyManager_->getPolicy(name);
         casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
 
+        /// @todo: use action chain
         loadEntity(policy);
 
         policyManager_->enablePolicy(policy);
-        return "OK: policy '" + name + "' successfully enabled";
+        return success("OK: policy '" + name + "' successfully enabled");
     }
     catch (const std::exception& e)
     {
-        return "ERROR: failed to enable policy '" + name + "': " + e.what();
+        return error("ERROR: failed to enable policy '" + name + "': " + e.what());
     }
 }
 
-std::string PKIManager::handleDisablePolicy(const std::string& name)
+CommandResult<std::string> PKIManager::handleDisablePolicy(const std::string& name)
 {
     try
     {
         auto policy = policyManager_->getPolicy(name);
         casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
 
+        /// @todo: use action chain
         unloadEntity(name);
 
         policyManager_->disablePolicy(policy);
-        return "OK: policy '" + name + "' successfully removed";
+        return success("OK: policy '" + name + "' successfully removed");
     }
     catch (const std::exception& e)
     {
-        return "ERROR: failed to disable policy '" + name + "': " + e.what();
+        return error("ERROR: failed to disable policy '" + name + "': " + e.what());
     }
 }
 
-std::string PKIManager::handlePolicyInfo(const std::string& name)
+CommandResult<std::string> PKIManager::handlePolicyInfo(const std::string& name)
 {
-    auto policy = policyManager_->getPolicy(name);
-    if (!policy)
+    try
     {
-        return "ERROR: Policy '" + name + "' not found";
-    }
+        auto policy = policyManager_->getPolicy(name);
+        casket::ThrowIfTrue(policy == nullptr, "policy does not exist");
 
-    std::ostringstream response;
-    response << "Policy: " << name << "\n";
-    response << "  CA Certificate: " << policy->caCertPath << "\n";
-    response << "  CA Key: " << policy->caKeyPath << "\n";
-    return response.str();
+        std::ostringstream response;
+        response << "Policy: " << name << "\n";
+        response << "  CA Certificate: " << policy->caCertPath << "\n";
+        response << "  CA Key: " << policy->caKeyPath << "\n";
+        return success(response.str());
+    }
+    catch (const std::exception& e)
+    {
+        return error("ERROR: failed to handle policy '" + name + "': " + e.what());
+    }
 }
 
-std::string PKIManager::handleGenerateKey(const std::string& name)
+CommandResult<std::string> PKIManager::handleGenerateKey(const std::string& name)
 {
     try
     {
@@ -120,19 +135,15 @@ std::string PKIManager::handleGenerateKey(const std::string& name)
 
         policyManager_->addKeyToPolicy(policy, keyPath);
 
-        return "OK: private key successfully generated for policy '" + name + "' at: " + keyPath;
-    }
-    catch (const std::filesystem::filesystem_error& e)
-    {
-        return "ERROR: filesystem error for policy '" + name + "': " + e.what();
+        return success("OK: private key successfully generated for policy '" + name + "' at: " + keyPath);
     }
     catch (const std::exception& e)
     {
-        return "ERROR: policy '" + name + "': " + e.what();
+        return error("ERROR: policy '" + name + "': " + e.what());
     }
 }
 
-std::string PKIManager::handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn)
+CommandResult<std::string> PKIManager::handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn)
 {
     try
     {
@@ -165,27 +176,21 @@ std::string PKIManager::handleGenerateSelfSignedCert(const std::string& name, co
 
         policyManager_->addCertificateToPolicy(policy, certPath);
 
-        return "OK: self-signed certificate successfully generated for policy '" + name + "' at: " + certPath;
-    }
-    catch (const std::filesystem::filesystem_error& e)
-    {
-        return "ERROR: filesystem error for policy '" + name + "': " + e.what();
+        return success("OK: self-signed certificate successfully generated for policy '" + name + "' at: " + certPath);
     }
     catch (const std::exception& e)
     {
-        return "ERROR: failed to generate self-signed certificate for policy '" + name + "': " + e.what();
+        return error("ERROR: failed to generate self-signed certificate for policy '" + name + "': " + e.what());
     }
 }
 
-std::string PKIManager::handleResign(const std::string& name, const std::string& base64Cert, const std::string& base64PublicKey)
+CommandResult<std::string> PKIManager::handleResign(const std::string& name, const std::string& base64Cert,
+                                                    const std::string& base64PublicKey)
 {
     try
     {
         auto policy = policyManager_->getPolicy(name);
-        if (!policy)
-        {
-            return "ERROR: Policy '" + name + "' not found";
-        }
+        casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
 
         auto cert = crypto::Cert::fromBase64(base64Cert);
         auto fingerprint = CertFingerprintGenerator::generate(cert, EVP_sha1());
@@ -193,13 +198,13 @@ std::string PKIManager::handleResign(const std::string& name, const std::string&
         auto resignedCert = certManager_->findByFingerprint(fingerprint, SteadyClock::now());
         if (resignedCert)
         {
-            return crypto::Cert::toBase64(resignedCert);
+            return success(crypto::Cert::toBase64(resignedCert));
         }
 
         auto ca = entities_.find(name);
         if (ca == entities_.end())
         {
-            return "ERROR: not found entity";
+            return error("ERROR: not found entity");
         }
 
         auto publicKey = crypto::AsymmKey::fromBase64(KeyType::Public, base64PublicKey);
@@ -209,13 +214,141 @@ std::string PKIManager::handleResign(const std::string& name, const std::string&
 
         certManager_->insertCertificate(name, fingerprint, res);
 
-        return base64Result;
+        return success(std::move(base64Result));
     }
     catch (const std::exception& e)
     {
-        std::string err = "ERROR: Failed to sign request with policy '" + name + "': ";
-        return err + e.what();
+        return error("ERROR: Failed to sign request with policy '" + name + "': " + e.what());
     }
+}
+
+void PKIManager::registerCommands()
+{
+    dispatcher_.registerCommand("help",
+                                "Show this help",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    (void)args;
+                                    return handleHelp();
+                                });
+
+    dispatcher_.registerCommand("create-policy",
+                                "Create a new policy with name",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: create-policy <name>");
+                                    }
+                                    return handleCreatePolicy(args[0]);
+                                });
+
+    dispatcher_.registerCommand("rm-policy",
+                                "Remove existing policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: rm-policy <name>");
+                                    }
+                                    return handleRemovePolicy(args[0]);
+                                });
+
+    dispatcher_.registerCommand("info-policy",
+                                "Print information about policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: info-policy <name>");
+                                    }
+                                    return handlePolicyInfo(args[0]);
+                                });
+
+    dispatcher_.registerCommand("enable-policy",
+                                "Enable existing policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: enable-policy <name>");
+                                    }
+                                    return handleEnablePolicy(args[0]);
+                                });
+
+    dispatcher_.registerCommand("disable-policy",
+                                "Disable existing policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: disable-policy <name>");
+                                    }
+                                    return handleDisablePolicy(args[0]);
+                                });
+
+    dispatcher_.registerCommand("gen-key",
+                                "Generate private key for policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 1 || args[0].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: gen-key <name>");
+                                    }
+                                    return handleGenerateKey(args[0]);
+                                });
+
+    dispatcher_.registerCommand("gen-ss-cert",
+                                "Generate self-signed certificate",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 2 || args[0].empty() || args[1].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: gen-ss-cert <name> <cert_dn>");
+                                    }
+                                    return handleGenerateSelfSignedCert(args[0], args[1]);
+                                });
+}
+
+bool PKIManager::processCommand(casket::Context<casket::UnixSocket>& ctx)
+{
+    std::error_code ec{};
+    PKIManagerResponse resp{};
+
+    auto req = ctx.readThenUnpack<PKIManagerCommand>(ec);
+
+    if (!req.has_value())
+    {
+        resp.retcode = "ERROR: " + CommandError(CommandErrorCode::InvalidArguments).toString();
+        return ctx.packThenSend<PKIManagerResponse>(resp, ec);
+    }
+
+    std::vector<std::string> args;
+    if (!req.value().args.empty())
+    {
+        args = casket::split(req.value().args, " ");
+    }
+
+    auto result = dispatcher_.execute(req.value().command, args);
+
+    if (result.has_value())
+    {
+        resp.retcode = result.value();
+    }
+    else
+    {
+        const auto& err = result.error();
+        if (!err.message.empty())
+        {
+            resp.retcode = "ERROR: " + err.message;
+        }
+        else
+        {
+            resp.retcode = "ERROR: " + err.codeToString();
+        }
+    }
+
+    return ctx.packThenSend<PKIManagerResponse>(resp, ec);
 }
 
 void PKIManager::loadEntity(const std::shared_ptr<Policy>& policy)

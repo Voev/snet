@@ -3,6 +3,7 @@
 #include <casket/utils/string.hpp>
 #include <casket/nonstd/optional.hpp>
 
+#include <snet/pki/pki_cmd_dispatcher.hpp>
 #include <snet/pki/storage_config.hpp>
 #include <snet/pki/cert_manager.hpp>
 #include <snet/pki/policy_manager.hpp>
@@ -153,208 +154,28 @@ class PKIManager
 public:
     explicit PKIManager(const StorageConfig& storageDir);
 
-    std::string handleHelp()
-    {
-        return "Commands:\n"
-               "  create-policy <name>                 - Create a new policy with name\n"
-               "  gen-key <name>                       - Generate private key for policy\n"
-               "  gen-ss-cert <name>                   - Generate self-signed certificate for policy\n"
-               "  info-policy <name>                   - Print information about existing policy\n"
-               "  add-policy <name> <ca_cert> <ca_key> - Add new policy\n"
-               "  rm-policy <name>                     - Remove existing policy\n"
-               "  help                                 - Show this help";
-    }
+    CommandResult<std::string> handleHelp();
 
-    std::string handleCreatePolicy(const std::string& name);
+    CommandResult<std::string> handleCreatePolicy(const std::string& name);
 
-    std::string handleRemovePolicy(const std::string& name);
+    CommandResult<std::string> handleRemovePolicy(const std::string& name);
 
-    std::string handleEnablePolicy(const std::string& name);
+    CommandResult<std::string> handleEnablePolicy(const std::string& name);
 
-    std::string handleDisablePolicy(const std::string& name);
+    CommandResult<std::string> handleDisablePolicy(const std::string& name);
 
-    std::string handlePolicyInfo(const std::string& name);
+    CommandResult<std::string> handlePolicyInfo(const std::string& name);
 
-    std::string handleGenerateKey(const std::string& name);
+    CommandResult<std::string> handleGenerateKey(const std::string& name);
 
-    std::string handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn);
+    CommandResult<std::string> handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn);
 
-    std::string handleResign(const std::string& name, const std::string& base64Cert,
-                             const std::string& base64PublicKey);
+    CommandResult<std::string> handleResign(const std::string& name, const std::string& base64Cert,
+                                            const std::string& base64PublicKey);
 
-    bool processCommand(casket::Context<casket::UnixSocket>& ctx)
-    {
-        std::error_code ec{};
-        PKIManagerResponse resp{};
+    void registerCommands();
 
-        auto req = ctx.readThenUnpack<PKIManagerCommand>(ec);
-
-        if (req.has_value())
-        {
-            if (req.value().command == "create-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleCreatePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "gen-key")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleGenerateKey(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "gen-ss-cert")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 2)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleGenerateSelfSignedCert(tokens[0], tokens[1]);
-                    }
-                }
-            }
-            else if (req.value().command == "rm-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleRemovePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "info-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handlePolicyInfo(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "enable-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleEnablePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "disable-policy")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 1)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleDisablePolicy(tokens[0]);
-                    }
-                }
-            }
-            else if (req.value().command == "sign-csr")
-            {
-                if (req.value().args.empty())
-                {
-                    resp.retcode = "ERROR: invalid parameters";
-                }
-                else
-                {
-                    auto tokens = casket::split(req.value().args, " ");
-                    if (tokens.size() != 3)
-                    {
-                        resp.retcode = "ERROR: invalid count of parameters";
-                    }
-                    else
-                    {
-                        resp.retcode = handleResign(tokens[0], tokens[1], tokens[2]);
-                    }
-                }
-            }
-            else if (req.value().command == "help" || req.value().command == "?")
-            {
-                resp.retcode = handleHelp();
-            }
-        }
-        else
-        {
-            resp.retcode = "ERROR: Unknown command. Type 'help' for available commands";
-        }
-
-        return ctx.packThenSend<PKIManagerResponse>(resp, ec);
-    }
+    bool processCommand(casket::Context<casket::UnixSocket>& ctx);
 
 private:
     void loadEntity(const std::shared_ptr<Policy>& policy);
@@ -363,6 +184,7 @@ private:
 
 private:
     const StorageConfig& storageConfig_;
+    PKICommandDispatcher dispatcher_;
     std::unique_ptr<PolicyManager> policyManager_;
     std::unique_ptr<CertManager> certManager_;
     std::map<std::string, std::shared_ptr<crypto::CertAuthority>> entities_;
