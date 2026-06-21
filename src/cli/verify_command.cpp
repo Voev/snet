@@ -3,9 +3,7 @@
 #include <openssl/x509_vfy.h>
 #include <openssl/safestack.h>
 
-#include <casket/opt/option_builder.hpp>
-#include <casket/opt/cmd_line_options_parser.hpp>
-
+#include <casket/opt/opt.hpp>
 #include <casket/log/log.hpp>
 
 #include <snet/cli/command_dispatcher.hpp>

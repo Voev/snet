@@ -1,6 +1,5 @@
 #include <chrono>
-#include <casket/opt/option_builder.hpp>
-#include <casket/opt/cmd_line_options_parser.hpp>
+#include <casket/opt/opt.hpp>
 #include <casket/thread/pool.hpp>
 #include <casket/lock_free/queue.hpp>
 
@@ -41,7 +40,7 @@ bool Connect(const Endpoint& endpoint)
         if (ec == std::errc::operation_in_progress)
         {
             ec.clear();
-            WaitSocket(socket, false, 3s, ec);
+            WaitSocketSelect(socket, false, 3s, ec);
         }
         casket::ThrowIfError(ec);
     }

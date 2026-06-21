@@ -1,0 +1,288 @@
+#include <iostream>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+#include <algorithm>
+#include <string>
+#include <utility>
+
+#include <casket/client/generic_client.hpp>
+#include <casket/opt/opt.hpp>
+#include <casket/utils/timer.hpp>
+
+#include <snet/pki/pki_manager.hpp>
+
+using namespace snet;
+using namespace snet::pki;
+using namespace casket;
+using namespace casket::opt;
+
+inline std::pair<std::string, std::string> splitIntoTwo(const std::string& str)
+{
+    // Trim leading/trailing spaces
+    size_t start = str.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos)
+    {
+        return {"", ""};
+    }
+
+    size_t end = str.find_last_not_of(" \t\n\r");
+    std::string trimmed = str.substr(start, end - start + 1);
+
+    // Find first space
+    size_t spacePos = trimmed.find_first_of(" \t");
+
+    if (spacePos == std::string::npos)
+    {
+        // No arguments, just command
+        return {trimmed, ""};
+    }
+
+    // Split into command and args
+    std::string command = trimmed.substr(0, spacePos);
+    std::string args = trimmed.substr(spacePos + 1);
+
+    // Trim args
+    size_t argsStart = args.find_first_not_of(" \t\n\r");
+    if (argsStart != std::string::npos)
+    {
+        args = args.substr(argsStart);
+    }
+
+    return {command, args};
+}
+
+struct CommandOptions
+{
+    std::string connectAddress;
+    std::chrono::milliseconds timeout{5000};
+    bool interactive{false};
+    bool verbose{false};
+};
+
+class CertManagerInterpreter final
+{
+public:
+    CertManagerInterpreter()
+    {
+        // clang-format off
+        parser_.add(
+            OptionBuilder("help")
+                .setDescription("Print help message")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("connect", Value(&options_.connectAddress))
+                .setDescription("Connection address")
+                .setDefaultValue("/tmp/cert_siner")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("timeout", Value(&options_.timeout))
+                .setDescription("Request timeout (ms)")
+                .setDefaultValue(5000)
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("interactive")
+                .setDescription("Run in interactive mode")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("verbose")
+                .setDescription("Verbose output")
+                .build()
+        );
+        parser_.add(
+            OptionBuilder("command", Value(&singleCommand_))
+                .setDescription("Execute single command and exit")
+                .build()
+        );
+        // clang-format on
+    }
+
+    ~CertManagerInterpreter() = default;
+
+    int run(int argc, char* argv[])
+    {
+        parser_.parse(argc, argv);
+
+        if (parser_.isUsed("help"))
+        {
+            parser_.help(std::cout, argv[0]);
+            return EXIT_SUCCESS;
+        }
+
+        parser_.validate();
+
+        options_.interactive = parser_.isUsed("interactive");
+        options_.verbose = parser_.isUsed("verbose");
+
+        // Connect to server
+        if (!connectToServer())
+        {
+            return EXIT_FAILURE;
+        }
+
+        // Execute single command if provided
+        if (!singleCommand_.empty())
+        {
+            return executeCommand(singleCommand_) ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
+
+        // Interactive mode
+        if (options_.interactive)
+        {
+            return interactiveMode();
+        }
+
+        // No command specified
+        std::cerr << "No command specified. Use --command or --interactive mode." << std::endl;
+        parser_.help(std::cout, argv[0]);
+        return EXIT_FAILURE;
+    }
+
+private:
+    bool connectToServer()
+    {
+        std::error_code ec;
+
+        std::cout << "Connecting to " << options_.connectAddress << "..." << std::endl;
+
+        if (!client_.connect(options_.connectAddress, -1, false, ec))
+        {
+            std::cerr << "Failed to connect: " << ec.message() << std::endl;
+            return false;
+        }
+
+        if (!client_.isConnected(options_.timeout, ec))
+        {
+            std::cerr << "Connection timeout: " << ec.message() << std::endl;
+            return false;
+        }
+
+        std::cout << "Connected successfully!" << std::endl;
+        return true;
+    }
+
+    bool executeCommand(const std::string& commandLine)
+    {
+        PKIManagerCommand command;
+
+        // Parse command line
+        if (!parseCommand(commandLine, command))
+        {
+            return false;
+        }
+
+        if (options_.verbose)
+        {
+            printCommand(command);
+        }
+
+        // Send command
+        std::error_code ec;
+        Timer timer;
+        timer.start();
+
+        if (!client_.send(command, ec))
+        {
+            std::cerr << "Failed to send command: " << ec.message() << std::endl;
+            return false;
+        }
+
+        // Receive response
+        auto response = client_.receive<PKIManagerResponse>(ec);
+        timer.stop();
+
+        if (!response)
+        {
+            std::cerr << "Failed to receive response: " << ec.message() << std::endl;
+            return false;
+        }
+
+        // Print response
+        printResponse(*response, timer.elapsedMicroSecs());
+
+        return true;
+    }
+
+    bool parseCommand(const std::string& cmdLine, PKIManagerCommand& command)
+    {
+        auto result = splitIntoTwo(cmdLine);
+        command.command = std::move(result.first);
+        command.args = std::move(result.second);
+        return true;
+    }
+
+    void printCommand(const PKIManagerCommand& cmd)
+    {
+        std::cout << "\n[DEBUG] Sending command:" << std::endl;
+        std::cout << "  Type:" << cmd.command << ":" << cmd.args;
+    }
+
+    void printResponse(const PKIManagerResponse& response, int64_t latency)
+    {
+        std::cout << "[Response] (latency: " << latency << " mcs)" << std::endl;
+        std::cout << response.retcode << std::endl;
+    }
+
+    int interactiveMode()
+    {
+        std::string commandLine;
+
+        while (true)
+        {
+            std::cout << "\n> ";
+            std::getline(std::cin, commandLine);
+
+            trim(commandLine);
+
+            if (commandLine.empty())
+            {
+                continue;
+            }
+
+            if (iequals(commandLine, "Q"))
+            {
+                std::cout << "Exiting interactive mode" << std::endl;
+                break;
+            }
+
+            if (!executeCommand(commandLine))
+            {
+                if (options_.verbose)
+                {
+                    std::cerr << "Command execution failed" << std::endl;
+                }
+            }
+        }
+
+        return EXIT_SUCCESS;
+    }
+
+private:
+    opt::CmdLineOptionsParser parser_;
+    CommandOptions options_;
+    GenericClient<UnixSocket> client_;
+    std::string singleCommand_;
+};
+
+int main(int argc, char* argv[])
+{
+    int ret{EXIT_SUCCESS};
+    try
+    {
+        CertManagerInterpreter interpreter;
+        ret = interpreter.run(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        ret = EXIT_FAILURE;
+    }
+    return ret;
+}

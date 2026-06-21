@@ -59,12 +59,6 @@ bool Cert::isEqual(const X509Cert* a, const X509Cert* b)
     return res == 0;
 }
 
-
-/*bool Cert::isSelfSigned(X509Cert* cert, bool verifySignature) noexcept
-{
-    return X509_self_signed(cert, verifySignature);
-}*/
-
 CertVersion Cert::version(X509Cert* cert)
 {
     long value = X509_get_version(cert);
@@ -138,7 +132,7 @@ std::time_t Cert::notAfter(X509Cert* cert)
 
 X509CertPtr Cert::fromStorage(std::string_view uri)
 {
-    auto storeLoader = StoreLoader(uri, nullptr, nullptr);
+        auto storeLoader = StoreLoader(uri, nullptr, nullptr);
     auto storeInfo = storeLoader.load(OSSL_STORE_INFO_CERT);
     auto result = X509CertPtr{OSSL_STORE_INFO_get1_CERT(storeInfo)};
     crypto::ThrowIfTrue(result == nullptr);

@@ -53,3 +53,6 @@ if (ENABLE_UNIT_TESTS)
   add_subdirectory(tests)
 endif (ENABLE_UNIT_TESTS)
 
+# Benchmarks
+add_subdirectory(bench)
+

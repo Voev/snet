@@ -10,6 +10,8 @@ class CertAuthority final : public casket::NonCopyable
 public:
     CertAuthority(KeyPtr key, const std::string& name);
 
+    CertAuthority(KeyPtr key, X509CertPtr cert);
+
     ~CertAuthority() noexcept;
 
     Key* getKey() const;
@@ -17,6 +19,8 @@ public:
     X509Cert* getCert() const;
 
     X509CertPtr sign(const std::string& name, Key* publicKey);
+
+    X509CertPtr resign(Key* forgedKey, X509Cert* originCert);
 
     CertAuthority(CertAuthority&& other) = default;
 

@@ -1,13 +1,20 @@
 ---
 AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
-AllowShortFunctionsOnASingleLine: false
-AllowShortBlocksOnASingleLine: 'true'
+AllowAllArgumentsOnNextLine: 'true'
+AllowShortFunctionsOnASingleLine: 'false'
+AllowShortBlocksOnASingleLine: 'false'
+AllowShortLambdasOnASingleLine: 'false'
 AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
 BreakBeforeBraces: Allman
 BreakConstructorInitializers: BeforeComma
 ColumnLimit: '120'
 IndentWidth: '4'
+LambdaBodyIndentation: Signature
+PenaltyBreakBeforeFirstCallParameter: 1
+PenaltyExcessCharacter: 100
+PenaltyReturnTypeOnItsOwnLine: 100
 PointerAlignment: Left
 SortIncludes: 'false'
 SortUsingDeclarations: 'false'
@@ -20,5 +27,3 @@ UseTab: Never
 
 BraceWrapping:
   AfterExternBlock: false
-
-...

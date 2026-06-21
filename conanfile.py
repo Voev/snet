@@ -38,6 +38,7 @@ class SecureNetwork(ConanFile):
         self.requires("libpcap/1.10.4")
         if self.options.enable_tests:
             self.requires("gtest/1.15.0")
+        self.requires("benchmark/1.8.4")
 
     def config_options(self):
         if self.settings.os == "Windows":
