@@ -170,6 +170,8 @@ public:
 
     CommandResult<std::string> handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn);
 
+    CommandResult<std::string> handleGetCertRequest(const std::string& name, const std::string& dn);
+
     CommandResult<std::string> handleResign(const std::string& name, const std::string& base64Cert,
                                             const std::string& base64PublicKey);
 

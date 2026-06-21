@@ -1,4 +1,10 @@
 #include <snet/pki/pki_manager.hpp>
+#include <snet/crypto/cert_req_builder.hpp>
+
+#include <casket/utils/action_chain.hpp>
+
+using namespace snet::crypto;
+using namespace casket;
 
 namespace snet::pki
 {
@@ -167,9 +173,10 @@ CommandResult<std::string> PKIManager::handleGenerateSelfSignedCert(const std::s
         auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
 
         /// @todo: consistency for cert file if throws exception
-        /// @todo: does we need to auto enabling policy?
         auto entity = std::make_shared<crypto::CertAuthority>(std::move(key), certDn);
-        entities_[name] = entity;
+
+        /// @todo: does we need to auto enabling policy?
+        /// entities_[name] = entity;
 
         auto filename = crypto::BioTraits::openFile(certPath, "wb");
         crypto::Cert::toBio(entity->getCert(), filename, Encoding::PEM);
@@ -181,6 +188,32 @@ CommandResult<std::string> PKIManager::handleGenerateSelfSignedCert(const std::s
     catch (const std::exception& e)
     {
         return error("ERROR: failed to generate self-signed certificate for policy '" + name + "': " + e.what());
+    }
+}
+
+CommandResult<std::string> PKIManager::handleGetCertRequest(const std::string& name, const std::string& dn)
+{
+    try
+    {
+        auto policy = policyManager_->getPolicy(name);
+        casket::ThrowIfTrue(policy == nullptr, "policy '{}' does not exist", name);
+
+        auto key = AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
+        auto req = CertReqBuilder()
+                       .signWith(key)
+                       .setVersion(CertReqVersion::V1)
+                       .setSubjectName(dn)
+                       .setPublicKey(key)
+                       .addExtension(NID_basic_constraints, "CA:TRUE,pathlen:0")
+                       .addExtension(NID_key_usage, "keyCertSign,cRLSign")
+                       .addExtension(NID_subject_key_identifier, "hash")
+                       .build();
+
+        return success(CertRequest::toBase64(req));
+    }
+    catch (const std::exception& e)
+    {
+        return error("ERROR: failed to get CSR for policy '" + name + "': " + e.what());
     }
 }
 
@@ -307,6 +340,17 @@ void PKIManager::registerCommands()
                                         return CommandResult<std::string>("Usage: gen-ss-cert <name> <cert_dn>");
                                     }
                                     return handleGenerateSelfSignedCert(args[0], args[1]);
+                                });
+    
+    dispatcher_.registerCommand("get-csr",
+                                "Get certificate signing request for policy",
+                                [this](const std::vector<std::string>& args) -> CommandResult<std::string>
+                                {
+                                    if (args.size() != 2 || args[0].empty() || args[1].empty())
+                                    {
+                                        return CommandResult<std::string>("Usage: get-csr <name> <csr_dn>");
+                                    }
+                                    return handleGetCertRequest(args[0], args[1]);
                                 });
 }
 
