@@ -293,9 +293,9 @@ CommandResult<std::string> PKIManager::handleGenerateSelfSignedCert(const json::
             [&]()
             {
                 std::string certDn = params.get<std::string>("cert_dn").value();
+                json::Integer daysValidity = params.get<json::Integer>("cert_validity").value();
                 auto key = crypto::AsymmKey::fromStorage(KeyType::Private, policy->caKeyPath);
-                /// @todo: use validity as parameter
-                selfSignedCert = crypto::CertSelfSigned::generate(key, certDn);
+                selfSignedCert = crypto::CertSelfSigned::generate(key, certDn, daysValidity);
             });
         chain.addAction(
             [&]()
@@ -338,7 +338,6 @@ CommandResult<std::string> PKIManager::handleGetCertRequest(const json::Object& 
                        .setVersion(CertReqVersion::V1)
                        .setSubjectName(csrDn)
                        .setPublicKey(key)
-                       /// @todo: parametrize options
                        .addExtension(NID_basic_constraints, "CA:TRUE,pathlen:0")
                        .addExtension(NID_key_usage, "keyCertSign,cRLSign")
                        .addExtension(NID_subject_key_identifier, "hash")
