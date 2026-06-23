@@ -178,4 +178,36 @@ std::vector<uint8_t> GroupParams::deriveSecret(Key* privateKey, Key* publicKey, 
     return secret;
 }
 
+GroupParams GroupParams::fromString(nonstd::string_view str) noexcept
+{
+    if (str == "prime256v1" || str == "P-256" || str == "secp256r1")
+        return GroupParams(GroupParams::Code::SECP256R1);
+    if (str == "secp384r1" || str == "P-384")
+        return GroupParams(GroupParams::Code::SECP384R1);
+    if (str == "secp521r1" || str == "P-521")
+        return GroupParams(GroupParams::Code::SECP521R1);
+    if (str == "brainpoolP256r1")
+        return GroupParams(GroupParams::Code::BRAINPOOL256R1);
+    if (str == "brainpoolP384r1")
+        return GroupParams(GroupParams::Code::BRAINPOOL384R1);
+    if (str == "brainpoolP512r1")
+        return GroupParams(GroupParams::Code::BRAINPOOL512R1);
+    if (str == "X25519")
+        return GroupParams(GroupParams::Code::X25519);
+    if (str == "X448")
+        return GroupParams(GroupParams::Code::X448);
+    if (str == "ffdhe2048")
+        return GroupParams(GroupParams::Code::FFDHE_2048);
+    if (str == "ffdhe3072")
+        return GroupParams(GroupParams::Code::FFDHE_3072);
+    if (str == "ffdhe4096")
+        return GroupParams(GroupParams::Code::FFDHE_4096);
+    if (str == "ffdhe6144")
+        return GroupParams(GroupParams::Code::FFDHE_6144);
+    if (str == "ffdhe8192")
+        return GroupParams(GroupParams::Code::FFDHE_8192);
+    else
+        return GroupParams(GroupParams::Code::NONE);
+}
+
 } // namespace snet::crypto

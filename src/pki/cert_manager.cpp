@@ -74,6 +74,8 @@ CertManager::CertManager(const StorageConfig& config)
 {
     db_.createIndex(0); // by fingerprint
     db_.createIndex(1); // by policy name
+
+    rebuildCache();
 }
 
 void CertManager::insertCertificate(const std::string& policyName, const CertFingerprint& fingerprint, X509Cert* cert)
@@ -98,25 +100,15 @@ void CertManager::insertCertificate(const std::string& policyName, const CertFin
     casket::ActionChain chain;
 
     chain.addAction(
-        [&cert, &certPath]()
+        [&]()
         {
             auto bio = crypto::BioTraits::openFile(certPath, "wb");
             crypto::Cert::toBio(cert, bio, Encoding::PEM);
         },
-        [&certPath]()
-        {
-            std::filesystem::remove(certPath);
-        });
-
-    chain.addAction(
         [&]()
         {
-            casket::ThrowIfFalse(db_.insert(record.toRow()), "Failed to insert certificate: " + db_.getLastError());
-        },
-        [&]()
-        {
-            auto fieldValue = makeFieldValue(fingerprint.toString());
-            db_.removeByIndex(0, fieldValue);
+            std::error_code ec;
+            std::filesystem::remove(certPath, ec);
         });
 
     chain.addAction(
@@ -144,9 +136,6 @@ void CertManager::insertCertificate(const std::string& policyName, const CertFin
         [&]()
         {
             db_.writeToFile(config_.getCertsMetadataPath());
-        },
-        []()
-        {
         });
 
     chain.execute();

@@ -38,6 +38,8 @@ PolicyManager::PolicyManager(const StorageConfig& config)
     , db_(CreateDatabase(config))
 {
     db_.createIndex(0);
+
+    loadPolicies();
 }
 
 PolicyManager::~PolicyManager() noexcept
@@ -356,6 +358,18 @@ std::vector<std::shared_ptr<Policy>> PolicyManager::getReadyPolicies() const
         {
             result.push_back(policy);
         }
+    }
+
+    return result;
+}
+
+std::vector<std::shared_ptr<Policy>> PolicyManager::getAllPolicies() const
+{
+    std::vector<std::shared_ptr<Policy>> result;
+
+    for (const auto& [name, policy] : policies_)
+    {
+        result.push_back(policy);
     }
 
     return result;

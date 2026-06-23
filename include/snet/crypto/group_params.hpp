@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <vector>
 #include <snet/crypto/pointers.hpp>
+#include <casket/nonstd/string_view.hpp>
 
 namespace snet::crypto
 {
@@ -46,7 +47,9 @@ public:
     {
     }
 
-    const char* toString() const;
+    const char* toString() const noexcept;
+
+    static GroupParams fromString(nonstd::string_view str) noexcept;
 
     constexpr bool operator==(GroupParams::Code code) const
     {
