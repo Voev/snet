@@ -149,31 +149,34 @@ struct PKIManagerResponse
     }
 };
 
-class PKIManager
+class PKIManager final
 {
 public:
     explicit PKIManager(const StorageConfig& storageDir);
 
+    ~PKIManager() noexcept = default;
+
     CommandResult<std::string> handleHelp();
 
-    CommandResult<std::string> handleCreatePolicy(const std::string& name);
+    CommandResult<std::string> handleListPolicies();
 
-    CommandResult<std::string> handleRemovePolicy(const std::string& name);
+    CommandResult<std::string> handlePolicyInfo(const casket::json::Object& params);
 
-    CommandResult<std::string> handleEnablePolicy(const std::string& name);
+    CommandResult<std::string> handleCreatePolicy(const casket::json::Object& params);
 
-    CommandResult<std::string> handleDisablePolicy(const std::string& name);
+    CommandResult<std::string> handleRemovePolicy(const casket::json::Object& params);
 
-    CommandResult<std::string> handlePolicyInfo(const std::string& name);
+    CommandResult<std::string> handleEnablePolicy(const casket::json::Object& params);
 
-    CommandResult<std::string> handleGenerateKey(const std::string& name);
+    CommandResult<std::string> handleDisablePolicy(const casket::json::Object& params);
 
-    CommandResult<std::string> handleGenerateSelfSignedCert(const std::string& name, const std::string& certDn);
+    CommandResult<std::string> handleGenerateKey(const casket::json::Object& params);
 
-    CommandResult<std::string> handleGetCertRequest(const std::string& name, const std::string& dn);
+    CommandResult<std::string> handleGenerateSelfSignedCert(const casket::json::Object& params);
 
-    CommandResult<std::string> handleResign(const std::string& name, const std::string& base64Cert,
-                                            const std::string& base64PublicKey);
+    CommandResult<std::string> handleGetCertRequest(const casket::json::Object& params);
+
+    CommandResult<std::string> handleResignCert(const casket::json::Object& params);
 
     void registerCommands();
 

@@ -4,8 +4,11 @@
 #include <functional>
 #include <vector>
 #include <string>
-#include <unordered_map>
-#include <snet/cmd/command.hpp>
+#include <sstream>
+#include <iomanip>
+
+#include <casket/nonstd/optional.hpp>
+#include <casket/json/json.hpp>
 
 namespace snet::pki
 {
@@ -14,6 +17,7 @@ enum class CommandErrorCode
 {
     None = 0,
     InvalidArguments,
+    ParseError,
     CommandNotFound,
     ExecutionFailed,
     PolicyNotFound,
@@ -30,13 +34,14 @@ struct CommandError
     CommandErrorCode code;
     std::string message;
 
-    CommandError()
-        : code(CommandErrorCode::None)
+    CommandError(CommandErrorCode c = CommandErrorCode::None)
+        : code(c)
     {
     }
-    CommandError(CommandErrorCode c, const std::string& msg = "")
+
+    CommandError(CommandErrorCode c, std::string msg)
         : code(c)
-        , message(msg)
+        , message(std::move(msg))
     {
     }
 
@@ -66,6 +71,8 @@ struct CommandError
             return "Success";
         case CommandErrorCode::InvalidArguments:
             return "Invalid arguments";
+        case CommandErrorCode::ParseError:
+            return "Parse error";
         case CommandErrorCode::CommandNotFound:
             return "Command not found";
         case CommandErrorCode::ExecutionFailed:
@@ -110,10 +117,19 @@ inline CommandResult<std::string> success()
     return CommandResult<std::string>("OK");
 }
 
-template <typename T>
-inline CommandResult<T> error(CommandErrorCode code, const std::string& msg = "")
+inline CommandResult<std::string> error(CommandErrorCode code, const std::string& msg)
 {
-    return CommandResult<T>(CommandError(code, msg));
+    return CommandResult<std::string>(CommandError(code, msg));
+}
+
+inline CommandResult<std::string> error(CommandErrorCode code, std::string&& msg)
+{
+    return CommandResult<std::string>(CommandError(code, std::move(msg)));
+}
+
+inline CommandResult<std::string> error(CommandErrorCode code, const char* msg)
+{
+    return CommandResult<std::string>(CommandError(code, std::string(msg)));
 }
 
 inline CommandResult<std::string> error(const std::string& msg)
@@ -124,24 +140,79 @@ inline CommandResult<std::string> error(const std::string& msg)
 class PKICommandDispatcher final
 {
 public:
-    using Handler = std::function<CommandResult<std::string>(const std::vector<std::string>&)>;
+    using Handler = std::function<CommandResult<std::string>(const casket::json::Value&)>;
 
     PKICommandDispatcher() = default;
     ~PKICommandDispatcher() = default;
 
-    void registerCommand(const std::string& name, const std::string& description, Handler handler)
+    void registerCommand(std::string name, std::string description, Handler handler, std::shared_ptr<casket::json::Schema> schema)
     {
-        commands_[name] = {description, std::move(handler)};
+        Command cmd;
+        cmd.description = std::move(description);
+        cmd.handler = std::move(handler);
+        cmd.schema = std::move(schema);
+        commands_[std::move(name)] = std::move(cmd);
     }
 
-    CommandResult<std::string> execute(const std::string& name, const std::vector<std::string>& args) const
+    void registerCommand(std::string name, std::string description, Handler handler)
     {
+        Command cmd;
+        cmd.description = std::move(description);
+        cmd.handler = std::move(handler);
+        commands_[std::move(name)] = std::move(cmd);
+    }
+
+    CommandResult<std::string> execute(const std::string& name, const casket::json::Value& params)
+    {
+        // Check if params contain --help or help flag
+        if (params.is<std::string>())
+        {
+            if (casket::equals(*params.get<std::string>(), "help"))
+            {
+                return success(getCommandHelp(name));
+            }
+        }
+
         auto it = commands_.find(name);
         if (it == commands_.end())
         {
-            return CommandResult<std::string>("Unknown command: " + name);
+            return error(CommandErrorCode::CommandNotFound, "Unknown command: " + name);
         }
-        return it->second.handler(args);
+
+        const auto& cmd = it->second;
+
+        // Validate schema if present
+        if (cmd.schema)
+        {
+            std::vector<std::string> errors;
+            casket::json::Value mutableParams = params;
+            if (!cmd.schema->validate(mutableParams, errors))
+            {
+                std::string errorMsg = "Validation failed: ";
+                for (size_t i = 0; i < errors.size(); ++i)
+                {
+                    errorMsg += errors[i];
+                    if (i < errors.size() - 1)
+                        errorMsg += "; ";
+                }
+                return error(CommandErrorCode::InvalidArguments, errorMsg);
+            }
+        }
+
+        return cmd.handler(params);
+    }
+
+    CommandResult<std::string> execute(const std::string& name, const std::string& jsonString)
+    {
+        try
+        {
+            casket::json::Value params = casket::json::parseDSL(jsonString);
+            return execute(name, params);
+        }
+        catch (const std::exception& e)
+        {
+            return error(CommandErrorCode::ParseError, e.what());
+        }
     }
 
     void printCommands(std::ostream& os) const
@@ -170,13 +241,40 @@ public:
     }
 
 private:
+    std::string getCommandHelp(const std::string& name) const
+    {
+        auto it = commands_.find(name);
+        if (it == commands_.end())
+        {
+            return "Unknown command: " + name;
+        }
+
+        const auto& cmd = it->second;
+
+        std::stringstream ss;
+        ss << "Command: " << name << "\n";
+        ss << "Description: " << cmd.description << "\n\n";
+
+        if (cmd.schema)
+        {
+            ss << cmd.schema->generateHelp();
+        }
+        else
+        {
+            ss << "No parameters required.\n";
+        }
+
+        return ss.str();
+    }
+
     struct Command
     {
         std::string description;
         Handler handler;
+        std::shared_ptr<casket::json::Schema> schema;
     };
 
-    std::unordered_map<std::string, Command> commands_;
+    std::map<std::string, Command> commands_;
 };
 
 } // namespace snet::pki

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 
+#include <casket/nonstd/string_view.hpp>
 #include <casket/utils/exception.hpp>
 #include <snet/utils/file_db.hpp>
 
@@ -190,6 +191,35 @@ struct Policy
             policy.status = static_cast<PolicyStatus>(getFieldValue<std::uint32_t>(row[3]));
         }
         return policy;
+    }
+
+    static nonstd::string_view statusToString(PolicyStatus status)
+    {
+        switch (status)
+        {
+        case PolicyStatus::CREATED:
+            return "CREATED - policy created, no components added";
+        case PolicyStatus::KEY_ADDED:
+            return "KEY_ADDED - private key added";
+        case PolicyStatus::COMPLETE:
+            return "COMPLETE - both key and certificate present";
+        case PolicyStatus::ENABLED:
+            return "ENABLED - policy is active and ready to use";
+        case PolicyStatus::DISABLED:
+            return "DISABLED - policy disabled, can not be used for signing";
+        case PolicyStatus::NOT_VALID:
+            return "NOT_VALID - certificate expired or invalid";
+        default:
+            return "UNKNOWN";
+        }
+    }
+
+    void print(std::ostream& os) const
+    {
+        os << "Policy: " << name << "\n";
+        os << "  Status: " << statusToString(status) << "\n";
+        os << "  CA Certificate: " << (caCertPath.empty() ? "not set" : caCertPath) << "\n";
+        os << "  CA Key: " << (caKeyPath.empty() ? "not set" : caKeyPath) << "\n";
     }
 };
 

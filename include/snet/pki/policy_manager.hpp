@@ -48,6 +48,8 @@ public:
 
     std::vector<std::shared_ptr<Policy>> getReadyPolicies() const;
 
+    std::vector<std::shared_ptr<Policy>> getAllPolicies() const;
+
 private:
     void loadPolicies();
 
