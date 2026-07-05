@@ -47,6 +47,7 @@ PKIManager::PKIManager(const StorageConfig& storageConfig)
     : storageConfig_(storageConfig)
     , policyManager_(std::make_unique<PolicyManager>(storageConfig))
     , certManager_(std::make_unique<CertManager>(storageConfig))
+    , trustedCertManager_(std::make_unique<TrustedCertManager>(storageConfig))
 {
     registerCommands();
 
@@ -392,6 +393,31 @@ CommandResult<std::string> PKIManager::handleResignCert(const json::Object& para
     }
 }
 
+CommandResult<std::string> PKIManager::handleAddTrustedCert(const json::Object& params)
+{
+    try
+    {
+        auto id = params.get<std::string>("id").value();
+        auto body = params.get<std::string>("body").value();
+
+        auto cert = crypto::Cert::fromBase64(body);
+        auto fingerprint = CertFingerprintGenerator::generate(cert, EVP_sha1());
+
+        auto resignedCert = trustedCertManager_->findByFingerprint(fingerprint, SteadyClock::now());
+        if (resignedCert)
+        {
+            return error(std::string("ERROR: already exists"));
+        }
+        trustedCertManager_->insertCertificate(id, fingerprint, cert);
+
+        return success(std::string("OK: trusted certificate successfully added"));
+    }
+    catch (const std::exception& e)
+    {
+        return error("ERROR: Failed to add trusted certificate: " + std::string(e.what()));
+    }
+}
+
 void PKIManager::registerCommands()
 {
     dispatcher_.registerCommand("help",
@@ -527,6 +553,20 @@ void PKIManager::registerCommands()
             return handleResignCert(*obj);
         },
         getResignCertSchema);
+
+    auto addTrustedCertSchema = json::Schema::create();
+    addTrustedCertSchema->add(json::TypedParamSpec<std::string>("id", "Certificate object identifier", true));
+    addTrustedCertSchema->add(json::TypedParamSpec<std::string>("body", "Certificate in Base64 encoding", true));
+
+    dispatcher_.registerCommand(
+        "add-trusted-cert",
+        "Add trusted certificate into storage",
+        [this](const json::Value& params) -> CommandResult<std::string>
+        {
+            const auto* obj = params.get<json::Object>();
+            return handleAddTrustedCert(*obj);
+        },
+        addTrustedCertSchema);
 }
 
 bool PKIManager::processCommand(casket::Context<casket::UnixSocket>& ctx)

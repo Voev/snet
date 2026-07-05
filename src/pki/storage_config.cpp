@@ -8,6 +8,7 @@ namespace snet::pki
 StorageConfig::StorageConfig()
 {
     addOption(OptionBuilder("storage_dir", Value(&storageDir)).setDefaultValue("${HOME}/.snet_pkimgr/").build());
+    addOption(OptionBuilder("trusted_store_name", Value(&trustedStoreName)).setDefaultValue("trusted").build());
     addOption(OptionBuilder("policy_metadata", Value(&policyMetadataFile)).setDefaultValue("policies.bin").build());
     addOption(OptionBuilder("certs_metadata", Value(&certsMetadataFile)).setDefaultValue("certificates.db").build());
     addOption(OptionBuilder("ca_cert_name", Value(&caCertName)).setDefaultValue("ca.crt").build());
@@ -23,6 +24,16 @@ std::string StorageConfig::name()
 std::filesystem::path StorageConfig::getPolicyPath(const std::string& name) const
 {
     return std::filesystem::path(storageDir) / name;
+}
+
+std::filesystem::path StorageConfig::getTrustedStorageDir() const
+{
+    return std::filesystem::path(storageDir) / trustedStoreName;
+}
+
+std::string StorageConfig::getTrustedCertsIndex() const
+{
+    return (getTrustedStorageDir() / "index.txt").string();
 }
 
 std::string StorageConfig::getPolicyMetadataPath() const

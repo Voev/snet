@@ -36,7 +36,6 @@ void ConfigManager::initialize(const std::string& configPath)
 
 void ConfigManager::read(const std::string& configFile)
 {
-
     ConfigOptionsReader reader;
     std::ifstream ifs(configFile);
 
