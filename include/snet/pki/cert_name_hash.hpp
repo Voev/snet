@@ -48,16 +48,10 @@ struct CertNameHash
     {
         if (str.empty())
             return CertNameHash();
-        try
-        {
-            size_t pos = 0;
-            uint64_t value = std::stoull(str, &pos, 16);
-            return (pos == str.length()) ? CertNameHash(value) : CertNameHash();
-        }
-        catch (...)
-        {
-            return CertNameHash();
-        }
+
+        size_t pos = 0;
+        uint64_t value = std::stoull(str, &pos, 16);
+        return (pos == str.length()) ? CertNameHash(value) : CertNameHash();
     }
 };
 

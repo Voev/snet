@@ -8,17 +8,17 @@
 
 using namespace casket;
 
-static inline std::vector<std::type_index> getFieldTypes()
+static inline std::vector<std::type_index> GetFieldTypes()
 {
     return {
-        typeid(std::string),                           // fingerprint
-        typeid(std::string),                           // name
-        typeid(std::string),                           // serialNumber
-        typeid(std::string),                           // subjectDN
-        typeid(std::string),                           // issuerDN
-        typeid(std::chrono::system_clock::time_point), // notBefore
-        typeid(std::chrono::system_clock::time_point), // notAfter
-        typeid(std::string)                            // certPath
+        typeid(std::string),     // fingerprint
+        typeid(std::string),     // name
+        typeid(std::string),     // serialNumber
+        typeid(std::string),     // subjectDN
+        typeid(std::string),     // issuerDN
+        typeid(snet::SystemTimePoint), // notBefore
+        typeid(snet::SystemTimePoint), // notAfter
+        typeid(std::string)      // certPath
     };
 }
 
@@ -27,7 +27,7 @@ namespace snet::pki
 
 std::shared_ptr<casket::db::IRow> TrustedCertificateRecord::toRow() const
 {
-    auto row = std::make_shared<casket::db::TxtRow>(getFieldTypes());
+    auto row = std::make_shared<casket::db::TxtRow>(::GetFieldTypes());
     row->setField(0, db::makeFieldValue(fingerprint.toString()));
     row->setField(1, db::makeFieldValue(name));
     row->setField(2, db::makeFieldValue(serialNumber));
@@ -49,8 +49,8 @@ TrustedCertificateRecord TrustedCertificateRecord::fromRow(const db::IRow& row)
         cert.serialNumber = db::extractField<std::string>(row, 2);
         cert.subjectDN = db::extractField<std::string>(row, 3);
         cert.issuerDN = db::extractField<std::string>(row, 4);
-        cert.notBefore = db::extractField<std::chrono::system_clock::time_point>(row, 5);
-        cert.notAfter = db::extractField<std::chrono::system_clock::time_point>(row, 6);
+        cert.notBefore = db::extractField<SystemTimePoint>(row, 5);
+        cert.notAfter = db::extractField<SystemTimePoint>(row, 6);
         cert.certPath = db::extractField<std::string>(row, 7);
     }
     return cert;
@@ -67,7 +67,7 @@ static inline std::unique_ptr<db::IDatabase> CreateDatabase(const StorageConfig&
 
     auto indexFile = trustedStorageDir / "index.txt";
 
-    std::unique_ptr<db::IDatabase> db = std::make_unique<db::TxtDatabase>(getFieldTypes());
+    auto db = std::make_unique<db::TxtDatabase>(::GetFieldTypes());
 
     if (std::filesystem::exists(indexFile))
     {
@@ -122,7 +122,11 @@ void TrustedCertManager::insertCertificate(const std::string& name, const CertFi
     chain.addAction(
         [&]()
         {
-            casket::ThrowIfFalse(db_->insert(record.toRow()), "Failed to insert certificate: " + db_->getLastError());
+            if (!db_->insert(record.toRow()))
+            {
+                throw casket::RuntimeError(
+                    "{} row: {}, field: {}", db_->getLastError(), db_->getErrorRow(), db_->getErrorField());
+            }
         },
         [&]()
         {
