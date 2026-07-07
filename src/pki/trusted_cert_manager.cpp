@@ -1,56 +1,62 @@
 #include <snet/pki/trusted_cert_manager.hpp>
+#include <snet/pki/cert_name_hash.hpp>
 
 #include <snet/utils/time.hpp>
 
-namespace snet::pki
-{
+#include <casket/db/field_extractor.hpp>
+#include <casket/db/txt/txt_database.hpp>
 
-Row TrustedCertificateRecord::toRow() const
-{
-    Row row(8);
-    row[0] = makeFieldValue(fingerprint.toString());
-    row[2] = makeFieldValue(name);
-    row[1] = makeFieldValue(serialNumber);
-    row[3] = makeFieldValue(subjectDN);
-    row[4] = makeFieldValue(issuerDN);
-    row[5] = makeFieldValue(ToIso8601(notBefore));
-    row[6] = makeFieldValue(ToIso8601(notAfter));
-    row[7] = makeFieldValue(certPath);
-    return row;
-}
-
-TrustedCertificateRecord TrustedCertificateRecord::fromRow(const Row& row)
-{
-    TrustedCertificateRecord cert;
-    if (row.size() >= 8)
-    {
-        cert.fingerprint = CertFingerprint::fromString(getFieldValue<std::string>(row[0]));
-        cert.name = getFieldValue<std::string>(row[1]);
-        cert.serialNumber = getFieldValue<std::string>(row[2]);
-        cert.subjectDN = getFieldValue<std::string>(row[3]);
-        cert.issuerDN = getFieldValue<std::string>(row[4]);
-        cert.notBefore = FromIso8601(getFieldValue<std::string>(row[5])).value_or(SystemTimePoint{});
-        cert.notAfter = FromIso8601(getFieldValue<std::string>(row[6])).value_or(SystemTimePoint{});
-        cert.certPath = getFieldValue<std::string>(row[7]);
-    }
-    return cert;
-}
+using namespace casket;
 
 static inline std::vector<std::type_index> getFieldTypes()
 {
     return {
-        typeid(std::string), // fingerprint
-        typeid(std::string), // name
-        typeid(std::string), // serialNumber
-        typeid(std::string), // subjectDN
-        typeid(std::string), // issuerDN
-        typeid(std::string), // notBefore
-        typeid(std::string), // notAfter
-        typeid(std::string)  // certPath
+        typeid(std::string),                           // fingerprint
+        typeid(std::string),                           // name
+        typeid(std::string),                           // serialNumber
+        typeid(std::string),                           // subjectDN
+        typeid(std::string),                           // issuerDN
+        typeid(std::chrono::system_clock::time_point), // notBefore
+        typeid(std::chrono::system_clock::time_point), // notAfter
+        typeid(std::string)                            // certPath
     };
 }
 
-static inline TXTDatabase CreateDatabase(const StorageConfig& config)
+namespace snet::pki
+{
+
+std::shared_ptr<casket::db::IRow> TrustedCertificateRecord::toRow() const
+{
+    auto row = std::make_shared<casket::db::TxtRow>(getFieldTypes());
+    row->setField(0, db::makeFieldValue(fingerprint.toString()));
+    row->setField(1, db::makeFieldValue(name));
+    row->setField(2, db::makeFieldValue(serialNumber));
+    row->setField(3, db::makeFieldValue(subjectDN));
+    row->setField(4, db::makeFieldValue(issuerDN));
+    row->setField(5, db::makeFieldValue(notBefore));
+    row->setField(6, db::makeFieldValue(notAfter));
+    row->setField(7, db::makeFieldValue(certPath));
+    return row;
+}
+
+TrustedCertificateRecord TrustedCertificateRecord::fromRow(const db::IRow& row)
+{
+    TrustedCertificateRecord cert;
+    if (row.size() >= 8)
+    {
+        cert.fingerprint = CertFingerprint::fromString(db::extractField<std::string>(row, 0));
+        cert.name = db::extractField<std::string>(row, 1);
+        cert.serialNumber = db::extractField<std::string>(row, 2);
+        cert.subjectDN = db::extractField<std::string>(row, 3);
+        cert.issuerDN = db::extractField<std::string>(row, 4);
+        cert.notBefore = db::extractField<std::chrono::system_clock::time_point>(row, 5);
+        cert.notAfter = db::extractField<std::chrono::system_clock::time_point>(row, 6);
+        cert.certPath = db::extractField<std::string>(row, 7);
+    }
+    return cert;
+}
+
+static inline std::unique_ptr<db::IDatabase> CreateDatabase(const StorageConfig& config)
 {
     auto trustedStorageDir = config.getTrustedStorageDir();
 
@@ -61,33 +67,32 @@ static inline TXTDatabase CreateDatabase(const StorageConfig& config)
 
     auto indexFile = trustedStorageDir / "index.txt";
 
+    std::unique_ptr<db::IDatabase> db = std::make_unique<db::TxtDatabase>(getFieldTypes());
+
     if (std::filesystem::exists(indexFile))
     {
-        return TXTDatabase::readFromFile(indexFile, getFieldTypes());
+        db->readFromFile(indexFile.string());
     }
-    else
-    {
-        return TXTDatabase(getFieldTypes());
-    }
+
+    return db;
 }
 
 TrustedCertManager::TrustedCertManager(const StorageConfig& config)
     : config_(config)
     , db_(CreateDatabase(config))
-    , certCache_(config.certCacheSize)
 {
-    db_.createIndex(0); // by fingerprint
-    db_.createIndex(1); // by policy name
-
-    rebuildCache();
+    db_->createIndex(0); // by fingerprint
+    db_->createIndex(1); // by name
 }
 
 void TrustedCertManager::insertCertificate(const std::string& name, const CertFingerprint& fingerprint, X509Cert* cert)
 {
     casket::ThrowIfFalse(cert, "invalid certificate");
 
+    auto certHash = CertNameHashGenerator::fromCert(cert);
+
     auto path = config_.getTrustedStorageDir();
-    path /= fingerprint.toString() + ".0";
+    path /= certHash.toString() + ".0";
     std::string certPath = path.string();
 
     TrustedCertificateRecord record;
@@ -117,77 +122,58 @@ void TrustedCertManager::insertCertificate(const std::string& name, const CertFi
     chain.addAction(
         [&]()
         {
-            casket::ThrowIfFalse(db_.insert(record.toRow()), "Failed to insert certificate: " + db_.getLastError());
+            casket::ThrowIfFalse(db_->insert(record.toRow()), "Failed to insert certificate: " + db_->getLastError());
         },
         [&]()
         {
-            auto fieldValue = makeFieldValue(fingerprint.toString());
-            db_.removeByIndex(0, fieldValue);
+            auto fpValue = db::makeFieldValue(fingerprint.toString());
+            const auto* row = db_->findByIndex(0, fpValue);
+            if (row)
+            {
+                for (size_t i = 0; i < db_->size(); ++i)
+                {
+                    const auto& currentRow = db_->getRow(i);
+                    if (&currentRow == row)
+                    {
+                        db_->remove(i);
+                        break;
+                    }
+                }
+            }
         });
 
     chain.addAction(
         [&]()
         {
-            certCache_.put(fingerprint, crypto::Cert::shallowCopy(cert), SystemToSteady(record.notAfter));
-        },
-        [&]()
-        {
-            certCache_.erase(fingerprint);
-        });
-
-    chain.addAction(
-        [&]()
-        {
-            db_.writeToFile(config_.getTrustedCertsIndex());
+            db_->writeToFile(config_.getTrustedCertsIndex());
         });
 
     chain.execute();
-}
-
-crypto::X509CertPtr TrustedCertManager::findByFingerprint(const CertFingerprint& fp, const SteadyTimePoint& tp)
-{
-    if (auto val = certCache_.get(fp, tp))
-    {
-        return crypto::Cert::shallowCopy(*val);
-    }
-    return nullptr;
 }
 
 std::vector<TrustedCertificateRecord> TrustedCertManager::findByName(const std::string& name) const
 {
     std::vector<TrustedCertificateRecord> result;
 
-    auto fieldValue = makeFieldValue(name);
-    const Row* row = db_.findByIndex(1, fieldValue);
-    if (row)
+    auto stmt = db_->createStatement();
+    stmt->whereEquals(1, db::makeFieldValue(name));
+    result.reserve(stmt->spin());
+
+    while (stmt->step())
     {
-        result.push_back(TrustedCertificateRecord::fromRow(*row));
+        const db::IRow* row = stmt->current();
+        if (row)
+        {
+            result.push_back(TrustedCertificateRecord::fromRow(*row));
+        }
     }
+
     return result;
 }
 
 size_t TrustedCertManager::size() const noexcept
 {
-    return certCache_.size();
-}
-
-const L1CertCache& TrustedCertManager::getAllCerts() const noexcept
-{
-    return certCache_;
-}
-
-void TrustedCertManager::rebuildCache()
-{
-    certCache_.clear();
-
-    for (size_t i = 0; i < db_.size(); i++)
-    {
-        const auto& row = db_.getRow(i);
-        auto record = TrustedCertificateRecord::fromRow(row);
-
-        auto cert = crypto::Cert::fromStorage(record.certPath);
-        certCache_.put(record.fingerprint, std::move(cert), SystemToSteady(record.notAfter));
-    }
+    return db_->size();
 }
 
 } // namespace snet::pki

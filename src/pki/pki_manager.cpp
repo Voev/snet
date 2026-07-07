@@ -403,11 +403,6 @@ CommandResult<std::string> PKIManager::handleAddTrustedCert(const json::Object& 
         auto cert = crypto::Cert::fromBase64(body);
         auto fingerprint = CertFingerprintGenerator::generate(cert, EVP_sha1());
 
-        auto resignedCert = trustedCertManager_->findByFingerprint(fingerprint, SteadyClock::now());
-        if (resignedCert)
-        {
-            return error(std::string("ERROR: already exists"));
-        }
         trustedCertManager_->insertCertificate(id, fingerprint, cert);
 
         return success(std::string("OK: trusted certificate successfully added"));
