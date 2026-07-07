@@ -10,14 +10,69 @@
 #include <optional>
 #include <stdexcept>
 
-#include <snet/utils/file_db.hpp>
-#include <snet/pki/policy.hpp>
 #include <snet/pki/storage_config.hpp>
 
+#include <casket/db/i_database.hpp>
 #include <casket/utils/noncopyable.hpp>
 
 namespace snet::pki
 {
+
+enum class PolicyStatus : uint32_t
+{
+    CREATED = 0,   // Policy created, no components added yet
+    KEY_ADDED = 1, // Private key added
+    COMPLETE = 2,  // Both key and certificate present
+    ENABLED = 3,   // Policy is active and ready to use
+    DISABLED = 4,  // Policy disabled by administrator
+    NOT_VALID = 5  // Certificate expired or invalid
+};
+
+struct Policy
+{
+    std::string name;
+    std::string caCertPath;
+    std::string caKeyPath;
+    PolicyStatus status;
+
+    Policy();
+
+    Policy(const std::string& n);
+
+    bool hasKey() const;
+
+    bool hasCertificate() const;
+
+    bool isComplete() const;
+
+    bool isExpired() const;
+
+    bool isReady() const;
+
+    bool canSign() const;
+
+    void updateStatus();
+
+    void addKey(const std::string& keyPath);
+
+    void addCertificate(const std::string& certPath);
+
+    void enable();
+
+    void disable();
+
+    void markNotValid();
+
+    void restore();
+
+    std::shared_ptr<casket::db::IRow> toRow() const;
+
+    static Policy fromRow(const casket::db::IRow& row);
+
+    static nonstd::string_view statusToString(PolicyStatus status);
+
+    void print(std::ostream& os) const;
+};
 
 class PolicyManager final : casket::NonCopyable
 {
@@ -57,7 +112,7 @@ private:
 
 private:
     const StorageConfig& config_;
-    TXTDatabase db_;
+    std::unique_ptr<casket::db::IDatabase> db_;
     std::map<std::string, std::shared_ptr<Policy>> policies_;
 };
 

@@ -4,6 +4,11 @@
 #include <casket/utils/action_chain.hpp>
 #include <casket/utils/exception.hpp>
 
+#include <casket/db/txt/txt_database.hpp>
+#include <casket/db/field_extractor.hpp>
+
+using namespace casket;
+
 namespace fs = std::filesystem;
 
 namespace snet::pki
@@ -12,32 +17,215 @@ namespace snet::pki
 static inline std::vector<std::type_index> GetFieldTypes()
 {
     return {
-        typeid(std::string), // name
-        typeid(std::string), // caCertPath
-        typeid(std::string), // caKeyPath
+        typeid(std::string),  // name
+        typeid(std::string),  // caCertPath
+        typeid(std::string),  // caKeyPath
         typeid(std::uint32_t) // status
     };
 }
 
-static inline TXTDatabase CreateDatabase(const StorageConfig& config)
+Policy::Policy()
+    : status(PolicyStatus::CREATED)
 {
-    auto metadataPath = config.getPolicyMetadataPath();
+}
 
-    if (fs::exists(metadataPath))
+Policy::Policy(const std::string& n)
+    : name(n)
+    , status(PolicyStatus::CREATED)
+{
+}
+
+bool Policy::hasKey() const
+{
+    return !caKeyPath.empty();
+}
+
+bool Policy::hasCertificate() const
+{
+    return !caCertPath.empty();
+}
+
+bool Policy::isComplete() const
+{
+    return hasKey() && hasCertificate();
+}
+
+bool Policy::isExpired() const
+{
+    return status == PolicyStatus::NOT_VALID;
+}
+
+bool Policy::isReady() const
+{
+    return status == PolicyStatus::ENABLED && isComplete();
+}
+
+bool Policy::canSign() const
+{
+    return isReady();
+}
+
+void Policy::updateStatus()
+{
+    if (status == PolicyStatus::DISABLED || status == PolicyStatus::NOT_VALID)
     {
-        return TXTDatabase::readFromFile(metadataPath, GetFieldTypes());
+        return;
+    }
+
+    bool hasKey = !caKeyPath.empty();
+    bool hasCert = !caCertPath.empty();
+
+    if (hasKey && hasCert)
+    {
+        if (status != PolicyStatus::ENABLED)
+        {
+            status = PolicyStatus::COMPLETE;
+        }
+    }
+    else if (hasKey)
+    {
+        status = PolicyStatus::KEY_ADDED;
     }
     else
     {
-        return TXTDatabase(GetFieldTypes());
+        status = PolicyStatus::CREATED;
     }
+}
+
+void Policy::addKey(const std::string& keyPath)
+{
+    casket::ThrowIfTrue(!caKeyPath.empty(), "key already set");
+    casket::ThrowIfTrue(status == PolicyStatus::ENABLED, "cannot add key to enabled policy");
+    casket::ThrowIfTrue(status == PolicyStatus::DISABLED, "cannot add key to disabled policy");
+    casket::ThrowIfTrue(status == PolicyStatus::NOT_VALID, "cannot add key to not valid policy");
+
+    caKeyPath = keyPath;
+    updateStatus(); // Becomes KEY_ADDED or COMPLETE (if cert exists)
+}
+
+void Policy::addCertificate(const std::string& certPath)
+{
+    casket::ThrowIfTrue(!caCertPath.empty(), "certificate already set");
+    casket::ThrowIfTrue(status == PolicyStatus::ENABLED, "cannot add certificate to enabled policy");
+    casket::ThrowIfTrue(status == PolicyStatus::DISABLED, "cannot add certificate to disabled policy");
+    casket::ThrowIfTrue(status == PolicyStatus::NOT_VALID, "cannot add certificate to not valid policy");
+    casket::ThrowIfTrue(!hasKey(), "cannot add certificate: key must be added first");
+
+    caCertPath = certPath;
+    // Now both key and cert present -> COMPLETE
+    status = PolicyStatus::COMPLETE;
+}
+
+void Policy::enable()
+{
+    casket::ThrowIfTrue(status != PolicyStatus::COMPLETE, "cannot enable: policy must be COMPLETE");
+    casket::ThrowIfTrue(!isComplete(), "cannot enable: policy must have both key and certificate");
+    status = PolicyStatus::ENABLED;
+}
+
+void Policy::disable()
+{
+    casket::ThrowIfTrue(status != PolicyStatus::ENABLED && status != PolicyStatus::COMPLETE,
+                        "cannot disable: policy must be ENABLED or COMPLETE");
+    status = PolicyStatus::DISABLED;
+}
+
+void Policy::markNotValid()
+{
+    casket::ThrowIfTrue(status != PolicyStatus::ENABLED, "cannot mark not valid: policy must be ENABLED");
+    status = PolicyStatus::NOT_VALID;
+}
+
+void Policy::restore()
+{
+    casket::ThrowIfTrue(status != PolicyStatus::DISABLED && status != PolicyStatus::NOT_VALID,
+                        "cannot restore: policy must be DISABLED or NOT_VALID");
+
+    // Restore based on available components
+    if (isComplete())
+    {
+        status = PolicyStatus::COMPLETE;
+    }
+    else if (hasKey())
+    {
+        status = PolicyStatus::KEY_ADDED;
+    }
+    else
+    {
+        status = PolicyStatus::CREATED;
+    }
+}
+
+nonstd::string_view Policy::statusToString(PolicyStatus status)
+{
+    switch (status)
+    {
+    case PolicyStatus::CREATED:
+        return "CREATED - policy created, no components added";
+    case PolicyStatus::KEY_ADDED:
+        return "KEY_ADDED - private key added";
+    case PolicyStatus::COMPLETE:
+        return "COMPLETE - both key and certificate present";
+    case PolicyStatus::ENABLED:
+        return "ENABLED - policy is active and ready to use";
+    case PolicyStatus::DISABLED:
+        return "DISABLED - policy disabled, can not be used for signing";
+    case PolicyStatus::NOT_VALID:
+        return "NOT_VALID - certificate expired or invalid";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+void Policy::print(std::ostream& os) const
+{
+    os << "Policy: " << name << "\n";
+    os << "  Status: " << statusToString(status) << "\n";
+    os << "  CA Certificate: " << (caCertPath.empty() ? "not set" : caCertPath) << "\n";
+    os << "  CA Key: " << (caKeyPath.empty() ? "not set" : caKeyPath) << "\n";
+}
+
+std::shared_ptr<casket::db::IRow> Policy::toRow() const
+{
+    auto row = std::make_shared<casket::db::TxtRow>(GetFieldTypes());
+    row->setField(0, db::makeFieldValue(name));
+    row->setField(1, db::makeFieldValue(caCertPath));
+    row->setField(2, db::makeFieldValue(caKeyPath));
+    row->setField(3, db::makeFieldValue(static_cast<std::uint32_t>(status)));
+    return row;
+}
+
+Policy Policy::fromRow(const db::IRow& row)
+{
+    Policy policy;
+    if (row.size() >= 4)
+    {
+        policy.name = db::extractField<std::string>(row, 0);
+        policy.caCertPath = db::extractField<std::string>(row, 1);
+        policy.caKeyPath = db::extractField<std::string>(row, 2);
+        policy.status = static_cast<PolicyStatus>(db::extractField<uint32_t>(row, 3));
+    }
+    return policy;
+}
+
+static inline std::unique_ptr<db::IDatabase> CreateDatabase(const StorageConfig& config)
+{
+    auto metadataPath = config.getPolicyMetadataPath();
+    auto db = std::make_unique<db::TxtDatabase>(GetFieldTypes());
+
+    if (fs::exists(metadataPath))
+    {
+        db->readFromFile(metadataPath);
+    }
+
+    return db;
 }
 
 PolicyManager::PolicyManager(const StorageConfig& config)
     : config_(config)
     , db_(CreateDatabase(config))
 {
-    db_.createIndex(0);
+    db_->createIndex(0);
 
     loadPolicies();
 }
@@ -70,17 +258,29 @@ void PolicyManager::createPolicy(const std::string& name)
         [&]()
         {
             CSK_LOG_DEBUG("inserting entry '%s'", name.c_str());
-            casket::ThrowIfFalse(db_.insert(policy->toRow()),
-                                 "{} row: {}, field: {}",
-                                 db_.getLastError(),
-                                 db_.getErrorRow(),
-                                 db_.getErrorField());
+            if (!db_->insert(policy->toRow()))
+            {
+                throw casket::RuntimeError(
+                    "{} row: {}, field: {}", db_->getLastError(), db_->getErrorRow(), db_->getErrorField());
+            }
         },
         [&]()
         {
             CSK_LOG_DEBUG("removing entry '%s'", name.c_str());
-            auto fieldValue = makeFieldValue(name);
-            casket::ThrowIfFalse(db_.removeByIndex(0, fieldValue), "{}", db_.getLastError());
+
+            auto fieldValue = db::makeFieldValue(name);
+            const auto* foundRow = db_->findByIndex(0, fieldValue);
+            if (foundRow)
+            {
+                for (size_t i = 0; i < db_->size(); ++i)
+                {
+                    if (&db_->getRow(i) == foundRow)
+                    {
+                        db_->remove(i);
+                        break;
+                    }
+                }
+            }
         });
 
     chain.addAction(
@@ -100,7 +300,7 @@ void PolicyManager::createPolicy(const std::string& name)
         {
             CSK_LOG_DEBUG("writing entry into database '%s'", name.c_str());
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -130,19 +330,30 @@ void PolicyManager::removePolicy(const std::string& name)
     chain.addAction(
         [&]()
         {
-            auto fieldValue = makeFieldValue(name);
-            casket::ThrowIfFalse(db_.removeByIndex(0, fieldValue), "{}", db_.getLastError());
+            auto fieldValue = db::makeFieldValue(name);
+            const auto* foundRow = db_->findByIndex(0, fieldValue);
+            if (foundRow)
+            {
+                for (size_t i = 0; i < db_->size(); ++i)
+                {
+                    if (&db_->getRow(i) == foundRow)
+                    {
+                        db_->remove(i);
+                        break;
+                    }
+                }
+            }
         },
         [&]()
         {
-            db_.insert(policyRow);
+            db_->insert(policyRow);
         });
 
     chain.addAction(
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.addAction(
@@ -198,7 +409,7 @@ void PolicyManager::enablePolicy(std::shared_ptr<Policy> policy)
         {
             CSK_LOG_DEBUG("saving policies to file");
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -246,7 +457,7 @@ void PolicyManager::disablePolicy(std::shared_ptr<Policy> policy)
         {
             CSK_LOG_DEBUG("saving policies to file");
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -282,7 +493,7 @@ void PolicyManager::addKeyToPolicy(std::shared_ptr<Policy> policy, const std::st
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -316,7 +527,7 @@ void PolicyManager::addCertificateToPolicy(std::shared_ptr<Policy> policy, const
         [&]()
         {
             auto metadataPath = config_.getPolicyMetadataPath();
-            db_.writeToFile(metadataPath);
+            db_->writeToFile(metadataPath);
         });
 
     chain.execute();
@@ -330,8 +541,8 @@ std::shared_ptr<Policy> PolicyManager::getPolicy(const std::string& name) const
         return it->second;
     }
 
-    auto fieldValue = makeFieldValue(name);
-    const Row* row = db_.findByIndex(0, fieldValue);
+    auto fieldValue = db::makeFieldValue(name);
+    auto row = db_->findByIndex(0, fieldValue);
     if (row)
     {
         Policy policy = Policy::fromRow(*row);
@@ -379,9 +590,9 @@ void PolicyManager::loadPolicies()
 {
     policies_.clear();
 
-    for (size_t i = 0; i < db_.size(); i++)
+    for (size_t i = 0; i < db_->size(); i++)
     {
-        const auto& row = db_.getRow(i);
+        const auto& row = db_->getRow(i);
         Policy policy = Policy::fromRow(row);
         policies_[policy.name] = std::make_shared<Policy>(policy);
     }
@@ -389,15 +600,16 @@ void PolicyManager::loadPolicies()
 
 bool PolicyManager::updatePolicy(const std::string& name, const Policy& policy)
 {
-    for (size_t i = 0; i < db_.size(); i++)
+    auto row = policy.toRow();
+    for (size_t i = 0; i < db_->size(); i++)
     {
-        const auto& row = db_.getRow(i);
-        if (row.size() >= 1)
+        const auto& currentRow = db_->getRow(i);
+        if (currentRow.size() >= 1)
         {
-            auto rowName = getFieldValue<std::string>(row[0]);
+            auto rowName = db::extractField<std::string>(currentRow, 0);
             if (rowName == name)
             {
-                return db_.updateRow(i, policy.toRow());
+                return db_->update(i, *row);
             }
         }
     }

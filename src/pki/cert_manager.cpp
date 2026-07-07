@@ -2,43 +2,14 @@
 
 #include <snet/utils/time.hpp>
 
-namespace snet::pki
-{
+#include <casket/db/txt/txt_database.hpp>
+#include <casket/db/field_extractor.hpp>
 
-Row CertificateRecord::toRow() const
-{
-    Row row(9);
-    row[0] = makeFieldValue(fingerprint.toString());
-    row[1] = makeFieldValue(serialNumber);
-    row[2] = makeFieldValue(policyName);
-    row[3] = makeFieldValue(subjectDN);
-    row[4] = makeFieldValue(issuerDN);
-    row[5] = makeFieldValue(ToIso8601(notBefore));
-    row[6] = makeFieldValue(ToIso8601(notAfter));
-    row[7] = makeFieldValue(CertStatusToString(status));
-    row[8] = makeFieldValue(certPath);
-    return row;
-}
+using namespace casket;
 
-CertificateRecord CertificateRecord::fromRow(const Row& row)
-{
-    CertificateRecord cert;
-    if (row.size() >= 9)
-    {
-        cert.fingerprint = CertFingerprint::fromString(getFieldValue<std::string>(row[0]));
-        cert.policyName = getFieldValue<std::string>(row[1]);
-        cert.serialNumber = getFieldValue<std::string>(row[2]);
-        cert.subjectDN = getFieldValue<std::string>(row[3]);
-        cert.issuerDN = getFieldValue<std::string>(row[4]);
-        cert.notBefore = FromIso8601(getFieldValue<std::string>(row[5])).value_or(SystemTimePoint{});
-        cert.notAfter = FromIso8601(getFieldValue<std::string>(row[6])).value_or(SystemTimePoint{});
-        cert.status = StringToCertStatus(getFieldValue<std::string>(row[7]));
-        cert.certPath = getFieldValue<std::string>(row[8]);
-    }
-    return cert;
-}
+namespace fs = std::filesystem;
 
-static inline std::vector<std::type_index> getFieldTypes()
+static inline std::vector<std::type_index> GetFieldTypes()
 {
     return {
         typeid(std::string), // fingerprint
@@ -53,18 +24,54 @@ static inline std::vector<std::type_index> getFieldTypes()
     };
 }
 
-static inline TXTDatabase CreateDatabase(const StorageConfig& config)
+namespace snet::pki
+{
+
+std::shared_ptr<db::IRow> CertificateRecord::toRow() const
+{
+    auto row = std::make_shared<db::TxtRow>(::GetFieldTypes());
+    row->setField(0, db::makeFieldValue(fingerprint.toString()));
+    row->setField(1, db::makeFieldValue(policyName));
+    row->setField(2, db::makeFieldValue(serialNumber));
+    row->setField(3, db::makeFieldValue(subjectDN));
+    row->setField(4, db::makeFieldValue(issuerDN));
+    row->setField(5, db::makeFieldValue(ToIso8601(notBefore)));
+    row->setField(6, db::makeFieldValue(ToIso8601(notAfter)));
+    row->setField(7, db::makeFieldValue(CertStatusToString(status)));
+    row->setField(8, db::makeFieldValue(certPath));
+    return row;
+}
+
+CertificateRecord CertificateRecord::fromRow(const db::IRow& row)
+{
+    CertificateRecord cert;
+    if (row.size() >= 9)
+    {
+        cert.fingerprint = CertFingerprint::fromString(db::extractField<std::string>(row, 0));
+        cert.policyName = db::extractField<std::string>(row, 1);
+        cert.serialNumber = db::extractField<std::string>(row, 2);
+        cert.subjectDN = db::extractField<std::string>(row, 3);
+        cert.issuerDN = db::extractField<std::string>(row, 4);
+        cert.notBefore = FromIso8601(db::extractField<std::string>(row, 5)).value_or(SystemTimePoint{});
+        cert.notAfter = FromIso8601(db::extractField<std::string>(row, 6)).value_or(SystemTimePoint{});
+        cert.status = StringToCertStatus(db::extractField<std::string>(row, 7));
+        cert.certPath = db::extractField<std::string>(row, 8);
+    }
+    return cert;
+}
+
+static inline std::unique_ptr<db::IDatabase> CreateDatabase(const StorageConfig& config)
 {
     auto metadataPath = config.getCertsMetadataPath();
 
+    auto db = std::make_unique<db::TxtDatabase>(::GetFieldTypes());
+
     if (std::filesystem::exists(metadataPath))
     {
-        return TXTDatabase::readFromFile(metadataPath, getFieldTypes());
+        db->readFromFile(metadataPath);
     }
-    else
-    {
-        return TXTDatabase(getFieldTypes());
-    }
+
+    return db;
 }
 
 CertManager::CertManager(const StorageConfig& config)
@@ -72,8 +79,8 @@ CertManager::CertManager(const StorageConfig& config)
     , db_(CreateDatabase(config))
     , certCache_(config.certCacheSize)
 {
-    db_.createIndex(0); // by fingerprint
-    db_.createIndex(1); // by policy name
+    db_->createIndex(0); // by fingerprint
+    db_->createIndex(1); // by policy name
 
     rebuildCache();
 }
@@ -114,12 +121,27 @@ void CertManager::insertCertificate(const std::string& policyName, const CertFin
     chain.addAction(
         [&]()
         {
-            casket::ThrowIfFalse(db_.insert(record.toRow()), "Failed to insert certificate: " + db_.getLastError());
+            if (!db_->insert(record.toRow()))
+            {
+                throw casket::RuntimeError(
+                    "{} row: {}, field: {}", db_->getLastError(), db_->getErrorRow(), db_->getErrorField());
+            }
         },
         [&]()
         {
-            auto fieldValue = makeFieldValue(fingerprint.toString());
-            db_.removeByIndex(0, fieldValue);
+            auto fieldValue = db::makeFieldValue(fingerprint.toString());
+            const auto* foundRow = db_->findByIndex(0, fieldValue);
+            if (foundRow)
+            {
+                for (size_t i = 0; i < db_->size(); ++i)
+                {
+                    if (&db_->getRow(i) == foundRow)
+                    {
+                        db_->remove(i);
+                        break;
+                    }
+                }
+            }
         });
 
     chain.addAction(
@@ -135,7 +157,7 @@ void CertManager::insertCertificate(const std::string& policyName, const CertFin
     chain.addAction(
         [&]()
         {
-            db_.writeToFile(config_.getCertsMetadataPath());
+            db_->writeToFile(config_.getCertsMetadataPath());
         });
 
     chain.execute();
@@ -154,8 +176,8 @@ std::vector<CertificateRecord> CertManager::findByPolicy(const std::string& poli
 {
     std::vector<CertificateRecord> result;
 
-    auto fieldValue = makeFieldValue(policyName);
-    const Row* row = db_.findByIndex(1, fieldValue);
+    auto fieldValue = db::makeFieldValue(policyName);
+    const db::IRow* row = db_->findByIndex(1, fieldValue);
     if (row)
     {
         result.push_back(CertificateRecord::fromRow(*row));
@@ -177,9 +199,9 @@ void CertManager::rebuildCache()
 {
     certCache_.clear();
 
-    for (size_t i = 0; i < db_.size(); i++)
+    for (size_t i = 0; i < db_->size(); i++)
     {
-        const auto& row = db_.getRow(i);
+        const auto& row = db_->getRow(i);
         auto record = CertificateRecord::fromRow(row);
 
         auto cert = crypto::Cert::fromStorage(record.certPath);

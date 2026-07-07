@@ -47,6 +47,7 @@ PKIManager::PKIManager(const StorageConfig& storageConfig)
     : storageConfig_(storageConfig)
     , policyManager_(std::make_unique<PolicyManager>(storageConfig))
     , certManager_(std::make_unique<CertManager>(storageConfig))
+    , trustedCertManager_(std::make_unique<TrustedCertManager>(storageConfig))
 {
     registerCommands();
 
@@ -88,7 +89,7 @@ CommandResult<std::string> PKIManager::handleListPolicies()
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to list policies: " + std::string(e.what()));
+        return error("failed to list policies: " + std::string(e.what()));
     }
 }
 
@@ -107,7 +108,7 @@ CommandResult<std::string> PKIManager::handlePolicyInfo(const json::Object& para
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to handle policy info: " + std::string(e.what()));
+        return error("failed to handle policy info: " + std::string(e.what()));
     }
 }
 
@@ -121,7 +122,7 @@ CommandResult<std::string> PKIManager::handleCreatePolicy(const json::Object& pa
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to create policy: " + std::string(e.what()));
+        return error("failed to create policy: " + std::string(e.what()));
     }
 }
 
@@ -135,7 +136,7 @@ CommandResult<std::string> PKIManager::handleRemovePolicy(const json::Object& pa
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to remove policy: " + std::string(e.what()));
+        return error("failed to remove policy: " + std::string(e.what()));
     }
 }
 
@@ -167,7 +168,7 @@ CommandResult<std::string> PKIManager::handleEnablePolicy(const json::Object& pa
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to enable policy: " + std::string(e.what()));
+        return error("failed to enable policy: " + std::string(e.what()));
     }
 }
 
@@ -200,7 +201,7 @@ CommandResult<std::string> PKIManager::handleDisablePolicy(const json::Object& p
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to disable policy: " + std::string(e.what()));
+        return error("failed to disable policy: " + std::string(e.what()));
     }
 }
 
@@ -262,7 +263,7 @@ CommandResult<std::string> PKIManager::handleGenerateKey(const json::Object& par
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to generate private key: " + std::string(e.what()));
+        return error("failed to generate private key: " + std::string(e.what()));
     }
 }
 
@@ -318,7 +319,7 @@ CommandResult<std::string> PKIManager::handleGenerateSelfSignedCert(const json::
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to generate self-signed certificate: " + std::string(e.what()));
+        return error("failed to generate self-signed certificate: " + std::string(e.what()));
     }
 }
 
@@ -347,7 +348,7 @@ CommandResult<std::string> PKIManager::handleGetCertRequest(const json::Object& 
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: failed to get CSR: " + std::string(e.what()));
+        return error("failed to get CSR: " + std::string(e.what()));
     }
 }
 
@@ -388,7 +389,27 @@ CommandResult<std::string> PKIManager::handleResignCert(const json::Object& para
     }
     catch (const std::exception& e)
     {
-        return error("ERROR: Failed to re-sign certificate: " + std::string(e.what()));
+        return error("Failed to re-sign certificate: " + std::string(e.what()));
+    }
+}
+
+CommandResult<std::string> PKIManager::handleAddTrustedCert(const json::Object& params)
+{
+    try
+    {
+        auto id = params.get<std::string>("id").value();
+        auto body = params.get<std::string>("body").value();
+
+        auto cert = crypto::Cert::fromBase64(body);
+        auto fingerprint = CertFingerprintGenerator::generate(cert, EVP_sha1());
+
+        trustedCertManager_->insertCertificate(id, fingerprint, cert);
+
+        return success(std::string("OK: trusted certificate successfully added"));
+    }
+    catch (const std::exception& e)
+    {
+        return error("Failed to add trusted certificate: " + std::string(e.what()));
     }
 }
 
@@ -527,6 +548,20 @@ void PKIManager::registerCommands()
             return handleResignCert(*obj);
         },
         getResignCertSchema);
+
+    auto addTrustedCertSchema = json::Schema::create();
+    addTrustedCertSchema->add(json::TypedParamSpec<std::string>("id", "Certificate object identifier", true));
+    addTrustedCertSchema->add(json::TypedParamSpec<std::string>("body", "Certificate in Base64 encoding", true));
+
+    dispatcher_.registerCommand(
+        "add-trusted-cert",
+        "Add trusted certificate into storage",
+        [this](const json::Value& params) -> CommandResult<std::string>
+        {
+            const auto* obj = params.get<json::Object>();
+            return handleAddTrustedCert(*obj);
+        },
+        addTrustedCertSchema);
 }
 
 bool PKIManager::processCommand(casket::Context<casket::UnixSocket>& ctx)

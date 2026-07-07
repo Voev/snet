@@ -17,6 +17,10 @@ public:
 
     std::string getPolicyMetadataPath() const;
 
+    std::filesystem::path getTrustedStorageDir() const;
+
+    std::string getTrustedCertsIndex() const;
+
     std::string getCertsMetadataPath() const;
 
     std::string getCACertPath(const std::string& name) const;
@@ -25,6 +29,7 @@ public:
 
 public:
     std::string storageDir;
+    std::string trustedStoreName;
     std::string policyMetadataFile;
     std::string certsMetadataFile;
     std::string caCertName;

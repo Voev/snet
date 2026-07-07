@@ -12,7 +12,11 @@ add_library(${TARGET_NAME} STATIC ${SOURCES})
 
 # Dependencies
 
-target_link_libraries(${TARGET_NAME} PUBLIC snet_crypto)
+target_link_libraries(${TARGET_NAME}
+    PUBLIC
+        snet_crypto
+        casket_db
+)
 
 # Code coverage target
 target_code_coverage(${TARGET_NAME})

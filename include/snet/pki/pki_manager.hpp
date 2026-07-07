@@ -7,6 +7,7 @@
 #include <snet/pki/storage_config.hpp>
 #include <snet/pki/cert_manager.hpp>
 #include <snet/pki/policy_manager.hpp>
+#include <snet/pki/trusted_cert_manager.hpp>
 
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_authority.hpp>
@@ -178,6 +179,8 @@ public:
 
     CommandResult<std::string> handleResignCert(const casket::json::Object& params);
 
+    CommandResult<std::string> handleAddTrustedCert(const casket::json::Object& params);
+
     void registerCommands();
 
     bool processCommand(casket::Context<casket::UnixSocket>& ctx);
@@ -192,6 +195,7 @@ private:
     PKICommandDispatcher dispatcher_;
     std::unique_ptr<PolicyManager> policyManager_;
     std::unique_ptr<CertManager> certManager_;
+    std::unique_ptr<TrustedCertManager> trustedCertManager_;
     std::map<std::string, std::shared_ptr<crypto::CertAuthority>> entities_;
 };
 

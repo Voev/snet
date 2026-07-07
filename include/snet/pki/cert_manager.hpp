@@ -10,9 +10,9 @@
 #include <snet/pki/cert_cache.hpp>
 #include <snet/pki/storage_config.hpp>
 
-#include <snet/utils/file_db.hpp>
 #include <snet/crypto/cert.hpp>
 
+#include <casket/db/i_database.hpp>
 #include <casket/utils/action_chain.hpp>
 #include <casket/utils/noncopyable.hpp>
 
@@ -31,9 +31,9 @@ struct CertificateRecord
     CertStatus status{CertStatus::UNKNOWN};
     std::string certPath;
 
-    Row toRow() const;
+    std::shared_ptr<casket::db::IRow> toRow() const;
 
-    static CertificateRecord fromRow(const Row& row);
+    static CertificateRecord fromRow(const casket::db::IRow& row);
 };
 
 class CertManager final : casket::NonCopyable
@@ -62,7 +62,7 @@ private:
 
 private:
     const StorageConfig& config_;
-    TXTDatabase db_;
+    std::unique_ptr<casket::db::IDatabase> db_;
     L1CertCache certCache_;
 };
 

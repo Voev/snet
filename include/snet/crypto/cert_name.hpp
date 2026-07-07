@@ -15,7 +15,7 @@ public:
 
     static std::string serialNumber(OSSL_CONST_COMPAT X509Name* name);
 
-    static inline std::string toString(X509Name* name)
+    static inline std::string toString(const X509Name* name)
     {
         auto bio = BioTraits::createMemoryBuffer();
         X509_NAME_print_ex(bio, name, 0, XN_FLAG_ONELINE);
