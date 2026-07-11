@@ -165,13 +165,6 @@ public:
 
     virtual ~Packet() noexcept;
 
-    Packet(nonstd::span<const uint8_t> data, bool deleteRawDataAtDestructor,
-           LinkLayerType layerType = LINKTYPE_ETHERNET);
-
-    Packet(size_t maxPacketLen);
-
-    Packet(nonstd::span<uint8_t> buffer);
-
     Packet(const Packet& other) = delete;
 
     Packet& operator=(const Packet& other) = delete;
@@ -180,6 +173,7 @@ public:
     {
         return m_LayerCount;
     }
+
     const LayerInfo& getLayer(size_t index) const noexcept
     {
         return m_Layers[index];

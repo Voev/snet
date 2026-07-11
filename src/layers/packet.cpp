@@ -23,28 +23,6 @@ Packet::~Packet() noexcept
     }
 }
 
-Packet::Packet(nonstd::span<const uint8_t> data, bool deleteRawDataAtDestructor, LinkLayerType layerType)
-    : m_DeleteRawDataAtDestructor(deleteRawDataAtDestructor)
-{
-    setRawData(data, layerType, -1);
-}
-
-Packet::Packet(size_t maxPacketLen)
-    : m_MaxPacketLen(maxPacketLen)
-    , m_DeleteRawDataAtDestructor(true)
-{
-    uint8_t* data = new uint8_t[maxPacketLen];
-    memset(data, 0, maxPacketLen);
-
-    setRawData({data, 0}, LINKTYPE_ETHERNET, -1);
-}
-
-Packet::Packet(nonstd::span<uint8_t> buffer)
-    : m_MaxPacketLen(buffer.size())
-{
-    setRawData(buffer, LINKTYPE_ETHERNET, -1);
-}
-
 bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength)
 {
     if (data.empty() && data.data() == nullptr)
