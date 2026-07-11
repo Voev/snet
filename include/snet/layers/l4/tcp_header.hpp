@@ -183,6 +183,24 @@ public:
         return nullptr;
     }
 
+    
+    /// @brief Returns a pointer to the raw TCP header.
+    /// @return Pointer to raw TCP header data.
+    const RawType* raw() const noexcept
+    {
+        return header_;
+    }
+
+    /// @brief Creates a TCPHeader from a raw TCP header pointer.
+    /// @param [in] raw Pointer to raw TCP header.
+    /// @return TCPHeader object.
+    static TCPHeader fromRaw(const RawType* raw) noexcept
+    {
+        TCPHeader header;
+        header.header_ = raw;
+        return header;
+    }
+
     /// @brief Gets the length of options in bytes.
     /// @return Options length in bytes, or 0 if no options exist.
     size_t optionsLength() const noexcept
