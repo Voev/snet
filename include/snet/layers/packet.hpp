@@ -22,18 +22,207 @@
 namespace snet::layers
 {
 
-class Packet
+class Packet final
 {
+public:
+    Packet() = default;
+
+    ~Packet() noexcept = default;
+
+    Packet(const Packet& other) = delete;
+
+    Packet& operator=(const Packet& other) = delete;
+
+    Packet(Packet&& other) noexcept = default;
+
+    Packet& operator=(Packet&& other) noexcept = default;
+
+    inline void setRawData(const uint8_t* data, size_t len, LinkLayerType linkType = LINKTYPE_ETHERNET)
+    {
+        rawData_ = data;
+        rawDataLen_ = len;
+        linkLayerType_ = linkType;
+        parse();
+    }
+
+    inline void setRawData(nonstd::span<const uint8_t> data, LinkLayerType linkType = LINKTYPE_ETHERNET)
+    {
+        setRawData(data.data(), data.size(), linkType);
+    }
+
+    inline size_t layerCount() const noexcept
+    {
+        return layerCount_;
+    }
+
+    inline const LayerInfo& getLayer(size_t index) const noexcept
+    {
+        return layers_[index];
+    }
+
+    inline const uint8_t* getPayloadData(const LayerInfo* layer) const noexcept
+    {
+        if (layer->payloadOffset > 0)
+        {
+            return rawData_ + layer->payloadOffset;
+        }
+        return nullptr;
+    }
+
+    inline size_t getPayloadSize(const LayerInfo* layer) const noexcept
+    {
+        if (layer->payloadOffset > 0)
+        {
+            return rawDataLen_ - layer->payloadOffset;
+        }
+        return 0;
+    }
+
+    inline nonstd::span<uint8_t> getPayload(const LayerInfo* layer) noexcept
+    {
+        if (layer && layer->payloadOffset > 0 && layer->payloadOffset < rawDataLen_)
+        {
+            return nonstd::span<uint8_t>(const_cast<uint8_t*>(rawData_ + layer->payloadOffset),
+                                         rawDataLen_ - layer->payloadOffset);
+        }
+        return nonstd::span<uint8_t>();
+    }
+
+    nonstd::span<const uint8_t> getPayload(const LayerInfo* layer) const noexcept
+    {
+        if (layer && layer->payloadOffset > 0 && layer->payloadOffset < rawDataLen_)
+        {
+            return nonstd::span<const uint8_t>(rawData_ + layer->payloadOffset, rawDataLen_ - layer->payloadOffset);
+        }
+        return nonstd::span<const uint8_t>();
+    }
+
+    nonstd::span<const uint8_t> getPayload(ProtocolType protocol) const noexcept
+    {
+        auto* layer = findLayer(protocol);
+        if (!layer)
+        {
+            return nonstd::span<const uint8_t>();
+        }
+        return getPayload(layer);
+    }
+
+    nonstd::span<uint8_t> getPayload(ProtocolType protocol) noexcept
+    {
+        auto* layer = findLayer(protocol);
+        if (!layer)
+        {
+            return nonstd::span<uint8_t>();
+        }
+        return getPayload(layer);
+    }
+
+    nonstd::span<const uint8_t> getPayload(size_t layerIndex) const noexcept
+    {
+        if (layerIndex >= layerCount_)
+        {
+            return nonstd::span<const uint8_t>();
+        }
+        return getPayload(&layers_[layerIndex]);
+    }
+
+    nonstd::span<uint8_t> getPayload(size_t layerIndex) noexcept
+    {
+        if (layerIndex >= layerCount_)
+        {
+            return nonstd::span<uint8_t>();
+        }
+        return getPayload(&layers_[layerIndex]);
+    }
+
+    const LayerInfo* begin() const noexcept
+    {
+        return layers_.data();
+    }
+
+    const LayerInfo* end() const noexcept
+    {
+        return layers_.data() + layerCount_;
+    }
+
+    const LayerInfo* findLayer(ProtocolType protocol) const noexcept
+    {
+        for (size_t i = 0; i < layerCount_; ++i)
+        {
+            if (layers_[i].protocol == protocol)
+            {
+                return &layers_[i];
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename HeaderType>
+    HeaderType getHeader(const LayerInfo& layer) const noexcept
+    {
+        HeaderType hdr;
+        hdr.initialize(layer, *this);
+        return hdr;
+    }
+
+    template <typename HeaderType>
+    HeaderType getHeader(size_t layerIndex) const noexcept
+    {
+        if (layerIndex >= layerCount_)
+        {
+            return HeaderType();
+        }
+        return getHeader<HeaderType>(layers_[layerIndex]);
+    }
+
+    template <typename HeaderType>
+    HeaderType getHeader(ProtocolType protocol) const noexcept
+    {
+        auto* layer = findLayer(protocol);
+        if (!layer)
+        {
+            return HeaderType();
+        }
+        return getHeader<HeaderType>(*layer);
+    }
+
+    inline void clear() noexcept
+    {
+        rawData_ = nullptr;
+        rawDataLen_ = 0;
+        layerCount_ = 0;
+    }
+
+    inline void setTimestamp(Timestamp timestamp)
+    {
+        timestamp_ = std::move(timestamp);
+    }
+
+    inline Timestamp getTimestamp() const
+    {
+        return timestamp_;
+    }
+
+    inline const uint8_t* getData() const
+    {
+        return rawData_;
+    }
+
+    inline LinkLayerType getLinkLayerType() const
+    {
+        return linkLayerType_;
+    }
+
+    inline size_t getDataLen() const
+    {
+        return rawDataLen_;
+    }
+
+    static bool isLinkTypeValid(int linkTypeValue);
+
+    void parse() noexcept;
+
 private:
-    Timestamp timestamp_;
-
-    uint8_t* m_RawData{nullptr};
-    size_t m_RawDataLen{0UL};
-
-    std::array<LayerInfo, 8> m_Layers;
-    size_t m_LayerCount = 0;
-    LinkLayerType m_LinkLayerType{LINKTYPE_ETHERNET};
-
     static ProtocolType getProtocolFromLinkType(LinkLayerType linkType)
     {
         switch (linkType)
@@ -60,258 +249,16 @@ private:
         }
     }
 
-    nonstd::optional<LayerInfo> parseLayer(ProtocolType protocol, size_t globalOffset, size_t remaining) noexcept
-    {
-        LayerInfo info{};
-        info.protocol = protocol;
-        info.offset = globalOffset;
-        info.payloadOffset = 0;
-
-        switch (protocol)
-        {
-        case Ethernet:
-        {
-            constexpr size_t ETHERNET_LEN = 14;
-            if (remaining < ETHERNET_LEN)
-                return nonstd::nullopt;
-
-            info.headerLength = ETHERNET_LEN;
-            info.payloadOffset = globalOffset + ETHERNET_LEN;
-
-            auto eth = EthernetHeader();
-            if (!eth.initialize(info, *this))
-            {
-                return nonstd::nullopt;
-            }
-
-            if (eth.etherType() == EtherType::VLAN || eth.etherType() == EtherType::IEEE_802_1AD)
-            {
-                if (remaining >= ETHERNET_LEN + 4)
-                {
-                    info.headerLength = ETHERNET_LEN + 4;
-                    info.payloadOffset = globalOffset + ETHERNET_LEN + 4;
-                }
-            }
-            break;
-        }
-
-        case IPv4:
-        {
-            constexpr size_t MIN_IP_LEN = 20;
-            if (remaining < MIN_IP_LEN)
-                return nonstd::nullopt;
-
-            auto ip = IPv4Header();
-            if (!ip.initialize(info, *this))
-            {
-                return nonstd::nullopt;
-            }
-
-            info.headerLength = ip.headerLength();
-            info.payloadOffset = globalOffset + info.headerLength;
-            break;
-        }
-
-        case IPv6:
-        {
-            constexpr size_t IPV6_LEN = 40;
-            if (remaining < IPV6_LEN)
-                return nonstd::nullopt;
-
-            info.headerLength = IPV6_LEN;
-            info.payloadOffset = globalOffset + IPV6_LEN;
-            break;
-        }
-
-        case TCP:
-        {
-            constexpr size_t MIN_TCP_LEN = 20;
-            if (remaining < MIN_TCP_LEN)
-                return nonstd::nullopt;
-
-            TCPHeader tcp;
-            if (!tcp.initialize(info, *this))
-            {
-                return nonstd::nullopt;
-            }
-
-            info.headerLength = tcp.headerLength();
-            info.payloadOffset = globalOffset + info.headerLength;
-            break;
-        }
-
-        default:
-            info.headerLength = remaining;
-            info.payloadOffset = globalOffset + remaining;
-            break;
-        }
-
-        if (globalOffset + info.headerLength > m_RawDataLen)
-        {
-            return nonstd::nullopt;
-        }
-
-        return info;
-    }
-
-public:
-    Packet() = default;
-
-    ~Packet() noexcept = default;
-
-    Packet(const Packet& other) = delete;
-
-    Packet& operator=(const Packet& other) = delete;
-
-    size_t layerCount() const noexcept
-    {
-        return m_LayerCount;
-    }
-
-    const LayerInfo& getLayer(size_t index) const noexcept
-    {
-        return m_Layers[index];
-    }
-
-    const uint8_t* getPayload(const LayerInfo* layer) const noexcept
-    {
-        if (layer->payloadOffset > 0)
-        {
-            return m_RawData + layer->payloadOffset;
-        }
-        return nullptr;
-    }
-
-    size_t getPayloadSize(const LayerInfo* layer) const noexcept
-    {
-        if (layer->payloadOffset > 0)
-        {
-            return m_RawDataLen - layer->payloadOffset;
-        }
-        return 0;
-    }
-
-    const LayerInfo* begin() const noexcept
-    {
-        return m_Layers.data();
-    }
-
-    const LayerInfo* end() const noexcept
-    {
-        return m_Layers.data() + m_LayerCount;
-    }
-
-    const LayerInfo* findLayer(ProtocolType protocol) const noexcept
-    {
-        for (size_t i = 0; i < m_LayerCount; ++i)
-        {
-            if (m_Layers[i].protocol == protocol)
-            {
-                return &m_Layers[i];
-            }
-        }
-        return nullptr;
-    }
-
-    template <typename HeaderType>
-    HeaderType getHeader(const LayerInfo& layer) const noexcept
-    {
-        HeaderType hdr;
-        hdr.initialize(layer, *this);
-        return hdr;
-    }
-
-    template <typename HeaderType>
-    HeaderType getHeader(size_t layerIndex) const noexcept
-    {
-        if (layerIndex >= m_LayerCount)
-            return HeaderType();
-        return getHeader<HeaderType>(m_Layers[layerIndex]);
-    }
-
-    template <typename HeaderType>
-    HeaderType getHeader(ProtocolType protocol) const noexcept
-    {
-        auto* layer = findLayer(protocol);
-        if (!layer)
-            return HeaderType();
-        return getHeader<HeaderType>(*layer);
-    }
-
-    void parse() noexcept
-    {
-        m_LayerCount = 0;
-
-        size_t packetLen = m_RawDataLen;
-        size_t offset = 0;
-
-        ProtocolType currentProto = getProtocolFromLinkType(m_LinkLayerType);
-
-        while (offset < packetLen && m_LayerCount < 8)
-        {
-            size_t remaining = packetLen - offset;
-
-            auto layerInfo = parseLayer(currentProto, offset, remaining);
-            if (!layerInfo)
-            {
-                break;
-            }
-
-            m_Layers[m_LayerCount++] = *layerInfo;
-            offset = layerInfo->getEndOffset();
-
-            if (offset >= packetLen)
-                break;
-
-            const LayerInfo& currentLayer = m_Layers[m_LayerCount - 1];
-            currentProto = getNextProtocol(currentLayer);
-
-            if (currentProto == UnknownProtocol)
-            {
-                break;
-            }
-        }
-    }
-
-    void clear();
-
-    virtual bool setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType);
-
-    void setTimestamp(Timestamp timestamp)
-    {
-        timestamp_ = std::move(timestamp);
-    }
-
-    Timestamp getTimestamp() const
-    {
-        return timestamp_;
-    }
-
-    const uint8_t* getData() const
-    {
-        return m_RawData;
-    }
-
-    LinkLayerType getLinkLayerType() const
-    {
-        return m_LinkLayerType;
-    }
-
-    size_t getDataLen() const
-    {
-        return m_RawDataLen;
-    }
-
-    static bool isLinkTypeValid(int linkTypeValue);
+    nonstd::optional<LayerInfo> parseLayer(ProtocolType protocol, size_t globalOffset, size_t remaining) noexcept;
 
 private:
-    void destructPacketData();
-
-    void reallocateRawData(size_t newSize);
-
-    std::string printPacketInfo() const;
-
-}; // class Packet
+    const uint8_t* rawData_{nullptr};
+    size_t rawDataLen_{0UL};
+    Timestamp timestamp_;
+    std::array<LayerInfo, 8> layers_;
+    size_t layerCount_ = 0;
+    LinkLayerType linkLayerType_{LINKTYPE_ETHERNET};
+};
 
 } // namespace snet::layers
 

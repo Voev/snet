@@ -7,30 +7,8 @@
 
 using namespace casket;
 
-
 namespace snet::layers
 {
-
-bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType)
-{
-    if (data.empty() && data.data() == nullptr)
-    {
-        return false;
-    }
-
-    m_RawData = const_cast<uint8_t*>(data.data());
-    m_RawDataLen = data.size();
-
-    m_LinkLayerType = layerType;
-
-    return true;
-}
-
-void Packet::clear()
-{
-    m_RawData = nullptr;
-    m_RawDataLen = 0;
-}
 
 bool Packet::isLinkTypeValid(int linkTypeValue)
 {
@@ -133,6 +111,145 @@ bool Packet::isLinkTypeValid(int linkTypeValue)
         return true;
     default:
         return false;
+    }
+}
+
+nonstd::optional<LayerInfo> Packet::parseLayer(ProtocolType protocol, size_t globalOffset, size_t remaining) noexcept
+{
+    LayerInfo info{};
+    info.protocol = protocol;
+    info.offset = globalOffset;
+    info.payloadOffset = 0;
+
+    switch (protocol)
+    {
+    case Ethernet:
+    {
+        constexpr size_t ETHERNET_LEN = 14;
+        if (remaining < ETHERNET_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = ETHERNET_LEN;
+        info.payloadOffset = globalOffset + ETHERNET_LEN;
+
+        auto eth = EthernetHeader();
+        if (!eth.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        if (eth.etherType() == EtherType::VLAN || eth.etherType() == EtherType::IEEE_802_1AD)
+        {
+            if (remaining >= ETHERNET_LEN + 4)
+            {
+                info.headerLength = ETHERNET_LEN + 4;
+                info.payloadOffset = globalOffset + ETHERNET_LEN + 4;
+            }
+        }
+        break;
+    }
+
+    case IPv4:
+    {
+        constexpr size_t MIN_IP_LEN = 20;
+        if (remaining < MIN_IP_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        auto ip = IPv4Header();
+        if (!ip.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = ip.headerLength();
+        info.payloadOffset = globalOffset + info.headerLength;
+        break;
+    }
+
+    case IPv6:
+    {
+        constexpr size_t IPV6_LEN = 40;
+        if (remaining < IPV6_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = IPV6_LEN;
+        info.payloadOffset = globalOffset + IPV6_LEN;
+        break;
+    }
+
+    case TCP:
+    {
+        constexpr size_t MIN_TCP_LEN = 20;
+        if (remaining < MIN_TCP_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        TCPHeader tcp;
+        if (!tcp.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = tcp.headerLength();
+        info.payloadOffset = globalOffset + info.headerLength;
+        break;
+    }
+
+    default:
+        info.headerLength = remaining;
+        info.payloadOffset = globalOffset + remaining;
+        break;
+    }
+
+    if (globalOffset + info.headerLength > rawDataLen_)
+    {
+        return nonstd::nullopt;
+    }
+
+    return info;
+}
+
+void Packet::parse() noexcept
+{
+    layerCount_ = 0;
+
+    size_t packetLen = rawDataLen_;
+    size_t offset = 0;
+
+    ProtocolType currentProto = getProtocolFromLinkType(linkLayerType_);
+
+    while (offset < packetLen && layerCount_ < layers_.max_size())
+    {
+        size_t remaining = packetLen - offset;
+
+        auto layerInfo = parseLayer(currentProto, offset, remaining);
+        if (!layerInfo)
+        {
+            break;
+        }
+
+        layers_[layerCount_++] = *layerInfo;
+        offset = layerInfo->getEndOffset();
+
+        if (offset >= packetLen)
+        {
+            break;
+        }
+
+        const LayerInfo& currentLayer = layers_[layerCount_ - 1];
+        currentProto = getNextProtocol(currentLayer);
+
+        if (currentProto == UnknownProtocol)
+        {
+            break;
+        }
     }
 }
 

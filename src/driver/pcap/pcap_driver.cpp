@@ -249,14 +249,8 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
 
         memcpy(packet->data, data, caplen);
 
-        if (!packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType()))
-        {
-            rstat = RecvStatus::Error;
-        }
-        else
-        {
-            stats_.packets_received++;
-        }
+        packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType());
+        stats_.packets_received++;
 
         packets[i] = &packet->packet;
     }
