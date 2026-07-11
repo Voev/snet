@@ -92,7 +92,7 @@ Status Pcap::configure(const io::Config& config)
         }
     }
 
-    pool_ = std::make_unique<PacketPool<PcapPacket>>(config.getMsgPoolSize(), config.getSnaplen());
+    pool_ = std::make_unique<casket::FixedObjectPool<PcapPacket>>(config.getMsgPoolSize(), config.getSnaplen());
 
     if (mode_ == Mode::ReadFile)
     {
@@ -249,7 +249,7 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
 
         memcpy(packet->data, data, caplen);
 
-        if (!packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType(), -1))
+        if (!packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType()))
         {
             rstat = RecvStatus::Error;
         }
@@ -305,7 +305,8 @@ layers::LinkLayerType Pcap::getDataLinkType() const
 
 Status Pcap::getMsgPoolInfo(PacketPoolInfo& info)
 {
-    pool_->getInfo(info);
+    (void)info;
+    //pool_->getInfo(info);
     return Status::Success;
 }
 

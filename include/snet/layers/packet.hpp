@@ -28,14 +28,10 @@ private:
     Timestamp timestamp_;
 
     uint8_t* m_RawData{nullptr};
+    size_t m_RawDataLen{0UL};
 
     std::array<LayerInfo, 8> m_Layers;
     size_t m_LayerCount = 0;
-
-    size_t m_RawDataLen{0UL};
-    size_t m_MaxPacketLen{0UL};
-    size_t m_FrameLength{0UL};
-
     LinkLayerType m_LinkLayerType{LINKTYPE_ETHERNET};
 
     static ProtocolType getProtocolFromLinkType(LinkLayerType linkType)
@@ -159,9 +155,9 @@ private:
     }
 
 public:
-    Packet();
+    Packet() = default;
 
-    virtual ~Packet() noexcept;
+    ~Packet() noexcept = default;
 
     Packet(const Packet& other) = delete;
 
@@ -279,7 +275,7 @@ public:
 
     void clear();
 
-    virtual bool setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength);
+    virtual bool setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType);
 
     void setTimestamp(Timestamp timestamp)
     {

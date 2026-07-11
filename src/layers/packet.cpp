@@ -11,31 +11,12 @@ using namespace casket;
 namespace snet::layers
 {
 
-Packet::Packet()
-{
-}
-
-Packet::~Packet() noexcept
-{
-}
-
-bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength)
+bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType)
 {
     if (data.empty() && data.data() == nullptr)
     {
         return false;
     }
-
-    if (frameLength == -1)
-    {
-        frameLength = data.size();
-    }
-    else if (frameLength < static_cast<int>(data.size()))
-    {
-        return false;
-    }
-
-    m_FrameLength = frameLength;
 
     m_RawData = const_cast<uint8_t*>(data.data());
     m_RawDataLen = data.size();
@@ -49,7 +30,6 @@ void Packet::clear()
 {
     m_RawData = nullptr;
     m_RawDataLen = 0;
-    m_FrameLength = 0;
 }
 
 bool Packet::isLinkTypeValid(int linkTypeValue)

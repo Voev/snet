@@ -268,8 +268,7 @@ static bool ProcessMessage(const nlmsghdr* nlh, NfqPacket* nfqPacket)
         pktlen = framelen;
     }
 
-    nfqPacket->packet.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW,
-                                 framelen);
+    nfqPacket->packet.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW);
     nfqPacket->packet.setTimestamp(Timestamp::currentTime());
     return true;
 }
