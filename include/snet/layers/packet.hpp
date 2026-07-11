@@ -38,8 +38,6 @@ private:
 
     LinkLayerType m_LinkLayerType{LINKTYPE_ETHERNET};
 
-    bool m_DeleteRawDataAtDestructor{false};
-
     static ProtocolType getProtocolFromLinkType(LinkLayerType linkType)
     {
         switch (linkType)

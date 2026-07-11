@@ -17,10 +17,6 @@ Packet::Packet()
 
 Packet::~Packet() noexcept
 {
-    if (m_DeleteRawDataAtDestructor)
-    {
-        delete[] m_RawData;
-    }
 }
 
 bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength)
@@ -39,34 +35,10 @@ bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerTyp
         return false;
     }
 
-    if (m_DeleteRawDataAtDestructor && m_RawData)
-    {
-        delete[] m_RawData;
-        m_RawData = nullptr;
-    }
-
     m_FrameLength = frameLength;
 
-    if (m_DeleteRawDataAtDestructor)
-    {
-        try
-        {
-            m_RawData = new uint8_t[data.size()];
-            std::copy(data.begin(), data.end(), m_RawData);
-            m_RawDataLen = data.size();
-        }
-        catch (const std::bad_alloc&)
-        {
-            m_RawData = nullptr;
-            m_RawDataLen = 0;
-            return false;
-        }
-    }
-    else
-    {
-        m_RawData = const_cast<uint8_t*>(data.data());
-        m_RawDataLen = data.size();
-    }
+    m_RawData = const_cast<uint8_t*>(data.data());
+    m_RawDataLen = data.size();
 
     m_LinkLayerType = layerType;
 
@@ -75,9 +47,6 @@ bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerTyp
 
 void Packet::clear()
 {
-    if (m_RawData != nullptr && m_DeleteRawDataAtDestructor)
-        delete[] m_RawData;
-
     m_RawData = nullptr;
     m_RawDataLen = 0;
     m_FrameLength = 0;
