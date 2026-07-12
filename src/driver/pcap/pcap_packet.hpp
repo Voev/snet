@@ -104,10 +104,7 @@ public:
         if (len > 0)
         {
             std::memcpy(buffer_.get(), rawData, len);
-            packet_.setRawData(
-                nonstd::span<const uint8_t>(buffer_.get(), len),
-                layers::LINKTYPE_ETHERNET
-            );
+            packet_.setRawData(nonstd::span<const uint8_t>(buffer_.get(), len), layers::LINKTYPE_ETHERNET);
             packet_.setTimestamp(layers::Timestamp(hdr.ts));
         }
     }
@@ -123,8 +120,9 @@ public:
     static inline PcapPacket* fromPacket(layers::Packet* packet) noexcept
     {
         if (!packet)
+        {
             return nullptr;
-
+        }
         return casket::container_of(packet, &PcapPacket::packet_);
     }
 
@@ -136,12 +134,10 @@ public:
     static inline const PcapPacket* fromPacket(const layers::Packet* packet) noexcept
     {
         if (!packet)
+        {
             return nullptr;
-
-        return casket::container_of(
-            const_cast<layers::Packet*>(packet),
-            &PcapPacket::packet_
-        );
+        }
+        return casket::container_of(const_cast<layers::Packet*>(packet), &PcapPacket::packet_);
     }
 
     /// @brief Returns a pointer to the embedded Packet viewer.
