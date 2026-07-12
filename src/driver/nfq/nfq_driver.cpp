@@ -367,7 +367,7 @@ Status NfQueue::configure(const io::Config& config)
     bufferSize_ = snaplen_ + 4096;
     buffer_ = new uint8_t[bufferSize_];
 
-    pool_ = std::make_unique<PacketPool<NfqPacket>>(config.getMsgPoolSize(), config.getSnaplen());
+    pool_ = std::make_unique<casket::FixedObjectPool<NfqPacket>>(config.getMsgPoolSize(), config.getSnaplen());
     socket_ = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
     timeout_ = config.getTimeout();
@@ -538,9 +538,9 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
     uint32_t plen = (verdict == Verdict::Replace) ? packet->getDataLen() : 0;
     int nfqVerdict = (verdict == Verdict::Pass || verdict == Verdict::Replace) ? NF_ACCEPT : NF_DROP;
 
-    auto nlPacket = NfqPacket::fromPacket(packet);
+    auto nfqPacket = NfqPacket::fromPacket(packet);
 
-    nlmsghdr* nlh = SetVerdict(buffer_, ntohl(nlPacket->ph->packet_id), queueNumber_, nfqVerdict, plen,
+    nlmsghdr* nlh = SetVerdict(buffer_, ntohl(nfqPacket->ph->packet_id), queueNumber_, nfqVerdict, plen,
                                const_cast<uint8_t*>(packet->getData()));
 
     if (sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
@@ -548,10 +548,10 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
         return Status::Error;
     }
 
-    nlPacket->mh = nullptr;
-    nlPacket->ph = nullptr;
+    nfqPacket->mh = nullptr;
+    nfqPacket->ph = nullptr;
 
-    pool_->release(nlPacket);
+    pool_->release(nfqPacket);
 
     return Status::Success;
 }
@@ -585,9 +585,14 @@ int NfQueue::getSnaplen() const
     return snaplen_;
 }
 
-Status NfQueue::getMsgPoolInfo(PacketPoolInfo& info)
+Status NfQueue::getMsgPoolInfo(io::PacketPoolInfo& info)
 {
-    pool_->getInfo(info);
+     auto capacity = pool_->capacity();
+
+    info.size = capacity;
+    /// @todo: fix it.
+    info.available = 0;
+    info.memorySize = sizeof(NfqPacket) * capacity;
     return Status::Success;
 }
 

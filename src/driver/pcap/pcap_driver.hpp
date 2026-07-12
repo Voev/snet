@@ -1,6 +1,5 @@
 #pragma once
 #include <snet/io.hpp>
-#include <snet/layers/packet_pool.hpp>
 
 #include <casket/types/fixed_object_pool.hpp>
 
@@ -81,7 +80,7 @@ public:
     /// @brief Retrieves packet pool statistics
     /// @param[out] info Structure to fill with pool information
     /// @return Status indicating success or failure
-    Status getMsgPoolInfo(layers::PacketPoolInfo& info) override;
+    Status getMsgPoolInfo(io::PacketPoolInfo& info) override;
 
     /// @brief Gets current driver statistics
     /// @param[out] stats Structure to fill with statistics data

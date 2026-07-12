@@ -2,38 +2,60 @@
 #include <linux/netfilter.h>
 
 #include <snet/layers/packet.hpp>
-#include <casket/types/intrusive_list.hpp>
 
 namespace snet::driver
 {
 
 /// @brief Netfilter queue packet wrapper with intrusive list support.
-struct NfqPacket final : public casket::IntrusiveListNode<NfqPacket>
+struct NfqPacket final
 {
-    layers::Packet packet;             ///< Base packet structure
-    const nlmsghdr* mh{nullptr};       ///< Netlink message header
-    nfqnl_msg_packet_hdr* ph{nullptr}; ///< Netfilter queue packet header
-    uint8_t* data{nullptr};            ///< Raw packet data pointer
+    layers::Packet packet;
+    std::unique_ptr<uint8_t[]> buffer_; ///< Owned data buffer.
+    size_t capacity_{0};                ///< Buffer size.
+    const nlmsghdr* mh{nullptr};        ///< Netlink message header
+    nfqnl_msg_packet_hdr* ph{nullptr};  ///< Netfilter queue packet header
+    uint8_t* data{nullptr};             ///< Raw packet data pointer
 
-    /// @brief Converts a Packet pointer back to its containing NfqPacket.
+    /// @brief Default constructor.
+    NfqPacket() = default;
+
+    /// @brief Constructor with buffer allocation.
+    /// Called by FixedObjectPool when creating each packet in the pool.
+    /// @param maxPacketSize Size of the data buffer to allocate.
+    explicit NfqPacket(size_t maxPacketSize)
+    {
+        allocate(maxPacketSize);
+    }
+
+    NfqPacket(const NfqPacket&) = delete;
+    NfqPacket& operator=(const NfqPacket&) = delete;
+
+    NfqPacket(NfqPacket&&) = default;
+    NfqPacket& operator=(NfqPacket&&) = default;
+
+    void allocate(size_t size)
+    {
+        if (size > capacity_)
+        {
+            buffer_ = std::make_unique<uint8_t[]>(size);
+            data = buffer_.get();
+            capacity_ = size;
+            packet.setRawData(nonstd::span<const uint8_t>(data, size));
+        }
+    }
+
+    /// @brief Gets the parent wrapper from an embedded Packet pointer.
     ///
-    /// @param[in] packet Pointer to the embedded Packet structure.
+    /// @param[in] packet Pointer to the embedded Packet.
     ///
-    /// @return Pointer to the parent NfqPacket, or nullptr if input is nullptr.
-    static NfqPacket* fromPacket(layers::Packet* packet)
+    /// @return Pointer to the parent wrapper, or nullptr if input is null.
+    static NfqPacket* fromPacket(layers::Packet* packet) noexcept
     {
         if (!packet)
         {
             return nullptr;
         }
-
-        static const size_t offset = []() -> size_t
-        {
-            NfqPacket dummy;
-            return reinterpret_cast<size_t>(&dummy.packet) - reinterpret_cast<size_t>(&dummy);
-        }();
-
-        return reinterpret_cast<NfqPacket*>(reinterpret_cast<char*>(packet) - offset);
+        return casket::container_of(packet, &NfqPacket::packet);
     }
 };
 

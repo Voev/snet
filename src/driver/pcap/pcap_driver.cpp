@@ -162,7 +162,7 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
     struct pcap_pkthdr* pcaphdr{nullptr};
     const uint8_t* data{nullptr};
     uint16_t i{};
-    PcapPacket* packet{nullptr};
+    PcapPacket* pcapPacket{nullptr};
     int ret{};
 
     for (i = 0; i < maxCount; ++i)
@@ -174,8 +174,8 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             break;
         }
 
-        packet = pool_->acquire();
-        if (!packet)
+        pcapPacket = pool_->acquire();
+        if (!pcapPacket)
         {
             rstat = RecvStatus::NoMemory;
             break;
@@ -239,20 +239,10 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
             updateHwStats();
         }
 
-        struct timeval ts{};
-        ts.tv_sec = pcaphdr->ts.tv_sec;
-        ts.tv_usec = pcaphdr->ts.tv_usec;
-
-        packet->packet.setTimestamp(Timestamp(ts));
-
-        int caplen = (pcaphdr->caplen > snaplen_) ? snaplen_ : pcaphdr->caplen;
-
-        memcpy(packet->data, data, caplen);
-
-        packet->packet.setRawData({packet->data, (size_t)caplen}, getDataLinkType());
+        pcapPacket->setFromPcap(*pcaphdr, data);
         stats_.packets_received++;
 
-        packets[i] = &packet->packet;
+        packets[i] = pcapPacket->asPacket();
     }
 
     if (packetCount)
@@ -264,11 +254,10 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
 
 Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)
 {
-    auto innerPacket = PcapPacket::fromPacket(packet);
-    stats_.verdicts[verdict]++;
-    packet->clear();
-    pool_->release(innerPacket);
+    auto pcapPacket = PcapPacket::fromPacket(packet);
+    pool_->release(pcapPacket);
 
+    stats_.verdicts[verdict]++;
     return Status::Success;
 }
 
@@ -297,10 +286,14 @@ layers::LinkLayerType Pcap::getDataLinkType() const
     return layers::LINKTYPE_NULL;
 }
 
-Status Pcap::getMsgPoolInfo(PacketPoolInfo& info)
+Status Pcap::getMsgPoolInfo(io::PacketPoolInfo& info)
 {
-    (void)info;
-    //pool_->getInfo(info);
+    auto capacity = pool_->capacity();
+
+    info.size = capacity;
+    /// @todo: fix it.
+    info.available = 0;
+    info.memorySize = sizeof(PcapPacket) * capacity;
     return Status::Success;
 }
 
