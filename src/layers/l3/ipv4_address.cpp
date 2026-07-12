@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstring>
 #include <limits>
+#include <arpa/inet.h>
 
 #include <snet/layers/l3/ipv4_address.hpp>
 

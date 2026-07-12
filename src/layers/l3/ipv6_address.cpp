@@ -1,5 +1,6 @@
 #include <cassert>
 #include <algorithm>
+#include <arpa/inet.h>
 #include <snet/layers/l3/ipv6_address.hpp>
 
 #include <casket/utils/error_code.hpp>
@@ -20,12 +21,12 @@ IPv6Address::~IPv6Address() = default;
 IPv6Address::IPv6Address(nonstd::span<const std::uint8_t> bytes)
 {
     assert(bytes.size_bytes() == kBytesCount);
-    std::copy(bytes.begin(), bytes.end(), std::begin(addr_.s6_addr));
+    std::copy(bytes.begin(), bytes.end(), std::begin(addr_.as_bytes));
 }
 
 IPv6Address::IPv6Address(std::string_view str)
 {
-    if (inet_pton(AF_INET6, str.data(), &addr_.s6_addr) <= 0)
+    if (inet_pton(AF_INET6, str.data(), &addr_.as_bytes) <= 0)
     {
         auto ec = GetLastSystemError();
         if (!ec)
@@ -58,22 +59,22 @@ IPv6Address& IPv6Address::operator=(IPv6Address&& other) noexcept
 
 IPv6Address::iterator IPv6Address::begin()
 {
-    return addr_.s6_addr;
+    return addr_.as_bytes;
 }
 
 IPv6Address::const_iterator IPv6Address::begin() const
 {
-    return addr_.s6_addr;
+    return addr_.as_bytes;
 }
 
 IPv6Address::iterator IPv6Address::end()
 {
-    return addr_.s6_addr + kBytesCount;
+    return addr_.as_bytes + kBytesCount;
 }
 
 IPv6Address::const_iterator IPv6Address::end() const
 {
-    return addr_.s6_addr + kBytesCount;
+    return addr_.as_bytes + kBytesCount;
 }
 
 std::optional<IPv6Address> IPv6Address::fromString(std::string_view str)
@@ -164,16 +165,16 @@ std::string IPv6Address::toString() const
 
 bool IPv6Address::isLoopback() const noexcept
 {
-    return ((addr_.s6_addr[0] == 0) && (addr_.s6_addr[1] == 0) && (addr_.s6_addr[2] == 0) && (addr_.s6_addr[3] == 0) &&
-            (addr_.s6_addr[4] == 0) && (addr_.s6_addr[5] == 0) && (addr_.s6_addr[6] == 0) && (addr_.s6_addr[7] == 0) &&
-            (addr_.s6_addr[8] == 0) && (addr_.s6_addr[9] == 0) && (addr_.s6_addr[10] == 0) &&
-            (addr_.s6_addr[11] == 0) && (addr_.s6_addr[12] == 0) && (addr_.s6_addr[13] == 0) &&
-            (addr_.s6_addr[14] == 0) && (addr_.s6_addr[15] == 1));
+    return ((addr_.as_bytes[0] == 0) && (addr_.as_bytes[1] == 0) && (addr_.as_bytes[2] == 0) && (addr_.as_bytes[3] == 0) &&
+            (addr_.as_bytes[4] == 0) && (addr_.as_bytes[5] == 0) && (addr_.as_bytes[6] == 0) && (addr_.as_bytes[7] == 0) &&
+            (addr_.as_bytes[8] == 0) && (addr_.as_bytes[9] == 0) && (addr_.as_bytes[10] == 0) &&
+            (addr_.as_bytes[11] == 0) && (addr_.as_bytes[12] == 0) && (addr_.as_bytes[13] == 0) &&
+            (addr_.as_bytes[14] == 0) && (addr_.as_bytes[15] == 1));
 }
 
 bool IPv6Address::isMulticast() const noexcept
 {
-    return (addr_.s6_addr[0] == 0xff);
+    return (addr_.as_bytes[0] == 0xff);
 }
 
 IPv6Address IPv6Address::any() noexcept

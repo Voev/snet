@@ -6,23 +6,6 @@
 namespace snet::driver
 {
 
-static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* data)
-{
-    int ret = 1;
-    const nlattr* attr;
-
-    for (attr = (nlattr*)MessageGetPayloadOffset(nlh, offset);
-         AttrIsOk(attr, (char*)MessageGetPayloadTail(nlh) - (char*)(attr));
-         attr = AttrNext(attr))
-    {
-        if ((ret = ParseAttr(attr, data)) <= 0)
-        {
-            return ret;
-        }
-    }
-    return ret;
-}
-
 static bool ParseAttr(const nlattr* attr, void* data)
 {
     const nlattr** tb = (const nlattr**)data;
@@ -86,6 +69,23 @@ static bool ParseAttr(const nlattr* attr, void* data)
     return true;
 }
 
+static inline int ParseAttrs(const nlmsghdr* nlh, unsigned int offset, void* data)
+{
+    int ret = 1;
+    const nlattr* attr;
+
+    for (attr = (nlattr*)MessageGetPayloadOffset(nlh, offset);
+         AttrIsOk(attr, (char*)MessageGetPayloadTail(nlh) - (char*)(attr));
+         attr = AttrNext(attr))
+    {
+        if ((ret = ParseAttr(attr, data)) <= 0)
+        {
+            return ret;
+        }
+    }
+    return ret;
+}
+
 bool NfqPacket::setFromMessage(const nlmsghdr* nlh)
 {
     if (mh_)
@@ -107,7 +107,7 @@ bool NfqPacket::setFromMessage(const nlmsghdr* nlh)
 
     if (attr[NFQA_CAP_LEN])
     {
-        pktlen = ntohl(AttrGetUint32(attr[NFQA_CAP_LEN]));
+        pktlen = casket::be_to_host(AttrGetUint32(attr[NFQA_CAP_LEN]));
     }
 
     packet_.setRawData({(uint8_t*)AttrGetPayload(attr[NFQA_PAYLOAD]), pktlen}, layers::LINKTYPE_RAW);

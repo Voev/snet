@@ -1,9 +1,8 @@
 #pragma once
-#include <linux/netfilter.h>
 
 #include <snet/layers/packet.hpp>
-
-#include "nl_messages.hpp"
+#include <casket/utils/container_of.hpp>
+#include <casket/utils/endianness.hpp>
 
 namespace snet::driver
 {
@@ -117,7 +116,7 @@ public:
     {
         if (ph_)
         {
-            return ntohl(ph_->packet_id);
+            return casket::be_to_host(ph_->packet_id);
         }
         return 0U;
     }

@@ -65,7 +65,7 @@ public:
 
     const uint8_t* asData() const noexcept
     {
-        return addr_.s6_addr;
+        return addr_.as_bytes;
     }
 
 private:
