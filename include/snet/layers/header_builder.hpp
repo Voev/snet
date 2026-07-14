@@ -1,4 +1,3 @@
-// snet/layers/header_builder.hpp
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -8,7 +7,6 @@
 namespace snet::layers
 {
 
-// ====== SFINAE: проверка на span-подобность ======
 template <typename T>
 struct is_span_like
 {
@@ -26,13 +24,15 @@ public:
 template <typename T>
 static constexpr bool is_span_like_v = is_span_like<T>::value;
 
-/// @brief Универсальный строитель заголовков.
 template <typename HeaderType>
 class HeaderBuilder
 {
 public:
-    explicit HeaderBuilder(uint8_t* buffer, size_t capacity) noexcept
-        : buffer_(buffer)
+    using AdvanceCallback = std::function<void(size_t bytes)>;
+
+    explicit HeaderBuilder(uint8_t* buffer, size_t capacity, AdvanceCallback callback) noexcept
+        : callback_(std::move(callback))
+        , buffer_(buffer)
         , capacity_(capacity)
         , header_(nullptr)
         , built_(false)
@@ -44,7 +44,6 @@ public:
         }
     }
 
-    /// @brief Устанавливает поле с perfect forwarding.
     template <typename FieldType, typename ValueType>
     HeaderBuilder& set(FieldType HeaderType::* field, ValueType&& value) noexcept
     {
@@ -55,14 +54,13 @@ public:
         return *this;
     }
 
-    /// @brief Строит заголовок и возвращает размер.
     size_t build() noexcept
     {
         built_ = true;
-        return getHeaderSize();
+        size_t size = getHeaderSize();
+        if (callback_) callback_(size);
+        return size;
     }
-
-    // ====== ACCESSORS ======
 
     HeaderType* raw() noexcept
     {
@@ -82,39 +80,32 @@ public:
     }
 
 private:
-    // ====== Обычные поля ======
     template <typename FieldType, typename ValueType>
     void set_field(FieldType HeaderType::* field, ValueType&& value) noexcept
     {
         header_->*field = std::forward<ValueType>(value);
     }
 
-    // ====== Массивы ======
     template <typename T, size_t N, typename ValueType>
     void set_field(T (HeaderType::*field)[N], ValueType&& value) noexcept
     {
         using DecayedType = std::decay_t<ValueType>;
 
-        // Проверяем, является ли value span-подобным
         if constexpr (is_span_like_v<DecayedType>)
         {
-            // Для span/array/vector — копируем по размеру
             size_t copy_len = std::min(value.size(), N);
             std::memcpy(&(header_->*field), value.data(), copy_len * sizeof(T));
         }
         else if constexpr (std::is_pointer_v<DecayedType>)
         {
-            // Для сырого указателя — просто копируем N элементов
             std::memcpy(&(header_->*field), value, N * sizeof(T));
         }
         else if constexpr (std::is_array_v<DecayedType>)
         {
-            // Для массива — копируем
             std::memcpy(&(header_->*field), value, N * sizeof(T));
         }
         else
         {
-            // Для присваивания скалярных значений (например, int[2] = {1,2})
             static_assert(std::is_trivially_copyable_v<ValueType>, "Array assignment requires trivially copyable type");
             std::memcpy(&(header_->*field), &value, N * sizeof(T));
         }
@@ -145,6 +136,8 @@ private:
         return sizeof(HeaderType);
     }
 
+private:
+    AdvanceCallback callback_;
     uint8_t* buffer_;
     size_t capacity_;
     HeaderType* header_;

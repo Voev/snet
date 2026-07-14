@@ -14,8 +14,8 @@ TEST(VariableHeaderTest, EthernetWithoutVlan)
     auto eth = builder.eth();
     eth.set(&ethernet_header::dstMac, dst.bytes)
        .set(&ethernet_header::srcMac, src.bytes)
-       .set(&ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(EtherType::IP)));
-    builder.advance(eth.build());
+       .set(&ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(EtherType::IP)))
+       .build();
 
     EXPECT_EQ(builder.offset(), sizeof(ethernet_header));
 
@@ -34,18 +34,15 @@ TEST(VariableHeaderTest, EthernetWithVlan)
     uint8_t dst[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
     uint8_t src[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
 
-    // VLAN: etherType = 0x8100
     auto eth = builder.eth();
     eth.set(&ethernet_header::dstMac, dst)
        .set(&ethernet_header::srcMac, src)
-       .set(&ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(EtherType::VLAN)));
-    builder.advance(eth.build());
+       .set(&ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(EtherType::VLAN)))
+       .build();
 
-    // Проверяем размер (14 + 4 = 18)
     EXPECT_EQ(builder.offset(), sizeof(ethernet_header) + 4);
     EXPECT_EQ(builder.offset(), 18);
 
-    // Проверяем данные
     auto* eth_header = reinterpret_cast<ethernet_header*>(builder.buffer());
     ASSERT_NE(eth_header, nullptr);
     EXPECT_EQ(std::memcmp(eth_header->dstMac, dst, 6), 0);

@@ -1,4 +1,3 @@
-// snet/layers/builder/packet_builder.hpp
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +8,6 @@
 namespace snet::layers
 {
 
-/// @brief Пакетный билдер с поддержкой переменной длины.
 template <typename PacketType>
 class PacketBuilder
 {
@@ -21,38 +19,33 @@ public:
         , offset_(0)
         , built_(false)
     {
-        if (pkt_) pkt_->reset();
+        if (pkt_)
+            pkt_->reset();
     }
 
-    // ====== ДОСТУП К БИЛДЕРАМ СЛОЁВ (ВОЗВРАЩАЮТ HeaderBuilder) ======
+    template <typename HeaderType>
+    HeaderBuilder<HeaderType> layer() noexcept
+    {
+        return HeaderBuilder<HeaderType>(buffer_ + offset_,
+                                         capacity_ - offset_,
+                                         [this](size_t bytes)
+                                         {
+                                             offset_ += bytes;
+                                         });
+    }
 
-    /// @brief Возвращает билдер для Ethernet слоя.
     HeaderBuilder<ethernet_header> eth() noexcept
     {
-        return HeaderBuilder<ethernet_header>(buffer_ + offset_, capacity_ - offset_);
+        return layer<ethernet_header>();
     }
-
-    /// @brief Возвращает билдер для IPv4 слоя.
     HeaderBuilder<ipv4_header> ipv4() noexcept
     {
-        return HeaderBuilder<ipv4_header>(buffer_ + offset_, capacity_ - offset_);
+        return layer<ipv4_header>();
     }
-
-    /// @brief Возвращает билдер для TCP слоя.
     HeaderBuilder<tcp_header> tcp() noexcept
     {
-        return HeaderBuilder<tcp_header>(buffer_ + offset_, capacity_ - offset_);
+        return layer<tcp_header>();
     }
-
-    // ====== ПРОДВИЖЕНИЕ ======
-
-    PacketBuilder& advance(size_t bytes) noexcept
-    {
-        offset_ += bytes;
-        return *this;
-    }
-
-    // ====== PAYLOAD ======
 
     PacketBuilder& payload(const void* data, size_t len) noexcept
     {
@@ -69,11 +62,10 @@ public:
         return payload(data.data(), data.size());
     }
 
-    // ====== BUILD ======
-
     PacketType* build() noexcept
     {
-        if (!pkt_ || offset_ == 0) return nullptr;
+        if (!pkt_ || offset_ == 0)
+            return nullptr;
 
         updateChecksums();
         updatePacketView();
@@ -82,18 +74,32 @@ public:
         return pkt_;
     }
 
-    // ====== ACCESSORS ======
-
-    size_t offset() const noexcept { return offset_; }
-    size_t remaining() const noexcept { return capacity_ - offset_; }
-    uint8_t* buffer() const noexcept { return buffer_; }
-    PacketType* packet() const noexcept { return pkt_; }
-    bool isBuilt() const noexcept { return built_; }
+    size_t offset() const noexcept
+    {
+        return offset_;
+    }
+    size_t remaining() const noexcept
+    {
+        return capacity_ - offset_;
+    }
+    uint8_t* buffer() const noexcept
+    {
+        return buffer_;
+    }
+    PacketType* packet() const noexcept
+    {
+        return pkt_;
+    }
+    bool isBuilt() const noexcept
+    {
+        return built_;
+    }
 
 private:
     void updateChecksums() noexcept
     {
-        if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header)) return;
+        if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header))
+            return;
 
         auto* ip = try_get_ip();
         if (ip && ip->protocol == 6)
@@ -114,10 +120,7 @@ private:
 
     void updatePacketView() noexcept
     {
-        pkt_->asPacket()->setRawData(
-            nonstd::span<const uint8_t>(buffer_, offset_),
-            LINKTYPE_ETHERNET
-        );
+        pkt_->asPacket()->setRawData(nonstd::span<const uint8_t>(buffer_, offset_), LINKTYPE_ETHERNET);
     }
 
     ipv4_header* try_get_ip() noexcept
@@ -147,10 +150,12 @@ private:
         for (size_t i = 0; i < words; ++i)
         {
             sum += be16toh(ptr[i]);
-            if (sum & 0x80000000) sum = (sum & 0xFFFF) + (sum >> 16);
+            if (sum & 0x80000000)
+                sum = (sum & 0xFFFF) + (sum >> 16);
         }
 
-        while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+        while (sum >> 16)
+            sum = (sum & 0xFFFF) + (sum >> 16);
         return htobe16(~sum & 0xFFFF);
     }
 
@@ -178,7 +183,8 @@ private:
         for (size_t i = 0; i < sizeof(Pseudo) / 2; ++i)
         {
             sum += be16toh(ptr[i]);
-            if (sum & 0x80000000) sum = (sum & 0xFFFF) + (sum >> 16);
+            if (sum & 0x80000000)
+                sum = (sum & 0xFFFF) + (sum >> 16);
         }
 
         const uint16_t* tcpPtr = reinterpret_cast<const uint16_t*>(tcp);
@@ -187,10 +193,12 @@ private:
         {
             uint16_t val = (i * 2 + 1 < tcp_len) ? be16toh(tcpPtr[i]) : 0;
             sum += val;
-            if (sum & 0x80000000) sum = (sum & 0xFFFF) + (sum >> 16);
+            if (sum & 0x80000000)
+                sum = (sum & 0xFFFF) + (sum >> 16);
         }
 
-        while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+        while (sum >> 16)
+            sum = (sum & 0xFFFF) + (sum >> 16);
         return htobe16(~sum & 0xFFFF);
     }
 
