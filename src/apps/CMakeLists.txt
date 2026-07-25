@@ -1,2 +1,3 @@
+add_subdirectory(cert_verify)
 add_subdirectory(pki_manager)
 add_subdirectory(pki_client)
