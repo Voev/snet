@@ -18,43 +18,43 @@
 
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_name.hpp>
-#include <snet/crypto/cert_crl_loader.hpp>
+#include <snet/crypto/crl.hpp>
 #include <snet/crypto/pointers.hpp>
 
+#include <snet/pki_fetch/cert_crl_loader.hpp>
+#include <snet/pki_fetch/url.hpp>
+
 #include <casket/log/log.hpp>
+#include <casket/utils/string.hpp>
+#include <casket/utils/exception.hpp>
 
-namespace snet::crypto
+#include <snet/tls/types.hpp>
+
+using namespace casket;
+using namespace snet::crypto;
+
+namespace snet::pki_fetch
 {
 
-STACK_OF(X509_CRL) * filter_valid_crl(STACK_OF(X509_CRL) * crls, time_t now)
+CrlOwningStackPtr FilterValidCrl(CrlStack* crls, time_t now)
 {
-    if (crls == NULL)
+    if (crls == nullptr)
     {
-        return NULL;
+        return nullptr;
     }
 
-    int count = sk_X509_CRL_num(crls);
-    if (count == 0)
-    {
-        return NULL;
-    }
+    auto count = sk_X509_CRL_num(crls);
+    crypto::ThrowIfTrue(count == 0, "no CRL");
 
-    STACK_OF(X509_CRL)* valid = sk_X509_CRL_new_null();
-    if (valid == NULL)
-    {
-        return NULL;
-    }
+    CrlOwningStackPtr valid{sk_X509_CRL_new_null()};
+    crypto::ThrowIfFalse(valid, "bad allocation");
 
-    if (!sk_X509_CRL_reserve(valid, count))
-    {
-        sk_X509_CRL_free(valid);
-        return NULL;
-    }
+    crypto::ThrowIfFalse(0 < sk_X509_CRL_reserve(valid, count));
 
     for (int i = 0; i < count; ++i)
     {
-        X509_CRL* crl = sk_X509_CRL_value(crls, i);
-        if (crl == NULL)
+        X509Crl* crl = sk_X509_CRL_value(crls, i);
+        if (!crl)
         {
             continue;
         }
@@ -62,51 +62,24 @@ STACK_OF(X509_CRL) * filter_valid_crl(STACK_OF(X509_CRL) * crls, time_t now)
         const ASN1_TIME* thisUpdate = X509_CRL_get0_lastUpdate(crl);
         const ASN1_TIME* nextUpdate = X509_CRL_get0_nextUpdate(crl);
 
-        if (thisUpdate == NULL)
-        {
-            continue;
-        }
-
         if (0 < X509_cmp_time(thisUpdate, &now))
         {
             continue;
         }
 
-        if (nextUpdate != NULL && 0 >= X509_cmp_time(nextUpdate, &now))
+        if (nextUpdate != nullptr && 0 >= X509_cmp_time(nextUpdate, &now))
         {
             continue;
         }
 
-        if (!X509_CRL_up_ref(crl))
-        {
-            continue;
-        }
-
-        if (!sk_X509_CRL_push(valid, crl))
-        {
-            X509_CRL_free(crl);
-        }
+        auto copy = Crl::shallowCopy(crl);
+        crypto::ThrowIfFalse(0 < sk_X509_CRL_push(valid, copy));
     }
 
     return valid;
 }
 
-static inline int sk_X509_CRL_push_with_up_ref(STACK_OF(X509_CRL) * crls, X509_CRL* crl)
-{
-    if (crl == NULL || !X509_CRL_up_ref(crl))
-    {
-        return 0;
-    }
-
-    if (!sk_X509_CRL_push(crls, crl))
-    {
-        X509_CRL_free(crl);
-        return 0;
-    }
-    return 1;
-}
-
-static inline int check_timeout(const int fd, const int timeout, const int checkOnRead)
+static inline int CheckTimeout(const int fd, const int timeout, const int checkOnRead)
 {
     fd_set fdset;
     struct timeval timevalue;
@@ -123,17 +96,17 @@ static inline int check_timeout(const int fd, const int timeout, const int check
 
     if (checkOnRead)
     {
-        return select(fd + 1, &fdset, NULL, NULL, &timevalue);
+        return select(fd + 1, &fdset, nullptr, nullptr, &timevalue);
     }
-    return select(fd + 1, NULL, &fdset, NULL, &timevalue);
+    return select(fd + 1, nullptr, &fdset, nullptr, &timevalue);
 }
 
-int bio_check_connection(BIO* conn, const int timeout)
+int CheckConnection(BIO* conn, const int timeout)
 {
     int ret = 0;
     int fd = -1;
 
-    if (conn == NULL)
+    if (conn == nullptr)
     {
         return 0;
     }
@@ -145,11 +118,11 @@ int bio_check_connection(BIO* conn, const int timeout)
 
     if (BIO_should_read(conn))
     {
-        ret = check_timeout(fd, timeout, 1);
+        ret = CheckTimeout(fd, timeout, 1);
     }
     else if (BIO_should_write(conn))
     {
-        ret = check_timeout(fd, timeout, 0);
+        ret = CheckTimeout(fd, timeout, 0);
     }
     else
     {
@@ -170,56 +143,31 @@ int bio_check_connection(BIO* conn, const int timeout)
 
 X509CrlPtr LoadCrlByHttp(const char* url, int timeout)
 {
+    OcspReqCtxPtr rctx;
     X509CrlPtr crl;
-    OCSP_REQ_CTX* rctx = NULL;
-    BIO* bio = NULL;
-    SSL_CTX* sslCtx = NULL;
-    char* host = NULL;
-    char* port = NULL;
-    char* path = NULL;
-    int useSsl = 0;
+    BioPtr bio;
     int fd = -1;
     int ret = 0;
 
-    if (!OCSP_parse_url(url, &host, &port, &path, &useSsl) || !host || !port || !path)
-    {
-        goto end;
-    }
+    auto urlData = UrlParser::parse(url);
+    casket::ThrowIfFalse(urlData.has_value(), "failed to parse URL '{}'", url);
 
-    bio = BIO_new_connect(host);
-    if (!bio || !BIO_set_conn_port(bio, port))
-    {
-        goto end;
-    }
+    bio.reset(BIO_new_connect(urlData->host.data()));
+    crypto::ThrowIfFalse(bio != nullptr, "failed to create socket");
+    crypto::ThrowIfFalse(0 < BIO_set_conn_port(bio, urlData->port.data()));
 
-    if (useSsl)
+    if (urlData->isHttps)
     {
-        BIO* ssl = NULL;
-        BIO* tmp = NULL;
-
-        sslCtx = SSL_CTX_new(TLS_client_method());
-        if (sslCtx == NULL)
-        {
-            goto end;
-        }
+        tls::SslCtxPtr sslCtx{SSL_CTX_new(TLS_client_method())};
+        crypto::ThrowIfFalse(sslCtx != nullptr, "failed to create TLS context");
 
         SSL_CTX_set_mode(sslCtx, SSL_MODE_AUTO_RETRY);
 
-        ssl = BIO_new_ssl(sslCtx, 1);
-        if (ssl == NULL)
-        {
-            goto end;
-        }
+        BioPtr ssl{BIO_new_ssl(sslCtx, 1)};
+        crypto::ThrowIfFalse(ssl != nullptr, "failed to create TLS BIO");
 
-        tmp = BIO_push(ssl, bio);
-        if (tmp == NULL)
-        {
-            BIO_free(ssl);
-            BIO_free(bio);
-            bio = NULL;
-            goto end;
-        }
-        bio = tmp;
+        BIO_push(ssl, bio.release());
+        bio = std::move(ssl);
     }
 
     if (timeout != -1)
@@ -230,31 +178,27 @@ X509CrlPtr LoadCrlByHttp(const char* url, int timeout)
     ret = BIO_do_connect(bio);
     if (0 >= ret && (-1 == timeout || !BIO_should_retry(bio)))
     {
-        goto end;
+        return nullptr;
     }
 
-    if (0 > BIO_get_fd(bio, &fd))
-    {
-        goto end;
-    }
+    crypto::ThrowIfFalse(0 < BIO_get_fd(bio, &fd));
 
     if (-1 != timeout && 0 >= ret)
     {
-        if (0 == check_timeout(fd, timeout, 0))
+        if (0 == CheckTimeout(fd, timeout, 0))
         {
-            goto end;
+            return nullptr;
         }
     }
 
-    rctx = OCSP_REQ_CTX_new(bio, 1024);
-    if (rctx == NULL || !OCSP_REQ_CTX_http(rctx, "GET", path) || !OCSP_REQ_CTX_add1_header(rctx, "Host", host))
-    {
-        goto end;
-    }
+    rctx.reset(OCSP_REQ_CTX_new(bio, 1024));
+    crypto::ThrowIfFalse(rctx != nullptr, "bad allocation");
+    crypto::ThrowIfFalse(0 < OCSP_REQ_CTX_http(rctx, "GET", urlData->path.data()));
+    crypto::ThrowIfFalse(0 < OCSP_REQ_CTX_add1_header(rctx, "Host", urlData->host.data()));
 
     while (1)
     {
-        X509_CRL* res = NULL;
+        X509_CRL* res = nullptr;
         ret = X509_CRL_http_nbio(rctx, &res);
 
         if (ret == 1 && res != nullptr)
@@ -264,7 +208,7 @@ X509CrlPtr LoadCrlByHttp(const char* url, int timeout)
         }
         else if (ret == 0)
         {
-            goto end;
+            return nullptr;
         }
 
         if (-1 == timeout)
@@ -272,36 +216,24 @@ X509CrlPtr LoadCrlByHttp(const char* url, int timeout)
             continue;
         }
 
-        if (!bio_check_connection(bio, timeout))
+        if (!CheckConnection(bio, timeout))
         {
-            goto end;
+            return nullptr;
         }
     }
 
-    if (crl != NULL)
-    {
-        ret = 1;
-    }
-
-end:
-    OPENSSL_free(host);
-    OPENSSL_free(path);
-    OPENSSL_free(port);
-    SSL_CTX_free(sslCtx);
-    OCSP_REQ_CTX_free(rctx);
-    BIO_free_all(bio);
     return crl;
 }
 
 X509CertPtr LoadCertByHttp(const char* url, int timeout)
 {
-    OCSP_REQ_CTX* rctx = NULL;
-    X509* cert = NULL;
-    BIO* bio = NULL;
-    SSL_CTX* sslCtx = NULL;
-    char* host = NULL;
-    char* port = NULL;
-    char* path = NULL;
+    OCSP_REQ_CTX* rctx = nullptr;
+    X509* cert = nullptr;
+    BIO* bio = nullptr;
+    SSL_CTX* sslCtx = nullptr;
+    char* host = nullptr;
+    char* port = nullptr;
+    char* path = nullptr;
     int useSsl = 0;
     int fd = -1;
     int ret = 0;
@@ -319,11 +251,11 @@ X509CertPtr LoadCertByHttp(const char* url, int timeout)
 
     if (useSsl)
     {
-        BIO* ssl = NULL;
-        BIO* tmp = NULL;
+        BIO* ssl = nullptr;
+        BIO* tmp = nullptr;
 
         sslCtx = SSL_CTX_new(TLS_client_method());
-        if (sslCtx == NULL)
+        if (sslCtx == nullptr)
         {
             goto end;
         }
@@ -331,17 +263,17 @@ X509CertPtr LoadCertByHttp(const char* url, int timeout)
         SSL_CTX_set_mode(sslCtx, SSL_MODE_AUTO_RETRY);
 
         ssl = BIO_new_ssl(sslCtx, 1);
-        if (ssl == NULL)
+        if (ssl == nullptr)
         {
             goto end;
         }
 
         tmp = BIO_push(ssl, bio);
-        if (tmp == NULL)
+        if (tmp == nullptr)
         {
             BIO_free(ssl);
             BIO_free(bio);
-            bio = NULL;
+            bio = nullptr;
             goto end;
         }
         bio = tmp;
@@ -365,14 +297,14 @@ X509CertPtr LoadCertByHttp(const char* url, int timeout)
 
     if (-1 != timeout && 0 >= ret)
     {
-        if (0 == check_timeout(fd, timeout, 0))
+        if (0 == CheckTimeout(fd, timeout, 0))
         {
             goto end;
         }
     }
 
     rctx = OCSP_REQ_CTX_new(bio, 1024);
-    if (rctx == NULL || !OCSP_REQ_CTX_http(rctx, "GET", path) || !OCSP_REQ_CTX_add1_header(rctx, "Host", host))
+    if (rctx == nullptr || !OCSP_REQ_CTX_http(rctx, "GET", path) || !OCSP_REQ_CTX_add1_header(rctx, "Host", host))
     {
         goto end;
     }
@@ -394,13 +326,13 @@ X509CertPtr LoadCertByHttp(const char* url, int timeout)
             continue;
         }
 
-        if (!bio_check_connection(bio, timeout))
+        if (!CheckConnection(bio, timeout))
         {
             goto end;
         }
     }
 
-    if (cert != NULL)
+    if (cert != nullptr)
     {
         ret = 1;
     }
@@ -409,7 +341,7 @@ end:
     if (!ret)
     {
         X509_free(cert);
-        cert = NULL;
+        cert = nullptr;
     }
     OPENSSL_free(host);
     OPENSSL_free(path);
@@ -426,11 +358,11 @@ static const char* GetDistPointUrl(DIST_POINT* dp)
 
     if (!dp->distpoint || dp->distpoint->type != 0)
     {
-        return NULL;
+        return nullptr;
     }
 
     gens = dp->distpoint->name.fullname;
-    for (int i = 0; i < sk_GENERAL_NAME_num(gens); i++)
+    for (int i = 0; i < sk_GENERAL_NAME_num(gens); ++i)
     {
         GENERAL_NAME* gen;
         ASN1_STRING* uri;
@@ -449,7 +381,7 @@ static const char* GetDistPointUrl(DIST_POINT* dp)
         }
     }
 
-    return NULL;
+    return nullptr;
 }
 
 static inline X509CrlPtr LoadCrlByExtention(X509Cert* cert, int nid)
@@ -475,7 +407,7 @@ CrlOwningStackPtr LocalSearchForCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_C
 {
     CrlOwningStackPtr crls{X509_STORE_CTX_get1_crls(ctx, name)};
 
-    crls.reset(filter_valid_crl(crls, time(nullptr)));
+    crls.reset(FilterValidCrl(crls, time(nullptr)));
 
     if (sk_X509_CRL_num(crls) > 0)
     {
@@ -483,6 +415,13 @@ CrlOwningStackPtr LocalSearchForCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_C
     }
 
     return nullptr;
+}
+
+static inline void AddCrlToStack(CrlStack* crls, X509Crl* crl)
+{
+    auto copy = Crl::shallowCopy(crl);
+    crypto::ThrowIfFalse(0 < sk_X509_CRL_push(crls, copy));
+    copy.release();
 }
 
 CrlOwningStackPtr DownloadCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx)
@@ -499,14 +438,14 @@ CrlOwningStackPtr DownloadCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx)
         return nullptr;
     }
 
+    AddCrlToStack(crls, crl);
     crypto::ThrowIfFalse(0 < X509_STORE_add_crl(store, crl));
-    crypto::ThrowIfFalse(0 < sk_X509_CRL_push_with_up_ref(crls, crl));
 
     crl = LoadCrlByExtention(cert, NID_freshest_crl);
     if (crl)
     {
+        AddCrlToStack(crls, crl);
         crypto::ThrowIfFalse(0 < X509_STORE_add_crl(store, crl));
-        crypto::ThrowIfFalse(0 < sk_X509_CRL_push_with_up_ref(crls, crl));
     }
 
     return crls;

@@ -68,6 +68,8 @@ using StoreCtx = struct ossl_store_ctx_st;
 using StoreInfo = struct ossl_store_info_st;
 using UiMethod = struct ui_method_st;
 
+using OcspReqCtx = struct ocsp_req_ctx_st;
+
 using CrlDistPoints = STACK_OF(DIST_POINT);
 using AuthInfoAccess = STACK_OF(ACCESS_DESCRIPTION);
 

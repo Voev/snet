@@ -9,6 +9,7 @@
 #include <openssl/cms.h>
 #include <openssl/safestack.h>
 #include <openssl/txt_db.h>
+#include <openssl/ocsp.h>
 
 #include <openssl/kdf.h>
 #include <openssl/hmac.h>
@@ -111,6 +112,8 @@ DEFINE_CUSTOM_UNIQUE_PTR(KeyPtr, Key, EVP_PKEY_free);
 DEFINE_CUSTOM_UNIQUE_PTR(KeyCtxPtr, KeyCtx, EVP_PKEY_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(HashCtxPtr, HashCtx, EVP_MD_CTX_free);
 DEFINE_CUSTOM_UNIQUE_PTR(CipherCtxPtr, CipherCtx, EVP_CIPHER_CTX_free);
+
+DEFINE_CUSTOM_UNIQUE_PTR(OcspReqCtxPtr, OcspReqCtx, OCSP_REQ_CTX_free);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 

@@ -12,7 +12,7 @@
 #include <snet/crypto/cert_verifier.hpp>
 #include <snet/crypto/exception.hpp>
 
-#include <snet/crypto/cert_crl_loader.hpp>
+#include <snet/pki_fetch/cert_crl_loader.hpp>
 
 using namespace casket;
 using namespace casket::opt;
@@ -26,7 +26,7 @@ X509CertPtr DownloadCert(nonstd::string_view uri)
 {
     CSK_LOG_DEBUG("loading certificate from URI: %s", uri.data());
 
-    X509CertPtr cert{LoadCertByHttp(uri.data(), 5)};
+    X509CertPtr cert{pki_fetch::LoadCertByHttp(uri.data(), 5)};
     //X509CertPtr cert(X509_load_http(uri.data(), nullptr, nullptr, 0));
 
     if (cert)
@@ -195,7 +195,7 @@ CrlStack* LookupCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_CONST_COMPAT X509
 
     try
     {
-        crls = LocalSearchForCrls(ctx, name);
+        crls = pki_fetch::LocalSearchForCrls(ctx, name);
         if (crls)
         {
             count = sk_X509_CRL_num(crls);
@@ -203,7 +203,7 @@ CrlStack* LookupCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_CONST_COMPAT X509
             return crls.release();
         }
 
-        crls = DownloadCrls(ctx);
+        crls = pki_fetch::DownloadCrls(ctx);
         count = crls ? sk_X509_CRL_num(crls) : 0;
 
         CSK_LOG_DEBUG("downloaded %d CRL(s) for %s", count, certName.c_str());
