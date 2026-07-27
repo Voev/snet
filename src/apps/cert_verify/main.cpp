@@ -22,25 +22,6 @@ using namespace snet::crypto;
 
 static bool bPrint{false};
 
-X509CertPtr DownloadCert(nonstd::string_view uri)
-{
-    CSK_LOG_DEBUG("loading certificate from URI: %s", uri.data());
-
-    X509CertPtr cert{pki_fetch::LoadCertByHttp(uri.data(), 5)};
-    //X509CertPtr cert(X509_load_http(uri.data(), nullptr, nullptr, 0));
-
-    if (cert)
-    {
-        CSK_LOG_DEBUG("successfully loaded certificate from %s", uri.data());
-    }
-    else
-    {
-        CSK_LOG_WARNING("failed to load certificate from %s", uri.data());
-    }
-
-    return cert;
-}
-
 std::vector<std::string> GetURIFromAuthInfoAccess(const AuthInfoAccess* aia)
 {
     std::vector<std::string> uris;
@@ -135,7 +116,7 @@ static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
         const auto& uri = uris[i];
         CSK_LOG_DEBUG("  URI[%zu]: %s", i, uri.c_str());
 
-        auto cert = DownloadCert(uri);
+        auto cert = pki_fetch::LoadCertByHttp(uri.data(), 5);
         if (!cert)
         {
             CSK_LOG_DEBUG("  failed to download certificate from URI[%zu]", i);
@@ -203,7 +184,7 @@ CrlStack* LookupCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_CONST_COMPAT X509
             return crls.release();
         }
 
-        crls = pki_fetch::DownloadCrls(ctx);
+        crls = pki_fetch::DownloadCrls(ctx, 5);
         count = crls ? sk_X509_CRL_num(crls) : 0;
 
         CSK_LOG_DEBUG("downloaded %d CRL(s) for %s", count, certName.c_str());
@@ -344,7 +325,6 @@ public:
 
         CertManager manager;
         manager.loadFile(options_.caStorePath);
-        //manager.loadStore(options_.caStorePath);
         manager.setGetIssuer(GetIssuer);
         manager.setLookupCRLs(LookupCrls);
         manager.setVerifyCallback(VerifyCallback);
