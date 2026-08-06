@@ -8,194 +8,19 @@
 #include <casket/nonstd/string_view.hpp>
 #include <snet/utils/finally.hpp>
 
-#include <snet/cli/command_dispatcher.hpp>
-
 #include <snet/crypto/cert.hpp>
 #include <snet/crypto/cert_verifier.hpp>
 #include <snet/crypto/exception.hpp>
 
+#include <snet/pki_fetch/cert_crl_loader.hpp>
+
 using namespace casket;
 using namespace casket::opt;
+
+using namespace snet;
 using namespace snet::crypto;
 
-namespace snet
-{
-
 static bool bPrint{false};
-
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-
-X509CrlPtr DownloadCrl(nonstd::string_view uri)
-{
-    CSK_LOG_DEBUG("loading CRL from URI: %s", uri.data());
-
-    X509CrlPtr crl(X509_CRL_load_http(uri.data(), nullptr, nullptr, 0));
-
-    if (crl)
-    {
-        CSK_LOG_DEBUG("successfully loaded CRL from %s", uri.data());
-    }
-    else
-    {
-        CSK_LOG_WARNING("failed to load CRL from %s", uri.data());
-    }
-
-    return crl;
-}
-
-X509CertPtr DownloadCert(nonstd::string_view uri)
-{
-    CSK_LOG_DEBUG("loading certificate from URI: %s", uri.data());
-
-    X509CertPtr cert(X509_load_http(uri.data(), nullptr, nullptr, 0));
-
-    if (cert)
-    {
-        CSK_LOG_DEBUG("successfully loaded certificate from %s", uri.data());
-    }
-    else
-    {
-        CSK_LOG_WARNING("failed to load certificate from %s", uri.data());
-    }
-
-    return cert;
-}
-
-template <typename T>
-T* GetExtension(X509Cert* cert, int extensionNid)
-{
-    const char* extName = OBJ_nid2sn(extensionNid);
-    CSK_LOG_DEBUG("trying to get extension %s (NID=%d)", extName, extensionNid);
-
-    T* ext = static_cast<T*>(X509_get_ext_d2i(cert, extensionNid, nullptr, nullptr));
-
-    if (ext)
-    {
-        CSK_LOG_DEBUG("found extension %s", extName);
-    }
-    else
-    {
-        CSK_LOG_DEBUG("extension %s not found", extName);
-    }
-
-    return ext;
-}
-
-static CrlStack* LookupCrls(const X509_STORE_CTX* ctx, const X509Name* name)
-{
-    std::string nameStr = CertName::toString(name);
-    CSK_LOG_DEBUG("trying to lookup CRL for name: %s", nameStr.c_str());
-
-    CrlOwningStackPtr crls;
-    try
-    {
-        crls.reset(X509_STORE_CTX_get1_crls(ctx, name));
-        if (crls)
-        {
-            int count = sk_X509_CRL_num(crls.get());
-            CSK_LOG_DEBUG("found %d CRL(s) in context cache for %s", count, nameStr.c_str());
-            return crls.release();
-        }
-
-        CSK_LOG_DEBUG("no CRL in cache for %s, trying to download via CDP", nameStr.c_str());
-
-        X509Cert* cert = X509_STORE_CTX_get_current_cert(ctx);
-        if (!cert)
-        {
-            CSK_LOG_WARNING("no current certificate in context");
-            return nullptr;
-        }
-
-        std::string certName = CertName::toString(Cert::subjectName(cert));
-        CSK_LOG_DEBUG("current certificate subject: %s", certName.c_str());
-
-        CrlDistPointsPtr crldp(GetExtension<CrlDistPoints>(cert, NID_crl_distribution_points));
-        if (!crldp)
-        {
-            CSK_LOG_DEBUG("no CDP extension in certificate %s", certName.c_str());
-            return nullptr;
-        }
-
-        int dpCount = sk_DIST_POINT_num(crldp);
-        CSK_LOG_DEBUG("found %d distribution point(s) in CDP", dpCount);
-
-        crls.reset(sk_X509_CRL_new_null());
-        ThrowIfFalse(crls);
-
-        int downloadedCount = 0;
-
-        for (int i = 0; i < dpCount; ++i)
-        {
-            DIST_POINT* dp = sk_DIST_POINT_value(crldp, i);
-            if (!dp->distpoint || dp->distpoint->type != 0)
-            {
-                CSK_LOG_DEBUG("distribution point %d has no fullname, skipping", i);
-                continue;
-            }
-
-            GENERAL_NAMES* gens = dp->distpoint->name.fullname;
-            int genCount = sk_GENERAL_NAME_num(gens);
-            CSK_LOG_DEBUG("distribution point %d has %d general name(s)", i, genCount);
-
-            int gtype = 0;
-            for (int j = 0; j < genCount; ++j)
-            {
-                GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens, j);
-                ASN1_STRING* uri = static_cast<ASN1_STRING*>(GENERAL_NAME_get0_value(gen, &gtype));
-
-                if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6)
-                {
-                    std::string uriStr(reinterpret_cast<const char*>(ASN1_STRING_get0_data(uri)),
-                                       ASN1_STRING_length(uri));
-                    CSK_LOG_DEBUG("found URI at gen[%d]: %s", j, uriStr.c_str());
-
-                    auto crl = DownloadCrl(uriStr);
-                    if (crl)
-                    {
-                        X509_CRL* rawCrl = crl.get();
-                        int pushResult = sk_X509_CRL_push(crls.get(), rawCrl);
-
-                        if (pushResult > 0)
-                        {
-                            crl.release();
-                            downloadedCount++;
-                            CSK_LOG_DEBUG("successfully added CRL from %s (stack now has %d elements)",
-                                          uriStr.c_str(),
-                                          sk_X509_CRL_num(crls.get()));
-                        }
-                        else
-                        {
-                            CSK_LOG_WARNING("failed to add CRL to stack from %s", uriStr.c_str());
-                        }
-                    }
-                    else
-                    {
-                        CSK_LOG_WARNING("failed to download CRL from %s", uriStr.c_str());
-                    }
-                }
-                else if (gtype == GEN_URI)
-                {
-                    CSK_LOG_WARNING("URI too short (length=%d), skipping", ASN1_STRING_length(uri));
-                }
-                else
-                {
-                    CSK_LOG_DEBUG("general name type %d is not URI, skipping", gtype);
-                }
-            }
-        }
-
-        CSK_LOG_DEBUG("downloaded %d CRL(s) for %s", downloadedCount, nameStr.c_str());
-    }
-    catch (const std::exception& e)
-    {
-        CSK_LOG_ERROR("exception: %s", e.what());
-        std::cout << "failed to lookup CRLs: " << e.what() << std::endl;
-    }
-
-    int total = crls ? sk_X509_CRL_num(crls.get()) : 0;
-    CSK_LOG_DEBUG("returning %d CRL(s) for %s", total, nameStr.c_str());
-    return crls.release();
-}
 
 std::vector<std::string> GetURIFromAuthInfoAccess(const AuthInfoAccess* aia)
 {
@@ -270,7 +95,7 @@ static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
     CSK_LOG_DEBUG("issuer NOT found locally");
     CSK_LOG_DEBUG("attempting to download issuer via AIA...");
 
-    AuthInfoAccessPtr aia(GetExtension<AuthInfoAccess>(subject, NID_info_access));
+    AuthInfoAccessPtr aia(Cert::getExtension<AuthInfoAccess>(subject, NID_info_access));
     if (!aia)
     {
         CSK_LOG_DEBUG("no AIA extension found in certificate");
@@ -291,7 +116,7 @@ static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
         const auto& uri = uris[i];
         CSK_LOG_DEBUG("  URI[%zu]: %s", i, uri.c_str());
 
-        auto cert = DownloadCert(uri);
+        auto cert = pki_fetch::LoadCertByHttp(uri.data(), 5);
         if (!cert)
         {
             CSK_LOG_DEBUG("  failed to download certificate from URI[%zu]", i);
@@ -341,7 +166,37 @@ static int GetIssuer(X509** issuer, X509_STORE_CTX* ctx, X509* subject)
     return 0;
 }
 
-#endif
+CrlStack* LookupCrls(OSSL_CONST_COMPAT X509StoreCtx* ctx, OSSL_CONST_COMPAT X509Name* name)
+{
+    std::string certName = CertName::toString(name);
+    CSK_LOG_DEBUG("trying to lookup CRL for name: %s", certName.c_str());
+
+    CrlOwningStackPtr crls;
+    int count = 0;
+
+    try
+    {
+        crls = pki_fetch::LocalSearchForCrls(ctx, name);
+        if (crls)
+        {
+            count = sk_X509_CRL_num(crls);
+            CSK_LOG_DEBUG("found %d CRL(s) in context cache for %s", count, certName.c_str());
+            return crls.release();
+        }
+
+        crls = pki_fetch::DownloadCrls(ctx, 5);
+        count = crls ? sk_X509_CRL_num(crls) : 0;
+
+        CSK_LOG_DEBUG("downloaded %d CRL(s) for %s", count, certName.c_str());
+    }
+    catch (const std::exception& e)
+    {
+        CSK_LOG_ERROR("exception: %s", e.what());
+        std::cout << "failed to lookup CRLs: " << e.what() << std::endl;
+    }
+
+    return crls.release();
+}
 
 int VerifyCallback(int ret, X509_STORE_CTX* ctx)
 {
@@ -398,10 +253,10 @@ struct Options
     bool checkAllCrl{false};
 };
 
-class Command final : public cmd::Command
+class CertVerifyCommand final
 {
 public:
-    Command()
+    CertVerifyCommand()
     {
         // clang-format off
         parser_.add(
@@ -445,9 +300,9 @@ public:
         // clang-format on
     }
 
-    ~Command() = default;
+    ~CertVerifyCommand() = default;
 
-    void execute(const std::vector<std::string_view>& args) override
+    void execute(const std::vector<std::string_view>& args)
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))
@@ -469,11 +324,9 @@ public:
         AsyncLogger::getInstance().setLevel(StringToLevel(options_.logLevel));
 
         CertManager manager;
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-        manager.loadStore(options_.caStorePath);
-        manager.setLookupCRLs(LookupCrls);
+        manager.loadFile(options_.caStorePath);
         manager.setGetIssuer(GetIssuer);
-#endif
+        manager.setLookupCRLs(LookupCrls);
         manager.setVerifyCallback(VerifyCallback);
 
         CertVerifier verifier(manager);
@@ -499,6 +352,19 @@ private:
     Options options_;
 };
 
-REGISTER_COMMAND("verify", "Verify certificate", Command);
-
-} // namespace snet
+int main(int argc, char* argv[])
+{
+    int ret{EXIT_SUCCESS};
+    try
+    {
+        std::vector<nonstd::string_view> args(argv + 1, argv + argc);
+        CertVerifyCommand command;
+        command.execute(args);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        ret = EXIT_FAILURE;
+    }
+    return ret;
+}

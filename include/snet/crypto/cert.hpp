@@ -98,6 +98,12 @@ public:
         BioTraits::flush(bio);
         return BioTraits::getMemoryDataAsString(bio);
     }
+
+    template <typename T>
+    static T* getExtension(X509Cert* cert, int extensionNid)
+    {
+        return static_cast<T*>(X509_get_ext_d2i(cert, extensionNid, nullptr, nullptr));
+    }
 };
 
 } // namespace snet::crypto

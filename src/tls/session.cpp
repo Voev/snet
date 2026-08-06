@@ -1072,6 +1072,9 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
         crypto::ThrowIfFalse(ctx != nullptr);
 
         crypto::ThrowIfFalse(0 < EVP_PKEY_decrypt_init(ctx));
+
+#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_WITH_TLS_PADDING));
 
         OSSL_PARAM params[2];
@@ -1081,6 +1084,10 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 
         crypto::ThrowIfFalse(0 < EVP_PKEY_CTX_set_params(ctx, params));
 
+#else  /// ^(OPENSSL_VERSION_NUMBER >= 0x30000000L)
+       /// @todo: support it.
+#endif /// !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    
         size_t size{0};
         crypto::ThrowIfFalse(
             0 < EVP_PKEY_decrypt(ctx, nullptr, &size, msg.preMasterSecret.data(), msg.preMasterSecret.size()));

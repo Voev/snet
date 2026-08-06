@@ -83,4 +83,5 @@ using MacCtx = struct evp_mac_ctx_st;
 using LibContext = struct ossl_lib_ctx_st;
 #else
 using MacCtx = struct hmac_ctx_st;
+using OcspReqCtx = struct ocsp_req_ctx_st;
 #endif
