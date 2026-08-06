@@ -1,4 +1,3 @@
-// snet/driver/inmemory_packet.hpp
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -11,13 +10,9 @@
 namespace snet::layers
 {
 
-/// @brief In-memory packet for testing and benchmarking.
-/// Stores data in an internal buffer, no external dependencies.
 class InMemoryPacket final
 {
 public:
-    // ====== CONSTRUCTORS ======
-
     InMemoryPacket() = default;
 
     explicit InMemoryPacket(size_t maxPacketSize)
@@ -27,11 +22,9 @@ public:
 
     ~InMemoryPacket() noexcept = default;
 
-    // ====== COPY ======
     InMemoryPacket(const InMemoryPacket&) = delete;
     InMemoryPacket& operator=(const InMemoryPacket&) = delete;
 
-    // ====== MOVE ======
     InMemoryPacket(InMemoryPacket&& other) noexcept
         : packet_(std::move(other.packet_))
         , buffer_(std::move(other.buffer_))
@@ -61,8 +54,6 @@ public:
         return *this;
     }
 
-    // ====== MEMORY MANAGEMENT ======
-
     void allocate(size_t size)
     {
         if (size > capacity_)
@@ -75,16 +66,12 @@ public:
         }
     }
 
-    // ====== RESET ======
-
     void reset() noexcept
     {
         packet_.clear();
         len_ = 0;
         // data_ remains allocated
     }
-
-    // ====== DATA ACCESS ======
 
     void setData(const uint8_t* data, size_t len)
     {
@@ -102,39 +89,49 @@ public:
         setData(data.data(), data.size());
     }
 
-    uint8_t* getData() const noexcept { return data_; }
-    size_t getLen() const noexcept { return len_; }
-    size_t getCapacity() const noexcept { return capacity_; }
+    uint8_t* getData() const noexcept
+    {
+        return data_;
+    }
 
-    // ====== PACKET VIEWER ======
+    size_t getLen() const noexcept
+    {
+        return len_;
+    }
 
-    layers::Packet* asPacket() noexcept { return &packet_; }
-    const layers::Packet* asPacket() const noexcept { return &packet_; }
+    size_t getCapacity() const noexcept
+    {
+        return capacity_;
+    }
 
-    // ====== STATIC FACTORY ======
+    layers::Packet* asPacket() noexcept
+    {
+        return &packet_;
+    }
+
+    const layers::Packet* asPacket() const noexcept
+    {
+        return &packet_;
+    }
 
     static InMemoryPacket* fromPacket(layers::Packet* packet) noexcept
     {
         if (!packet)
+        {
             return nullptr;
-
+        }
         return casket::container_of(packet, &InMemoryPacket::packet_);
     }
 
     static const InMemoryPacket* fromPacket(const layers::Packet* packet) noexcept
     {
         if (!packet)
+        {
             return nullptr;
-
-        return casket::container_of(
-            const_cast<layers::Packet*>(packet),
-            &InMemoryPacket::packet_
-        );
+        }
+        return casket::container_of(const_cast<layers::Packet*>(packet), &InMemoryPacket::packet_);
     }
 
-    // ====== UTILITY ======
-
-    /// @brief Creates a deep copy of this packet.
     InMemoryPacket clone() const
     {
         InMemoryPacket copy(capacity_);
@@ -142,14 +139,12 @@ public:
         {
             std::memcpy(copy.data_, data_, len_);
             copy.len_ = len_;
-            copy.packet_.setRawData(nonstd::span<const uint8_t>(copy.data_, len_),
-                                    packet_.getLinkLayerType());
+            copy.packet_.setRawData(nonstd::span<const uint8_t>(copy.data_, len_), packet_.getLinkLayerType());
             copy.packet_.setTimestamp(packet_.getTimestamp());
         }
         return copy;
     }
 
-    /// @brief Dumps packet to hex string (for debugging).
     std::string toHex() const
     {
         std::string result;
@@ -171,4 +166,4 @@ private:
     size_t len_{0};
 };
 
-} // namespace snet::driver
+} // namespace snet::layers

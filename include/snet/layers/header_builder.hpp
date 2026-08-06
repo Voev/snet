@@ -49,7 +49,7 @@ public:
     {
         if (header_ && !built_)
         {
-            set_field(field, std::forward<ValueType>(value));
+            setField(field, std::forward<ValueType>(value));
         }
         return *this;
     }
@@ -81,13 +81,13 @@ public:
 
 private:
     template <typename FieldType, typename ValueType>
-    void set_field(FieldType HeaderType::* field, ValueType&& value) noexcept
+    void setField(FieldType HeaderType::* field, ValueType&& value) noexcept
     {
         header_->*field = std::forward<ValueType>(value);
     }
 
     template <typename T, size_t N, typename ValueType>
-    void set_field(T (HeaderType::*field)[N], ValueType&& value) noexcept
+    void setField(T (HeaderType::*field)[N], ValueType&& value) noexcept
     {
         using DecayedType = std::decay_t<ValueType>;
 

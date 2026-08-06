@@ -38,10 +38,12 @@ public:
     {
         return layer<ethernet_header>();
     }
+
     HeaderBuilder<ipv4_header> ipv4() noexcept
     {
         return layer<ipv4_header>();
     }
+
     HeaderBuilder<tcp_header> tcp() noexcept
     {
         return layer<tcp_header>();
@@ -65,7 +67,9 @@ public:
     PacketType* build() noexcept
     {
         if (!pkt_ || offset_ == 0)
+        {
             return nullptr;
+        }
 
         updateChecksums();
         updatePacketView();
@@ -78,18 +82,22 @@ public:
     {
         return offset_;
     }
+
     size_t remaining() const noexcept
     {
         return capacity_ - offset_;
     }
+
     uint8_t* buffer() const noexcept
     {
         return buffer_;
     }
+
     PacketType* packet() const noexcept
     {
         return pkt_;
     }
+
     bool isBuilt() const noexcept
     {
         return built_;
@@ -101,10 +109,10 @@ private:
         if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header))
             return;
 
-        auto* ip = try_get_ip();
+        auto* ip = tryGetIp();
         if (ip && ip->protocol == 6)
         {
-            auto* tcp = try_get_tcp(ip);
+            auto* tcp = tryGetTcp(ip);
             if (tcp)
             {
                 size_t ip_len = offset_ - sizeof(ethernet_header);
@@ -123,20 +131,24 @@ private:
         pkt_->asPacket()->setRawData(nonstd::span<const uint8_t>(buffer_, offset_), LINKTYPE_ETHERNET);
     }
 
-    ipv4_header* try_get_ip() noexcept
+    ipv4_header* tryGetIp() noexcept
     {
         if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header))
+        {
             return nullptr;
+        }
 
         auto* ip = reinterpret_cast<ipv4_header*>(buffer_ + sizeof(ethernet_header));
         return (ip->version == 4) ? ip : nullptr;
     }
 
-    tcp_header* try_get_tcp(const ipv4_header* ip) noexcept
+    tcp_header* tryGetTcp(const ipv4_header* ip) noexcept
     {
         size_t ip_size = ip->ihl * 4;
         if (offset_ < sizeof(ethernet_header) + ip_size + sizeof(tcp_header))
+        {
             return nullptr;
+        }
 
         return reinterpret_cast<tcp_header*>(buffer_ + sizeof(ethernet_header) + ip_size);
     }
