@@ -17,10 +17,10 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
 
     if (tcpData.getMissingByteCount() == 0)
     {
-        auto session = test->sessions_.find(tcpData.getConnectionData().flowKey);
+        auto flowKey = tcpData.getConnectionData().getFlowKey();
+        auto session = test->sessions_.find(flowKey);
         if (session == test->sessions_.end())
         {
-            auto flowKey = tcpData.getConnectionData().flowKey;
             auto result =
                 test->sessions_.emplace(std::make_pair(flowKey, std::make_shared<Session>(test->recordPool_)));
             if (result.second)

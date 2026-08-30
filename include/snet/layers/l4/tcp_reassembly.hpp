@@ -2,6 +2,7 @@
 
 #include <snet/layers/packet.hpp>
 #include <snet/layers/l3/ip_address.hpp>
+#include <snet/layers/l4/tcp_types.hpp>
 #include <snet/utils/pointer_vector.hpp>
 #include <unordered_map>
 #include <chrono>
@@ -111,61 +112,6 @@
 namespace snet::layers
 {
 
-/**
- * @struct ConnectionData
- * Represents basic TCP/UDP + IP connection data
- */
-struct ConnectionData
-{
-    /** Source IP address */
-    IPAddress srcIP;
-    /** Destination IP address */
-    IPAddress dstIP;
-    /** Source TCP/UDP port */
-    uint16_t srcPort;
-    /** Destination TCP/UDP port */
-    uint16_t dstPort;
-    /** A 4-byte hash key representing the connection */
-    uint32_t flowKey;
-    /** Start timestamp of the connection with microsecond precision */
-    timeval startTime;
-    /** End timestamp of the connection with microsecond precision */
-    timeval endTime;
-    /** Start timestamp of the connection with nanosecond precision */
-    std::chrono::time_point<std::chrono::high_resolution_clock>
-        startTimePrecise;
-    /** End timestamp of the connection with nanosecond precision */
-    std::chrono::time_point<std::chrono::high_resolution_clock> endTimePrecise;
-
-    /**
-     * A c'tor for this struct that basically zeros all members
-     */
-    ConnectionData()
-        : srcPort(0)
-        , dstPort(0)
-        , flowKey(0)
-        , startTime()
-        , endTime()
-    {
-    }
-
-    /**
-     * Set the start time of the connection
-     * @param[in] startTimeValue timestamp value
-     */
-    void setStartTime(
-        const std::chrono::time_point<std::chrono::high_resolution_clock>&
-            startTimeValue);
-
-    /**
-     * Set the end time of the connection
-     * @param[in] endTimeValue timestamp value
-     */
-    void setEndTime(
-        const std::chrono::time_point<std::chrono::high_resolution_clock>&
-            endTimeValue);
-};
-
 class TcpReassembly;
 
 /**
@@ -189,7 +135,7 @@ public:
      */
     TcpStreamData(
         const uint8_t* tcpData, size_t tcpDataLength, size_t missingBytes,
-        const ConnectionData& connData,
+        const ConnectionInfo& connData,
         std::chrono::time_point<std::chrono::high_resolution_clock> timestamp)
         : m_Data(tcpData)
         , m_DataLen(tcpDataLength)
@@ -240,7 +186,7 @@ public:
      * A getter for the connection data
      * @return The const reference to connection data
      */
-    const ConnectionData& getConnectionData() const
+    const ConnectionInfo& getConnectionData() const
     {
         return m_Connection;
     }
@@ -263,7 +209,7 @@ private:
     const uint8_t* m_Data;
     size_t m_DataLen;
     size_t m_MissingBytes;
-    const ConnectionData& m_Connection;
+    const ConnectionInfo& m_Connection;
     std::chrono::time_point<std::chrono::high_resolution_clock> m_Timestamp;
 };
 
@@ -433,7 +379,7 @@ public:
     /**
      * The type for storing the connection information
      */
-    typedef std::unordered_map<uint32_t, ConnectionData> ConnectionInfoList;
+    typedef std::unordered_map<uint32_t, ConnectionInfo> ConnectionInfoList;
 
     /**
      * @typedef OnTcpMessageReady
@@ -456,7 +402,7 @@ public:
      * @param[in] userCookie A pointer to the cookie provided by the user in
      * TcpReassembly c'tor (or nullptr if no cookie provided)
      */
-    typedef void (*OnTcpConnectionStart)(const ConnectionData& connectionData,
+    typedef void (*OnTcpConnectionStart)(const ConnectionInfo& connectionData,
                                          void* userCookie);
 
     /**
@@ -469,7 +415,7 @@ public:
      * @param[in] userCookie A pointer to the cookie provided by the user in
      * TcpReassembly c'tor (or nullptr if no cookie provided)
      */
-    typedef void (*OnTcpConnectionEnd)(const ConnectionData& connectionData,
+    typedef void (*OnTcpConnectionEnd)(const ConnectionInfo& connectionData,
                                        ConnectionEndReason reason,
                                        void* userCookie);
 
@@ -543,7 +489,7 @@ public:
      * connection is closed, and a negative number (< 0) if this connection
      * isn't managed by this TcpReassembly instance
      */
-    int isConnectionOpen(const ConnectionData& connection) const;
+    int isConnectionOpen(const ConnectionInfo& connection) const;
 
     /**
      * Clean up the closed connections from the memory
@@ -596,7 +542,7 @@ private:
         int8_t numOfSides;
         int8_t prevSide;
         TcpOneSideData twoSides[2];
-        ConnectionData connData;
+        ConnectionInfo connData;
 
         TcpReassemblyData()
             : closed(false)

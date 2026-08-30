@@ -55,11 +55,12 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
 
     if (tcpData.getMissingByteCount() == 0)
     {
-        auto session = mgr->sessions.find(tcpData.getConnectionData().flowKey);
+        auto flowKey = tcpData.getConnectionData().getFlowKey();
+        auto session = mgr->sessions.find(flowKey);
         if (session == mgr->sessions.end())
         {
             auto result = mgr->sessions.emplace(
-                std::make_pair(tcpData.getConnectionData().flowKey, std::make_shared<tls::Session>(mgr->recordPool)));
+                std::make_pair(flowKey, std::make_shared<tls::Session>(mgr->recordPool)));
             if (result.second)
             {
                 session = result.first;
