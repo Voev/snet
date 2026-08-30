@@ -7,103 +7,8 @@
 
 using namespace casket;
 
-
 namespace snet::layers
 {
-
-Packet::Packet()
-{
-}
-
-Packet::~Packet() noexcept
-{
-    if (m_DeleteRawDataAtDestructor)
-    {
-        delete[] m_RawData;
-    }
-}
-
-Packet::Packet(nonstd::span<const uint8_t> data, bool deleteRawDataAtDestructor, LinkLayerType layerType)
-    : m_DeleteRawDataAtDestructor(deleteRawDataAtDestructor)
-{
-    setRawData(data, layerType, -1);
-}
-
-Packet::Packet(size_t maxPacketLen)
-    : m_MaxPacketLen(maxPacketLen)
-    , m_DeleteRawDataAtDestructor(true)
-{
-    uint8_t* data = new uint8_t[maxPacketLen];
-    memset(data, 0, maxPacketLen);
-
-    setRawData({data, 0}, LINKTYPE_ETHERNET, -1);
-}
-
-Packet::Packet(nonstd::span<uint8_t> buffer)
-    : m_MaxPacketLen(buffer.size())
-{
-    setRawData(buffer, LINKTYPE_ETHERNET, -1);
-}
-
-bool Packet::setRawData(nonstd::span<const uint8_t> data, LinkLayerType layerType, int frameLength)
-{
-    if (data.empty() && data.data() == nullptr)
-    {
-        return false;
-    }
-
-    if (frameLength == -1)
-    {
-        frameLength = data.size();
-    }
-    else if (frameLength < static_cast<int>(data.size()))
-    {
-        return false;
-    }
-
-    if (m_DeleteRawDataAtDestructor && m_RawData)
-    {
-        delete[] m_RawData;
-        m_RawData = nullptr;
-    }
-
-    m_FrameLength = frameLength;
-
-    if (m_DeleteRawDataAtDestructor)
-    {
-        try
-        {
-            m_RawData = new uint8_t[data.size()];
-            std::copy(data.begin(), data.end(), m_RawData);
-            m_RawDataLen = data.size();
-        }
-        catch (const std::bad_alloc&)
-        {
-            m_RawData = nullptr;
-            m_RawDataLen = 0;
-            return false;
-        }
-    }
-    else
-    {
-        m_RawData = const_cast<uint8_t*>(data.data());
-        m_RawDataLen = data.size();
-    }
-
-    m_LinkLayerType = layerType;
-
-    return true;
-}
-
-void Packet::clear()
-{
-    if (m_RawData != nullptr && m_DeleteRawDataAtDestructor)
-        delete[] m_RawData;
-
-    m_RawData = nullptr;
-    m_RawDataLen = 0;
-    m_FrameLength = 0;
-}
 
 bool Packet::isLinkTypeValid(int linkTypeValue)
 {
@@ -206,6 +111,145 @@ bool Packet::isLinkTypeValid(int linkTypeValue)
         return true;
     default:
         return false;
+    }
+}
+
+nonstd::optional<LayerInfo> Packet::parseLayer(ProtocolType protocol, size_t globalOffset, size_t remaining) noexcept
+{
+    LayerInfo info{};
+    info.protocol = protocol;
+    info.offset = globalOffset;
+    info.payloadOffset = 0;
+
+    switch (protocol)
+    {
+    case Ethernet:
+    {
+        constexpr size_t ETHERNET_LEN = 14;
+        if (remaining < ETHERNET_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = ETHERNET_LEN;
+        info.payloadOffset = globalOffset + ETHERNET_LEN;
+
+        auto eth = EthernetHeader();
+        if (!eth.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        if (eth.etherType() == EtherType::VLAN || eth.etherType() == EtherType::IEEE_802_1AD)
+        {
+            if (remaining >= ETHERNET_LEN + 4)
+            {
+                info.headerLength = ETHERNET_LEN + 4;
+                info.payloadOffset = globalOffset + ETHERNET_LEN + 4;
+            }
+        }
+        break;
+    }
+
+    case IPv4:
+    {
+        constexpr size_t MIN_IP_LEN = 20;
+        if (remaining < MIN_IP_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        auto ip = IPv4Header();
+        if (!ip.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = ip.headerLength();
+        info.payloadOffset = globalOffset + info.headerLength;
+        break;
+    }
+
+    case IPv6:
+    {
+        constexpr size_t IPV6_LEN = 40;
+        if (remaining < IPV6_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = IPV6_LEN;
+        info.payloadOffset = globalOffset + IPV6_LEN;
+        break;
+    }
+
+    case TCP:
+    {
+        constexpr size_t MIN_TCP_LEN = 20;
+        if (remaining < MIN_TCP_LEN)
+        {
+            return nonstd::nullopt;
+        }
+
+        TCPHeader tcp;
+        if (!tcp.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = tcp.headerLength();
+        info.payloadOffset = globalOffset + info.headerLength;
+        break;
+    }
+
+    default:
+        info.headerLength = remaining;
+        info.payloadOffset = globalOffset + remaining;
+        break;
+    }
+
+    if (globalOffset + info.headerLength > rawDataLen_)
+    {
+        return nonstd::nullopt;
+    }
+
+    return info;
+}
+
+void Packet::parse() noexcept
+{
+    layerCount_ = 0;
+
+    size_t packetLen = rawDataLen_;
+    size_t offset = 0;
+
+    ProtocolType currentProto = getProtocolFromLinkType(linkLayerType_);
+
+    while (offset < packetLen && layerCount_ < layers_.max_size())
+    {
+        size_t remaining = packetLen - offset;
+
+        auto layerInfo = parseLayer(currentProto, offset, remaining);
+        if (!layerInfo)
+        {
+            break;
+        }
+
+        layers_[layerCount_++] = *layerInfo;
+        offset = layerInfo->getEndOffset();
+
+        if (offset >= packetLen)
+        {
+            break;
+        }
+
+        const LayerInfo& currentLayer = layers_[layerCount_ - 1];
+        currentProto = getNextProtocol(currentLayer);
+
+        if (currentProto == UnknownProtocol)
+        {
+            break;
+        }
     }
 }
 

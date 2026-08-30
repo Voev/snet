@@ -1,6 +1,7 @@
 #pragma once
 #include <snet/layers/l3/types.hpp>
 #include <casket/nonstd/string_view.hpp>
+#include <casket/nonstd/optional.hpp>
 
 namespace snet::layers
 {
@@ -48,7 +49,9 @@ public:
 
     operator uint32_t() const;
 
-    std::uint32_t toUint() const;
+    uint32_t toHost() const;
+
+    uint32_t toNetwork() const;
 
     std::string toString() const;
 
@@ -67,10 +70,12 @@ public:
 
     static IPv4Address any() noexcept;
 
-    static std::optional<IPv4Address> fromString(nonstd::string_view str);
+    static nonstd::optional<IPv4Address> fromString(nonstd::string_view str);
+
+    IPv4Address fromNetwork(uint32_t addrBE) noexcept;
 
 private:
-    InAddrType addr_;
+    InAddrType addr_; // BE
 };
 
 } // namespace snet::layers
@@ -86,6 +91,6 @@ struct std::hash<snet::layers::IPv4Address>
 {
     std::size_t operator()(const snet::layers::IPv4Address& addr) const noexcept
     {
-        return std::hash<std::uint32_t>()(addr.toUint());
+        return std::hash<std::uint32_t>()(addr.toHost());
     }
 };

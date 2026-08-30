@@ -75,7 +75,7 @@ TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, uint32_t recValue)
 
 TLVRecordBuilder::TLVRecordBuilder(uint32_t recType, const IPv4Address& recValue)
 {
-    uint32_t recIntValue = recValue.toUint();
+    uint32_t recIntValue = recValue.toHost();
     init(recType, (uint8_t*)&recIntValue, sizeof(uint32_t));
 }
 

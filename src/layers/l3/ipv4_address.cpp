@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstring>
 #include <limits>
+#include <arpa/inet.h>
 
 #include <snet/layers/l3/ipv4_address.hpp>
 
@@ -70,32 +71,32 @@ IPv4Address& IPv4Address::operator=(IPv4Address&& other) noexcept
 
 bool IPv4Address::operator==(const IPv4Address& rhs) const noexcept
 {
-    return toUint() == rhs.toUint();
+    return addr_.s_addr == rhs.addr_.s_addr;
 }
 
 bool IPv4Address::operator!=(const IPv4Address& rhs) const noexcept
 {
-    return toUint() != rhs.toUint();
+    return !(*this == rhs);
 }
 
 bool IPv4Address::operator<(const IPv4Address& rhs) const noexcept
 {
-    return toUint() < rhs.toUint();
+    return toHost() < rhs.toHost();
 }
 
 bool IPv4Address::operator>(const IPv4Address& rhs) const noexcept
 {
-    return toUint() > rhs.toUint();
+    return toHost() > rhs.toHost();
 }
 
 bool IPv4Address::operator<=(const IPv4Address& rhs) const noexcept
 {
-    return toUint() <= rhs.toUint();
+    return !(*this > rhs);
 }
 
 bool IPv4Address::operator>=(const IPv4Address& rhs) const noexcept
 {
-    return toUint() >= rhs.toUint();
+    return !(*this < rhs);
 }
 
 IPv4Address IPv4Address::operator&(const IPv4Address& mask) const
@@ -115,12 +116,17 @@ IPv4Address IPv4Address::operator~() const
 
 IPv4Address::operator uint32_t() const
 {
-    return toUint();
+    return toHost();
 }
 
-std::uint32_t IPv4Address::toUint() const
+uint32_t IPv4Address::toHost() const
 {
-    return casket::host_to_be(addr_.s_addr);
+    return casket::be_to_host(addr_.s_addr);
+}
+
+uint32_t IPv4Address::toNetwork() const
+{
+    return addr_.s_addr;
 }
 
 std::string IPv4Address::toString() const
@@ -136,17 +142,17 @@ std::string IPv4Address::toString() const
 
 bool IPv4Address::isLoopback() const noexcept
 {
-    return (toUint() & 0xFF000000) == 0x7F000000;
+    return (toHost() & 0xFF000000) == 0x7F000000;
 }
 
 bool IPv4Address::isMulticast() const noexcept
 {
-    return (toUint() & 0xF0000000) == 0xE0000000;
+    return (toHost() & 0xF0000000) == 0xE0000000;
 }
 
 bool IPv4Address::isBroadcast() const noexcept
 {
-    return (toUint() & 0xFFFFFFFF) == 0xFFFFFFFF;
+    return (toHost() & 0xFFFFFFFF) == 0xFFFFFFFF;
 }
 
 bool IPv4Address::isUnicast() const noexcept
@@ -156,7 +162,7 @@ bool IPv4Address::isUnicast() const noexcept
 
 bool increment(IPv4Address& addr)
 {
-    uint32_t addr_int = casket::be_to_host<uint32_t>(addr.toUint());
+    uint32_t addr_int = casket::be_to_host<uint32_t>(addr.toNetwork());
     bool reached_end = ++addr_int == std::numeric_limits<uint32_t>::max();
     addr = IPv4Address(casket::be_to_host<uint32_t>(addr_int));
     return reached_end;
@@ -164,7 +170,7 @@ bool increment(IPv4Address& addr)
 
 bool decrement(IPv4Address& addr)
 {
-    uint32_t addrUint = casket::be_to_host<uint32_t>(addr.toUint());
+    uint32_t addrUint = casket::be_to_host<uint32_t>(addr.toNetwork());
     bool reachedEnd = --addrUint == 0;
     addr = IPv4Address(casket::be_to_host<uint32_t>(addrUint));
     return reachedEnd;
@@ -183,6 +189,13 @@ std::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
         return std::nullopt;
     }
     return IPv4Address(addr);
+}
+
+IPv4Address IPv4Address::fromNetwork(uint32_t addrBE) noexcept
+{
+    IPv4Address result;
+    result.addr_.s_addr = addrBE;
+    return result;
 }
 
 } // namespace snet::layers

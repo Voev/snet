@@ -1,6 +1,7 @@
 #pragma once
 #include <snet/io.hpp>
-#include <snet/layers/packet_pool.hpp>
+
+#include <casket/types/fixed_object_pool.hpp>
 
 #include "pcap_handle.hpp"
 #include "pcap_packet.hpp"
@@ -79,7 +80,7 @@ public:
     /// @brief Retrieves packet pool statistics
     /// @param[out] info Structure to fill with pool information
     /// @return Status indicating success or failure
-    Status getMsgPoolInfo(layers::PacketPoolInfo& info) override;
+    Status getMsgPoolInfo(io::PacketPoolInfo& info) override;
 
     /// @brief Gets current driver statistics
     /// @param[out] stats Structure to fill with statistics data
@@ -117,25 +118,25 @@ private:
     Status updateHwStats() noexcept;
 
 private:
-    std::unique_ptr<layers::PacketPool<PcapPacket>> pool_; ///< Packet pool for memory management
-    Stats stats_;                                          ///< Driver statistics counters
-    char errbuf_[PCAP_ERRBUF_SIZE];                        ///< Error buffer for PCAP operations
-    std::string device_;                                   ///< Network device name or file path
-    std::string filter_;                                   ///< BPF filter expression
-    PcapHandle handle_;                                    ///< PCAP handle wrapper
-    FILE* fp_;                                             ///< File pointer for offline capture
-    unsigned int snaplen_;                                 ///< Snapshot length in bytes
-    int timeout_;                                          ///< Read timeout in milliseconds
-    int bufferSize_;                                       ///< Buffer size for capture
-    Mode mode_;                                            ///< Capture mode (LIVE or OFFLINE)
-    uint32_t netmask_;                                     ///< Network mask for filter compilation
-    uint32_t hwupdateCount_;                               ///< Hardware statistics update interval
-    U32Counter recvCounter_;                               ///< Received packets counter
-    U32Counter dropCounter_;                               ///< Dropped packets counter
-    bool promiscMode_;                                     ///< Promiscuous mode flag
-    bool immediateMode_;                                   ///< Immediate mode flag
-    bool nonblocking_;                                     ///< Non-blocking mode flag
-    volatile bool interrupted_;                            ///< Interruption flag for async operations
+    std::unique_ptr<casket::FixedObjectPool<PcapPacket>> pool_; ///< Packet pool for memory management
+    Stats stats_;                                               ///< Driver statistics counters
+    char errbuf_[PCAP_ERRBUF_SIZE];                             ///< Error buffer for PCAP operations
+    std::string device_;                                        ///< Network device name or file path
+    std::string filter_;                                        ///< BPF filter expression
+    PcapHandle handle_;                                         ///< PCAP handle wrapper
+    FILE* fp_;                                                  ///< File pointer for offline capture
+    unsigned int snaplen_;                                      ///< Snapshot length in bytes
+    int timeout_;                                               ///< Read timeout in milliseconds
+    int bufferSize_;                                            ///< Buffer size for capture
+    Mode mode_;                                                 ///< Capture mode (LIVE or OFFLINE)
+    uint32_t netmask_;                                          ///< Network mask for filter compilation
+    uint32_t hwupdateCount_;                                    ///< Hardware statistics update interval
+    U32Counter recvCounter_;                                    ///< Received packets counter
+    U32Counter dropCounter_;                                    ///< Dropped packets counter
+    bool promiscMode_;                                          ///< Promiscuous mode flag
+    bool immediateMode_;                                        ///< Immediate mode flag
+    bool nonblocking_;                                          ///< Non-blocking mode flag
+    volatile bool interrupted_;                                 ///< Interruption flag for async operations
 };
 
 } // namespace snet::driver

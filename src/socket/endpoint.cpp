@@ -55,7 +55,7 @@ Endpoint::Endpoint(const IPAddress& addr, std::uint16_t port) noexcept
     {
         data_.v4.sin_family = AF_INET;
         data_.v4.sin_port = host_to_be(port);
-        data_.v4.sin_addr.s_addr = host_to_be(addr.toIPv4().toUint());
+        data_.v4.sin_addr.s_addr = host_to_be(addr.toIPv4().toHost());
     }
     else
     {

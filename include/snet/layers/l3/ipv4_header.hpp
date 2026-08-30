@@ -35,6 +35,15 @@ struct ipv4_header
 };
 #pragma pack(pop)
 
+static inline void setVerIhl(ipv4_header* header, uint8_t version, uint8_t ihl) noexcept
+{
+    if (header != nullptr) [[likely]]
+    {
+        header->version = version;
+        header->ihl = ihl;
+    }
+}
+
 class Packet;
 
 /// @brief Represents an IPv4 header.

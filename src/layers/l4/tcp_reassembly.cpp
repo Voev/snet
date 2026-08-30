@@ -313,7 +313,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         if (tcpPayloadSize != 0 && m_OnMessageReadyCallback != nullptr)
         {
 
-            TcpStreamData streamData(packet->getPayload(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
+            TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
                                      currTime);
             m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
         }
@@ -354,7 +354,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             // send only the new data to the callback
             if (m_OnMessageReadyCallback != nullptr)
             {
-                TcpStreamData streamData(packet->getPayload(layer) + newLength, tcpPayloadSize - newLength, 0,
+                TcpStreamData streamData(packet->getPayloadData(layer) + newLength, tcpPayloadSize - newLength, 0,
                                          tcpReassemblyData->connData, currTime);
                 m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
             }
@@ -409,7 +409,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         // send the data to the callback
         if (m_OnMessageReadyCallback != nullptr)
         {
-            TcpStreamData streamData(packet->getPayload(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
+            TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
                                      currTime);
             m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
         }
@@ -461,7 +461,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         newTcpFrag->dataLength = tcpPayloadSize;
         newTcpFrag->sequence = sequence;
         newTcpFrag->timestamp = currTime;
-        memcpy(newTcpFrag->data, packet->getPayload(layer), tcpPayloadSize);
+        memcpy(newTcpFrag->data, packet->getPayloadData(layer), tcpPayloadSize);
         tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.pushBack(newTcpFrag);
 
         CSK_LOG_DEBUG("Found out-of-order packet and added a new TCP fragment with size "

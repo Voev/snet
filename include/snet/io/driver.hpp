@@ -10,10 +10,17 @@
 
 #include <snet/layers/link_type.hpp>
 #include <snet/layers/packet.hpp>
-#include <snet/layers/packet_pool.hpp>
 
 namespace snet::io
 {
+
+/// @brief Packet pool statistics information
+struct PacketPoolInfo
+{
+    uint32_t size;      ///< Total number of packets in the pool
+    uint32_t available; ///< Number of free packets available for acquisition
+    size_t memorySize;  ///< Total memory allocated by the pool (objects + data buffers)
+};
 
 /// @brief Abstract base class for network drivers.
 class Driver
@@ -82,7 +89,7 @@ public:
     /// @brief Gets packet pool information.
     /// @param[out] info Structure to fill with pool statistics.
     /// @return Status indicating success or failure.
-    virtual Status getMsgPoolInfo(layers::PacketPoolInfo& info) = 0;
+    virtual Status getMsgPoolInfo(PacketPoolInfo& info) = 0;
 };
 
 /// @brief Driver creation function type.
