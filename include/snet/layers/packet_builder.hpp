@@ -180,8 +180,8 @@ private:
             uint16_t len;
         };
 
-        size_t ip_size = ip->ihl * 4;
-        size_t tcp_len = tcp->doff * 4;
+        //size_t ip_size = ip->ihl * 4;
+        size_t tcp_len = tcp->u.bits.doff * 4;
 
         Pseudo pseudo;
         pseudo.src = ip->saddr;

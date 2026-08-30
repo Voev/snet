@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <ostream>
 #include <casket/utils/endianness.hpp>
@@ -17,18 +18,215 @@ struct tcp_header
     uint16_t dest;
     uint32_t seq;
     uint32_t ack_seq;
+    union
+    {
+        struct
+        {
 #if (BYTE_ORDER == LITTLE_ENDIAN)
-    uint16_t res1 : 4, doff : 4, fin : 1, syn : 1, rst : 1, psh : 1, ack : 1, urg : 1, res2 : 2;
+            uint16_t res1 : 4;
+            uint16_t doff : 4;
+            uint16_t fin : 1;
+            uint16_t syn : 1;
+            uint16_t rst : 1;
+            uint16_t psh : 1;
+            uint16_t ack : 1;
+            uint16_t urg : 1;
+            uint16_t res2 : 2;
 #else
-    uint16_t doff : 4, res1 : 4, res2 : 2, urg : 1, ack : 1, psh : 1, rst : 1, syn : 1, fin : 1;
+            uint16_t doff : 4;
+            uint16_t res1 : 4;
+            uint16_t res2 : 2;
+            uint16_t urg : 1;
+            uint16_t ack : 1;
+            uint16_t psh : 1;
+            uint16_t rst : 1;
+            uint16_t syn : 1;
+            uint16_t fin : 1;
 #endif
+        } bits;
+        uint16_t flags;
+    } u;
     uint16_t window;
     uint16_t check;
     uint16_t urg_ptr;
 };
 #pragma pack(pop)
 
+// TCP flags constants
+namespace tcp_flags
+{
+    constexpr uint16_t FIN  = 0x0001;
+    constexpr uint16_t SYN  = 0x0002;
+    constexpr uint16_t RST  = 0x0004;
+    constexpr uint16_t PSH  = 0x0008;
+    constexpr uint16_t ACK  = 0x0010;
+    constexpr uint16_t URG  = 0x0020;
+    constexpr uint16_t ECE  = 0x0040;
+    constexpr uint16_t CWR  = 0x0080;
+    constexpr uint16_t NS   = 0x0100;
+    
+    // DOFF masks (upper 4 bits)
+    constexpr uint16_t DOFF_MASK   = 0xF000;
+    constexpr uint16_t DOFF_SHIFT  = 12;
+    
+    // RES1 masks (bits 8-11)
+    constexpr uint16_t RES1_MASK   = 0x0F00;
+    constexpr uint16_t RES1_SHIFT  = 8;
+    
+    // RES2 masks (bits 14-15)
+    constexpr uint16_t RES2_MASK   = 0xC000;
+    constexpr uint16_t RES2_SHIFT  = 14;
+}
+class TCPBits
+{
+public:
+    explicit TCPBits(tcp_header* const header) noexcept
+        : header_(header)
+    {
+        assert(header_ != nullptr && "TCPBits: header is nullptr");
+    }
+
+    TCPBits(const TCPBits&) = delete;
+    TCPBits& operator=(const TCPBits&) = delete;
+
+    TCPBits(TCPBits&&) noexcept = default;
+    TCPBits& operator=(TCPBits&&) noexcept = default;
+
+    /// @brief Set Data Offset field
+    TCPBits& doff(uint8_t value) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.doff = value;
+        }
+        return *this;
+    }
+
+    /// @brief Set RES1 field
+    TCPBits& res1(uint8_t value) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.res1 = value;
+        }
+        return *this;
+    }
+
+    /// @brief Set RES2 field
+    TCPBits& res2(uint8_t value) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.res2 = value;
+        }
+        return *this;
+    }
+
+    /// @brief Set FIN flag
+    TCPBits& fin(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.fin = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set SYN flag
+    TCPBits& syn(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.syn = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set RST flag
+    TCPBits& rst(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.rst = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set PSH flag
+    TCPBits& psh(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.psh = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set ACK flag
+    TCPBits& ack(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.ack = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set URG flag
+    TCPBits& urg(bool set = true) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.bits.urg = set ? 1 : 0;
+        }
+        return *this;
+    }
+
+    /// @brief Set all flags using bitmask (for use with tcp_flags constants)
+    TCPBits& flags(uint16_t mask) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            // Clear flags (bits 0-8), preserve DOFF and RES
+            header_->u.flags = (header_->u.flags & ~0x01FF) | (mask & 0x01FF);
+        }
+        return *this;
+    }
+
+    /// @brief Set entire flags field directly
+    TCPBits& raw(uint16_t value) noexcept
+    {
+        if (header_ != nullptr) [[likely]]
+        {
+            header_->u.flags = value;
+        }
+        return *this;
+    }
+
+    /// @brief Get raw pointer to TCP header
+    [[nodiscard]] tcp_header* get() noexcept
+    {
+        return header_;
+    }
+
+    /// @brief Get const raw pointer to TCP header
+    [[nodiscard]] const tcp_header* get() const noexcept
+    {
+        return header_;
+    }
+
+    /// @brief Check if the header is valid
+    [[nodiscard]] bool isValid() const noexcept
+    {
+        return header_ != nullptr;
+    }
+
+private:
+    tcp_header* const header_;
+};
+
 class Packet;
+
 /// @brief Represents a TCP header.
 /// 
 /// Provides access to TCP header fields including source/destination ports,
@@ -99,56 +297,56 @@ public:
     /// @return Header length in 32-bit words (data offset field).
     uint8_t headerLen() const noexcept
     {
-        return header_->doff;
+        return header_->u.bits.doff;
     }
     
     /// @brief Gets the header length in bytes.
     /// @return Header length in bytes.
     uint8_t headerLength() const noexcept
     {
-        return header_->doff * 4;
+        return header_->u.bits.doff * 4;
     }
 
     /// @brief Checks if the FIN flag is set.
     /// @return true if FIN flag is set, false otherwise.
     bool isFIN() const noexcept
     {
-        return header_->fin != 0;
+        return header_->u.bits.fin != 0;
     }
     
     /// @brief Checks if the SYN flag is set.
     /// @return true if SYN flag is set, false otherwise.
     bool isSYN() const noexcept
     {
-        return header_->syn != 0;
+        return header_->u.bits.syn != 0;
     }
     
     /// @brief Checks if the RST flag is set.
     /// @return true if RST flag is set, false otherwise.
     bool isRST() const noexcept
     {
-        return header_->rst != 0;
+        return header_->u.bits.rst != 0;
     }
     
     /// @brief Checks if the PSH flag is set.
     /// @return true if PSH flag is set, false otherwise.
     bool isPSH() const noexcept
     {
-        return header_->psh != 0;
+        return header_->u.bits.psh != 0;
     }
     
     /// @brief Checks if the ACK flag is set.
     /// @return true if ACK flag is set, false otherwise.
     bool isACK() const noexcept
     {
-        return header_->ack != 0;
+        return header_->u.bits.ack != 0;
     }
     
     /// @brief Checks if the URG flag is set.
     /// @return true if URG flag is set, false otherwise.
     bool isURG() const noexcept
     {
-        return header_->urg != 0;
+        return header_->u.bits.urg != 0;
     }
 
     /// @brief Gets the window size.

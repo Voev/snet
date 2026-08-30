@@ -63,8 +63,8 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::T
 
     if (ipAddrType == IPAddress::IPv4)
     {
-        uint32_t srcIP = srcIPAddress.toIPv4().toUint();
-        uint32_t dstIP = dstIPAddress.toIPv4().toUint();
+        uint32_t srcIP = srcIPAddress.toIPv4().toHost();
+        uint32_t dstIP = dstIPAddress.toIPv4().toHost();
         uint16_t pseudoHeader[6];
         pseudoHeader[0] = srcIP >> 16;
         pseudoHeader[1] = srcIP & 0xFFFF;

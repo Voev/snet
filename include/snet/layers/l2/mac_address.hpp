@@ -45,19 +45,16 @@ struct MacAddress
         return !(*this == other);
     }
 
-    /// @brief Создаёт broadcast MAC.
     static MacAddress broadcast()
     {
         return MacAddress{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     }
 
-    /// @brief Создаёт нулевой MAC.
     static MacAddress zero()
     {
         return MacAddress{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     }
 
-    /// @brief Парсит MAC из строки "AA:BB:CC:DD:EE:FF".
     static MacAddress parse(const std::string& str)
     {
         MacAddress mac;

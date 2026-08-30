@@ -54,6 +54,26 @@ public:
         return *this;
     }
 
+    template <typename Func>
+    HeaderBuilder& apply(Func&& func) noexcept
+    {
+        if (header_ && !built_)
+        {
+            std::forward<Func>(func)(header_);
+        }
+        return *this;
+    }
+
+    template <typename Func, typename... Args>
+    HeaderBuilder& apply(Func&& func, Args&&... args) noexcept
+    {
+        if (header_ && !built_)
+        {
+            std::forward<Func>(func)(header_, std::forward<Args>(args)...);
+        }
+        return *this;
+    }
+
     size_t build() noexcept
     {
         built_ = true;
@@ -130,7 +150,7 @@ private:
 
         if constexpr (std::is_same_v<HeaderType, tcp_header>)
         {
-            return static_cast<size_t>(header_->doff) * 4;
+            return static_cast<size_t>(header_->u.bits.doff) * 4;
         }
 
         return sizeof(HeaderType);
