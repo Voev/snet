@@ -52,31 +52,6 @@ struct tcp_header
 };
 #pragma pack(pop)
 
-// TCP flags constants
-namespace tcp_flags
-{
-    constexpr uint16_t FIN  = 0x0001;
-    constexpr uint16_t SYN  = 0x0002;
-    constexpr uint16_t RST  = 0x0004;
-    constexpr uint16_t PSH  = 0x0008;
-    constexpr uint16_t ACK  = 0x0010;
-    constexpr uint16_t URG  = 0x0020;
-    constexpr uint16_t ECE  = 0x0040;
-    constexpr uint16_t CWR  = 0x0080;
-    constexpr uint16_t NS   = 0x0100;
-    
-    // DOFF masks (upper 4 bits)
-    constexpr uint16_t DOFF_MASK   = 0xF000;
-    constexpr uint16_t DOFF_SHIFT  = 12;
-    
-    // RES1 masks (bits 8-11)
-    constexpr uint16_t RES1_MASK   = 0x0F00;
-    constexpr uint16_t RES1_SHIFT  = 8;
-    
-    // RES2 masks (bits 14-15)
-    constexpr uint16_t RES2_MASK   = 0xC000;
-    constexpr uint16_t RES2_SHIFT  = 14;
-}
 class TCPBits
 {
 public:
