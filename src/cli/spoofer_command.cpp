@@ -54,7 +54,7 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
     (void)sideIndex;
     if (tcpData.getMissingByteCount() == 0)
     {
-        auto flowKey = tcpData.getConnectionData().flowKey;
+        auto flowKey = tcpData.getConnectionData().getFlowKey();
         auto session = manager->find(flowKey);
         if (session == manager->end())
         {

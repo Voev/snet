@@ -17,37 +17,6 @@ using namespace casket;
 namespace snet::layers
 {
 
-static timeval timePointToTimeval(const std::chrono::time_point<std::chrono::high_resolution_clock>& in)
-{
-    auto duration = in.time_since_epoch();
-
-    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count() -
-                        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds(seconds)).count();
-
-    struct timeval out;
-    out.tv_sec = seconds;
-    out.tv_usec = microseconds;
-    return out;
-}
-
-void ConnectionData::setStartTime(const std::chrono::time_point<std::chrono::high_resolution_clock>& startTimeValue)
-{
-    startTime = timePointToTimeval(startTimeValue);
-    startTimePrecise = startTimeValue;
-}
-
-void ConnectionData::setEndTime(const std::chrono::time_point<std::chrono::high_resolution_clock>& endTimeValue)
-{
-    endTime = timePointToTimeval(endTimeValue);
-    endTimePrecise = endTimeValue;
-}
-
-timeval TcpStreamData::getTimeStamp() const
-{
-    return timePointToTimeval(m_Timestamp);
-}
-
 TcpReassembly::TcpReassembly(OnTcpMessageReady onMessageReadyCallback, void* userCookie,
                              OnTcpConnectionStart onConnectionStartCallback, OnTcpConnectionEnd onConnectionEndCallback,
                              const TcpReassemblyConfiguration& config)
@@ -132,12 +101,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         std::pair<ConnectionList::iterator, bool> pair =
             m_ConnectionList.insert(std::make_pair(flowKey, TcpReassemblyData()));
         tcpReassemblyData = &pair.first->second;
-        tcpReassemblyData->connData.srcIP = srcIP;
-        tcpReassemblyData->connData.dstIP = dstIP;
-        tcpReassemblyData->connData.srcPort = tcpHeader.srcPort();
-        tcpReassemblyData->connData.dstPort = tcpHeader.dstPort();
-        tcpReassemblyData->connData.flowKey = flowKey;
-        tcpReassemblyData->connData.setStartTime(currTime);
+        tcpReassemblyData->connData.tuple = ConnectionTuple({srcIP, tcpHeader.srcPort()}, {dstIP, tcpHeader.dstPort()});
+        tcpReassemblyData->connData.start_time = currTime;
 
         m_ConnectionInfo[flowKey] = tcpReassemblyData->connData;
 
@@ -157,10 +122,10 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 
         tcpReassemblyData = &iter->second;
 
-        if (currTime > tcpReassemblyData->connData.endTimePrecise)
+        if (currTime > tcpReassemblyData->connData.end_time)
         {
-            tcpReassemblyData->connData.setEndTime(currTime);
-            m_ConnectionInfo[flowKey].setEndTime(currTime);
+            tcpReassemblyData->connData.end_time = currTime;
+            m_ConnectionInfo[flowKey].end_time = currTime;
         }
     }
 
@@ -780,7 +745,7 @@ void TcpReassembly::closeAllConnections()
         if (tcpReassemblyData.closed) // the connection is already closed, skip it
             continue;
 
-        uint32_t flowKey = tcpReassemblyData.connData.flowKey;
+        uint32_t flowKey = tcpReassemblyData.connData.getFlowKey();
         CSK_LOG_DEBUG("Closing connection with flow key %lx", flowKey);
 
         CSK_LOG_DEBUG("Calling checkOutOfOrderFragments on side 0");
@@ -799,9 +764,9 @@ void TcpReassembly::closeAllConnections()
     }
 }
 
-int TcpReassembly::isConnectionOpen(const ConnectionData& connection) const
+int TcpReassembly::isConnectionOpen(const ConnectionInfo& connection) const
 {
-    ConnectionList::const_iterator iter = m_ConnectionList.find(connection.flowKey);
+    ConnectionList::const_iterator iter = m_ConnectionList.find(connection.getFlowKey());
     if (iter != m_ConnectionList.end())
         return iter->second.closed == false;
 
