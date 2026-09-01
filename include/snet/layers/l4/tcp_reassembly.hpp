@@ -1,8 +1,11 @@
 #pragma once
 
+#include <functional>
+
 #include <snet/layers/packet.hpp>
 #include <snet/layers/l3/ip_address.hpp>
 #include <snet/layers/l4/tcp_types.hpp>
+#include <snet/layers/l4/tcp_stream.hpp>
 #include <snet/utils/pointer_vector.hpp>
 #include <unordered_map>
 #include <chrono>
@@ -114,103 +117,15 @@ namespace snet::layers
 
 class TcpReassembly;
 
-/**
- * @class TcpStreamData
- * When following a TCP connection each packet may contain a piece of the data
- * transferred between the client and the server. This class represents these
- * pieces: each instance of it contains a piece of data, usually extracted from
- * a single packet, as well as information about the connection
- */
-class TcpStreamData
+struct TcpReassemblyCallbacks
 {
-public:
-    /**
-     * A c'tor for this class that get data from outside and set the internal
-     * members
-     * @param[in] tcpData A pointer to buffer containing the TCP data piece
-     * @param[in] tcpDataLength The length of the buffer
-     * @param[in] missingBytes The number of missing bytes due to packet loss.
-     * @param[in] connData TCP connection information for this TCP data
-     * @param[in] timestamp when this packet was received
-     */
-    TcpStreamData(
-        const uint8_t* tcpData, size_t tcpDataLength, size_t missingBytes,
-        const ConnectionInfo& connData,
-        std::chrono::time_point<std::chrono::high_resolution_clock> timestamp)
-        : m_Data(tcpData)
-        , m_DataLen(tcpDataLength)
-        , m_MissingBytes(missingBytes)
-        , m_Connection(connData)
-        , m_Timestamp(timestamp)
-    {
-    }
+    using OnTcpMessageReady = std::function<void(int8_t side, const TcpStreamData& data, void* userData)>;
+    using OnTcpConnectionStart = std::function<void(const ConnectionInfo& info, void* userData)>;
+    using OnTcpConnectionClose = std::function<void(const ConnectionInfo& info, ConnectionEndReason reason, void* userData)>;
 
-    /**
-     * A getter for the data buffer
-     * @return A pointer to the buffer
-     */
-    const uint8_t* getData() const
-    {
-        return m_Data;
-    }
-
-    /**
-     * A getter for buffer length
-     * @return Buffer length
-     */
-    size_t getDataLength() const
-    {
-        return m_DataLen;
-    }
-
-    /**
-     * A getter for missing byte count due to packet loss.
-     * @return Missing byte count
-     */
-    size_t getMissingByteCount() const
-    {
-        return m_MissingBytes;
-    }
-
-    /**
-     * Determine if bytes are missing. getMissingByteCount can be called to
-     * determine the number of missing bytes.
-     * @return true if bytes are missing.
-     */
-    bool isBytesMissing() const
-    {
-        return getMissingByteCount() > 0;
-    }
-
-    /**
-     * A getter for the connection data
-     * @return The const reference to connection data
-     */
-    const ConnectionInfo& getConnectionData() const
-    {
-        return m_Connection;
-    }
-
-    /**
-     * @return A microsecond precision of the packet timestamp
-     */
-    timeval getTimeStamp() const;
-
-    /**
-     * @return A nanosecond precision of the packet timestamp
-     */
-    std::chrono::time_point<std::chrono::high_resolution_clock>
-    getTimeStampPrecise() const
-    {
-        return m_Timestamp;
-    }
-
-private:
-    const uint8_t* m_Data;
-    size_t m_DataLen;
-    size_t m_MissingBytes;
-    const ConnectionInfo& m_Connection;
-    std::chrono::time_point<std::chrono::high_resolution_clock> m_Timestamp;
+    OnTcpMessageReady onMessageReady;
+    OnTcpConnectionStart onConnectionStart;
+    OnTcpConnectionClose onConnectionClose;
 };
 
 /**
@@ -265,10 +180,9 @@ struct TcpReassemblyConfiguration
      * @param[in] enableBaseBufferClearCondition To enable to clear buffer once
      * packet contains data from a different side than the side seen before
      */
-    explicit TcpReassemblyConfiguration(
-        bool removeConnInfo = true, uint32_t closedConnectionDelay = 5,
-        uint32_t maxNumToClean = 30, uint32_t maxOutOfOrderFragments = 0,
-        bool enableBaseBufferClearCondition = true)
+    explicit TcpReassemblyConfiguration(bool removeConnInfo = true, uint32_t closedConnectionDelay = 5,
+                                        uint32_t maxNumToClean = 30, uint32_t maxOutOfOrderFragments = 0,
+                                        bool enableBaseBufferClearCondition = true)
         : removeConnInfo(removeConnInfo)
         , closedConnectionDelay(closedConnectionDelay)
         , maxNumToClean(maxNumToClean)
@@ -287,17 +201,6 @@ struct TcpReassemblyConfiguration
 class TcpReassembly
 {
 public:
-    /**
-     * An enum for connection end reasons
-     */
-    enum ConnectionEndReason
-    {
-        /** Connection ended because of FIN or RST packet */
-        TcpReassemblyConnectionClosedByFIN_RST,
-        /** Connection ended manually by the user */
-        TcpReassemblyConnectionClosedManually
-    };
-
     /**
      * An enum for providing reassembly status for each processed packet
      */
@@ -382,44 +285,6 @@ public:
     typedef std::unordered_map<uint32_t, ConnectionInfo> ConnectionInfoList;
 
     /**
-     * @typedef OnTcpMessageReady
-     * A callback invoked when new data arrives on a connection
-     * @param[in] side The side this data belongs to (MachineA->MachineB or vice
-     * versa). The value is 0 or 1 where 0 is the first side seen in the
-     * connection and 1 is the second side seen
-     * @param[in] tcpData The TCP data itself + connection information
-     * @param[in] userCookie A pointer to the cookie provided by the user in
-     * TcpReassembly c'tor (or nullptr if no cookie provided)
-     */
-    typedef void (*OnTcpMessageReady)(int8_t side, const TcpStreamData& tcpData,
-                                      void* userCookie);
-
-    /**
-     * @typedef OnTcpConnectionStart
-     * A callback invoked when a new TCP connection is identified (whether it
-     * begins with a SYN packet or not)
-     * @param[in] connectionData Connection information
-     * @param[in] userCookie A pointer to the cookie provided by the user in
-     * TcpReassembly c'tor (or nullptr if no cookie provided)
-     */
-    typedef void (*OnTcpConnectionStart)(const ConnectionInfo& connectionData,
-                                         void* userCookie);
-
-    /**
-     * @typedef OnTcpConnectionEnd
-     * A callback invoked when a TCP connection is terminated, either by a FIN
-     * or RST packet or manually by the user
-     * @param[in] connectionData Connection information
-     * @param[in] reason The reason for connection termination: FIN/RST packet
-     * or manually by the user
-     * @param[in] userCookie A pointer to the cookie provided by the user in
-     * TcpReassembly c'tor (or nullptr if no cookie provided)
-     */
-    typedef void (*OnTcpConnectionEnd)(const ConnectionInfo& connectionData,
-                                       ConnectionEndReason reason,
-                                       void* userCookie);
-
-    /**
      * A c'tor for this class
      * @param[in] onMessageReadyCallback The callback to be invoked when new
      * data arrives
@@ -434,12 +299,8 @@ public:
      * @param[in] config Optional parameter for defining special configuration
      * parameters. If not set the default parameters will be set
      */
-    explicit TcpReassembly(
-        OnTcpMessageReady onMessageReadyCallback, void* userCookie = nullptr,
-        OnTcpConnectionStart onConnectionStartCallback = nullptr,
-        OnTcpConnectionEnd onConnectionEndCallback = nullptr,
-        const TcpReassemblyConfiguration& config =
-            TcpReassemblyConfiguration());
+    explicit TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie = nullptr,
+                           const TcpReassemblyConfiguration& config = TcpReassemblyConfiguration());
 
     /**
      * The most important method of this class which gets a raw packet from the
@@ -571,16 +432,13 @@ private:
 
         // Disable copy and move operations
         OutOfOrderProcessingGuard(const OutOfOrderProcessingGuard&) = delete;
-        OutOfOrderProcessingGuard&
-        operator=(const OutOfOrderProcessingGuard&) = delete;
+        OutOfOrderProcessingGuard& operator=(const OutOfOrderProcessingGuard&) = delete;
     };
 
     typedef std::unordered_map<uint32_t, TcpReassemblyData> ConnectionList;
     typedef std::map<time_t, std::list<uint32_t>> CleanupList;
 
-    OnTcpMessageReady m_OnMessageReadyCallback;
-    OnTcpConnectionStart m_OnConnStart;
-    OnTcpConnectionEnd m_OnConnEnd;
+    TcpReassemblyCallbacks callbacks_;
     void* m_UserCookie;
     ConnectionList m_ConnectionList;
     ConnectionInfoList m_ConnectionInfo;
@@ -593,15 +451,13 @@ private:
     bool m_EnableBaseBufferClearCondition;
     bool m_ProcessingOutOfOrder = false;
 
-    void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData,
-                                  int8_t sideIndex, bool cleanWholeFragList);
+    void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);
 
-    void handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex,
-                        uint32_t flowKey, bool isRst);
+    void handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, uint32_t flowKey, bool isRst);
 
     void closeConnectionInternal(uint32_t flowKey, ConnectionEndReason reason);
 
     void insertIntoCleanupList(uint32_t flowKey);
 };
 
-} // namespace snet::tcp
+} // namespace snet::layers

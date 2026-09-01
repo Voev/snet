@@ -73,10 +73,6 @@ private:
     }
 };
 
-// ============================================================================
-// 2. TCP специфичные типы
-// ============================================================================
-
 /// @brief TCP connection state.
 enum class TCPState : uint8_t
 {
@@ -88,6 +84,17 @@ enum class TCPState : uint8_t
     Closing,     // Both sides FIN
     TimeWait,    // Waiting for timeout
     Closed       // Connection closed
+};
+
+/**
+ * An enum for connection end reasons
+ */
+enum ConnectionEndReason
+{
+    /** Connection ended because of FIN or RST packet */
+    TcpReassemblyConnectionClosedByFIN_RST,
+    /** Connection ended manually by the user */
+    TcpReassemblyConnectionClosedManually
 };
 
 /// @brief TCP flags (bitmask).
@@ -110,58 +117,96 @@ enum class Direction : uint8_t
     ServerToClient
 };
 
-// ============================================================================
-// 3. Потоковые данные (для TcpStreamData)
-// ============================================================================
-
-/// @brief Piece of TCP stream data.
-struct StreamData
+/// @brief Zero-copy TCP fragment.
+struct TcpFragment
 {
-    const uint8_t* data{nullptr};
-    size_t len{0};
-    size_t missing_bytes{0};
-    ConnectionTuple tuple;
+    uint32_t sequence{0};
+    size_t dataLength{0};
+    std::unique_ptr<uint8_t[]> data;
     std::chrono::time_point<std::chrono::high_resolution_clock> timestamp;
 
-    StreamData() = default;
+    TcpFragment() = default;
 
-    StreamData(const uint8_t* d, size_t l, size_t missing, const ConnectionTuple& t,
-               std::chrono::time_point<std::chrono::high_resolution_clock> ts)
-        : data(d)
-        , len(l)
-        , missing_bytes(missing)
-        , tuple(t)
-        , timestamp(ts)
+    TcpFragment(uint32_t seq, size_t len, uint8_t* d)
+        : sequence(seq)
+        , dataLength(len)
+        , data(d) // ← захват владения без копирования
     {
     }
+
+    TcpFragment(uint32_t seq, const uint8_t* d, size_t len)
+        : sequence(seq)
+        , dataLength(len)
+        , data(new uint8_t[len])
+    {
+        std::memcpy(data.get(), d, len);
+    }
+
+    TcpFragment(TcpFragment&& other) noexcept
+        : sequence(other.sequence)
+        , dataLength(other.dataLength)
+        , data(std::move(other.data))
+        , timestamp(other.timestamp)
+    {
+        other.dataLength = 0;
+    }
+
+    TcpFragment& operator=(TcpFragment&& other) noexcept
+    {
+        if (this != &other)
+        {
+            sequence = other.sequence;
+            dataLength = other.dataLength;
+            data = std::move(other.data);
+            timestamp = other.timestamp;
+            other.dataLength = 0;
+        }
+        return *this;
+    }
+
+    TcpFragment(const TcpFragment&) = delete;
+    TcpFragment& operator=(const TcpFragment&) = delete;
 
     bool hasData() const
     {
-        return data != nullptr && len > 0;
+        return data != nullptr && dataLength > 0;
     }
-    bool hasMissingBytes() const
+    uint32_t endSequence() const
     {
-        return missing_bytes > 0;
+        return sequence + static_cast<uint32_t>(dataLength);
     }
-    timeval getTimeVal() const;
+    const uint8_t* getData() const
+    {
+        return data.get();
+    }
+    uint8_t* getData()
+    {
+        return data.get();
+    }
+
+    /// @brief Отдать владение данными (zero-copy).
+    uint8_t* releaseData()
+    {
+        return data.release();
+    }
 };
 
-
-/// @brief Complete connection information.
 struct ConnectionInfo
 {
     ConnectionTuple tuple;
-    TCPState state{TCPState::SynSent};
     std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
     std::chrono::time_point<std::chrono::high_resolution_clock> end_time;
-    uint32_t client_seq{0};
-    uint32_t server_seq{0};
-    uint32_t client_ack{0};
-    uint32_t server_ack{0};
-    uint32_t client_seq_delta{0};
-    uint32_t server_seq_delta{0};
-    bool closed{false};
 
+    ConnectionInfo() = default;
+    ConnectionInfo(const ConnectionTuple& t)
+        : tuple(t)
+    {
+    }
+
+    uint32_t getFlowKey() const
+    {
+        return tuple.flowKey;
+    }
     IPAddress getClientIP() const
     {
         return tuple.client.ip;
@@ -177,10 +222,6 @@ struct ConnectionInfo
     uint16_t getServerPort() const
     {
         return tuple.server.port;
-    }
-    uint32_t getFlowKey() const
-    {
-        return tuple.flowKey;
     }
 };
 

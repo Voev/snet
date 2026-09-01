@@ -120,7 +120,11 @@ public:
         io::Controller controller;
         auto driver = controller.load(drv);
 
-        layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
+        
+        layers::TcpReassemblyCallbacks callbacks;
+        callbacks.onMessageReady = tcpReassemblyMsgReadyCallback;
+
+        layers::TcpReassembly tcpReassembly(callbacks, &manager);
         driver->configure(config);
 
         driver->start();
