@@ -72,7 +72,7 @@ void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStre
 
 DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
     : recordPool_(1024)
-    , reassembler_(tcpReassemblyMsgReadyCallback, this)
+    , reassembler_({tcpReassemblyMsgReadyCallback, nullptr, nullptr}, this)
 {
     auto found = section.find("keylog");
     if (found != section.end())

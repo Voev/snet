@@ -17,14 +17,11 @@ using namespace casket;
 namespace snet::layers
 {
 
-TcpReassembly::TcpReassembly(OnTcpMessageReady onMessageReadyCallback, void* userCookie,
-                             OnTcpConnectionStart onConnectionStartCallback, OnTcpConnectionEnd onConnectionEndCallback,
+TcpReassembly::TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie,
                              const TcpReassemblyConfiguration& config)
+    : callbacks_(std::move(callbacks))
 {
-    m_OnMessageReadyCallback = onMessageReadyCallback;
     m_UserCookie = userCookie;
-    m_OnConnStart = onConnectionStartCallback;
-    m_OnConnEnd = onConnectionEndCallback;
     m_ClosedConnectionDelay = (config.closedConnectionDelay > 0) ? config.closedConnectionDelay : 5;
     m_RemoveConnInfo = config.removeConnInfo;
     m_MaxNumToClean = (config.removeConnInfo == true && config.maxNumToClean == 0) ? 30 : config.maxNumToClean;
@@ -107,8 +104,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         m_ConnectionInfo[flowKey] = tcpReassemblyData->connData;
 
         // fire connection start callback
-        if (m_OnConnStart != nullptr)
-            m_OnConnStart(tcpReassemblyData->connData, m_UserCookie);
+        if (callbacks_.onConnectionStart != nullptr)
+            callbacks_.onConnectionStart(tcpReassemblyData->connData, m_UserCookie);
     }
     else // connection already exists
     {
@@ -275,12 +272,12 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             tcpReassemblyData->twoSides[sideIndex].sequence++;
 
         // send data to the callback
-        if (tcpPayloadSize != 0 && m_OnMessageReadyCallback != nullptr)
+        if (tcpPayloadSize != 0 && callbacks_.onMessageReady != nullptr)
         {
 
             TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
                                      currTime);
-            m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
         }
         status = TcpMessageHandled;
 
@@ -317,11 +314,11 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             tcpReassemblyData->twoSides[sideIndex].sequence += tcpPayloadSize - newLength;
 
             // send only the new data to the callback
-            if (m_OnMessageReadyCallback != nullptr)
+            if (callbacks_.onMessageReady != nullptr)
             {
                 TcpStreamData streamData(packet->getPayloadData(layer) + newLength, tcpPayloadSize - newLength, 0,
                                          tcpReassemblyData->connData, currTime);
-                m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+                callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
             }
             status = TcpMessageHandled;
         }
@@ -372,11 +369,11 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             tcpReassemblyData->twoSides[sideIndex].sequence++;
 
         // send the data to the callback
-        if (m_OnMessageReadyCallback != nullptr)
+        if (callbacks_.onMessageReady != nullptr)
         {
             TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
                                      currTime);
-            m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
         }
         status = TcpMessageHandled;
 
@@ -476,7 +473,7 @@ void TcpReassembly::handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t 
     int otherSideIndex = 1 - sideIndex;
     if (tcpReassemblyData->twoSides[otherSideIndex].gotFinOrRst)
     {
-        closeConnectionInternal(flowKey, TcpReassembly::TcpReassemblyConnectionClosedByFIN_RST);
+        closeConnectionInternal(flowKey, TcpReassemblyConnectionClosedByFIN_RST);
         return;
     }
     else
@@ -484,7 +481,7 @@ void TcpReassembly::handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t 
 
     // and if it's a rst, close the flow unilaterally
     if (isRst)
-        closeConnectionInternal(flowKey, TcpReassembly::TcpReassemblyConnectionClosedByFIN_RST);
+        closeConnectionInternal(flowKey, TcpReassemblyConnectionClosedByFIN_RST);
 }
 
 void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex,
@@ -535,11 +532,11 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 
                         // send new data to callback
 
-                        if (m_OnMessageReadyCallback != nullptr)
+                        if (callbacks_.onMessageReady != nullptr)
                         {
                             TcpStreamData streamData(curTcpFrag->data, curTcpFrag->dataLength, 0,
                                                      tcpReassemblyData->connData, curTcpFrag->timestamp);
-                            m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+                            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
                         }
                     }
 
@@ -575,11 +572,11 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                         curSideData.sequence += curTcpFrag->dataLength - newLength;
 
                         // send only the new data to the callback
-                        if (m_OnMessageReadyCallback != nullptr)
+                        if (callbacks_.onMessageReady != nullptr)
                         {
                             TcpStreamData streamData(curTcpFrag->data + newLength, curTcpFrag->dataLength - newLength,
                                                      0, tcpReassemblyData->connData, curTcpFrag->timestamp);
-                            m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+                            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
                         }
 
                         foundSomething = true;
@@ -653,7 +650,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
             if (curTcpFrag->data != nullptr)
             {
                 // send new data to callback
-                if (m_OnMessageReadyCallback != nullptr)
+                if (callbacks_.onMessageReady != nullptr)
                 {
                     // prepare missing data text
                     std::string missingDataTextStr = prepareMissingDataMessage(missingDataLen);
@@ -673,7 +670,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
                     // curTcpFrag->dataLength, tcpReassemblyData->connData);
                     TcpStreamData streamData(&dataWithMissingDataText[0], dataWithMissingDataText.size(),
                                              missingDataLen, tcpReassemblyData->connData, curTcpFrag->timestamp);
-                    m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
+                    callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
 
                     CSK_LOG_DEBUG("Found missing data on side %d: %lu"
                                   " byte are missing. Sending the closest "
@@ -699,7 +696,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 
 void TcpReassembly::closeConnection(uint32_t flowKey)
 {
-    closeConnectionInternal(flowKey, TcpReassembly::TcpReassemblyConnectionClosedManually);
+    closeConnectionInternal(flowKey, TcpReassemblyConnectionClosedManually);
 }
 
 void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReason reason)
@@ -724,8 +721,10 @@ void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReaso
     CSK_LOG_DEBUG("Calling checkOutOfOrderFragments on side 1");
     checkOutOfOrderFragments(&tcpReassemblyData, 1, true);
 
-    if (m_OnConnEnd != nullptr)
-        m_OnConnEnd(tcpReassemblyData.connData, reason, m_UserCookie);
+    if (callbacks_.onConnectionClose != nullptr)
+    {
+        callbacks_.onConnectionClose(tcpReassemblyData.connData, reason, m_UserCookie);
+    }
 
     tcpReassemblyData.closed = true; // mark the connection as closed
     insertIntoCleanupList(flowKey);
@@ -754,8 +753,10 @@ void TcpReassembly::closeAllConnections()
         CSK_LOG_DEBUG("Calling checkOutOfOrderFragments on side 1");
         checkOutOfOrderFragments(&tcpReassemblyData, 1, true);
 
-        if (m_OnConnEnd != nullptr)
-            m_OnConnEnd(tcpReassemblyData.connData, TcpReassemblyConnectionClosedManually, m_UserCookie);
+        if (callbacks_.onConnectionClose != nullptr)
+        {
+            callbacks_.onConnectionClose(tcpReassemblyData.connData, TcpReassemblyConnectionClosedManually, m_UserCookie);
+        }
 
         tcpReassemblyData.closed = true; // mark the connection as closed
         insertIntoCleanupList(flowKey);

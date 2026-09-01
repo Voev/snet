@@ -186,7 +186,10 @@ public:
         driver->start();
         std::cout << "Start processing: '" << options_.input << "'..." << std::endl;
 
-        layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
+        layers::TcpReassemblyCallbacks callbacks;
+        callbacks.onMessageReady = tcpReassemblyMsgReadyCallback;
+
+        layers::TcpReassembly tcpReassembly(callbacks, &manager);
         RecvStatus status{RecvStatus::Ok};
         constexpr uint16_t batchSize = 32;
         snet::layers::Packet* packets[batchSize] = {};
