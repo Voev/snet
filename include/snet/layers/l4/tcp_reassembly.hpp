@@ -121,75 +121,21 @@ struct TcpReassemblyCallbacks
 {
     using OnTcpMessageReady = std::function<void(int8_t side, const TcpStreamData& data, void* userData)>;
     using OnTcpConnectionStart = std::function<void(const ConnectionInfo& info, void* userData)>;
-    using OnTcpConnectionClose = std::function<void(const ConnectionInfo& info, ConnectionEndReason reason, void* userData)>;
+    using OnTcpConnectionClose =
+        std::function<void(const ConnectionInfo& info, ConnectionEndReason reason, void* userData)>;
 
     OnTcpMessageReady onMessageReady;
     OnTcpConnectionStart onConnectionStart;
     OnTcpConnectionClose onConnectionClose;
 };
 
-/**
- * @struct TcpReassemblyConfiguration
- * A structure for configuring the TcpReassembly class
- */
-struct TcpReassemblyConfiguration
+struct TcpReassemblyConfig
 {
-    /** The flag indicating whether to remove the connection data after a
-     * connection is closed */
-    bool removeConnInfo;
-
-    /** How long the closed connections will not be cleaned up. The value is
-     * expressed in seconds. If the value is set to 0 then TcpReassembly should
-     * use the default value. This parameter is only relevant if removeConnInfo
-     * is equal to true.
-     */
-    uint32_t closedConnectionDelay;
-
-    /** The maximum number of items to be cleaned up per one call of
-     * purgeClosedConnections. If the value is set to 0 then TcpReassembly
-     * should use the default value. This parameter is only relevant if
-     * removeConnInfo is equal to true.
-     */
-    uint32_t maxNumToClean;
-
-    /** The maximum number of fragments with a non-matching sequence-number to
-       store per connection flow before packets are assumed permanently missed.
-       If the value is 0, TcpReassembly should keep out of order fragments
-       indefinitely, or until a message from the paired side is seen.
-     */
-    uint32_t maxOutOfOrderFragments;
-
-    /**  To enable to clear buffer once packet contains data from a different
-     * side than the side seen before
-     */
-    bool enableBaseBufferClearCondition;
-
-    /**
-     * A c'tor for this struct
-     * @param[in] removeConnInfo The flag indicating whether to remove the
-     * connection data after a connection is closed. The default is true
-     * @param[in] closedConnectionDelay How long the closed connections will not
-     * be cleaned up. The value is expressed in seconds. If it's set to 0 the
-     * default value will be used. The default is 5.
-     * @param[in] maxNumToClean The maximum number of items to be cleaned up per
-     * one call of purgeClosedConnections. If it's set to 0 the default value
-     * will be used. The default is 30.
-     * @param[in] maxOutOfOrderFragments The maximum number of unmatched
-     * fragments to keep per flow before missed fragments are considered lost.
-     * The default is unlimited.
-     * @param[in] enableBaseBufferClearCondition To enable to clear buffer once
-     * packet contains data from a different side than the side seen before
-     */
-    explicit TcpReassemblyConfiguration(bool removeConnInfo = true, uint32_t closedConnectionDelay = 5,
-                                        uint32_t maxNumToClean = 30, uint32_t maxOutOfOrderFragments = 0,
-                                        bool enableBaseBufferClearCondition = true)
-        : removeConnInfo(removeConnInfo)
-        , closedConnectionDelay(closedConnectionDelay)
-        , maxNumToClean(maxNumToClean)
-        , maxOutOfOrderFragments(maxOutOfOrderFragments)
-        , enableBaseBufferClearCondition(enableBaseBufferClearCondition)
-    {
-    }
+    uint32_t closeDelaySec{5};
+    uint32_t maxCleanup{30};
+    uint32_t maxOutOfOrder{0};
+    bool removeConnInfo{true};
+    bool enableBaseBufferClear{true};
 };
 
 /**
@@ -300,7 +246,7 @@ public:
      * parameters. If not set the default parameters will be set
      */
     explicit TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie = nullptr,
-                           const TcpReassemblyConfiguration& config = TcpReassemblyConfiguration());
+                           TcpReassemblyConfig config = TcpReassemblyConfig());
 
     /**
      * The most important method of this class which gets a raw packet from the
@@ -439,16 +385,12 @@ private:
     typedef std::map<time_t, std::list<uint32_t>> CleanupList;
 
     TcpReassemblyCallbacks callbacks_;
+    TcpReassemblyConfig config_;
     void* m_UserCookie;
     ConnectionList m_ConnectionList;
     ConnectionInfoList m_ConnectionInfo;
     CleanupList m_CleanupList;
-    bool m_RemoveConnInfo;
-    uint32_t m_ClosedConnectionDelay;
-    uint32_t m_MaxNumToClean;
-    size_t m_MaxOutOfOrderFragments;
     time_t m_PurgeTimepoint;
-    bool m_EnableBaseBufferClearCondition;
     bool m_ProcessingOutOfOrder = false;
 
     void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);

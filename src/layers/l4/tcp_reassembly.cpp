@@ -18,22 +18,18 @@ namespace snet::layers
 {
 
 TcpReassembly::TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie,
-                             const TcpReassemblyConfiguration& config)
+                             TcpReassemblyConfig config)
     : callbacks_(std::move(callbacks))
+    , config_(std::move(config))
 {
     m_UserCookie = userCookie;
-    m_ClosedConnectionDelay = (config.closedConnectionDelay > 0) ? config.closedConnectionDelay : 5;
-    m_RemoveConnInfo = config.removeConnInfo;
-    m_MaxNumToClean = (config.removeConnInfo == true && config.maxNumToClean == 0) ? 30 : config.maxNumToClean;
-    m_MaxOutOfOrderFragments = config.maxOutOfOrderFragments;
     m_PurgeTimepoint = time(nullptr) + PURGE_FREQ_SECS;
-    m_EnableBaseBufferClearCondition = config.enableBaseBufferClearCondition;
 }
 
 TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 {
     // automatic cleanup
-    if (m_RemoveConnInfo == true)
+    if (config_.removeConnInfo)
     {
         if (time(nullptr) >= m_PurgeTimepoint)
         {
@@ -247,7 +243,7 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
     // condition. As none of them are perfect solutions this will give user a
     // little more control over it.
 
-    if (m_EnableBaseBufferClearCondition && !first && tcpPayloadSize > 0 && tcpReassemblyData->prevSide != -1 &&
+    if (config_.enableBaseBufferClear && !first && tcpPayloadSize > 0 && tcpReassemblyData->prevSide != -1 &&
         tcpReassemblyData->prevSide != sideIndex &&
         tcpReassemblyData->twoSides[tcpReassemblyData->prevSide].tcpFragmentList.size() > 0)
     {
@@ -434,8 +430,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         // check if we've stored too many out-of-order fragments; if so,
         // consider missing packets lost and continue processing until the
         // number of stored fragments is lower than the acceptable limit again
-        if (m_MaxOutOfOrderFragments > 0 &&
-            tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.size() > m_MaxOutOfOrderFragments)
+        if (config_.maxOutOfOrder > 0 &&
+            tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.size() > config_.maxOutOfOrder)
         {
             checkOutOfOrderFragments(tcpReassemblyData, sideIndex, false);
         }
@@ -607,7 +603,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
         // number of out of order fragments isn't above the configured limit,
         // assume it's out-of-order and return
         if (!cleanWholeFragList &&
-            (m_MaxOutOfOrderFragments == 0 || curSideData.tcpFragmentList.size() <= m_MaxOutOfOrderFragments))
+            (config_.maxOutOfOrder == 0 || curSideData.tcpFragmentList.size() <= config_.maxOutOfOrder))
         {
             return;
         }
@@ -783,7 +779,7 @@ void TcpReassembly::insertIntoCleanupList(uint32_t flowKey)
     // otherwise this method returns an iterator to the element that prevents
     // insertion.
     std::pair<CleanupList::iterator, bool> pair =
-        m_CleanupList.insert(std::make_pair(time(nullptr) + m_ClosedConnectionDelay, CleanupList::mapped_type()));
+        m_CleanupList.insert(std::make_pair(time(nullptr) + config_.closeDelaySec, CleanupList::mapped_type()));
 
     // getting the reference to list
     CleanupList::mapped_type& keysList = pair.first->second;
@@ -795,7 +791,7 @@ uint32_t TcpReassembly::purgeClosedConnections(uint32_t maxNumToClean)
     uint32_t count = 0;
 
     if (maxNumToClean == 0)
-        maxNumToClean = m_MaxNumToClean;
+        maxNumToClean = config_.maxCleanup;
 
     CleanupList::iterator iterTime = m_CleanupList.begin(), iterTimeEnd = m_CleanupList.upper_bound(time(nullptr));
     while (iterTime != iterTimeEnd && count < maxNumToClean)
