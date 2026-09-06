@@ -6,111 +6,13 @@
 #include <snet/layers/l3/ip_address.hpp>
 #include <snet/layers/l4/tcp_types.hpp>
 #include <snet/layers/l4/tcp_stream.hpp>
+#include <snet/layers/l4/tcp_fragment_pool.hpp>
 #include <snet/utils/pointer_vector.hpp>
 #include <unordered_map>
 #include <chrono>
 #include <map>
 #include <list>
 #include <time.h>
-
-/**
- * @file
- * This is an implementation of TCP reassembly logic, which means reassembly of
- * TCP messages spanning multiple TCP segments (or packets).<BR> This logic can
- * be useful in analyzing messages for a large number of protocols implemented
- * on top of TCP including HTTP, SSL/TLS, FTP and many many more.
- *
- * __General Features:__
- * - Manage multiple TCP connections under one pcpp#TcpReassembly instance
- * - Support TCP retransmission
- * - Support out-of-order packets
- * - Support missing TCP data
- * - TCP connections can end "naturally" (by FIN/RST packets) or manually by the
- * user
- * - Support callbacks for new TCP data, connection start and connection end
- *
- * __Logic Description:__
- * - The user creates an instance of the pcpp#TcpReassembly class
- * - Then the user starts feeding it with TCP packets
- * - The pcpp#TcpReassembly instance manages all TCP connections from the
- * packets it's being fed. For each connection it manages its 2 sides (A->B and
- * B->A).
- * - When a packet arrives, it is first classified to a certain TCP connection
- * - Then it is classified to a certain side of the TCP connection
- * - Then the pcpp#TcpReassembly logic tries to understand if the data in this
- * packet is the expected data (sequence-wise) and if it's new (e.g isn't a
- * retransmission).
- * - If the packet data matches these criteria a callback is being invoked. This
- * callback is supplied by the user in the creation of the pcpp#TcpReassembly
- * instance. This callback contains the new data (of course), but also
- * information about the connection (5-tuple, 4-byte hash key describing the
- * connection, etc.) and also a pointer to a "user cookie", meaning a pointer to
- * a structure provided by the user during the creation of the
- * pcpp#TcpReassembly instance.
- * - If the data in this packet isn't new, it's being ignored
- * - If the data in this packet isn't expected (meaning this packet came
- * out-of-order), then the data is being queued internally and will be sent to
- * the user when its turn arrives (meaning, after the data before arrives).
- * - If the missing data doesn't arrive until a new message from the other side
- * of the connection arrives or until the connection ends - this will be
- * considered as missing data and the queued data will be sent to the user, but
- * the string "[X bytes missing]" will be added to the message sent in the
- * callback.
- * - pcpp#TcpReassembly supports 2 more callbacks - one is invoked when a new
- * TCP connection is first seen and the other when it's ended (either by a
- * FIN/RST packet or manually by the user). Both of these callbacks contain data
- * about the connection (5-tuple, 4-byte hash key describing the connection,
- * etc.) and also a pointer to a "user cookie", meaning a pointer to a structure
- * provided by the user during the creation of the pcpp#TcpReassembly instance.
- * The end connection callback also provides the reason for closing it
- * ("naturally" or manually).
- *
- * __Basic Usage and APIs:__
- * - pcpp#TcpReassembly c'tor - Create an instance, provide the callbacks and
- * the user cookie to the instance
- * - pcpp#TcpReassembly#reassemblePacket() - Feed pcpp#TcpReassembly instance
- * with packets
- * - pcpp#TcpReassembly#closeConnection() - Manually close a connection by a
- * flow key
- * - pcpp#TcpReassembly#closeAllConnections() - Manually close all currently
- * opened connections
- * - pcpp#TcpReassembly#OnTcpMessageReady callback - Invoked when new data
- * arrives on a certain connection. Contains the new data as well as connection
- * data (5-tuple, flow key).
- * - pcpp#TcpReassembly#OnTcpConnectionStart callback - Invoked when a new
- * connection is identified
- * - pcpp#TcpReassembly#OnTcpConnectionEnd callback - Invoked when a connection
- * ends (either by FIN/RST or manually by the user).
- *
- * __Additional information:__
- * When the connection is closed the information is not being deleted from
- * memory immediately. There is a delay between these moments. Existence of this
- * delay is caused by two reasons:
- * - pcpp#TcpReassembly#reassemblePacket() should detect the packets that arrive
- * after the FIN packet has been received.
- * - The user can use the information about connections managed by
- * pcpp#TcpReassembly instance. Following methods are used for this purpose:
- * pcpp#TcpReassembly#getConnectionInformation and
- * pcpp#TcpReassembly#isConnectionOpen. Cleaning of memory can be performed
- * automatically (the default behavior) by pcpp#TcpReassembly#reassemblePacket()
- * or manually by calling pcpp#TcpReassembly#purgeClosedConnections in the user
- * code. Automatic cleaning is performed once per second.
- *
- * The struct pcpp#TcpReassemblyConfiguration allows to setup the parameters of
- * cleanup. Following parameters are supported:
- * - pcpp#TcpReassemblyConfiguration#doNotRemoveConnInfo - if this member is set
- * to false the automatic cleanup mode is applied.
- * - pcpp#TcpReassemblyConfiguration#closedConnectionDelay - the value of delay
- * expressed in seconds. The minimum value is 1.
- * - pcpp#TcpReassemblyConfiguration#maxNumToClean - to avoid performance
- * overhead when the cleanup is being performed, this parameter is used. It
- * defines the maximum number of items to be removed per one call of
- *   pcpp#TcpReassembly#purgeClosedConnections.
- * - pcpp#TcpReassemblyConfiguration#maxOutOfOrderFragments - the maximum number
- * of unmatched fragments to keep per flow before missed fragments are
- * considered lost. A value of 0 means unlimited.
- *
- */
 
 namespace snet::layers
 {
@@ -131,6 +33,7 @@ struct TcpReassemblyCallbacks
 
 struct TcpReassemblyConfig
 {
+    TcpFragmentPoolConfig poolConfig;
     uint32_t closeDelaySec{5};
     uint32_t maxCleanup{30};
     uint32_t maxOutOfOrder{0};
@@ -152,6 +55,7 @@ public:
      */
     enum ReassemblyStatus
     {
+        Error_NoMemory,
         /**
          * The processed packet contains valid TCP payload, and its payload is
          * processed by `OnMessageReadyCallback` callback function. The packet
@@ -308,31 +212,12 @@ public:
     uint32_t purgeClosedConnections(uint32_t maxNumToClean = 0);
 
 private:
-    struct TcpFragment
-    {
-        uint32_t sequence;
-        size_t dataLength;
-        uint8_t* data;
-        std::chrono::time_point<std::chrono::high_resolution_clock> timestamp;
-
-        TcpFragment()
-            : sequence(0)
-            , dataLength(0)
-            , data(nullptr)
-        {
-        }
-        ~TcpFragment()
-        {
-            delete[] data;
-        }
-    };
-
     struct TcpOneSideData
     {
         IPAddress srcIP;
         uint16_t srcPort;
         uint32_t sequence;
-        utils::PointerVector<TcpFragment> tcpFragmentList;
+        std::map<uint32_t, TcpFragment*> tcpFragments;
         bool gotFinOrRst;
 
         TcpOneSideData()
@@ -340,6 +225,32 @@ private:
             , sequence(0)
             , gotFinOrRst(false)
         {
+        }
+
+        TcpOneSideData(const TcpOneSideData&) = delete;
+        TcpOneSideData& operator=(const TcpOneSideData&) = delete;
+
+        TcpOneSideData(TcpOneSideData&& other) noexcept
+            : srcIP(other.srcIP)
+            , srcPort(other.srcPort)
+            , sequence(other.sequence)
+            , tcpFragments(std::move(other.tcpFragments))
+            , gotFinOrRst(other.gotFinOrRst)
+        {
+        }
+
+        TcpOneSideData& operator=(TcpOneSideData&& other) noexcept
+        {
+            if (this != &other)
+            {
+                tcpFragments.clear();
+                srcIP = other.srcIP;
+                srcPort = other.srcPort;
+                sequence = other.sequence;
+                tcpFragments = std::move(other.tcpFragments);
+                gotFinOrRst = other.gotFinOrRst;
+            }
+            return *this;
         }
     };
 
@@ -392,6 +303,7 @@ private:
     CleanupList m_CleanupList;
     time_t m_PurgeTimepoint;
     bool m_ProcessingOutOfOrder = false;
+    std::unique_ptr<TcpFragmentPool> fragmentPool_;
 
     void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);
 

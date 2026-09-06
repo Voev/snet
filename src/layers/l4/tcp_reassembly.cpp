@@ -17,10 +17,10 @@ using namespace casket;
 namespace snet::layers
 {
 
-TcpReassembly::TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie,
-                             TcpReassemblyConfig config)
+TcpReassembly::TcpReassembly(TcpReassemblyCallbacks callbacks, void* userCookie, TcpReassemblyConfig config)
     : callbacks_(std::move(callbacks))
     , config_(std::move(config))
+    , fragmentPool_(std::make_unique<TcpFragmentPool>(config_.poolConfig))
 {
     m_UserCookie = userCookie;
     m_PurgeTimepoint = time(nullptr) + PURGE_FREQ_SECS;
@@ -245,11 +245,12 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 
     if (config_.enableBaseBufferClear && !first && tcpPayloadSize > 0 && tcpReassemblyData->prevSide != -1 &&
         tcpReassemblyData->prevSide != sideIndex &&
-        tcpReassemblyData->twoSides[tcpReassemblyData->prevSide].tcpFragmentList.size() > 0)
+        tcpReassemblyData->twoSides[tcpReassemblyData->prevSide].tcpFragments.size() > 0)
     {
         CSK_LOG_DEBUG("Seeing a first data packet from a different side. "
                       "Previous side was %d, current side is %d",
-                      static_cast<int>(tcpReassemblyData->prevSide), static_cast<int>(sideIndex));
+                      static_cast<int>(tcpReassemblyData->prevSide),
+                      static_cast<int>(sideIndex));
         checkOutOfOrderFragments(tcpReassemblyData, tcpReassemblyData->prevSide, true);
     }
     tcpReassemblyData->prevSide = sideIndex;
@@ -271,8 +272,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         if (tcpPayloadSize != 0 && callbacks_.onMessageReady != nullptr)
         {
 
-            TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
-                                     currTime);
+            TcpStreamData streamData(
+                packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData, currTime);
             callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
         }
         status = TcpMessageHandled;
@@ -312,8 +313,11 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             // send only the new data to the callback
             if (callbacks_.onMessageReady != nullptr)
             {
-                TcpStreamData streamData(packet->getPayloadData(layer) + newLength, tcpPayloadSize - newLength, 0,
-                                         tcpReassemblyData->connData, currTime);
+                TcpStreamData streamData(packet->getPayloadData(layer) + newLength,
+                                         tcpPayloadSize - newLength,
+                                         0,
+                                         tcpReassemblyData->connData,
+                                         currTime);
                 callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
             }
             status = TcpMessageHandled;
@@ -367,8 +371,8 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
         // send the data to the callback
         if (callbacks_.onMessageReady != nullptr)
         {
-            TcpStreamData streamData(packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData,
-                                     currTime);
+            TcpStreamData streamData(
+                packet->getPayloadData(layer), tcpPayloadSize, 0, tcpReassemblyData->connData, currTime);
             callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
         }
         status = TcpMessageHandled;
@@ -412,26 +416,51 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
             return status;
         }
 
-        // create a new TcpFragment, copy the TCP data to it and add this packet
-        // to the the out-of-order packet list
-        TcpFragment* newTcpFrag = new TcpFragment();
-        newTcpFrag->data = new uint8_t[tcpPayloadSize];
-        newTcpFrag->dataLength = tcpPayloadSize;
-        newTcpFrag->sequence = sequence;
-        newTcpFrag->timestamp = currTime;
-        memcpy(newTcpFrag->data, packet->getPayloadData(layer), tcpPayloadSize);
-        tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.pushBack(newTcpFrag);
+        TcpFragment* newTcpFrag =
+            fragmentPool_->acquire(sequence, packet->getPayloadData(layer), tcpPayloadSize, currTime);
+
+        if (!newTcpFrag)
+        {
+            CSK_LOG_WARNING("Fragment pool exhausted! Attempting cleanup...");
+            checkOutOfOrderFragments(tcpReassemblyData, sideIndex, true);
+
+            newTcpFrag = fragmentPool_->acquire(sequence, packet->getPayloadData(layer), tcpPayloadSize, currTime);
+
+            if (!newTcpFrag)
+            {
+                CSK_LOG_ERROR("Cannot allocate fragment even after cleanup!");
+                return Error_NoMemory;
+            }
+        }
+
+        //  ВСТАВКА В MAP ======
+
+        auto& fragMap = tcpReassemblyData->twoSides[sideIndex].tcpFragments;
+
+        // Проверяем ретрансмиссию
+        auto it = fragMap.find(sequence);
+        if (it != fragMap.end())
+        {
+            CSK_LOG_DEBUG("Retransmission detected for SEQ %u, replacing old fragment", sequence);
+            fragmentPool_->release(it->second);
+            it->second = newTcpFrag;
+        }
+        else
+        {
+            fragMap[sequence] = newTcpFrag;
+        }
 
         CSK_LOG_DEBUG("Found out-of-order packet and added a new TCP fragment with size "
                       "%zu to the out-of-order list of side %d",
-                      tcpPayloadSize, static_cast<int>(sideIndex));
+                      tcpPayloadSize,
+                      static_cast<int>(sideIndex));
         status = OutOfOrderTcpMessageBuffered;
 
         // check if we've stored too many out-of-order fragments; if so,
         // consider missing packets lost and continue processing until the
         // number of stored fragments is lower than the acceptable limit again
         if (config_.maxOutOfOrder > 0 &&
-            tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.size() > config_.maxOutOfOrder)
+            tcpReassemblyData->twoSides[sideIndex].tcpFragments.size() > config_.maxOutOfOrder)
         {
             checkOutOfOrderFragments(tcpReassemblyData, sideIndex, false);
         }
@@ -444,13 +473,6 @@ TcpReassembly::ReassemblyStatus TcpReassembly::reassemblePacket(Packet* packet)
 
         return status;
     }
-}
-
-static std::string prepareMissingDataMessage(uint32_t missingDataLen)
-{
-    std::stringstream missingDataTextStream;
-    missingDataTextStream << '[' << missingDataLen << " bytes missing]";
-    return missingDataTextStream.str();
 }
 
 void TcpReassembly::handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, uint32_t flowKey, bool isRst)
@@ -483,211 +505,221 @@ void TcpReassembly::handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t 
 void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex,
                                              bool cleanWholeFragList)
 {
+    // =========================================================================
+    // 1. ЗАЩИТА ОТ РЕКУРСИИ
+    // =========================================================================
+    // Если мы уже обрабатываем out-of-order фрагменты, выходим.
+    // Это предотвращает рекурсивные вызовы (например, если коллбэк вызывает
+    // reassemblePacket, который снова вызывает checkOutOfOrderFragments).
     if (m_ProcessingOutOfOrder)
     {
         return;
     }
 
+    // RAII guard: устанавливает m_ProcessingOutOfOrder = true при входе
+    // и автоматически сбрасывает в false при выходе из функции.
     OutOfOrderProcessingGuard guard(m_ProcessingOutOfOrder);
 
-    bool foundSomething = false;
-
+    // =========================================================================
+    // 2. ПОЛУЧАЕМ ССЫЛКИ НА ДАННЫЕ
+    // =========================================================================
     auto& curSideData = tcpReassemblyData->twoSides[sideIndex];
+    auto& fragMap = curSideData.tcpFragments; // std::map<uint32_t, TcpFragment*>
+    uint32_t expected = curSideData.sequence;
 
-    do
+    // =========================================================================
+    // 3. ОСНОВНОЙ ЦИКЛ
+    // =========================================================================
+    // Повторяем, пока находим фрагменты, которые можно обработать.
+    // Это итеративный подход вместо рекурсивного.
+    bool foundSomething = true;
+    while (foundSomething)
     {
-        CSK_LOG_DEBUG("Starting first iteration of checkOutOfOrderFragments - "
-                      "looking for fragments that match the current sequence "
-                      "or have smaller sequence");
+        foundSomething = false;
 
-        do
+        // =====================================================================
+        // 3.1. ПРОХОД ПО ВСЕМ ФРАГМЕНТАМ В MAP
+        // =====================================================================
+        // map уже отсортирован по SEQ, поэтому мы обходим фрагменты по порядку.
+        auto it = fragMap.begin();
+        while (it != fragMap.end())
         {
-            auto tcpFragIter = curSideData.tcpFragmentList.begin();
-            foundSomething = false;
+            TcpFragment* frag = it->second;
+            uint32_t fragEnd = frag->sequence + static_cast<uint32_t>(frag->dataLength);
 
-            // first fragment list iteration - go over the whole fragment list
-            // and see if can find fragments that match the current sequence or
-            // have smaller sequence but have big enough payload to get new data
-            while (tcpFragIter != curSideData.tcpFragmentList.end())
+            // ----------------------------------------------------------------
+            // СЛУЧАЙ 1: Фрагмент перекрывает expected (частично новые данные)
+            // ----------------------------------------------------------------
+            // Пример: expected = 1000, fragment = [990, 1010]
+            // Новые данные: [1000, 1010] (10 байт)
+            if (frag->sequence <= expected && fragEnd > expected)
             {
-                // if fragment sequence matches the current sequence
-                if ((*tcpFragIter)->sequence == curSideData.sequence)
-                {
-                    // pop the fragment from fragment list
-                    auto curTcpFrag = curSideData.tcpFragmentList.getAndDetach(tcpFragIter);
-                    // update sequence
-                    curSideData.sequence += curTcpFrag->dataLength;
-                    if (curTcpFrag->data != nullptr)
-                    {
-                        CSK_LOG_DEBUG("Found an out-of-order packet matching "
-                                      "to the current sequence with size "
-                                      "%lu on side %d"
-                                      ". Pulling it out of the list and "
-                                      "sending the data to the callback",
-                                      curTcpFrag->dataLength, static_cast<int>(sideIndex));
+                // Вычисляем смещение и размер новых данных
+                uint32_t offset = expected - frag->sequence;
+                size_t newLen = frag->dataLength - offset;
 
-                        // send new data to callback
+                CSK_LOG_DEBUG("Found fragment overlapping expected sequence. "
+                              "Fragment [%u, %u], expected %u, new data [%u, %u]",
+                              frag->sequence,
+                              fragEnd,
+                              expected,
+                              expected,
+                              expected + static_cast<uint32_t>(newLen));
 
-                        if (callbacks_.onMessageReady != nullptr)
-                        {
-                            TcpStreamData streamData(curTcpFrag->data, curTcpFrag->dataLength, 0,
-                                                     tcpReassemblyData->connData, curTcpFrag->timestamp);
-                            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
-                        }
-                    }
-
-                    foundSomething = true;
-
-                    continue;
-                }
-
-                // if fragment sequence has lower sequence than the current
-                // sequence
-                if (SEQ_LT((*tcpFragIter)->sequence, curSideData.sequence))
-                {
-                    // pop the fragment from fragment list
-                    auto curTcpFrag = curSideData.tcpFragmentList.getAndDetach(tcpFragIter);
-                    // check if it still has new data
-                    uint32_t newSequence = curTcpFrag->sequence + curTcpFrag->dataLength;
-
-                    // it has new data
-                    if (SEQ_GT(newSequence, curSideData.sequence))
-                    {
-                        // calculate the delta new data size
-                        uint32_t newLength = curSideData.sequence - curTcpFrag->sequence;
-
-                        CSK_LOG_DEBUG("Found a fragment in the out-of-order list which "
-                                      "its sequence is lower than expected but its "
-                                      "payload is long enough to contain new data. "
-                                      "Calling the callback with the new data. Fragment "
-                                      "size is %lu on side %d, new data size is %d",
-                                      curTcpFrag->dataLength, static_cast<int>(sideIndex),
-                                      static_cast<int>(curTcpFrag->dataLength - newLength));
-
-                        // update current sequence with the delta new data size
-                        curSideData.sequence += curTcpFrag->dataLength - newLength;
-
-                        // send only the new data to the callback
-                        if (callbacks_.onMessageReady != nullptr)
-                        {
-                            TcpStreamData streamData(curTcpFrag->data + newLength, curTcpFrag->dataLength - newLength,
-                                                     0, tcpReassemblyData->connData, curTcpFrag->timestamp);
-                            callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
-                        }
-
-                        foundSomething = true;
-                    }
-                    else
-                    {
-                        CSK_LOG_DEBUG("Found a fragment in the out-of-order "
-                                      "list which doesn't contain any new "
-                                      "data, ignoring it. Fragment size is "
-                                      "%lu on side %d",
-                                      curTcpFrag->dataLength, static_cast<int>(sideIndex));
-                    }
-
-                    continue;
-                }
-
-                // if got to here it means the fragment has higher sequence than
-                // current sequence, increment it and continue
-                tcpFragIter++;
-            }
-
-            // if managed to find new segment, do the search all over again
-        } while (foundSomething);
-
-        // if got here it means we're left only with fragments that have higher
-        // sequence than current sequence. This means out-of-order packets or
-        // missing data. If we don't want to clear the frag list yet and the
-        // number of out of order fragments isn't above the configured limit,
-        // assume it's out-of-order and return
-        if (!cleanWholeFragList &&
-            (config_.maxOutOfOrder == 0 || curSideData.tcpFragmentList.size() <= config_.maxOutOfOrder))
-        {
-            return;
-        }
-
-        CSK_LOG_DEBUG("Starting second  iteration of checkOutOfOrderFragments "
-                      "- handle missing data");
-
-        // second fragment list iteration - now we're left only with fragments
-        // that have higher sequence than current sequence. This means missing
-        // data. Search for the fragment with the closest sequence to the
-        // current one
-
-        uint32_t closestSequence = 0xffffffff;
-        bool closestSequenceDefined = false;
-        auto closestSequenceFragIt = curSideData.tcpFragmentList.end();
-
-        for (auto tcpFragIter = curSideData.tcpFragmentList.begin(); tcpFragIter != curSideData.tcpFragmentList.end();
-             tcpFragIter++)
-        {
-            // check if its sequence is closer than current closest sequence
-            if (!closestSequenceDefined || SEQ_LT((*tcpFragIter)->sequence, closestSequence))
-            {
-                closestSequence = (*tcpFragIter)->sequence;
-                closestSequenceFragIt = tcpFragIter;
-                closestSequenceDefined = true;
-            }
-        }
-
-        // this means fragment list is not empty at this stage
-        if (closestSequenceFragIt != curSideData.tcpFragmentList.end())
-        {
-            // get the fragment with the closest sequence
-            auto curTcpFrag = curSideData.tcpFragmentList.getAndDetach(closestSequenceFragIt);
-
-            // calculate number of missing bytes
-            uint32_t missingDataLen = curTcpFrag->sequence - curSideData.sequence;
-
-            // update sequence
-            curSideData.sequence = curTcpFrag->sequence + curTcpFrag->dataLength;
-            if (curTcpFrag->data != nullptr)
-            {
-                // send new data to callback
+                // Отправляем только новые данные в коллбэк
                 if (callbacks_.onMessageReady != nullptr)
                 {
-                    // prepare missing data text
-                    std::string missingDataTextStr = prepareMissingDataMessage(missingDataLen);
-
-                    // add missing data text to the data that will be sent to
-                    // the callback. This means that the data will look
-                    // something like:
-                    // "[xx bytes missing]<original_data>"
-                    std::vector<uint8_t> dataWithMissingDataText;
-                    dataWithMissingDataText.reserve(missingDataTextStr.length() + curTcpFrag->dataLength);
-                    dataWithMissingDataText.insert(dataWithMissingDataText.end(), missingDataTextStr.begin(),
-                                                   missingDataTextStr.end());
-                    dataWithMissingDataText.insert(dataWithMissingDataText.end(), curTcpFrag->data,
-                                                   curTcpFrag->data + curTcpFrag->dataLength);
-
-                    // TcpStreamData streamData(curTcpFrag->data,
-                    // curTcpFrag->dataLength, tcpReassemblyData->connData);
-                    TcpStreamData streamData(&dataWithMissingDataText[0], dataWithMissingDataText.size(),
-                                             missingDataLen, tcpReassemblyData->connData, curTcpFrag->timestamp);
+                    TcpStreamData streamData(
+                        frag->data + offset, newLen, 0, tcpReassemblyData->connData, frag->timestamp);
                     callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
-
-                    CSK_LOG_DEBUG("Found missing data on side %d: %lu"
-                                  " byte are missing. Sending the closest "
-                                  "fragment which is in size %lu"
-                                  " + missing text message which size is %lu",
-                                  static_cast<int>(sideIndex), missingDataLen, curTcpFrag->dataLength,
-                                  missingDataTextStr.length()
-
-                    );
                 }
+
+                // Обновляем expected до конца новых данных
+                expected += static_cast<uint32_t>(newLen);
+                curSideData.sequence = expected;
+
+                // Возвращаем фрагмент в пул и удаляем из map
+                fragmentPool_->release(frag);
+                it = fragMap.erase(it);
+                foundSomething = true;
+                continue;
             }
 
-            CSK_LOG_DEBUG("Calling checkOutOfOrderFragments again from the start");
+            // ----------------------------------------------------------------
+            // СЛУЧАЙ 2: Фрагмент полностью внутри expected (ретрансмиссия)
+            // ----------------------------------------------------------------
+            // Пример: expected = 1000, fragment = [980, 990]
+            // Все данные уже получены — это ретрансмиссия.
+            if (fragEnd <= expected)
+            {
+                CSK_LOG_DEBUG(
+                    "Retransmission detected: fragment [%u, %u], expected %u", frag->sequence, fragEnd, expected);
 
-            // call the method again from the start to do the whole search again
-            // (both iterations). the stop condition is when the list is empty
-            // (so closestSequenceFragIndex == -1)
-            foundSomething = true;
+                // Просто удаляем фрагмент, данные уже отправлены
+                fragmentPool_->release(frag);
+                it = fragMap.erase(it);
+                foundSomething = true;
+                continue;
+            }
+
+            // ----------------------------------------------------------------
+            // СЛУЧАЙ 3: Фрагмент начинается ровно с expected (in-order)
+            // ----------------------------------------------------------------
+            // Пример: expected = 1000, fragment = [1000, 1020]
+            if (frag->sequence == expected)
+            {
+                CSK_LOG_DEBUG("Found in-order fragment [%u, %u], expected %u", frag->sequence, fragEnd, expected);
+
+                // Отправляем все данные фрагмента
+                if (callbacks_.onMessageReady != nullptr)
+                {
+                    TcpStreamData streamData(
+                        frag->data, frag->dataLength, 0, tcpReassemblyData->connData, frag->timestamp);
+                    callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
+                }
+
+                // Обновляем expected
+                expected += static_cast<uint32_t>(frag->dataLength);
+                curSideData.sequence = expected;
+
+                // Возвращаем фрагмент в пул и удаляем из map
+                fragmentPool_->release(frag);
+                it = fragMap.erase(it);
+                foundSomething = true;
+                continue;
+            }
+
+            // Фрагмент имеет SEQ > expected — переходим к следующему
+            ++it;
         }
 
-    } while (foundSomething);
+        // =====================================================================
+        // 3.2. ОЧИСТКА ВСЕГО СПИСКА (обработка как missing data)
+        // =====================================================================
+        // Если cleanWholeFragList == true, обрабатываем все оставшиеся
+        // фрагменты как missing data. Это происходит в двух случаях:
+        //   1. Пришёл FIN/RST пакет
+        //   2. Превышен лимит out-of-order фрагментов
+        //   3. Пакет с другой стороны соединения
+        if (cleanWholeFragList && !fragMap.empty())
+        {
+            auto firstIt = fragMap.begin();
+            TcpFragment* firstFrag = firstIt->second;
+
+            // Проверяем, есть ли пропуск данных
+            if (firstFrag->sequence > expected)
+            {
+                uint32_t missingLen = firstFrag->sequence - expected;
+
+                CSK_LOG_DEBUG("Processing missing data: expected %u, first fragment %u, "
+                              "missing %u bytes on side %d",
+                              expected,
+                              firstFrag->sequence,
+                              missingLen,
+                              sideIndex);
+
+                // Формируем сообщение о пропущенных данных
+                std::string missingText = "[" + std::to_string(missingLen) + " bytes missing]";
+
+                // Собираем сообщение: "[X bytes missing]" + данные фрагмента
+                std::vector<uint8_t> dataWithMissing;
+                dataWithMissing.reserve(missingText.size() + firstFrag->dataLength);
+                dataWithMissing.insert(dataWithMissing.end(), missingText.begin(), missingText.end());
+                dataWithMissing.insert(dataWithMissing.end(), firstFrag->data, firstFrag->data + firstFrag->dataLength);
+
+                // Отправляем в коллбэк
+                if (callbacks_.onMessageReady != nullptr)
+                {
+                    TcpStreamData streamData(dataWithMissing.data(),
+                                             dataWithMissing.size(),
+                                             missingLen,
+                                             tcpReassemblyData->connData,
+                                             firstFrag->timestamp);
+                    callbacks_.onMessageReady(sideIndex, streamData, m_UserCookie);
+                }
+
+                // Обновляем expected до конца фрагмента
+                expected = firstFrag->sequence + static_cast<uint32_t>(firstFrag->dataLength);
+                curSideData.sequence = expected;
+
+                // Возвращаем фрагмент в пул и удаляем из map
+                fragmentPool_->release(firstFrag);
+                fragMap.erase(firstIt);
+                foundSomething = true;
+                continue;
+            }
+        }
+
+        // =====================================================================
+        // 3.3. ПРОВЕРКА ЛИМИТА OUT-OF-ORDER ФРАГМЕНТОВ
+        // =====================================================================
+        // Если накопилось слишком много out-of-order фрагментов,
+        // принудительно обрабатываем их как missing data.
+        if (!cleanWholeFragList && config_.maxOutOfOrder > 0 && fragMap.size() > config_.maxOutOfOrder)
+        {
+            CSK_LOG_DEBUG("Out-of-order fragment limit exceeded (%zu > %u). "
+                          "Processing as missing data.",
+                          fragMap.size(),
+                          config_.maxOutOfOrder);
+
+            // Устанавливаем флаг и продолжаем цикл
+            cleanWholeFragList = true;
+            foundSomething = true;
+            continue;
+        }
+    }
+
+    // =========================================================================
+    // 4. LOG: ИТОГОВОЕ СОСТОЯНИЕ
+    // =========================================================================
+    if (!fragMap.empty())
+    {
+        CSK_LOG_DEBUG("checkOutOfOrderFragments finished. Side %d, expected %u, "
+                      "%zu fragments remaining in map",
+                      sideIndex,
+                      curSideData.sequence,
+                      fragMap.size());
+    }
 }
 
 void TcpReassembly::closeConnection(uint32_t flowKey)
@@ -706,23 +738,32 @@ void TcpReassembly::closeConnectionInternal(uint32_t flowKey, ConnectionEndReaso
 
     TcpReassemblyData& tcpReassemblyData = iter->second;
 
-    if (tcpReassemblyData.closed) // the connection is already closed
+    if (tcpReassemblyData.closed)
         return;
 
     CSK_LOG_DEBUG("Closing connection with flow key %lx", flowKey);
 
-    CSK_LOG_DEBUG("Calling checkOutOfOrderFragments on side 0");
     checkOutOfOrderFragments(&tcpReassemblyData, 0, true);
-
-    CSK_LOG_DEBUG("Calling checkOutOfOrderFragments on side 1");
     checkOutOfOrderFragments(&tcpReassemblyData, 1, true);
+
+    for (auto& pair : tcpReassemblyData.twoSides[0].tcpFragments)
+    {
+        fragmentPool_->release(pair.second);
+    }
+    tcpReassemblyData.twoSides[0].tcpFragments.clear();
+
+    for (auto& pair : tcpReassemblyData.twoSides[1].tcpFragments)
+    {
+        fragmentPool_->release(pair.second);
+    }
+    tcpReassemblyData.twoSides[1].tcpFragments.clear();
 
     if (callbacks_.onConnectionClose != nullptr)
     {
         callbacks_.onConnectionClose(tcpReassemblyData.connData, reason, m_UserCookie);
     }
 
-    tcpReassemblyData.closed = true; // mark the connection as closed
+    tcpReassemblyData.closed = true;
     insertIntoCleanupList(flowKey);
 
     CSK_LOG_DEBUG("Connection with flow key %lx is closed", flowKey);
@@ -751,7 +792,8 @@ void TcpReassembly::closeAllConnections()
 
         if (callbacks_.onConnectionClose != nullptr)
         {
-            callbacks_.onConnectionClose(tcpReassemblyData.connData, TcpReassemblyConnectionClosedManually, m_UserCookie);
+            callbacks_.onConnectionClose(
+                tcpReassemblyData.connData, TcpReassemblyConnectionClosedManually, m_UserCookie);
         }
 
         tcpReassemblyData.closed = true; // mark the connection as closed
