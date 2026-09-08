@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <chrono>
-#include <tuple>
+#include <cstring>
 
 namespace snet::layers
 {
@@ -18,10 +18,13 @@ constexpr uint32_t compileTimeHash(const char* str, uint32_t hash = 0)
     return *str ? compileTimeHash(str + 1, (hash << 5) - hash + *str) : hash;
 }
 
+#define COMPILE_TIME_TYPE_NAME(T) __PRETTY_FUNCTION__
+
 template <typename T>
 constexpr uint32_t getTypeId()
 {
-    constexpr uint32_t id = compileTimeHash(typeid(T).name());
+    constexpr const char* name = __PRETTY_FUNCTION__;
+    constexpr uint32_t id = compileTimeHash(name);
     return id;
 }
 
@@ -58,9 +61,12 @@ public:
         static_assert(CONTEXT_COUNT > 0, "No context types defined");
 
         constexpr size_t type_index = getTypeIndex<ContextType>();
-        constexpr size_t slot_index = type_index * MAX_INSTANCES + index;
+        size_t slot_index = type_index * MAX_INSTANCES + index;
 
-        static_assert(slot_index < CONTEXT_COUNT * MAX_INSTANCES, "Context index out of bounds");
+        if (slot_index >= CONTEXT_COUNT * MAX_INSTANCES)
+        {
+            return nullptr;
+        }
 
         auto& slot = slots[slot_index];
         if (slot.type_id == detail::getTypeId<ContextType>() && slot.data)
@@ -79,7 +85,7 @@ public:
         }
 
         constexpr size_t type_index = getTypeIndex<ContextType>();
-        constexpr size_t slot_index = type_index * MAX_INSTANCES + index;
+        size_t slot_index = type_index * MAX_INSTANCES + index;
 
         if (slot_index >= CONTEXT_COUNT * MAX_INSTANCES)
         {
@@ -114,7 +120,7 @@ public:
     bool clear(size_t index = 0)
     {
         constexpr size_t type_index = getTypeIndex<ContextType>();
-        constexpr size_t slot_index = type_index * MAX_INSTANCES + index;
+        size_t slot_index = type_index * MAX_INSTANCES + index;
 
         if (slot_index >= CONTEXT_COUNT * MAX_INSTANCES)
         {
@@ -141,7 +147,7 @@ public:
     bool has(size_t index = 0) const
     {
         constexpr size_t type_index = getTypeIndex<ContextType>();
-        constexpr size_t slot_index = type_index * MAX_INSTANCES + index;
+        size_t slot_index = type_index * MAX_INSTANCES + index;
 
         if (slot_index >= CONTEXT_COUNT * MAX_INSTANCES)
         {
@@ -204,32 +210,27 @@ private:
     uint32_t active_count_{0};
     uint32_t slot_mask_{0};
 
-    // Compile-time поиск индекса типа
-    template <typename T, size_t... Is>
-    static constexpr size_t findTypeIndex(std::index_sequence<Is...>)
+    template <typename T, typename... Args>
+    struct TypeIndex;
+
+    template <typename T, typename First, typename... Rest>
+    struct TypeIndex<T, First, Rest...>
     {
-        size_t result = 0;
-        bool found = false;
-        
-        // Используем fold expression для поиска
-        ((std::is_same_v<T, std::tuple_element_t<Is, std::tuple<ContextTypes...>>> ? 
-            (result = Is, found = true, true) : false), ...);
-        
-        // static_assert не может использовать found, поэтому используем другой подход
-        return result;
-    }
+        static constexpr size_t value = std::is_same_v<T, First> ? 0 : 1 + TypeIndex<T, Rest...>::value;
+    };
+
+    template <typename T>
+    struct TypeIndex<T>
+    {
+        static constexpr size_t value = 0;
+    };
 
     template <typename T>
     static constexpr size_t getTypeIndex()
     {
-        // Используем std::index_sequence для перебора типов
-        constexpr size_t idx = findTypeIndex<T>(std::index_sequence_for<ContextTypes...>{});
-        
-        // Проверяем, что тип найден (используем отдельный static_assert)
-        static_assert(std::disjunction_v<std::is_same<T, ContextTypes>...>, 
+        static_assert(TypeIndex<T, ContextTypes...>::value < sizeof...(ContextTypes), 
                       "Context type not found in the list");
-        
-        return idx;
+        return TypeIndex<T, ContextTypes...>::value;
     }
 };
 

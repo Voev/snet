@@ -41,7 +41,9 @@ struct SessionCtxPoolManagerFromTuple<std::tuple<Types...>>
 // SessionManager
 // ============================================================================
 
-template <typename KeyType, typename ContextTypesTuple>
+template <typename KeyType, typename ContextTypesTuple,
+          typename Hash = std::hash<KeyType>,
+          typename KeyEqual = std::equal_to<KeyType>>
 class SessionManager
 {
 public:
@@ -61,7 +63,7 @@ public:
 
     struct Config
     {
-        size_t max_sessions{1000000};
+        size_t max_sessions{1000};
         uint32_t session_timeout_sec{300};
         uint32_t cleanup_interval_sec{5};
         float load_factor{0.75f};
@@ -96,8 +98,9 @@ public:
     // Основной API
     // ========================================================================
 
-    template <typename... ContextArgs>
-    Session* getOrCreate(const Key& key, ContextArgs&&... ctx_args)
+    // Создание сессии с одним контекстом (указатель на контекст)
+    template <typename ContextType>
+    Session* getOrCreate(const Key& key, ContextType* ctx)
     {
         processRemovalQueue();
 
@@ -107,12 +110,26 @@ public:
             updateSession(session);
             return session;
         }
-        return createSession(key, std::forward<ContextArgs>(ctx_args)...);
+        return createSession(key, ctx);
+    }
+
+    // Создание сессии с несколькими контекстами (пакет указателей)
+    template <typename... ContextTypes>
+    Session* getOrCreate(const Key& key, ContextTypes*... ctxs)
+    {
+        processRemovalQueue();
+
+        auto* session = findSession(key);
+        if (session)
+        {
+            updateSession(session);
+            return session;
+        }
+        return createSession(key, ctxs...);
     }
 
     Session* find(const Key& key)
     {
-        processRemovalQueue();
         return findSession(key);
     }
 
@@ -254,7 +271,6 @@ public:
     template <typename Func>
     void forEachSession(Func&& func)
     {
-        processRemovalQueue();
         auto it = session_map_.begin();
         auto end = session_map_.end();
         for (; it != end; ++it)
@@ -290,8 +306,8 @@ private:
     // ========================================================================
 
     Config config_;
-
-    casket::FlatHashMap<Key, Session> session_map_;
+    
+    casket::FlatHashMap<Key, Session, casket::LinearProbing, Hash, KeyEqual> session_map_;
     casket::RingBuffer<Key> removal_queue_;
     PoolManager context_pools_;
     std::atomic<uint64_t> session_counter_{0};
@@ -334,8 +350,9 @@ private:
         return processed;
     }
 
-    template <typename... ContextArgs>
-    Session* createSession(const Key& key, ContextArgs&&... ctx_args)
+    // Создание сессии с одним контекстом
+    template <typename ContextType>
+    Session* createSession(const Key& key, ContextType* ctx)
     {
         if (session_map_.size() >= config_.max_sessions)
         {
@@ -357,13 +374,66 @@ private:
         session.flags = 0;
         session.created_at = getCurrentTimestamp();
         session.last_activity = session.created_at;
-        session.timeout_at = session.created_at + static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
+        session.timeout_at = session.created_at + 
+            static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
         session.contexts = ContextContainer();
 
-        initializeContexts(&session, std::forward<ContextArgs>(ctx_args)...);
+        // Инициализируем только переданный контекст
+        if (ctx)
+        {
+            session.contexts.template set<ContextType>(ctx);
+        }
 
         if (!session_map_.insert(key, std::move(session)))
+        {
+            if (ctx)
+            {
+                context_pools_.template deallocate<ContextType>(ctx);
+            }
             return nullptr;
+        }
+
+        session_counter_++;
+        return session_map_.find(key);
+    }
+
+    // Создание сессии с несколькими контекстами
+    template <typename... ContextTypes>
+    Session* createSession(const Key& key, ContextTypes*... ctxs)
+    {
+        if (session_map_.size() >= config_.max_sessions)
+        {
+            processRemovalQueue();
+
+            if (session_map_.size() >= config_.max_sessions)
+            {
+                evictOldestSession();
+            }
+        }
+
+        if (session_map_.size() >= session_map_.capacity() * 0.85f)
+        {
+            session_map_.reserve(session_map_.capacity() * 2);
+        }
+
+        Session session;
+        session.key = key;
+        session.flags = 0;
+        session.created_at = getCurrentTimestamp();
+        session.last_activity = session.created_at;
+        session.timeout_at = session.created_at + 
+            static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
+        session.contexts = ContextContainer();
+
+        // Инициализируем все переданные контексты
+        (initializeContext(&session, ctxs), ...);
+
+        if (!session_map_.insert(key, std::move(session)))
+        {
+            // Если вставка не удалась, освобождаем все контексты
+            (context_pools_.template deallocate<ContextTypes>(ctxs), ...);
+            return nullptr;
+        }
 
         session_counter_++;
         return session_map_.find(key);
@@ -394,12 +464,6 @@ private:
             removal_queue_.push(oldest->key);
             processRemovalQueue();
         }
-    }
-
-    template <typename... ContextArgs>
-    void initializeContexts(Session* session, ContextArgs&&... ctx_args)
-    {
-        (initializeContext<ContextArgs>(session, std::forward<ContextArgs>(ctx_args)), ...);
     }
 
     template <typename ContextType>
@@ -438,7 +502,8 @@ private:
     static uint64_t getCurrentTimestamp()
     {
         auto now = std::chrono::steady_clock::now();
-        return std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+            now.time_since_epoch()).count();
     }
 };
 
