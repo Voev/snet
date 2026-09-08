@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <chrono>
 #include <type_traits>
 #include <utility>
@@ -14,10 +13,6 @@
 
 namespace snet::layers
 {
-
-// ============================================================================
-// Хелперы для распаковки tuple
-// ============================================================================
 
 template <typename Tuple>
 struct SessionCtxContainerFromTuple;
@@ -36,10 +31,6 @@ struct SessionCtxPoolManagerFromTuple<std::tuple<Types...>>
 {
     using type = SessionCtxPoolManager<Types...>;
 };
-
-// ============================================================================
-// SessionManager
-// ============================================================================
 
 template <typename KeyType, typename ContextTypesTuple,
           typename Hash = std::hash<KeyType>,
@@ -89,16 +80,11 @@ public:
         : config_(std::move(other.config_))
         , session_map_(std::move(other.session_map_))
         , removal_queue_(std::move(other.removal_queue_))
-        , session_counter_(other.session_counter_.load())
+        , session_counter_(other.session_counter_)
         , context_pools_(std::move(other.context_pools_))
     {
     }
 
-    // ========================================================================
-    // Основной API
-    // ========================================================================
-
-    // Создание сессии с одним контекстом (указатель на контекст)
     template <typename ContextType>
     Session* getOrCreate(const Key& key, ContextType* ctx)
     {
@@ -113,7 +99,6 @@ public:
         return createSession(key, ctx);
     }
 
-    // Создание сессии с несколькими контекстами (пакет указателей)
     template <typename... ContextTypes>
     Session* getOrCreate(const Key& key, ContextTypes*... ctxs)
     {
@@ -137,10 +122,6 @@ public:
     {
         return findSession(key);
     }
-
-    // ========================================================================
-    // Контексты
-    // ========================================================================
 
     template <typename ContextType>
     ContextType* allocateContext()
@@ -211,10 +192,6 @@ public:
         return context_pools_;
     }
 
-    // ========================================================================
-    // Управление сессиями
-    // ========================================================================
-
     bool removeSession(const Key& key)
     {
         return addToRemovalQueue(key);
@@ -224,10 +201,6 @@ public:
     {
         return processRemovalQueue();
     }
-
-    // ========================================================================
-    // Доступ к конфигурации и статистике
-    // ========================================================================
 
     const Config& getConfig() const
     {
@@ -261,12 +234,8 @@ public:
 
     uint64_t getSessionCounter() const
     {
-        return session_counter_.load();
+        return session_counter_;
     }
-
-    // ========================================================================
-    // Итерация по сессиям
-    // ========================================================================
 
     template <typename Func>
     void forEachSession(Func&& func)
@@ -301,20 +270,11 @@ public:
     }
 
 private:
-    // ========================================================================
-    // Поля класса
-    // ========================================================================
-
     Config config_;
-    
     casket::FlatHashMap<Key, Session, casket::LinearProbing, Hash, KeyEqual> session_map_;
     casket::RingBuffer<Key> removal_queue_;
     PoolManager context_pools_;
-    std::atomic<uint64_t> session_counter_{0};
-
-    // ========================================================================
-    // Управление сессиями
-    // ========================================================================
+    uint64_t session_counter_{0};
 
     Session* findSession(const Key& key)
     {
@@ -350,7 +310,6 @@ private:
         return processed;
     }
 
-    // Создание сессии с одним контекстом
     template <typename ContextType>
     Session* createSession(const Key& key, ContextType* ctx)
     {
@@ -378,7 +337,6 @@ private:
             static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
         session.contexts = ContextContainer();
 
-        // Инициализируем только переданный контекст
         if (ctx)
         {
             session.contexts.template set<ContextType>(ctx);
@@ -397,7 +355,6 @@ private:
         return session_map_.find(key);
     }
 
-    // Создание сессии с несколькими контекстами
     template <typename... ContextTypes>
     Session* createSession(const Key& key, ContextTypes*... ctxs)
     {
@@ -425,12 +382,10 @@ private:
             static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
         session.contexts = ContextContainer();
 
-        // Инициализируем все переданные контексты
         (initializeContext(&session, ctxs), ...);
 
         if (!session_map_.insert(key, std::move(session)))
         {
-            // Если вставка не удалась, освобождаем все контексты
             (context_pools_.template deallocate<ContextTypes>(ctxs), ...);
             return nullptr;
         }
