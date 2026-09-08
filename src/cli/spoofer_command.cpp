@@ -130,14 +130,10 @@ public:
         driver->start();
         std::cout << "Starting reading '" << options_.input << "'..." << std::endl;
 
-        size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
-
         tcpReassembly.closeAllConnections();
         driver->stop();
 
         logWorker.stop();
-
-        std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }
 
 private:

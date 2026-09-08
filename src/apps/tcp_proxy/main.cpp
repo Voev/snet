@@ -148,15 +148,10 @@ int main(int argc, char* argv[])
 
         driver->start();
 
-        size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
-
         tcpReassembly.closeAllConnections();
         driver->stop();
 
         logWorker.stop();
-
-        std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
-
     }
     catch (std::exception& e)
     {
