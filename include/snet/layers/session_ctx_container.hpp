@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <chrono>
+#include <tuple>
 
 namespace snet::layers
 {
@@ -203,20 +204,32 @@ private:
     uint32_t active_count_{0};
     uint32_t slot_mask_{0};
 
-    template <typename T, typename... Args>
-    static constexpr size_t getTypeIndexImpl()
+    // Compile-time поиск индекса типа
+    template <typename T, size_t... Is>
+    static constexpr size_t findTypeIndex(std::index_sequence<Is...>)
     {
-        size_t idx = 0;
+        size_t result = 0;
         bool found = false;
-        ((idx = (std::is_same_v<T, Args> ? (found = true, idx) : idx + 1)), ...);
-        static_assert(found, "Context type not found in the list");
-        return idx;
+        
+        // Используем fold expression для поиска
+        ((std::is_same_v<T, std::tuple_element_t<Is, std::tuple<ContextTypes...>>> ? 
+            (result = Is, found = true, true) : false), ...);
+        
+        // static_assert не может использовать found, поэтому используем другой подход
+        return result;
     }
 
     template <typename T>
     static constexpr size_t getTypeIndex()
     {
-        return getTypeIndexImpl<T, ContextTypes...>();
+        // Используем std::index_sequence для перебора типов
+        constexpr size_t idx = findTypeIndex<T>(std::index_sequence_for<ContextTypes...>{});
+        
+        // Проверяем, что тип найден (используем отдельный static_assert)
+        static_assert(std::disjunction_v<std::is_same<T, ContextTypes>...>, 
+                      "Context type not found in the list");
+        
+        return idx;
     }
 };
 
