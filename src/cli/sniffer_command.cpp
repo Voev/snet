@@ -210,14 +210,10 @@ public:
             }
         } while (status == RecvStatus::Ok);
 
-        size_t numOfConnectionsProcessed = tcpReassembly.getConnectionInformation().size();
-
         tcpReassembly.closeAllConnections();
         driver->stop();
 
         logWorker.stop();
-
-        std::cout << "Done! processed " << numOfConnectionsProcessed << " connections" << std::endl;
     }
 
 private:
