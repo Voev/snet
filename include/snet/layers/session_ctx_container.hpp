@@ -18,8 +18,6 @@ constexpr uint32_t compileTimeHash(const char* str, uint32_t hash = 0)
     return *str ? compileTimeHash(str + 1, (hash << 5) - hash + *str) : hash;
 }
 
-#define COMPILE_TIME_TYPE_NAME(T) __PRETTY_FUNCTION__
-
 template <typename T>
 constexpr uint32_t getTypeId()
 {
@@ -69,7 +67,7 @@ public:
         }
 
         auto& slot = slots[slot_index];
-        if (slot.type_id == detail::getTypeId<ContextType>() && slot.data)
+        if (slot.data)
         {
             return static_cast<ContextType*>(slot.data);
         }
@@ -210,27 +208,28 @@ private:
     uint32_t active_count_{0};
     uint32_t slot_mask_{0};
 
-    template <typename T, typename... Args>
-    struct TypeIndex;
+    template <typename T, size_t I = 0, typename... Args>
+    struct TypeIndexImpl;
 
-    template <typename T, typename First, typename... Rest>
-    struct TypeIndex<T, First, Rest...>
+    template <typename T, size_t I, typename First, typename... Rest>
+    struct TypeIndexImpl<T, I, First, Rest...>
     {
-        static constexpr size_t value = std::is_same_v<T, First> ? 0 : 1 + TypeIndex<T, Rest...>::value;
+        static constexpr size_t value = 
+            std::is_same_v<T, First> ? I : TypeIndexImpl<T, I + 1, Rest...>::value;
     };
 
-    template <typename T>
-    struct TypeIndex<T>
+    template <typename T, size_t I>
+    struct TypeIndexImpl<T, I>
     {
-        static constexpr size_t value = 0;
+        static constexpr size_t value = sizeof...(ContextTypes);
     };
 
     template <typename T>
     static constexpr size_t getTypeIndex()
     {
-        static_assert(TypeIndex<T, ContextTypes...>::value < sizeof...(ContextTypes), 
-                      "Context type not found in the list");
-        return TypeIndex<T, ContextTypes...>::value;
+        constexpr size_t idx = TypeIndexImpl<T, 0, ContextTypes...>::value;
+        static_assert(idx < sizeof...(ContextTypes), "Context type not found in the list");
+        return idx;
     }
 };
 
