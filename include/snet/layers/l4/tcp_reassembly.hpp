@@ -14,6 +14,8 @@
 #include <list>
 #include <time.h>
 
+#include <snet/layers/session_manager.hpp>
+
 namespace snet::layers
 {
 
@@ -256,6 +258,7 @@ private:
 
     struct TcpReassemblyData
     {
+        static constexpr size_t MAX_INSTANCES = 1;
         bool closed;
         int8_t numOfSides;
         int8_t prevSide;
@@ -295,6 +298,8 @@ private:
     typedef std::unordered_map<uint32_t, TcpReassemblyData> ConnectionList;
     typedef std::map<time_t, std::list<uint32_t>> CleanupList;
 
+    using ContextTypes = std::tuple<TcpReassemblyData>;
+    SessionManager<uint32_t, ContextTypes> sessionManager_;
     TcpReassemblyCallbacks callbacks_;
     TcpReassemblyConfig config_;
     void* m_UserCookie;
@@ -304,6 +309,8 @@ private:
     time_t m_PurgeTimepoint;
     bool m_ProcessingOutOfOrder = false;
     std::unique_ptr<TcpFragmentPool> fragmentPool_;
+
+
 
     void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);
 
