@@ -174,11 +174,7 @@ public:
         if (!extractPacketInfo(packet, srcIP, dstIP, tcpHeader, tcpLayer))
         {
             // Не TCP/IP пакет - передаем дальше по цепочке
-            if (this->nextPacket(session, packet))
-            {
-                return PacketStatus::TcpMessageHandled;
-            }
-            return PacketStatus::NonTcpPacket;
+            return passToNext(session, packet, PacketStatus::NonTcpPacket);
         }
 
         auto timestamp = packet->getTimestamp().toTimePoint();
@@ -212,11 +208,7 @@ public:
         if (ctx->closed)
         {
             // Передаем дальше по цепочке
-            if (this->nextPacket(session, packet))
-            {
-                return PacketStatus::TcpMessageHandled;
-            }
-            return PacketStatus::Ignore_PacketOfClosedFlow;
+            return passToNext(session, packet, PacketStatus::Ignore_PacketOfClosedFlow);
         }
 
         // Определяем сторону
@@ -224,11 +216,7 @@ public:
         if (side < 0)
         {
             // Передаем дальше по цепочке
-            if (this->nextPacket(session, packet))
-            {
-                return PacketStatus::TcpMessageHandled;
-            }
-            return PacketStatus::Error_PacketDoesNotMatchFlow;
+            return passToNext(session, packet, PacketStatus::Error_PacketDoesNotMatchFlow);
         }
 
         auto& sideData = ctx->twoSides[side];
@@ -241,18 +229,9 @@ public:
             {
                 handleFinOrRst(ctx, session, flowKey, 1 - side, true);
                 // Передаем дальше по цепочке
-                if (this->nextPacket(session, packet))
-                {
-                    return PacketStatus::TcpMessageHandled;
-                }
-                return PacketStatus::FIN_RSTWithNoData;
+                return passToNext(session, packet, PacketStatus::FIN_RSTWithNoData);
             }
-            // Передаем дальше по цепочке
-            if (this->nextPacket(session, packet))
-            {
-                return PacketStatus::TcpMessageHandled;
-            }
-            return PacketStatus::Ignore_PacketOfClosedFlow;
+            return passToNext(session, packet, PacketStatus::Ignore_PacketOfClosedFlow);
         }
 
         // Получаем данные
@@ -266,12 +245,7 @@ public:
         if ((isFin || isRst) && payloadLen == 0)
         {
             handleFinOrRst(ctx, session, flowKey, side, isRst);
-            // Передаем дальше по цепочке
-            if (this->nextPacket(session, packet))
-            {
-                return PacketStatus::TcpMessageHandled;
-            }
-            return PacketStatus::FIN_RSTWithNoData;
+            return passToNext(session, packet, PacketStatus::FIN_RSTWithNoData);
         }
 
         // Проверка смены стороны
@@ -290,13 +264,7 @@ public:
 
         // Если пакет был обработан или проигнорирован - все равно передаем дальше
         // для других обработчиков в цепочке
-        if (this->nextPacket(session, packet))
-        {
-            // Если дальше обработали - возвращаем успех
-            return PacketStatus::TcpMessageHandled;
-        }
-
-        return status;
+        return passToNext(session, packet, status);
     }
 
     // ========== Управление ==========

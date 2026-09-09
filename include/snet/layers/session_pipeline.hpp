@@ -104,7 +104,7 @@ public:
         return success;
     }
 
-    // ========== Обработка пакета ==========
+    // Начало обработки пайплайна для пакета
     PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         if (pipeline_.empty() || !session || !packet)
@@ -112,7 +112,7 @@ public:
             return PacketStatus::Error_NoMemory;
         }
 
-        return pipeline_[0]->processPacket(session, packet);
+        return pipeline_[0]->processPacket(session, packet, PacketStatus::UnknownStatus);
     }
 
     // ========== Управление ==========
