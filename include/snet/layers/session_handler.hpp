@@ -8,6 +8,8 @@ namespace snet::layers
 
 enum PacketStatus
 {
+    UnknownStatus = 0,
+    PacketHandled,
     Error_NoMemory,
     TcpMessageHandled,
     OutOfOrderTcpMessageBuffered,
@@ -35,7 +37,7 @@ public:
 
     virtual bool destroyContext(Session* session) = 0;
 
-    virtual PacketStatus processPacket(Session* session, layers::Packet* packet) = 0;
+    virtual PacketStatus processPacket(Session* session, layers::Packet* packet, PacketStatus status) = 0;
 
     void setNext(std::shared_ptr<ISessionHandler> next)
     {
@@ -48,13 +50,13 @@ public:
     }
 
 protected:
-    inline bool nextPacket(Session* session, layers::Packet* packet)
+    inline PacketStatus passToNext(Session* session, layers::Packet* packet, PacketStatus status)
     {
         if (next_)
         {
-            return next_->processPacket(session, packet);
+            return next_->processPacket(session, packet, status);
         }
-        return false;
+        return status;
     }
 
     template <typename ContextType>
