@@ -1,5 +1,6 @@
 add_subdirectory(layers)
 add_subdirectory(crypto)
+add_subdirectory(tcp)
 add_subdirectory(tls)
 add_subdirectory(pcap)
 add_subdirectory(pki_fetch)
