@@ -108,23 +108,12 @@ public:
 
     bool createContext(Session* session) override
     {
-        if (!session)
-            return false;
-
-        // Проверяем, есть ли уже контекст
-        if (this->template hasContext<TcpReassemblerContext>(session))
-        {
-            return true;
-        }
-
-        // Создаем контекст
         auto* ctx = this->template allocateContext<TcpReassemblerContext>();
         if (!ctx)
         {
             return false;
         }
 
-        // Инициализируем
         ctx->clear(fragmentPool_.get());
 
         if (!this->template setContext<TcpReassemblerContext>(session, ctx))
@@ -138,17 +127,13 @@ public:
 
     bool destroyContext(Session* session) override
     {
-        if (!session)
-            return false;
-
-        // Получаем и очищаем контекст
-        auto* ctx = this->template getContext<TcpReassemblerContext>(session);
-        if (ctx)
+        auto* ctx = this->template removeContext<TcpReassemblerContext>(session);
+        if (!ctx)
         {
-            ctx->clear(fragmentPool_.get());
-            this->template removeContext<TcpReassemblerContext>(session);
+            return false;
         }
-
+        
+        this->template deallocateContext<TcpReassemblerContext>(ctx);
         return true;
     }
 
@@ -159,31 +144,26 @@ public:
             return PacketStatus::Error_NoMemory;
         }
 
-        // Получаем контекст
         auto* ctx = this->template getContext<TcpReassemblerContext>(session);
         if (!ctx)
         {
-            return PacketStatus::Error_NoMemory;
+            return PacketStatus::Error_NoContext;
         }
 
-        // Извлекаем IP и TCP информацию
         IPAddress srcIP, dstIP;
         TCPHeader tcpHeader;
         const Layer* tcpLayer = nullptr;
 
         if (!extractPacketInfo(packet, srcIP, dstIP, tcpHeader, tcpLayer))
         {
-            // Не TCP/IP пакет - передаем дальше по цепочке
             return passToNext(session, packet, PacketStatus::NonTcpPacket);
         }
 
         auto timestamp = packet->getTimestamp().toTimePoint();
         auto timestampUs = std::chrono::duration_cast<std::chrono::microseconds>(timestamp.time_since_epoch()).count();
 
-        // Вычисляем ключ
         Key flowKey = calculateFlowKey(srcIP, dstIP, tcpHeader);
 
-        // Инициализация нового соединения
         bool isNewConnection = (ctx->numOfSides == 0);
         if (isNewConnection)
         {
@@ -197,58 +177,48 @@ public:
             }
         }
 
-        // Обновляем активность
         ctx->lastActivity = timestampUs;
         if (timestamp > ctx->connData.end_time)
         {
             ctx->connData.end_time = timestamp;
         }
 
-        // Проверяем закрытое соединение
         if (ctx->closed)
         {
-            // Передаем дальше по цепочке
             return passToNext(session, packet, PacketStatus::Ignore_PacketOfClosedFlow);
         }
 
-        // Определяем сторону
         int8_t side = determineSide(ctx, srcIP, tcpHeader.srcPort());
         if (side < 0)
         {
-            // Передаем дальше по цепочке
             return passToNext(session, packet, PacketStatus::Error_PacketDoesNotMatchFlow);
         }
 
         auto& sideData = ctx->twoSides[side];
         sideData.packetsReceived++;
 
-        // Проверяем FIN/RST на этой стороне
         if (sideData.gotFinOrRst)
         {
             if (!ctx->twoSides[1 - side].gotFinOrRst && tcpHeader.isRST())
             {
                 handleFinOrRst(ctx, session, flowKey, 1 - side, true);
-                // Передаем дальше по цепочке
                 return passToNext(session, packet, PacketStatus::FIN_RSTWithNoData);
             }
             return passToNext(session, packet, PacketStatus::Ignore_PacketOfClosedFlow);
         }
 
-        // Получаем данные
         size_t payloadLen = packet->getPayloadSize(tcpLayer);
         const uint8_t* payload = packet->getPayloadData(tcpLayer);
 
         bool isFin = tcpHeader.isFIN();
         bool isRst = tcpHeader.isRST();
 
-        // FIN/RST без данных
         if ((isFin || isRst) && payloadLen == 0)
         {
             handleFinOrRst(ctx, session, flowKey, side, isRst);
             return passToNext(session, packet, PacketStatus::FIN_RSTWithNoData);
         }
 
-        // Проверка смены стороны
         if (config_.enableBaseBufferClear && !isFirstPacket(ctx, side) && payloadLen > 0 && ctx->prevSide != -1 &&
             ctx->prevSide != side && !ctx->twoSides[ctx->prevSide].tcpFragments.empty())
         {
@@ -257,13 +227,10 @@ public:
         }
         ctx->prevSide = side;
 
-        // Обработка последовательности
         uint32_t seq = tcpHeader.seqNum();
         PacketStatus status = processSequence(
             ctx, session, side, seq, payload, payloadLen, tcpHeader.isSYN(), isFin, isRst, timestamp, flowKey);
 
-        // Если пакет был обработан или проигнорирован - все равно передаем дальше
-        // для других обработчиков в цепочке
         return passToNext(session, packet, status);
     }
 
