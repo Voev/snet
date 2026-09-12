@@ -62,7 +62,6 @@ public:
         return add(handler);
     }
 
-    // ========== Создание контекста для всей цепочки ==========
     bool createContext(Session* session)
     {
         if (pipeline_.empty() || !session)
@@ -83,7 +82,6 @@ public:
         return success;
     }
 
-    // ========== Уничтожение контекста для всей цепочки ==========
     bool destroyContext(Session* session)
     {
         if (pipeline_.empty() || !session)
@@ -92,7 +90,6 @@ public:
         }
 
         bool success = true;
-        // Проходим в обратном порядке
         for (auto it = pipeline_.rbegin(); it != pipeline_.rend(); ++it)
         {
             if (!(*it)->destroyContext(session))
@@ -104,7 +101,6 @@ public:
         return success;
     }
 
-    // Начало обработки пайплайна для пакета
     PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         if (pipeline_.empty() || !session || !packet)
@@ -115,7 +111,6 @@ public:
         return pipeline_[0]->processPacket(session, packet, PacketStatus::UnknownStatus);
     }
 
-    // ========== Управление ==========
     void clear()
     {
         pipeline_.clear();

@@ -227,20 +227,19 @@ public:
     }
 
     template <typename ContextType>
-    bool removeContext(Session* session, size_t index = 0)
+    ContextType* removeContext(Session* session, size_t index = 0)
     {
         if (!session)
-            return false;
+            return nullptr;
 
         auto* ctx = session->contexts.template get<ContextType>(index);
         if (!ctx)
-            return false;
+            return nullptr;
 
         if (!session->contexts.template clear<ContextType>(index))
-            return false;
+            return nullptr;
 
-        context_pools_.template deallocate<ContextType>(ctx);
-        return true;
+        return ctx;
     }
 
     template <typename ContextType>

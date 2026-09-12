@@ -10,6 +10,7 @@ enum PacketStatus
 {
     UnknownStatus = 0,
     PacketHandled,
+    Error_NoContext,
     Error_NoMemory,
     TcpMessageHandled,
     OutOfOrderTcpMessageBuffered,
@@ -79,8 +80,30 @@ protected:
     ContextType* allocateContext()
     {
         if (!sessionManager_)
+        {
             return nullptr;
+        }
         return sessionManager_->template allocateContext<ContextType>();
+    }
+
+    template <typename ContextType, typename... Args>
+    ContextType* allocateContext(Args&&... args)
+    {
+        if (!sessionManager_)
+        {
+            return nullptr;
+        }
+        return sessionManager_->template allocateContext<ContextType>(std::forward<Args>(args)...);
+    }
+
+    template <typename ContextType>
+    ContextType* removeContext(Session* session, size_t index = 0)
+    {
+        if (!sessionManager_)
+        {
+            return nullptr;
+        }
+        return sessionManager_->template removeContext<ContextType>(session, index);
     }
 
     template <typename ContextType>
