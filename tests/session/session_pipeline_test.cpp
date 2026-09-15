@@ -6,6 +6,7 @@
 
 #include <snet/session/session_pipeline.hpp>
 
+using namespace snet::layers;
 using namespace snet::session;
 
 namespace

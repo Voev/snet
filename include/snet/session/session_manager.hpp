@@ -98,31 +98,31 @@ public:
         }
     }
 
-    PacketStatus processPacket(Packet* packet)
+    layers::PacketStatus processPacket(layers::Packet* packet)
     {
         if (!packet)
         {
-            return PacketStatus::Error_NoMemory;
+            return layers::PacketStatus::Error_NoMemory;
         }
 
-        IPAddress srcIP, dstIP;
-        auto ipHeader = packet->getHeader<IPv4Header>(IPv4);
+        layers::IPAddress srcIP, dstIP;
+        auto ipHeader = packet->getHeader<layers::IPv4Header>(layers::IPv4);
         if (ipHeader.isValid())
         {
-            srcIP = IPAddress(ipHeader.srcAddr());
-            dstIP = IPAddress(ipHeader.dstAddr());
+            srcIP = layers::IPAddress(ipHeader.srcAddr());
+            dstIP = layers::IPAddress(ipHeader.dstAddr());
         }
         else
         {
-            return PacketStatus::NonIpPacket;
+            return layers::PacketStatus::NonIpPacket;
         }
 
-        const auto* layer = packet->findLayer(TCP);
+        const auto* layer = packet->findLayer(layers::TCP);
         if (!layer)
         {
-            return PacketStatus::NonTcpPacket;
+            return layers::PacketStatus::NonTcpPacket;
         }
-        auto tcpHeader = packet->getHeader<TCPHeader>(*layer);
+        auto tcpHeader = packet->getHeader<layers::TCPHeader>(*layer);
 
         uint32_t flowKey =
             layers::hash5Tuple(srcIP, dstIP, tcpHeader.srcPort(), tcpHeader.dstPort(), ipHeader.protocol(), false);
@@ -135,7 +135,7 @@ public:
             session = newSession(flowKey);
             if (!session)
             {
-                return PacketStatus::Error_NoMemory;
+                return layers::PacketStatus::Error_NoMemory;
             }
             isNewSession = true;
         }
@@ -151,7 +151,7 @@ public:
             return pipeline_->processPacket(session, packet);
         }
 
-        return PacketStatus::TcpMessageHandled;
+        return layers::PacketStatus::TcpMessageHandled;
     }
 
     template <typename ContextType>
