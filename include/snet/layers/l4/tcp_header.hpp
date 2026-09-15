@@ -200,6 +200,24 @@ private:
     tcp_header* const header_;
 };
 
+/// @brief Sets TCP data offset, reserved bits and flags.
+///
+/// @param h     Pointer to tcp_header.
+/// @param doff  Data offset in 32-bit words (5 = 20 bytes, no options).
+/// @param flags Raw TCP flags byte (FIN=0x01, SYN=0x02, ..., URG=0x20).
+static inline void setTcpDoffFlags(tcp_header* h, uint8_t doff, uint8_t flags) noexcept
+{
+    h->u.bits.res1 = 0;
+    h->u.bits.doff = doff;
+    h->u.bits.fin  = (flags & 0x01) ? 1 : 0;
+    h->u.bits.syn  = (flags & 0x02) ? 1 : 0;
+    h->u.bits.rst  = (flags & 0x04) ? 1 : 0;
+    h->u.bits.psh  = (flags & 0x08) ? 1 : 0;
+    h->u.bits.ack  = (flags & 0x10) ? 1 : 0;
+    h->u.bits.urg  = (flags & 0x20) ? 1 : 0;
+    h->u.bits.res2 = 0;
+}
+
 class Packet;
 
 /// @brief Represents a TCP header.
@@ -386,6 +404,20 @@ public:
     ///
     /// @return Reference to the output stream for chaining.
     std::ostream& print(std::ostream& os) const noexcept;
+
+    inline uint8_t flagsByte() const noexcept
+    {
+        uint8_t b = 0;
+        // clang-format off
+        if (header_->u.bits.fin) b |= 0x01;
+        if (header_->u.bits.syn) b |= 0x02;
+        if (header_->u.bits.rst) b |= 0x04;
+        if (header_->u.bits.psh) b |= 0x08;
+        if (header_->u.bits.ack) b |= 0x10;
+        if (header_->u.bits.urg) b |= 0x20;
+        // clang-format on
+        return b;
+    }
 
 private:
     const RawType* header_ = nullptr; ///< Pointer to raw TCP header data.

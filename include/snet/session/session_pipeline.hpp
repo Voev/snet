@@ -96,14 +96,14 @@ public:
         return success;
     }
 
-    PacketStatus processPacket(Session* session, layers::Packet* packet)
+    layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         if (pipeline_.empty() || !session || !packet)
         {
-            return PacketStatus::Error_NoMemory;
+            return layers::PacketStatus::Error_NoMemory;
         }
 
-        return pipeline_.front()->processPacket(session, packet, PacketStatus::UnknownStatus);
+        return pipeline_.front()->processPacket(session, packet, layers::PacketStatus::UnknownStatus);
     }
 
     void clear()
