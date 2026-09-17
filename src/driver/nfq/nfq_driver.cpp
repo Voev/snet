@@ -322,7 +322,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
         {
             if (ec == std::errc::no_buffer_space)
             {
-                stats_.hw_packets_dropped++;
+                stats_.hwPacketsDropped++;
                 continue;
             }
             else if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block)
@@ -400,7 +400,7 @@ const char* NfQueue::getName() const
 
 Status NfQueue::getStats(Stats* stats)
 {
-    stats_.hw_packets_received = stats_.packets_received;
+    stats_.hwPacketsReceived = stats_.packetsReceived;
     memcpy(stats, &stats_, sizeof(Stats));
     return Status::Success;
 }

@@ -22,12 +22,12 @@ enum Verdict
 
 struct Stats
 {
-    uint64_t hw_packets_received;   /* Packets received by the hardware */
-    uint64_t hw_packets_dropped;    /* Packets dropped by the hardware */
-    uint64_t packets_received;      /* Packets received by this instance */
-    uint64_t packets_filtered;      /* Packets filtered by this instance's BPF */
-    uint64_t packets_injected;      /* Packets injected by this instance */
-    uint64_t packets_outstanding;   /* Packets outstanding in this instance */
+    uint64_t hwPacketsReceived;     /* Packets received by the hardware */
+    uint64_t hwPacketsDropped;      /* Packets dropped by the hardware */
+    uint64_t packetsReceived;       /* Packets received by this instance */
+    uint64_t packetsFiltered;       /* Packets filtered by this instance's BPF */
+    uint64_t packetsInjected;       /* Packets injected by this instance */
+    uint64_t packetsOutstanding;    /* Packets outstanding in this instance */
     uint64_t verdicts[MaxVerdicts]; /* Counters of packets handled per-verdict. */
 };
 
@@ -45,9 +45,11 @@ enum class Status
 enum class RecvStatus
 {
     Ok = 0,
+    NoBuffer,
     Timeout,
     Eof,
     Interrupted,
     Error,
     NoMemory,
+    WouldBlock
 };

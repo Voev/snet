@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <unordered_map>
 #include <snet/io/types.hpp>
 
 namespace snet::io
