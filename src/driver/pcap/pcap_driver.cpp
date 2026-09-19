@@ -240,7 +240,7 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
         }
 
         pcapPacket->setFromPcap(*pcaphdr, data);
-        stats_.packets_received++;
+        stats_.packetsReceived++;
 
         packets[i] = pcapPacket->asPacket();
     }
@@ -268,7 +268,7 @@ Status Pcap::inject(const uint8_t* data, uint32_t dataLength)
         return Status::Error;
     }
 
-    stats_.packets_injected++;
+    stats_.packetsInjected++;
     return Status::Success;
 }
 
@@ -308,7 +308,7 @@ Status Pcap::getStats(Stats* stats)
 
     if (mode_ == Mode::ReadFile)
     {
-        stats->hw_packets_received = stats->packets_received + stats->packets_filtered;
+        stats->hwPacketsReceived = stats->packetsReceived + stats->packetsFiltered;
     }
 
     return Status::Success;
@@ -443,8 +443,8 @@ Status Pcap::updateHwStats() noexcept
     recvCounter_.update(ps.ps_recv);
     dropCounter_.update(ps.ps_drop);
 
-    stats_.hw_packets_received = recvCounter_.getRelative();
-    stats_.hw_packets_dropped = dropCounter_.getRelative();
+    stats_.hwPacketsReceived = recvCounter_.getRelative();
+    stats_.hwPacketsDropped = dropCounter_.getRelative();
 
     hwupdateCount_ = 0;
     return Status::Success;
