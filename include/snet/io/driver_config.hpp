@@ -1,17 +1,16 @@
 #pragma once
 #include <string>
-#include <unordered_map>
 #include <snet/io/types.hpp>
 
 namespace snet::io
 {
 
-class DriverConfig
+class DriverConfig final
 {
 public:
-    using Parameters = std::unordered_map<std::string, std::string>;
-
     DriverConfig() = default;
+
+    ~DriverConfig() noexcept = default;
 
     void setPath(std::string path)
     {

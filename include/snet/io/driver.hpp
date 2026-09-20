@@ -17,10 +17,27 @@ namespace snet::io
 /// @brief Packet pool statistics information
 struct PacketPoolInfo
 {
-    uint32_t size;      ///< Total number of packets in the pool
-    uint32_t available; ///< Number of free packets available for acquisition
-    size_t memorySize;  ///< Total memory allocated by the pool (objects + data buffers)
+    uint32_t capacity{0U};  ///< Total number of packets in the pool
+    uint32_t available{0U}; ///< Number of free packets available for acquisition
+    size_t memorySize{0U};  ///< Total memory allocated by the pool (objects + data buffers)
+
+    /// @brief Prints pool statistics to the given stream.
+    /// @param[in] os Output stream.
+    void print(std::ostream& os) const
+    {
+        os << "Packet pool information:\n"
+           << "  capacity:   " << capacity << "\n"
+           << "  available:  " << available << "\n"
+           << "  memorySize: " << memorySize << " bytes\n";
+    }
 };
+
+/// @brief Stream operator for convenient logging.
+inline std::ostream& operator<<(std::ostream& os, const PacketPoolInfo& info)
+{
+    info.print(os);
+    return os;
+}
 
 /// @brief Abstract base class for network drivers.
 class Driver
@@ -33,6 +50,17 @@ public:
     /// @brief Gets driver name.
     /// @return Driver identifier string.
     virtual const char* getName() const = 0;
+
+    /// @brief Registers driver-specific options in the shared config section.
+    ///
+    /// Called once by the controller before the config file is parsed.
+    /// Add your options via Config::addDriverOption() using the names as they
+    /// appear in the config file. Option names must be unique within the section.
+    ///
+    /// @param[out] config Shared driver configuration section.
+    ///
+    /// @return Status of the operation.
+    virtual Status declareOptions(io::Config& config) = 0;
 
     /// @brief Configures driver with specified parameters.
     /// @param[in] config Configuration parameters.

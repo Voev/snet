@@ -32,7 +32,7 @@ public:
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
 
-    bool create(const std::string& name, bool debug);
+    bool create(const std::string& name);
     void destroy();
 
     int fd() const noexcept

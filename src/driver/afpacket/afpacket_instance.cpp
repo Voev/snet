@@ -24,7 +24,7 @@ Instance::~Instance()
     destroy();
 }
 
-bool Instance::create(const std::string& name, bool debug)
+bool Instance::create(const std::string& name)
 {
     name_ = name;
     buffer_ = MAP_FAILED;
@@ -120,11 +120,6 @@ bool Instance::create(const std::string& name, bool debug)
     {
         CSK_LOG_ERROR("could not enable promiscuous mode on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
-    }
-
-    if (debug)
-    {
-        CSK_LOG_INFO("afpacket[%s] hdrlen=%u mtu=%d", name_.c_str(), tpHdrlen_, mtu_);
     }
 
     return true;

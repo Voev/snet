@@ -9,7 +9,6 @@
 #include <casket/types/fixed_object_pool.hpp>
 
 #include "afpacket_types.hpp"
-#include "afpacket_config.hpp"
 #include "afpacket_wrapper.hpp"
 #include "afpacket_instance.hpp"
 
@@ -20,7 +19,7 @@ class AFPacketDriver final : public snet::io::Driver
 {
 public:
     using AFPacketPool = casket::FixedObjectPool<AFPacketWrapper>;
-    using AFPacketPoolPtr = std::unqiue_ptr<AFPacketPool>;
+    using AFPacketPoolPtr = std::unique_ptr<AFPacketPool>;
     using AFPacketInstancePtr = std::unique_ptr<Instance>;
 
     AFPacketDriver();
@@ -30,6 +29,7 @@ public:
 
     const char* getName() const override;
 
+    Status declareOptions(io::Config& config) override;
     Status configure(const snet::io::Config& config) override;
     Status start() override;
     Status stop() override;
@@ -67,13 +67,24 @@ private:
     void releaseAllOutstandingFrames();
 
 private:
-    AFPacketConfig cfg_;
     std::vector<AFPacketInstancePtr> instances_;
     AFPacketPoolPtr pool_;
     size_t currInstanceIdx_{0};
     std::atomic<bool> interrupted_{false};
     Stats stats_{};
-    int snaplen_{0};
+    size_t snaplen_{0};
+    
+    std::vector<std::string> devices_;
+    uint32_t bufferSizeMb_{128};
+    int32_t timeoutMs_{-1};
+    bool useTxRing_{false};
+
+    struct Fanout
+    {
+        bool enabled{false};
+        uint16_t type{0};
+        uint16_t flags{0};
+    } fanout;
 };
 
 } // namespace snet::driver

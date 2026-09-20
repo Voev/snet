@@ -16,6 +16,9 @@ namespace snet::driver
 class NfQueue final : public io::Driver
 {
 public:
+    using NfqPacketPool = casket::FixedObjectPool<NfqPacket>;
+    using NfqPacketPoolPtr = std::unique_ptr<NfqPacketPool>;
+
     /// @brief Constructs a Netfilter queue driver instance
     /// @param[in] config Driver configuration parameters (queue number, buffer size, etc.)
     explicit NfQueue(const io::DriverConfig& config);
@@ -27,6 +30,13 @@ public:
     /// @param[in] config Driver configuration parameters
     /// @return Shared pointer to created driver instance
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
+
+    /// @brief Registers driver-specific options in the shared config section.
+    ///
+    /// @param[out] config Shared driver configuration section.
+    ///
+    /// @return Status of the operation.
+    Status declareOptions(io::Config& config) override;
 
     /// @brief Configures the driver with specified parameters
     /// @param[in] config Configuration parameters (queue number, copy mode, etc.)
@@ -118,19 +128,19 @@ private:
     void closeSocket() noexcept;
 
 private:
-    std::unique_ptr<casket::FixedObjectPool<NfqPacket>> pool_; ///< Smart pointer to packet pool.
-    Stats stats_;                                              ///< Statistics counters.
-    uint8_t* buffer_;                                          ///< Pointer to I/O buffer.
-    size_t bufferSize_;                                        ///< Buffer size in bytes.
-    socket::SocketType socket_;                                ///< Socket type.
-    sockaddr_nl address_;                                      ///< Netlink socket address.
-    unsigned int queueNumber_;                                 ///< Queue number.
-    unsigned int queueMaxLength_;                              ///< Maximum queue length.
-    unsigned int portid_;                                      ///< Port identifier.
-    int snaplen_;                                              ///< Snapshot length.
-    int timeout_;                                              ///< Timeout value.
-    bool failOpen_;                                            ///< Fail-open flag.
-    volatile bool interrupted_;                                ///< Interruption flag.
+    NfqPacketPoolPtr pool_;       ///< Smart pointer to packet pool.
+    Stats stats_;                 ///< Statistics counters.
+    uint8_t* buffer_;             ///< Pointer to I/O buffer.
+    size_t bufferSize_;           ///< Buffer size in bytes.
+    socket::SocketType socket_;   ///< Socket type.
+    sockaddr_nl address_;         ///< Netlink socket address.
+    unsigned int queueNumber_;    ///< Queue number.
+    unsigned int queueMaxLength_; ///< Maximum queue length.
+    unsigned int portid_;         ///< Port identifier.
+    int snaplen_;                 ///< Snapshot length.
+    int timeout_;                 ///< Timeout value.
+    bool failOpen_;               ///< Fail-open flag.
+    volatile bool interrupted_;   ///< Interruption flag.
 };
 
 } // namespace snet::driver
