@@ -32,30 +32,6 @@ public:
 
     ~Config() noexcept override = default;
 
-    void parse(nonstd::span<const nonstd::string_view> lines) override
-    {
-        std::vector<nonstd::string_view> own;
-        for (const auto& line : lines)
-        {
-            auto tokens = splitToViewsWithQuotes(line);
-            if (tokens.empty())
-                continue;
-
-            const auto& key = tokens[0];
-            if (key.size() > 6 && key.substr(0, 6) == "param.")
-            {
-                parameters_[std::string(key.substr(6))] = tokens.size() > 1 ? std::string(tokens[1]) : std::string();
-            }
-            else
-            {
-                own.push_back(line);
-            }
-        }
-
-        Section::parse(own);
-        syncFromOptions();
-    }
-
     void setInput(std::string input)
     {
         input_ = std::move(input);
@@ -69,6 +45,7 @@ public:
     {
         msgPoolSize_ = poolSize;
     }
+
     std::size_t getMsgPoolSize() const
     {
         return msgPoolSize_;

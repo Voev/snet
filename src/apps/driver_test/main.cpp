@@ -114,11 +114,7 @@ int main(int argc, char* argv[])
         snet::io::Controller controller;
         auto driver = controller.load(driverConfig);
 
-        ConfigManager manager;
-
-        driver->declareOptions(*manager.getDriverConfig());
-        manager.read(params.configPath);
-        driver->configure(*manager.getDriverConfig());
+        controller.configure(params.configPath, driver->getName());
 
         snet::io::PacketPoolInfo info;
         auto status = driver->getMsgPoolInfo(info);
