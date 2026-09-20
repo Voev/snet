@@ -16,7 +16,6 @@ namespace snet::io
 
 Controller::Controller()
 {
-    options_.add<io::Config>();
 }
 
 Controller::~Controller() noexcept

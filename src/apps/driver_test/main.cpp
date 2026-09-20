@@ -57,34 +57,6 @@ private:
     Parameters args_;
 };
 
-class ConfigManager final
-{
-public:
-    ConfigManager()
-    {
-        options_.add<snet::io::Config>();
-    }
-
-    ~ConfigManager() noexcept
-    {
-    }
-
-    void read(const std::string& configPath)
-    {
-        ConfigOptionsReader reader;
-        std::ifstream ifs(configPath);
-        reader.read(ifs, options_);
-    }
-
-    snet::io::Config* getDriverConfig() noexcept
-    {
-        return options_.get<snet::io::Config>();
-    }
-
-private:
-    casket::opt::ConfigOptions options_;
-};
-
 int main(int argc, char* argv[])
 {
     LogWorker logWorker(std::make_unique<ConsoleSink>());

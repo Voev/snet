@@ -14,12 +14,6 @@ class Config : public casket::opt::Section
 public:
     using Parameters = std::unordered_map<std::string, std::string>;
 
-    static const std::string& name()
-    {
-        static const std::string n = "driver";
-        return n;
-    }
-
     Config()
         : input_()
         , msgPoolSize_(0U)
