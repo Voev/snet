@@ -5,8 +5,7 @@
 #include <string.h>
 #include <vector>
 
-#include <casket/utils/string.hpp>
-#include <casket/utils/to_number.hpp>
+#include <casket/opt/opt.hpp>
 
 #include <snet/utils/counter.hpp>
 
@@ -17,6 +16,7 @@
 static pthread_mutex_t bpf_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace casket;
+using namespace casket::opt;
 using namespace snet::layers;
 
 struct BpfProgramDeleter
@@ -70,29 +70,32 @@ const char* Pcap::getName() const
     return "pcap";
 }
 
+Status Pcap::declareOptions(io::Config& config)
+{
+    // clang-format off
+    config.addDriverOption(OptionBuilder("pcap_buffer_size", Value(&bufferSize_))
+        .setDefaultValue(false)
+        .setDescription("Packet buffer space to allocate in bytes")
+        .build());
+    config.addDriverOption(OptionBuilder("pcap_no_promiscuous", Value(&promiscMode_))
+        .setDefaultValue(true)
+        .setDescription("Disables opening the interface in promiscuous mode")
+        .build());
+    config.addDriverOption(OptionBuilder("pcap_no_immediate", Value(&immediateMode_))
+        .setDefaultValue(true)
+        .setDescription("Disables immediate mode for traffic capture (may cause unbounded blocking)")
+        .build());
+    // clang-format on
+    return Status::Success;
+}
+
 Status Pcap::configure(const io::Config& config)
 {
     snaplen_ = config.getSnaplen();
     timeout_ = config.getTimeout();
     mode_ = config.getMode();
 
-    for (const auto& [name, value] : config.getParameters())
-    {
-        if (iequals(name, "buffer_size"))
-        {
-            to_number(value, bufferSize_);
-        }
-        else if (iequals(name, "no_promiscuous"))
-        {
-            promiscMode_ = false;
-        }
-        else if (iequals(name, "no_immediate"))
-        {
-            immediateMode_ = false;
-        }
-    }
-
-    pool_ = std::make_unique<casket::FixedObjectPool<PcapPacket>>(config.getMsgPoolSize(), config.getSnaplen());
+    pool_ = std::make_unique<PcapPacketPool>(config.getMsgPoolSize(), config.getSnaplen());
 
     if (mode_ == Mode::ReadFile)
     {
@@ -288,11 +291,11 @@ layers::LinkLayerType Pcap::getDataLinkType() const
 
 Status Pcap::getMsgPoolInfo(io::PacketPoolInfo& info)
 {
-    auto capacity = pool_->capacity();
+    auto capacity = pool_ ? pool_->capacity() : 0U;
+    auto available = pool_ ? pool_->available() : 0U;
 
-    info.size = capacity;
-    /// @todo: fix it.
-    info.available = 0;
+    info.capacity = capacity;
+    info.available = available;
     info.memorySize = sizeof(PcapPacket) * capacity;
     return Status::Success;
 }

@@ -17,10 +17,13 @@
 #include <unistd.h>
 
 #include <casket/log/log.hpp>
+#include <casket/opt/opt.hpp>
 
 #ifndef POLLRDHUP
 #define POLLRDHUP 0x2000
 #endif
+
+using namespace casket::opt;
 
 namespace snet::driver
 {
@@ -42,17 +45,109 @@ const char* AFPacketDriver::getName() const
     return "af_packet";
 }
 
+Status AFPacketDriver::declareOptions(io::Config& config)
+{
+    // clang-format off
+    config.addDriverOption(OptionBuilder("afp_buffer_size_mb", Value(&bufferSizeMb_))
+        .setDefaultValue(kDefaultBufferMb)
+        .setDescription("Packet buffer space to allocate in megabytes")
+        .build());
+    config.addDriverOption(OptionBuilder("afp_use_tx_ring", Value(&useTxRing_))
+        .setDefaultValue(false)
+        .setDescription("Use memory-mapped TX ring")
+        .build());
+    // clang-format on
+    return Status::Success;
+}
+
 Status AFPacketDriver::configure(const snet::io::Config& config)
 {
-    if (!cfg_.parse(config))
-        return Status::InvalidArgument;
-
     snaplen_ = config.getSnaplen();
+    timeoutMs_ = config.getTimeout();
+    if (timeoutMs_ == 0)
+        timeoutMs_ = -1;
 
-    for (const auto& name : cfg_.devices)
+    const std::string& devs = config.getInput();
+    if (devs.empty() || devs.front() == ':' || devs.back() == ':')
+    {
+        CSK_LOG_ERROR("invalid interface specification: '%s'", devs.c_str());
+        return Status::InvalidArgument;
+    }
+
+    size_t pos = 0;
+    while (pos < devs.size())
+    {
+        size_t colon = devs.find(':', pos);
+        if (colon == std::string::npos)
+            colon = devs.size();
+        if (colon > pos)
+        {
+            std::string name = devs.substr(pos, colon - pos);
+            if (name.size() >= IFNAMSIZ)
+            {
+                CSK_LOG_ERROR("interface name too long: '%s'", name.c_str());
+                return Status::InvalidArgument;
+            }
+            devices_.push_back(std::move(name));
+        }
+        pos = colon + 1;
+    }
+
+    if (devices_.empty())
+    {
+        CSK_LOG_ERROR("no interfaces specified");
+        return Status::InvalidArgument;
+    }
+    if (devices_.size() > kMaxInterfaces)
+    {
+        CSK_LOG_ERROR("using more than %zu interfaces is not supported", kMaxInterfaces);
+        return Status::InvalidArgument;
+    }
+
+    for (const auto& kv : config.getParameters())
+    {
+        const std::string& key = kv.first;
+        const std::string& value = kv.second;
+
+        if (key == "fanout_type")
+        {
+            if (value == "hash")
+                fanout.type = PACKET_FANOUT_HASH;
+            else if (value == "lb")
+                fanout.type = PACKET_FANOUT_LB;
+            else if (value == "cpu")
+                fanout.type = PACKET_FANOUT_CPU;
+            else if (value == "rollover")
+                fanout.type = PACKET_FANOUT_ROLLOVER;
+            else if (value == "rnd")
+                fanout.type = PACKET_FANOUT_RND;
+            else if (value == "qm")
+                fanout.type = PACKET_FANOUT_QM;
+            else
+            {
+                CSK_LOG_ERROR("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
+                return Status::InvalidArgument;
+            }
+            fanout.enabled = true;
+        }
+        else if (key == "fanout_flag")
+        {
+            if (value == "rollover")
+                fanout.flags |= PACKET_FANOUT_FLAG_ROLLOVER;
+            else if (value == "defrag")
+                fanout.flags |= PACKET_FANOUT_FLAG_DEFRAG;
+            else
+            {
+                CSK_LOG_ERROR("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
+                return Status::InvalidArgument;
+            }
+        }
+    }
+
+    for (const auto& name : devices_)
     {
         auto inst = std::make_unique<Instance>();
-        if (!inst->create(name, cfg_.debug))
+        if (!inst->create(name))
             return Status::NoSuchDevice;
         instances_.push_back(std::move(inst));
     }
@@ -72,9 +167,9 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
 
     uint32_t numRings = 0;
     for (auto& i : instances_)
-        numRings += (i->peer && cfg_.useTxRing) ? 2 : 1;
+        numRings += (i->peer && useTxRing_) ? 2 : 1;
 
-    const uint32_t totalBytes = cfg_.bufferSizeMb * 1024 * 1024;
+    const uint32_t totalBytes = bufferSizeMb_ * 1024 * 1024;
     const uint32_t ringSize = totalBytes / numRings;
 
     for (auto& inst : instances_)
@@ -103,9 +198,8 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
             }
             if (errno == ENOMEM)
             {
-                if (cfg_.debug)
-                    CSK_LOG_INFO(
-                        "RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
+                CSK_LOG_INFO(
+                    "RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
                 continue;
             }
             CSK_LOG_ERROR("couldn't create RX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
@@ -118,7 +212,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
         }
 
         // --- TX ring ---
-        if (inst->peer && cfg_.useTxRing)
+        if (inst->peer && useTxRing_)
         {
             bool txCreated = false;
             for (int order = kDefaultOrder; order >= 0; --order)
@@ -198,7 +292,7 @@ bool AFPacketDriver::startInstance(Instance& inst)
         return false;
     }
 
-    if (cfg_.fanout.enabled && !configureFanout(inst))
+    if (fanout.enabled && !configureFanout(inst))
         return false;
 
     inst.setActive(true);
@@ -207,7 +301,7 @@ bool AFPacketDriver::startInstance(Instance& inst)
 
 bool AFPacketDriver::configureFanout(Instance& inst)
 {
-    const int arg = ((cfg_.fanout.type | cfg_.fanout.flags) << 16) | static_cast<int>(inst.index());
+    const int arg = ((fanout.type | fanout.flags) << 16) | static_cast<int>(inst.index());
     if (::setsockopt(inst.fd(), SOL_PACKET, PACKET_FANOUT, &arg, sizeof(arg)) == -1)
     {
         CSK_LOG_ERROR("could not configure packet fanout on %s: %s", inst.name().c_str(), std::strerror(errno));
@@ -357,13 +451,9 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
             break;
         }
 
-        // Сначала берём обёртку, потом кадр. Если кадра нет —
-        // вернём обёртку в пул. Так мы не «съедаем» кадр впустую.
         AFPacketWrapper* wrapper = pool_->acquire();
         if (!wrapper)
         {
-            // Пул рассчитан на sum(tp_frame_nr); эта ветка — защита
-            // от некорректной конфигурации, а не нормальный путь.
             CSK_LOG_ERROR("no free AFPacketWrapper (pool is exhausted)");
             status = RecvStatus::NoBuffer;
             break;
@@ -398,7 +488,6 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
                           tpMac,
                           tpSnaplen,
                           instance->rxRing.layout.tp_frame_size);
-            // Кадр не отдаём приложению — сразу возвращаем ядру.
             hdr->tp_status = TP_STATUS_KERNEL;
             pool_->release(wrapper);
             status = RecvStatus::Error;
@@ -407,7 +496,6 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
 
         uint8_t* data = entry->raw + tpMac;
 
-        // Восстановление VLAN-тега прямо в mmap-кадре (кадр уже наш).
         if ((hdr->tp_vlan_tci || (hdr->tp_status & TP_STATUS_VLAN_VALID)) &&
             tpSnaplen >= static_cast<uint32_t>(kVlanOffset))
         {
@@ -424,11 +512,7 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
 
         stats_.packetsReceived++;
 
-        // Zero-copy: обёртка держит view прямо в mmap-кадр.
         wrapper->attach(data, tpSnaplen, tpLen, instance, entry);
-
-        // tp_status ОСТАЁТСЯ TP_STATUS_USER.
-        // Кадр вернём ядру только в finalizePacket().
         rawPacket[idx++] = wrapper->asPacket();
     }
 
@@ -472,16 +556,14 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
 
 Status AFPacketDriver::getMsgPoolInfo(snet::io::PacketPoolInfo& info)
 {
-    auto capacity = pool_ ? pool_->poolSize() : 0;
-    info.size = capacity;
-    info.available = 0;
-    info.memorySize = capacity * sizeof(AFPacketWrapper);
+    auto capacity = pool_ ? pool_->capacity() : 0U;
+    auto available = pool_ ? pool_->available() : 0U;
+
+    info.capacity = capacity;
+    info.available = available;
+    info.memorySize = sizeof(AFPacketWrapper) * capacity;
     return Status::Success;
 }
-
-// ============================================================
-//  Внутренние helpers
-// ============================================================
 
 bool AFPacketDriver::calculateFrameSize(Instance& inst)
 {
@@ -515,15 +597,12 @@ bool AFPacketDriver::calculateLayout(Instance& inst, tpacket_req& layout, int or
     layout.tp_block_nr = layout.tp_frame_nr / framesPerBlock;
     layout.tp_frame_nr = layout.tp_block_nr * framesPerBlock;
 
-    if (cfg_.debug)
-    {
-        CSK_LOG_INFO("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
+    CSK_LOG_INFO("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
                      inst.name().c_str(),
                      layout.tp_frame_size,
                      layout.tp_frame_nr,
                      layout.tp_block_size,
                      layout.tp_block_nr);
-    }
     return true;
 }
 
@@ -625,7 +704,7 @@ RecvStatus AFPacketDriver::waitForPacket()
         pfds[i].revents = 0;
     }
 
-    int timeout = cfg_.timeoutMs;
+    int timeout = timeoutMs_;
     while (timeout != 0)
     {
         if (interrupted_.load(std::memory_order_acquire))

@@ -15,11 +15,13 @@
 #include <casket/utils/to_number.hpp>
 
 #include <casket/log/async_logger.hpp>
+#include <casket/opt/opt.hpp>
 
 #include "nl_messages.hpp"
 #include "nfq_driver.hpp"
 
 using namespace casket;
+using namespace casket::opt;
 using namespace snet::socket;
 using namespace snet::layers;
 
@@ -176,6 +178,21 @@ NfQueue::~NfQueue()
     delete[] buffer_;
 }
 
+Status NfQueue::declareOptions(io::Config& config)
+{
+    // clang-format off
+    config.addDriverOption(OptionBuilder("nfq_fail_open", Value(&failOpen_))
+        .setDefaultValue(false)
+        .setDescription("Allow the kernel to bypass the netfilter queue when it is full")
+        .build());
+    config.addDriverOption(OptionBuilder("nfq_queue_max_length", Value(&queueMaxLength_))
+        .setDefaultValue(::kDefaultQueueMaxLength)
+        .setDescription("Maximum queue length")
+        .build());
+    // clang-format on
+    return Status::Success;
+}
+
 Status NfQueue::configure(const io::Config& config)
 {
     std::error_code ec;
@@ -183,24 +200,12 @@ Status NfQueue::configure(const io::Config& config)
     snaplen_ = config.getSnaplen();
     timeout_ = config.getTimeout();
 
-    for (const auto& [name, value] : config.getParameters())
-    {
-        if (iequals(name, "fail_open"))
-        {
-            failOpen_ = false;
-        }
-        else if (iequals(name, "queue_max_length"))
-        {
-            to_number(value, queueMaxLength_);
-        }
-    }
-
     to_number(config.getInput(), queueNumber_, ec);
 
     bufferSize_ = snaplen_ + 4096;
     buffer_ = new uint8_t[bufferSize_];
 
-    pool_ = std::make_unique<casket::FixedObjectPool<NfqPacket>>(config.getMsgPoolSize(), bufferSize_);
+    pool_ = std::make_unique<NfqPacketPool>(config.getMsgPoolSize(), bufferSize_);
     socket_ = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
 
     timeout_ = config.getTimeout();
@@ -417,11 +422,11 @@ int NfQueue::getSnaplen() const
 
 Status NfQueue::getMsgPoolInfo(io::PacketPoolInfo& info)
 {
-    auto capacity = pool_->capacity();
+    auto capacity = pool_ ? pool_->capacity() : 0U;
+    auto available = pool_ ? pool_->available() : 0U;
 
-    info.size = capacity;
-    /// @todo: fix it.
-    info.available = 0;
+    info.capacity = capacity;
+    info.available = available;
     info.memorySize = sizeof(NfqPacket) * capacity;
     return Status::Success;
 }
