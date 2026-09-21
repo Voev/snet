@@ -24,12 +24,13 @@
 #endif
 
 using namespace casket::opt;
+using namespace snet::io;
 
 namespace snet::driver
 {
 
 AFPacketDriver::AFPacketDriver(const io::DriverConfig& config)
-    : io::DriverBase(config)
+    : DriverBase(config)
 {
 }
 
@@ -147,7 +148,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
 
     for (const auto& name : devices_)
     {
-        auto inst = std::make_unique<Instance>();
+        auto inst = std::make_unique<Instance>(*this);
         if (!inst->create(name))
             return Status::NoSuchDevice;
         instances_.push_back(std::move(inst));

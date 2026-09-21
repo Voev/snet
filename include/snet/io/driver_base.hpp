@@ -11,9 +11,8 @@ namespace snet::io
 class DriverBase : public snet::io::Driver
 {
 public:
-    ~DriverBase() noexcept override = default;
+    ~DriverBase() noexcept = default;
 
-protected:
     DriverBase() noexcept = default;
 
     explicit DriverBase(const snet::io::DriverConfig& cfg)
@@ -25,7 +24,7 @@ protected:
     template <typename... Args>
     void log(casket::LogLevel level, const char* fmt, Args&&... args) const
     {
-        if (log_ == nullptr || level > log_->getLevel())
+        if (log_ == nullptr || !log_->isEnabled(level))
             return;
         log_->logf(level, fmt, std::forward<Args>(args)...);
     }
