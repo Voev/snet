@@ -36,7 +36,8 @@ namespace snet::driver
 {
 
 Pcap::Pcap(const io::DriverConfig& config)
-    : handle_(nullptr)
+    : DriverBase(config)
+    , handle_(nullptr)
     , fp_(nullptr)
     , snaplen_(0)
     , timeout_(0)
@@ -49,7 +50,6 @@ Pcap::Pcap(const io::DriverConfig& config)
     , nonblocking_(false)
     , interrupted_(false)
 {
-    (void)config;
 }
 
 Pcap::~Pcap() noexcept

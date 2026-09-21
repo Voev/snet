@@ -13,7 +13,7 @@ namespace snet::driver
 /// @details Provides packet capture and injection capabilities using libpcap.
 ///          Supports both live capture from network interfaces and offline
 ///          processing of pcap files.
-class Pcap final : public io::Driver
+class Pcap final : public io::DriverBase
 {
 public:
     using PcapPacketPool = casket::FixedObjectPool<PcapPacket>;

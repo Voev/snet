@@ -23,16 +23,19 @@ struct Ring
     RingEntry* cursor{nullptr};
 };
 
-class Instance
+class AFPacketDriver;
+
+class Instance final
 {
 public:
-    Instance() = default;
-    ~Instance();
+    explicit Instance(AFPacketDriver& driver);
+    ~Instance() noexcept;
 
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
 
     bool create(const std::string& name);
+
     void destroy();
 
     int fd() const noexcept
@@ -103,6 +106,7 @@ public:
     uint32_t tpReserve{0};
 
 private:
+    AFPacketDriver& driver_;
     int fd_{-1};
     uint32_t index_{0};
     uint32_t tpReserve_{0};

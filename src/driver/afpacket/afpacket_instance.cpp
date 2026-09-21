@@ -1,6 +1,5 @@
 #include "afpacket_instance.hpp"
-
-#include <casket/log/log.hpp>
+#include "afpacket_driver.hpp"
 
 #include <arpa/inet.h>
 
@@ -19,7 +18,11 @@
 namespace snet::driver
 {
 
-Instance::~Instance()
+Instance::Instance(AFPacketDriver& driver)
+    : driver_(driver)
+{}
+
+Instance::~Instance() noexcept
 {
     destroy();
 }
@@ -32,7 +35,7 @@ bool Instance::create(const std::string& name)
     fd_ = ::socket(PF_PACKET, SOCK_RAW, 0);
     if (fd_ == -1)
     {
-        CSK_LOG_ERROR("could not open PF_PACKET socket for %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("could not open PF_PACKET socket for %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
 
@@ -40,7 +43,7 @@ bool Instance::create(const std::string& name)
     std::strncpy(ifr.ifr_name, name_.c_str(), sizeof(ifr.ifr_name) - 1);
     if (::ioctl(fd_, SIOCGIFINDEX, &ifr) == -1)
     {
-        CSK_LOG_ERROR("could not find index for device %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("could not find index for device %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     index_ = static_cast<uint32_t>(ifr.ifr_ifindex);
@@ -49,7 +52,7 @@ bool Instance::create(const std::string& name)
     socklen_t len = sizeof(val);
     if (::getsockopt(fd_, SOL_PACKET, PACKET_HDRLEN, &val, &len) < 0)
     {
-        CSK_LOG_ERROR("couldn't retrieve TPACKET_V2 header length on %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("couldn't retrieve TPACKET_V2 header length on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     tpHdrlen_ = static_cast<uint32_t>(val);
@@ -57,26 +60,26 @@ bool Instance::create(const std::string& name)
     val = TPACKET_V2;
     if (::setsockopt(fd_, SOL_PACKET, PACKET_VERSION, &val, sizeof(val)) < 0)
     {
-        CSK_LOG_ERROR("couldn't activate TPACKET_V2 on %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("couldn't activate TPACKET_V2 on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
 
     val = static_cast<int>(kVlanTagLen);
     if (::setsockopt(fd_, SOL_PACKET, PACKET_RESERVE, &val, sizeof(val)) < 0)
     {
-        CSK_LOG_ERROR("couldn't set up %d-byte reservation on %s: %s", val, name_.c_str(), std::strerror(errno));
+        driver_.logError("couldn't set up %d-byte reservation on %s: %s", val, name_.c_str(), std::strerror(errno));
         return false;
     }
 
     val = 1;
     if (::setsockopt(fd_, SOL_PACKET, PACKET_QDISC_BYPASS, &val, sizeof(val)) < 0)
     {
-        CSK_LOG_ERROR("couldn't configure qdisc bypass on %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("couldn't configure qdisc bypass on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     if (::setsockopt(fd_, SOL_PACKET, PACKET_LOSS, &val, sizeof(val)) < 0)
     {
-        CSK_LOG_ERROR("couldn't configure PACKET_LOSS on %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("couldn't configure PACKET_LOSS on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
 
@@ -84,14 +87,14 @@ bool Instance::create(const std::string& name)
     std::strncpy(ifr.ifr_name, name_.c_str(), sizeof(ifr.ifr_name) - 1);
     if (::ioctl(fd_, SIOCGIFMTU, &ifr) == -1)
     {
-        CSK_LOG_ERROR("could not query MTU for '%s': %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("could not query MTU for '%s': %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     mtu_ = ifr.ifr_mtu;
 
     if (::getsockopt(fd_, SOL_PACKET, PACKET_RESERVE, &val, &len) == -1)
     {
-        CSK_LOG_ERROR("could not query packet reserved space for '%s': %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("could not query packet reserved space for '%s': %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     tpReserve_ = static_cast<uint32_t>(val);
@@ -103,13 +106,13 @@ bool Instance::create(const std::string& name)
     std::strncpy(hw.ifr_name, name_.c_str(), sizeof(hw.ifr_name) - 1);
     if (::ioctl(fd_, SIOCGIFHWADDR, &hw) == -1)
     {
-        CSK_LOG_ERROR("SIOCGIFHWADDR failed for %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("SIOCGIFHWADDR failed for %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
     const int arptype = hw.ifr_hwaddr.sa_family;
     if (arptype != ARPHRD_ETHER && arptype != ARPHRD_LOOPBACK)
     {
-        CSK_LOG_ERROR("invalid interface type for %s: %d", name_.c_str(), arptype);
+        driver_.logError("invalid interface type for %s: %d", name_.c_str(), arptype);
         return false;
     }
 
@@ -118,7 +121,7 @@ bool Instance::create(const std::string& name)
     mr.mr_type = PACKET_MR_PROMISC;
     if (::setsockopt(fd_, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &mr, sizeof(mr)) == -1)
     {
-        CSK_LOG_ERROR("could not enable promiscuous mode on %s: %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("could not enable promiscuous mode on %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
 
@@ -165,7 +168,7 @@ bool Instance::bindTo(int protocol)
 
     if (::bind(fd_, reinterpret_cast<sockaddr*>(&sll), sizeof(sll)) == -1)
     {
-        CSK_LOG_ERROR("bind(%s): %s", name_.c_str(), std::strerror(errno));
+        driver_.logError("bind(%s): %s", name_.c_str(), std::strerror(errno));
         return false;
     }
 
@@ -173,7 +176,7 @@ bool Instance::bindTo(int protocol)
     socklen_t errlen = sizeof(err);
     if (::getsockopt(fd_, SOL_SOCKET, SO_ERROR, &err, &errlen) || err)
     {
-        CSK_LOG_ERROR("getsockopt(SO_ERROR) on %s: %s", name_.c_str(), err ? std::strerror(err) : std::strerror(errno));
+        driver_.logError("getsockopt(SO_ERROR) on %s: %s", name_.c_str(), err ? std::strerror(err) : std::strerror(errno));
         return false;
     }
     return true;

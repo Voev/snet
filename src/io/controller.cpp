@@ -111,19 +111,12 @@ Status Controller::configure(const std::string& configPath, const std::string& n
         return Status::Error;
     }
 
-    try
-    {
-        casket::opt::ConfigOptionsReader reader;
-        std::ifstream ifs(configPath);
-        if (!ifs)
-            return Status::Error;
-
-        reader.read(ifs, options_);
-    }
-    catch (const std::exception&)
-    {
+    casket::opt::ConfigOptionsReader reader;
+    std::ifstream ifs(configPath);
+    if (!ifs)
         return Status::Error;
-    }
+
+    reader.read(ifs, options_);
 
     auto* section = sectionFor(name);
     if (!section)

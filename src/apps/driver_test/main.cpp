@@ -82,6 +82,7 @@ int main(int argc, char* argv[])
 
         snet::io::DriverConfig driverConfig;
         driverConfig.setPath(params.driverPath);
+        driverConfig.setLogger(&AsyncLogger::getInstance());
 
         snet::io::Controller controller;
         auto driver = controller.load(driverConfig);
