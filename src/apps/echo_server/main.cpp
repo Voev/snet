@@ -1,4 +1,3 @@
-// main.cpp
 #include <cstdio>
 #include <memory>
 
@@ -20,39 +19,27 @@ using namespace echo;
 using SessionContexts = std::tuple<TcpConnection>;
 using SessionManager = snet::session::SessionManager<uint32_t, SessionContexts>;
 
-// ============================================================
-// Sink: real network interface
-// ============================================================
 class NetworkSink : public IPacketSink
 {
 public:
     bool transmit(Packet* packet) override
     {
-        // In production: AF_PACKET / DPDK / TUN / etc.
-        // Here — just log
         printf("[TX] %zu bytes\n", packet->getDataLen());
-
-        // Example with AF_PACKET:
-        // ::sendto(rawSocket_, data, len, 0, ...);
         return true;
     }
 };
 
-// ============================================================
-// Main
-// ============================================================
 int main()
 {
     printf("=== TCP Echo Server ===\n\n");
 
-    // ---------- 1. SessionManager ----------
     SessionManager::Config sessCfg;
     sessCfg.max_sessions = 10000;
     SessionManager mgr(sessCfg);
 
     NetworkSink sink;
     TcpListenerRegistry listeners;
-    listeners.add(IPAddress::any(), 8080);   // listen on 0.0.0.0:8080
+    listeners.add(IPAddress::any(), 8080);
 
     auto echoConsumer = std::make_unique<EchoConsumer<SessionManager>>(&mgr);
 

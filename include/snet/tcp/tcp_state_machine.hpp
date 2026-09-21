@@ -24,10 +24,6 @@ public:
         bool connectionEstablished{false};
     };
 
-    // ============================================================
-    // Application events
-    // ============================================================
-
     static TcpOutput onActiveOpen(TcpConnection& conn, uint32_t iss)
     {
         if (conn.state != TcpState::Closed)
@@ -123,10 +119,6 @@ public:
         return TcpOutput::sendRst(conn.sndNxt, conn.rcvNxt);
     }
 
-    // ============================================================
-    // RX event
-    // ============================================================
-
     static RxResult onRxSegment(TcpConnection& conn, const TcpSegment& seg)
     {
         RxResult result;
@@ -188,10 +180,6 @@ public:
         return result;
     }
 
-    // ============================================================
-    // Timers
-    // ============================================================
-
     static TcpOutput onRetransmitTimeout(TcpConnection& conn)
     {
         if (!conn.inEstablished() &&
@@ -235,10 +223,6 @@ public:
         return TcpOutput::close();
     }
 
-    // ============================================================
-    // Post-send hook
-    // ============================================================
-
     /// @brief Updates sequence numbers after a segment has been sent.
     ///
     /// Must be called ONLY by the handler that actually transmitted the
@@ -261,9 +245,6 @@ public:
     }
 
 private:
-    // ============================================================
-    // State handlers
-    // ============================================================
 
     static TcpOutput handleClosed(TcpConnection&, const TcpSegment& seg)
     {
@@ -353,11 +334,9 @@ private:
                                        const TcpSegment& seg,
                                        RxResult& result)
     {
-        // ─── ACK processing ───
         if (seg.flags.hasAck())
             processAck(conn, seg.ack, seg.window);
 
-        // ─── Data ───
         if (seg.payloadLen > 0 && conn.rxRing)
         {
             const int32_t diff = static_cast<int32_t>(seg.seq - conn.rcvNxt);
@@ -392,7 +371,6 @@ private:
             }
         }
 
-        // ─── FIN ───
         if (seg.flags.hasFin())
         {
             conn.rcvNxt++;
@@ -402,11 +380,9 @@ private:
             return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
 
-        // ─── ACK for received data ───
         if (result.deliverToApp)
             return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
 
-        // ─── Try to send pending data ───
         return buildSendSegment(conn);
     }
 
@@ -528,10 +504,6 @@ private:
         return TcpOutput::none();
     }
 
-    // ============================================================
-    // ACK processing
-    // ============================================================
-
     static void processAck(TcpConnection& conn, uint32_t ack, uint16_t window)
     {
         // Ignore ACKs outside [sndUna, sndNxt]
@@ -561,10 +533,6 @@ private:
             conn.sndWl2 = ack;
         }
     }
-
-    // ============================================================
-    // Build data segment
-    // ============================================================
 
     static TcpOutput buildSendSegment(TcpConnection& conn)
     {

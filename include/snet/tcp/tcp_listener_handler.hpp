@@ -51,10 +51,6 @@ public:
     using Session = typename SessionManagerType::Session;
     using TcpConnection = snet::tcp::TcpConnection;
 
-    // ============================================================
-    // Construction
-    // ============================================================
-
     explicit TcpListenerHandler(snet::tcp::TcpListenerRegistry* listeners, TcpListenerHandlerConfig config = {})
         : listeners_(listeners)
         , config_(config)
@@ -66,10 +62,6 @@ public:
     {
         return "TcpListenerHandler";
     }
-
-    // ============================================================
-    // ISessionHandler — context management
-    // ============================================================
 
     bool createContext(Session* session) override
     {
@@ -114,10 +106,6 @@ public:
         return true;
     }
 
-    // ============================================================
-    // ISessionHandler — packet processing
-    // ============================================================
-
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
         if (!session || !packet)
@@ -160,7 +148,6 @@ public:
         if (conn->state != TcpState::Closed)
             return this->passToNext(session, packet, status);
 
-        // ─── Passive open ───
         const uint32_t ourISN = nextISN();
 
         auto out = TcpStateMachine::onPassiveOpen(*conn,
@@ -171,7 +158,6 @@ public:
                                                   hdr.seqNum(),  // client's ISN
                                                   ourISN);       // our ISN
 
-        // ─── Store FSM output for TX handler ───
         // TX handler will pick this up and emit SYN-ACK.
         if (out.type != TcpOutput::Type::None)
         {
@@ -193,10 +179,6 @@ public:
     }
 
 private:
-    // ============================================================
-    // Mark RST for unknown port (TX handler will emit it)
-    // ============================================================
-
     /// @brief Stores a "send RST" request in the connection context.
     ///
     /// Since there's no session for unknown ports, this uses a
@@ -225,10 +207,6 @@ private:
                       "RST not sent (no session)",
                       hdr.dstPort());
     }
-
-    // ============================================================
-    // Helpers
-    // ============================================================
 
     bool extractPacketInfo(layers::Packet* packet, snet::layers::IPAddress& srcIP, snet::layers::IPAddress& dstIP,
                            snet::layers::TCPHeader& hdr, const snet::layers::LayerInfo*& tcpLayer)

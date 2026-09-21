@@ -48,7 +48,6 @@ TcpSegment makeSeg(TcpFlags f, uint32_t seq, uint32_t ack,
     return s;
 }
 
-// ─── Helpers to build TcpFlags from individual bits ───
 TcpFlags flagsSyn()                     { TcpFlags f; f.setSyn(true); return f; }
 TcpFlags flagsAck()                     { TcpFlags f; f.setAck(true); return f; }
 TcpFlags flagsSynAck()                  { TcpFlags f; f.setSyn(true).setAck(true); return f; }
@@ -60,10 +59,6 @@ TcpFlags flagsRstAck()                  { TcpFlags f; f.setRst(true).setAck(true
 const uint8_t kPayload[] = "hello";
 
 } // namespace
-
-// ============================================================
-// IPAddress
-// ============================================================
 
 TEST(IPAddressFromStringTest, ParsesIpv4)
 {
@@ -82,10 +77,6 @@ TEST(IPAddressFromStringTest, RejectsInvalid)
     auto opt = IPAddress::fromString("not-an-ip");
     EXPECT_FALSE(opt.has_value());
 }
-
-// ============================================================
-// State names
-// ============================================================
 
 TEST(TcpStateNameTest, AllStatesHaveNames)
 {
@@ -106,10 +97,6 @@ TEST(TcpStateNameTest, UnknownState)
 {
     EXPECT_EQ(tcpStateName(static_cast<TcpState>(255)), "UNKNOWN");
 }
-
-// ============================================================
-// TcpFlags
-// ============================================================
 
 TEST(TcpFlagsTest, FromByteAllBits)
 {
@@ -182,10 +169,6 @@ TEST(TcpFlagsTest, EqualityOperators)
     EXPECT_TRUE(flagsSyn() != flagsAck());
     EXPECT_TRUE(flagsRstAck() == TcpFlags::fromByte(0x14));
 }
-
-// ============================================================
-// TcpOutput
-// ============================================================
 
 TEST(TcpOutputTest, None)
 {
@@ -261,10 +244,6 @@ TEST(TcpOutputTest, Close)
     EXPECT_EQ(c.type, TcpOutput::Type::Close);
 }
 
-// ============================================================
-// TcpConnection
-// ============================================================
-
 TEST(TcpConnectionTest, InEstablishedAndTerminal)
 {
     TcpConnection c = makeConnection();
@@ -303,10 +282,6 @@ TEST(TcpConnectionTest, ResetClearsFields)
     EXPECT_EQ(c.sndNxt, 0u);
     EXPECT_EQ(c.packetsReceived, 0u);
 }
-
-// ============================================================
-// FSM — application events
-// ============================================================
 
 TEST(TcpFsmTest, ActiveOpenSendsSyn)
 {
@@ -443,10 +418,6 @@ TEST(TcpFsmTest, AppAbort)
     EXPECT_EQ(out.seq, 100u);
     EXPECT_EQ(out.ack, 200u);
 }
-
-// ============================================================
-// FSM — RX events
-// ============================================================
 
 TEST(TcpFsmTest, RxRstClosesConnection)
 {
@@ -666,10 +637,6 @@ TEST(TcpFsmTest, EstablishedAckAdvancesSndUna)
     EXPECT_EQ(c.sndWnd, 1000u);
 }
 
-// ============================================================
-// FSM — closing sequence
-// ============================================================
-
 TEST(TcpFsmTest, FinWait1AckTransitionsToFinWait2)
 {
     TcpConnection c = makeConnection();
@@ -844,10 +811,6 @@ TEST(TcpFsmTest, RxUnknownStateSendsRst)
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
 }
 
-// ============================================================
-// FSM — timers
-// ============================================================
-
 TEST(TcpFsmTest, RetransmitInClosedReturnsNone)
 {
     TcpConnection c = makeConnection();
@@ -943,10 +906,6 @@ TEST(TcpFsmTest, TimeWaitExpiredInOtherStateNoop)
     EXPECT_EQ(out.type, TcpOutput::Type::None);
 }
 
-// ============================================================
-// FSM — post-send hook
-// ============================================================
-
 TEST(TcpFsmTest, OnSegmentSentIgnoresNonSend)
 {
     TcpConnection c = makeConnection();
@@ -992,10 +951,6 @@ TEST(TcpFsmTest, OnSegmentSentAdvancesSndNxtWithPayload)
     EXPECT_EQ(c.bytesSent, 5u);
     EXPECT_EQ(c.packetsSent, 1u);
 }
-
-// ============================================================
-// FSM — end-to-end scenarios
-// ============================================================
 
 TEST(TcpFsmScenario, ActiveOpenHandshakeAndClose)
 {

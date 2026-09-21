@@ -162,9 +162,6 @@ struct TcpConnection
 {
     static constexpr size_t MAX_INSTANCES = 1;
 
-    // ============================================================
-    // Endpoints
-    // ============================================================
     layers::IPAddress localIP;
     layers::IPAddress remoteIP;
     uint16_t localPort{0};
@@ -173,15 +170,9 @@ struct TcpConnection
     TcpOutput pendingOutput;
     bool hasPendingOutput{false};
 
-    // ============================================================
-    // State
-    // ============================================================
     TcpState state{TcpState::Closed};
     bool passiveOpen{false}; // true if LISTEN accepted the connection
 
-    // ============================================================
-    // Send side (our outgoing data)
-    // ============================================================
     uint32_t sndUna{0}; // oldest unacknowledged seq
     uint32_t sndNxt{0}; // next seq to send
     uint32_t sndWnd{0}; // peer's advertised window
@@ -195,9 +186,6 @@ struct TcpConnection
     TxRingBuffer* txRing{nullptr};
     bool txRingOwnedByTransmit{false};
 
-    // ============================================================
-    // Receive side (incoming data)
-    // ============================================================
     uint32_t rcvNxt{0}; // next seq expected
     uint32_t rcvWnd{65535};
     uint32_t irs{0}; // initial receive seq (peer's ISS)
@@ -205,25 +193,16 @@ struct TcpConnection
     RxRingBuffer* rxRing{nullptr};
     bool rxRingOwnedByReceive{false};
 
-    // ============================================================
-    // Timers
-    // ============================================================
     std::chrono::steady_clock::time_point lastActivity;
     std::chrono::steady_clock::time_point timeWaitStart;
     uint32_t rto{1000}; // retransmit timeout (ms)
     uint32_t timeWaitMs{30000};
 
-    // ============================================================
-    // Flags
-    // ============================================================
     bool finSent{false};
     bool finReceived{false};
     bool resetSent{false};
     bool closed{false};
 
-    // ============================================================
-    // Stats
-    // ============================================================
     uint64_t packetsReceived{0};
     uint64_t packetsSent{0};
     uint64_t bytesReceived{0};
