@@ -13,7 +13,7 @@ namespace snet::driver
 ///          Provides high-performance packet capture from iptables/nftables
 ///          queues with support for packet verdicts (ACCEPT, DROP, etc.).
 /// @note Requires Linux kernel with Netfilter support and appropriate permissions
-class NfQueue final : public io::Driver
+class NfQueue final : public io::DriverBase
 {
 public:
     using NfqPacketPool = casket::FixedObjectPool<NfqPacket>;

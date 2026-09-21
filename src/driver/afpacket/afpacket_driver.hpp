@@ -5,6 +5,7 @@
 #include <atomic>
 
 #include <snet/io.hpp>
+#include <snet/io/driver_base.hpp>
 
 #include <casket/types/fixed_object_pool.hpp>
 
@@ -15,14 +16,14 @@
 namespace snet::driver
 {
 
-class AFPacketDriver final : public snet::io::Driver
+class AFPacketDriver final : public snet::io::DriverBase
 {
 public:
     using AFPacketPool = casket::FixedObjectPool<AFPacketWrapper>;
     using AFPacketPoolPtr = std::unique_ptr<AFPacketPool>;
     using AFPacketInstancePtr = std::unique_ptr<Instance>;
 
-    AFPacketDriver();
+    explicit AFPacketDriver(const io::DriverConfig& config);
     ~AFPacketDriver() noexcept;
 
     static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);

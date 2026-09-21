@@ -1,5 +1,3 @@
-
-
 #include <system_error>
 
 #include <arpa/inet.h>
@@ -159,17 +157,17 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, Nf
 }
 
 NfQueue::NfQueue(const io::DriverConfig& config)
-    : buffer_(nullptr)
+    : DriverBase(config)
+    , buffer_(nullptr)
     , bufferSize_(0)
     , queueNumber_(0)
-    , queueMaxLength_(::kDefaultQueueMaxLength)
+    , queueMaxLength_(0)
     , portid_(0)
     , snaplen_(0)
     , timeout_(0)
     , failOpen_(true)
     , interrupted_(false)
 {
-    (void)config;
 }
 
 NfQueue::~NfQueue()
@@ -200,13 +198,33 @@ Status NfQueue::configure(const io::Config& config)
     snaplen_ = config.getSnaplen();
     timeout_ = config.getTimeout();
 
-    to_number(config.getInput(), queueNumber_, ec);
+    const std::string& queueStr = config.getInput();
+    to_number(queueStr, queueNumber_, ec);
+    if (ec)
+    {
+        logError("invalid queue number '%s': %s", queueStr.c_str(), ec.message().c_str());
+        return Status::Error;
+    }
+
+    // fixing recall
+    delete[] buffer_;
+    buffer_ = nullptr;
 
     bufferSize_ = snaplen_ + 4096;
-    buffer_ = new uint8_t[bufferSize_];
+    buffer_ = new (std::nothrow) uint8_t[bufferSize_];
+    if (!buffer_)
+    {
+        logError("cannot allocate %zu bytes for packet buffer", bufferSize_);
+        return Status::NoMemory;
+    }
 
     pool_ = std::make_unique<NfqPacketPool>(config.getMsgPoolSize(), bufferSize_);
     socket_ = socket::CreateSocket(AF_NETLINK, SOCK_RAW, NETLINK_NETFILTER, ec);
+    if (ec)
+    {
+        logError("cannot create netlink socket: %s", ec.message().c_str());
+        return Status::Error;
+    }
 
     timeout_ = config.getTimeout();
     if (timeout_)
@@ -214,49 +232,94 @@ Status NfQueue::configure(const io::Config& config)
         timeval tv;
         tv.tv_sec = timeout_ / 1000;
         tv.tv_usec = (timeout_ % 1000) * 1000;
-        setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
+
+        if (setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1)
+        {
+            logWarning("cannot set SO_RCVTIMEO to %u ms: %s", timeout_, std::strerror(errno));
+        }
     }
 
     unsigned int socketRcvBufSize = queueMaxLength_ * snaplen_;
     if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUFFORCE, &socketRcvBufSize, sizeof(socketRcvBufSize)) == -1)
     {
-        setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &socketRcvBufSize, sizeof(socketRcvBufSize));
+        logDebug("SO_RCVBUFFORCE denied (%s), trying SO_RCVBUF", std::strerror(errno));
+
+        if (setsockopt(socket_, SOL_SOCKET, SO_RCVBUF, &socketRcvBufSize, sizeof(socketRcvBufSize)) == -1)
+        {
+            logWarning("cannot set SO_RCVBUF to %u: %s", socketRcvBufSize, std::strerror(errno));
+        }
     }
 
     bindAddress(0, 0, ec);
+    if (ec)
+    {
+        logError("cannot bind netlink socket: %s", ec.message().c_str());
+        return Status::Error;
+    }
 
-    nlmsghdr* nlh;
+    auto sendCommand = [this](int family, int cmd, uint32_t qnum, const char* what) -> Status
+    {
+        nlmsghdr* nlh = SetCfgCommand(buffer_, family, cmd, qnum);
+        if (!nlh)
+        {
+            logError("cannot build netlink command '%s'", what);
+            return Status::Error;
+        }
 
-    nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    sendSocket(nlh, nlh->nlmsg_len, ec);
+        std::error_code sendEc;
+        sendSocket(nlh, nlh->nlmsg_len, sendEc);
+        if (sendEc)
+        {
+            logError("cannot send '%s': %s", what, sendEc.message().c_str());
+            return Status::Error;
+        }
 
-    nlh = SetCfgCommand(buffer_, AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0);
-    sendSocket(nlh, nlh->nlmsg_len, ec);
+        logDebug("netlink command '%s' sent", what);
+        return Status::Success;
+    };
 
-    nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_PF_BIND, 0);
-    sendSocket(nlh, nlh->nlmsg_len, ec);
+    if (sendCommand(AF_INET, NFQNL_CFG_CMD_PF_UNBIND, 0, "PF_UNBIND AF_INET") != Status::Success)
+        return Status::Error;
+    if (sendCommand(AF_INET6, NFQNL_CFG_CMD_PF_UNBIND, 0, "PF_UNBIND AF_INET6") != Status::Success)
+        return Status::Error;
+    if (sendCommand(AF_INET, NFQNL_CFG_CMD_PF_BIND, 0, "PF_BIND AF_INET") != Status::Success)
+        return Status::Error;
+    if (sendCommand(AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0, "PF_BIND AF_INET6") != Status::Success)
+        return Status::Error;
+    if (sendCommand(AF_UNSPEC, NFQNL_CFG_CMD_BIND, queueNumber_, "QUEUE_BIND") != Status::Success)
+        return Status::Error;
 
-    nlh = SetCfgCommand(buffer_, AF_INET6, NFQNL_CFG_CMD_PF_BIND, 0);
-    sendSocket(nlh, nlh->nlmsg_len, ec);
-
-    nlh = SetCfgCommand(buffer_, AF_UNSPEC, NFQNL_CFG_CMD_BIND, queueNumber_);
-    sendSocket(nlh, nlh->nlmsg_len, ec);
-
-    nlh = SetCfgParams(buffer_, NFQNL_COPY_PACKET, snaplen_, queueNumber_);
+    nlmsghdr* nlh = SetCfgParams(buffer_, NFQNL_COPY_PACKET, snaplen_, queueNumber_);
+    if (!nlh)
+    {
+        logError("cannot build NFQNL_COPY_PACKET params");
+        return Status::Error;
+    }
 
     uint32_t value = htonl(queueMaxLength_);
     SetAttribute(nlh, NFQA_CFG_QUEUE_MAXLEN, sizeof(value), &value);
 
     value = htonl(NFQA_CFG_F_GSO);
     if (failOpen_)
-    {
         value |= htonl(NFQA_CFG_F_FAIL_OPEN);
-    }
 
     SetAttribute(nlh, NFQA_CFG_FLAGS, sizeof(value), &value);
     SetAttribute(nlh, NFQA_CFG_MASK, sizeof(value), &value);
 
-    sendSocket(nlh, nlh->nlmsg_len, ec);
+    std::error_code sendEc;
+    sendSocket(nlh, nlh->nlmsg_len, sendEc);
+    if (sendEc)
+    {
+        logError("cannot send NFQA_CFG_PARAMS: %s", sendEc.message().c_str());
+        return Status::Error;
+    }
+
+    logInfo("nfqueue configured: queue=%u snaplen=%u poolSize=%u failOpen=%d",
+            queueNumber_,
+            snaplen_,
+            config.getMsgPoolSize(),
+            failOpen_);
+
     return Status::Success;
 }
 
@@ -284,7 +347,7 @@ Status NfQueue::stop()
     nlh = SetCfgCommand(buffer_, AF_INET, NFQNL_CFG_CMD_UNBIND, queueNumber_);
     if (sendSocket(nlh, nlh->nlmsg_len, ec) == -1)
     {
-        CSK_LOG_ERROR("error sending data over socket: %s", ec.message().c_str());
+        logError("error sending data over socket: %s", ec.message().c_str());
         return Status::Error;
     }
 
@@ -317,7 +380,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
         nfqPacket = pool_->acquire();
         if (!nfqPacket)
         {
-            CSK_LOG_ERROR("error taking packet from pool");
+            logError("error taking packet from pool");
             rstat = RecvStatus::Error;
             break;
         }
@@ -345,7 +408,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             }
             else
             {
-                CSK_LOG_ERROR("error receiving data from socket: %s", ec.message().c_str());
+                logError("error receiving data from socket: %s", ec.message().c_str());
                 rstat = RecvStatus::Error;
             }
             break;
@@ -354,7 +417,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
         ret = ProcessMessages(nfqPacket->getData(), ret, portid_, nfqPacket, ec);
         if (ret < 0)
         {
-            CSK_LOG_ERROR("error processing data from socket: %s", ec.message().c_str());
+            logError("error processing data from socket: %s", ec.message().c_str());
             rstat = RecvStatus::Error;
             break;
         }

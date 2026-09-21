@@ -28,16 +28,17 @@ using namespace casket::opt;
 namespace snet::driver
 {
 
-AFPacketDriver::AFPacketDriver()
-{}
+AFPacketDriver::AFPacketDriver(const io::DriverConfig& config)
+    : io::DriverBase(config)
+{
+}
 
 AFPacketDriver::~AFPacketDriver() noexcept
 {}
 
 std::shared_ptr<io::Driver> AFPacketDriver::create(const io::DriverConfig& config)
 {
-    (void)config;
-    return std::make_shared<AFPacketDriver>();
+    return std::make_shared<AFPacketDriver>(config);
 }
 
 const char* AFPacketDriver::getName() const
@@ -70,7 +71,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
     const std::string& devs = config.getInput();
     if (devs.empty() || devs.front() == ':' || devs.back() == ':')
     {
-        CSK_LOG_ERROR("invalid interface specification: '%s'", devs.c_str());
+        logError("invalid interface specification: '%s'", devs.c_str());
         return Status::InvalidArgument;
     }
 
@@ -85,7 +86,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
             std::string name = devs.substr(pos, colon - pos);
             if (name.size() >= IFNAMSIZ)
             {
-                CSK_LOG_ERROR("interface name too long: '%s'", name.c_str());
+                logError("interface name too long: '%s'", name.c_str());
                 return Status::InvalidArgument;
             }
             devices_.push_back(std::move(name));
@@ -95,12 +96,12 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
 
     if (devices_.empty())
     {
-        CSK_LOG_ERROR("no interfaces specified");
+        logError("no interfaces specified");
         return Status::InvalidArgument;
     }
     if (devices_.size() > kMaxInterfaces)
     {
-        CSK_LOG_ERROR("using more than %zu interfaces is not supported", kMaxInterfaces);
+        logError("using more than %zu interfaces is not supported", kMaxInterfaces);
         return Status::InvalidArgument;
     }
 
@@ -125,7 +126,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
                 fanout.type = PACKET_FANOUT_QM;
             else
             {
-                CSK_LOG_ERROR("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
+                logError("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
                 return Status::InvalidArgument;
             }
             fanout.enabled = true;
@@ -138,7 +139,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
                 fanout.flags |= PACKET_FANOUT_FLAG_DEFRAG;
             else
             {
-                CSK_LOG_ERROR("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
+                logError("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
                 return Status::InvalidArgument;
             }
         }
@@ -198,16 +199,16 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
             }
             if (errno == ENOMEM)
             {
-                CSK_LOG_INFO(
+                logInfo(
                     "RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
                 continue;
             }
-            CSK_LOG_ERROR("couldn't create RX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
+            logError("couldn't create RX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
             return Status::Error;
         }
         if (!rxCreated)
         {
-            CSK_LOG_ERROR("couldn't allocate enough memory for RX ring on %s", inst->name().c_str());
+            logError("couldn't allocate enough memory for RX ring on %s", inst->name().c_str());
             return Status::NoMemory;
         }
 
@@ -230,12 +231,12 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
                 }
                 if (errno == ENOMEM)
                     continue;
-                CSK_LOG_ERROR("couldn't create TX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
+                logError("couldn't create TX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
                 return Status::Error;
             }
             if (!txCreated)
             {
-                CSK_LOG_ERROR("couldn't allocate enough memory for TX ring on %s", inst->name().c_str());
+                logError("couldn't allocate enough memory for TX ring on %s", inst->name().c_str());
                 return Status::NoMemory;
             }
         }
@@ -267,7 +268,7 @@ Status AFPacketDriver::start()
 {
     if (instances_.empty())
     {
-        CSK_LOG_ERROR("start() called before configure()");
+        logError("start() called before configure()");
         return Status::InvalidArgument;
     }
 
@@ -288,7 +289,7 @@ bool AFPacketDriver::startInstance(Instance& inst)
 
     if (::bind(inst.fd(), reinterpret_cast<sockaddr*>(&sll), sizeof(sll)) == -1)
     {
-        CSK_LOG_ERROR("bind(%s) to ETH_P_ALL failed: %s", inst.name().c_str(), std::strerror(errno));
+        logError("bind(%s) to ETH_P_ALL failed: %s", inst.name().c_str(), std::strerror(errno));
         return false;
     }
 
@@ -304,7 +305,7 @@ bool AFPacketDriver::configureFanout(Instance& inst)
     const int arg = ((fanout.type | fanout.flags) << 16) | static_cast<int>(inst.index());
     if (::setsockopt(inst.fd(), SOL_PACKET, PACKET_FANOUT, &arg, sizeof(arg)) == -1)
     {
-        CSK_LOG_ERROR("could not configure packet fanout on %s: %s", inst.name().c_str(), std::strerror(errno));
+        logError("could not configure packet fanout on %s: %s", inst.name().c_str(), std::strerror(errno));
         return false;
     }
     return true;
@@ -331,13 +332,13 @@ Status AFPacketDriver::inject(const uint8_t* data, uint32_t dataLen)
 {
     if (instances_.empty())
     {
-        CSK_LOG_ERROR("no instances to inject from");
+        logError("no instances to inject from");
         return Status::InvalidArgument;
     }
     Instance* egress = instances_.front().get();
     if (!transmitPacket(egress, data, dataLen))
     {
-        CSK_LOG_ERROR("error sending packet via %s", egress->name().c_str());
+        logError("error sending packet via %s", egress->name().c_str());
         return Status::Error;
     }
     stats_.packetsInjected++;
@@ -358,7 +359,7 @@ bool AFPacketDriver::transmitPacket(Instance* egress, const uint8_t* data, uint3
         auto* hdr = reinterpret_cast<tpacket2_hdr*>(entry->raw);
         if (hdr->tp_status != TP_STATUS_AVAILABLE)
         {
-            CSK_LOG_ERROR("TX ring on %s is full", egress->name().c_str());
+            logError("TX ring on %s is full", egress->name().c_str());
             return false;
         }
 
@@ -368,7 +369,7 @@ bool AFPacketDriver::transmitPacket(Instance* egress, const uint8_t* data, uint3
 
         if (::send(egress->fd(), nullptr, 0, 0) < 0)
         {
-            CSK_LOG_ERROR("send() via TX ring on %s: %s", egress->name().c_str(), std::strerror(errno));
+            logError("send() via TX ring on %s: %s", egress->name().c_str(), std::strerror(errno));
             return false;
         }
         egress->txRing.cursor = entry->next;
@@ -385,7 +386,7 @@ bool AFPacketDriver::transmitPacket(Instance* egress, const uint8_t* data, uint3
                 if (::poll(&pfd, 1, 10) > 0 && (pfd.revents & POLLOUT))
                     continue;
             }
-            CSK_LOG_ERROR("error sending data over socket %s: %s", egress->name().c_str(), std::strerror(errno));
+            logError("error sending data over socket %s: %s", egress->name().c_str(), std::strerror(errno));
             return false;
         }
     }
@@ -434,7 +435,7 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
 
     if (!pool_)
     {
-        CSK_LOG_ERROR("receivePackets called before configure()");
+        logError("receivePackets called before configure()");
         *packetCount = 0;
         return RecvStatus::Error;
     }
@@ -454,7 +455,7 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
         AFPacketWrapper* wrapper = pool_->acquire();
         if (!wrapper)
         {
-            CSK_LOG_ERROR("no free AFPacketWrapper (pool is exhausted)");
+            logError("no free AFPacketWrapper (pool is exhausted)");
             status = RecvStatus::NoBuffer;
             break;
         }
@@ -483,7 +484,7 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
 
         if (tpMac + tpSnaplen > instance->rxRing.layout.tp_frame_size)
         {
-            CSK_LOG_ERROR("corrupted frame on %s (MAC %u + CapLen %u > FrameSize %u)",
+            logError("corrupted frame on %s (MAC %u + CapLen %u > FrameSize %u)",
                           instance->name().c_str(),
                           tpMac,
                           tpSnaplen,
@@ -524,14 +525,14 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
 {
     if (!rawPacket)
     {
-        CSK_LOG_ERROR("finalizePacket called with null packet");
+        logError("finalizePacket called with null packet");
         return Status::InvalidArgument;
     }
 
     AFPacketWrapper* wrapper = AFPacketWrapper::fromPacket(rawPacket);
     if (!wrapper || !wrapper->entry() || !wrapper->instance())
     {
-        CSK_LOG_ERROR("finalizePacket called with unknown packet");
+        logError("finalizePacket called with unknown packet");
         return Status::InvalidArgument;
     }
 
@@ -543,7 +544,7 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
     {
         if (!transmitPacket(wrapper->instance()->peer, wrapper->asPacket()->getData(), wrapper->caplen()))
         {
-            CSK_LOG_ERROR("failed to forward packet out of %s", wrapper->instance()->peer->name().c_str());
+            logError("failed to forward packet out of %s", wrapper->instance()->peer->name().c_str());
         }
     }
 
@@ -588,7 +589,7 @@ bool AFPacketDriver::calculateLayout(Instance& inst, tpacket_req& layout, int or
     const unsigned framesPerBlock = layout.tp_block_size / layout.tp_frame_size;
     if (framesPerBlock == 0)
     {
-        CSK_LOG_ERROR(
+        logError(
             "invalid frames per block (%u/%u) for %s", layout.tp_block_size, layout.tp_frame_size, inst.name().c_str());
         return false;
     }
@@ -597,12 +598,12 @@ bool AFPacketDriver::calculateLayout(Instance& inst, tpacket_req& layout, int or
     layout.tp_block_nr = layout.tp_frame_nr / framesPerBlock;
     layout.tp_frame_nr = layout.tp_block_nr * framesPerBlock;
 
-    CSK_LOG_INFO("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
-                     inst.name().c_str(),
-                     layout.tp_frame_size,
-                     layout.tp_frame_nr,
-                     layout.tp_block_size,
-                     layout.tp_block_nr);
+    logInfo("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
+        inst.name().c_str(),
+        layout.tp_frame_size,
+        layout.tp_frame_nr,
+        layout.tp_block_size,
+        layout.tp_block_nr);
     return true;
 }
 
@@ -612,7 +613,7 @@ bool AFPacketDriver::mmapRings(Instance& inst)
     void* buf = ::mmap(nullptr, ringSize, PROT_READ | PROT_WRITE, MAP_SHARED, inst.fd(), 0);
     if (buf == MAP_FAILED)
     {
-        CSK_LOG_ERROR("could not MMAP the ring on %s: %s", inst.name().c_str(), std::strerror(errno));
+        logError("could not MMAP the ring on %s: %s", inst.name().c_str(), std::strerror(errno));
         return false;
     }
 
@@ -628,7 +629,7 @@ bool AFPacketDriver::setupRing(Ring& ring)
     ring.entries = static_cast<RingEntry*>(::calloc(ring.layout.tp_frame_nr, sizeof(RingEntry)));
     if (!ring.entries)
     {
-        CSK_LOG_ERROR("could not allocate ring entries");
+        logError("could not allocate ring entries");
         return false;
     }
 
@@ -666,7 +667,7 @@ void AFPacketDriver::updateHwStats()
         }
         else
         {
-            CSK_LOG_ERROR("failed to get stats for %s: %s", inst->name().c_str(), std::strerror(errno));
+            logError("failed to get stats for %s: %s", inst->name().c_str(), std::strerror(errno));
         }
     }
 }
@@ -737,11 +738,11 @@ RecvStatus AFPacketDriver::waitForPacket()
                 if (p.revents & (POLLHUP | POLLRDHUP | POLLERR | POLLNVAL))
                 {
                     if (p.revents & (POLLHUP | POLLRDHUP))
-                        CSK_LOG_ERROR("hang-up on a packet socket");
+                        logError("hang-up on a packet socket");
                     else if (p.revents & POLLERR)
-                        CSK_LOG_ERROR("error condition on a packet socket");
+                        logError("error condition on a packet socket");
                     else
-                        CSK_LOG_ERROR("invalid polling request on a packet socket");
+                        logError("invalid polling request on a packet socket");
                     return RecvStatus::Error;
                 }
             }
@@ -749,7 +750,7 @@ RecvStatus AFPacketDriver::waitForPacket()
         }
         if (ret < 0 && errno != EINTR)
         {
-            CSK_LOG_ERROR("poll failed: %s", std::strerror(errno));
+            logError("poll failed: %s", std::strerror(errno));
             return RecvStatus::Error;
         }
     }
