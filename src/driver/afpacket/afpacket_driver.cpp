@@ -1,4 +1,5 @@
 #include "afpacket_driver.hpp"
+#include "afpacket_fanout.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -35,7 +36,8 @@ AFPacketDriver::AFPacketDriver(const io::DriverSpec& config)
 }
 
 AFPacketDriver::~AFPacketDriver() noexcept
-{}
+{
+}
 
 std::shared_ptr<io::Driver> AFPacketDriver::create(const io::DriverSpec& config)
 {
@@ -50,13 +52,25 @@ const char* AFPacketDriver::getName() const
 Status AFPacketDriver::declareOptions(io::Config& config)
 {
     // clang-format off
-    config.addDriverOption(OptionBuilder("afp_buffer_size_mb", Value(&bufferSizeMb_))
+    config.addDriverOption(OptionBuilder("buffer_size_mb", Value(&bufferSizeMb_))
         .setDefaultValue(kDefaultBufferMb)
         .setDescription("Packet buffer space to allocate in megabytes")
         .build());
-    config.addDriverOption(OptionBuilder("afp_use_tx_ring", Value(&useTxRing_))
+    config.addDriverOption(OptionBuilder("use_tx_ring", Value(&useTxRing_))
         .setDefaultValue(false)
         .setDescription("Use memory-mapped TX ring")
+        .build());
+    config.addDriverOption(OptionBuilder("fanout_enabled", Value(&fanoutEnabled_))
+        .setDefaultValue(false)
+        .setDescription("Enable AF_PACKET fanout")
+        .build());
+    config.addDriverOption(OptionBuilder("fanout_type", Value(&fanoutType_))
+        .setDefaultValue(afpacket::Fanout::Type::Hash)
+        .setDescription("Fanout type: hash|lb|cpu|rollover|rnd|qm")
+        .build());
+    config.addDriverOption(OptionBuilder("fanout_flags", Value(&fanoutFlags_))
+        .setDefaultValue(afpacket::Fanout::Flags::None)
+        .setDescription("Fanout flags: none|rollover|uniqueid|defrag")
         .build());
     // clang-format on
     return Status::Success;
@@ -104,46 +118,6 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
     {
         logError("using more than %zu interfaces is not supported", kMaxInterfaces);
         return Status::InvalidArgument;
-    }
-
-    for (const auto& kv : config.getParameters())
-    {
-        const std::string& key = kv.first;
-        const std::string& value = kv.second;
-
-        if (key == "fanout_type")
-        {
-            if (value == "hash")
-                fanout.type = PACKET_FANOUT_HASH;
-            else if (value == "lb")
-                fanout.type = PACKET_FANOUT_LB;
-            else if (value == "cpu")
-                fanout.type = PACKET_FANOUT_CPU;
-            else if (value == "rollover")
-                fanout.type = PACKET_FANOUT_ROLLOVER;
-            else if (value == "rnd")
-                fanout.type = PACKET_FANOUT_RND;
-            else if (value == "qm")
-                fanout.type = PACKET_FANOUT_QM;
-            else
-            {
-                logError("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
-                return Status::InvalidArgument;
-            }
-            fanout.enabled = true;
-        }
-        else if (key == "fanout_flag")
-        {
-            if (value == "rollover")
-                fanout.flags |= PACKET_FANOUT_FLAG_ROLLOVER;
-            else if (value == "defrag")
-                fanout.flags |= PACKET_FANOUT_FLAG_DEFRAG;
-            else
-            {
-                logError("unrecognized argument for %s: '%s'", key.c_str(), value.c_str());
-                return Status::InvalidArgument;
-            }
-        }
     }
 
     for (const auto& name : devices_)
@@ -200,8 +174,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
             }
             if (errno == ENOMEM)
             {
-                logInfo(
-                    "RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
+                logInfo("RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
                 continue;
             }
             logError("couldn't create RX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
@@ -294,7 +267,7 @@ bool AFPacketDriver::startInstance(Instance& inst)
         return false;
     }
 
-    if (fanout.enabled && !configureFanout(inst))
+    if (fanoutEnabled_ && !configureFanout(inst))
         return false;
 
     inst.setActive(true);
@@ -303,7 +276,9 @@ bool AFPacketDriver::startInstance(Instance& inst)
 
 bool AFPacketDriver::configureFanout(Instance& inst)
 {
-    const int arg = ((fanout.type | fanout.flags) << 16) | static_cast<int>(inst.index());
+    afpacket::Fanout fanout(fanoutType_, fanoutFlags_, static_cast<uint16_t>(inst.index()));
+    const uint32_t arg = fanout.value();
+
     if (::setsockopt(inst.fd(), SOL_PACKET, PACKET_FANOUT, &arg, sizeof(arg)) == -1)
     {
         logError("could not configure packet fanout on %s: %s", inst.name().c_str(), std::strerror(errno));
@@ -486,10 +461,10 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
         if (tpMac + tpSnaplen > instance->rxRing.layout.tp_frame_size)
         {
             logError("corrupted frame on %s (MAC %u + CapLen %u > FrameSize %u)",
-                          instance->name().c_str(),
-                          tpMac,
-                          tpSnaplen,
-                          instance->rxRing.layout.tp_frame_size);
+                     instance->name().c_str(),
+                     tpMac,
+                     tpSnaplen,
+                     instance->rxRing.layout.tp_frame_size);
             hdr->tp_status = TP_STATUS_KERNEL;
             pool_->release(wrapper);
             status = RecvStatus::Error;
@@ -600,11 +575,11 @@ bool AFPacketDriver::calculateLayout(Instance& inst, tpacket_req& layout, int or
     layout.tp_frame_nr = layout.tp_block_nr * framesPerBlock;
 
     logInfo("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
-        inst.name().c_str(),
-        layout.tp_frame_size,
-        layout.tp_frame_nr,
-        layout.tp_block_size,
-        layout.tp_block_nr);
+            inst.name().c_str(),
+            layout.tp_frame_size,
+            layout.tp_frame_nr,
+            layout.tp_block_size,
+            layout.tp_block_nr);
     return true;
 }
 

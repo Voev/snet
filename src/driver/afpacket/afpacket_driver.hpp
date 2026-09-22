@@ -12,6 +12,7 @@
 #include "afpacket_types.hpp"
 #include "afpacket_wrapper.hpp"
 #include "afpacket_instance.hpp"
+#include "afpacket_fanout.hpp"
 
 namespace snet::driver
 {
@@ -74,18 +75,15 @@ private:
     std::atomic<bool> interrupted_{false};
     Stats stats_{};
     size_t snaplen_{0};
-    
+
     std::vector<std::string> devices_;
     uint32_t bufferSizeMb_{128};
     int32_t timeoutMs_{-1};
     bool useTxRing_{false};
 
-    struct Fanout
-    {
-        bool enabled{false};
-        uint16_t type{0};
-        uint16_t flags{0};
-    } fanout;
+    afpacket::Fanout::Type fanoutType_{afpacket::Fanout::Type::Hash};
+    afpacket::Fanout::Flags fanoutFlags_{afpacket::Fanout::Flags::None};
+    bool fanoutEnabled_ = false;
 };
 
 } // namespace snet::driver
