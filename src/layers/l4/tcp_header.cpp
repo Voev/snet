@@ -22,7 +22,7 @@ bool TCPHeader::initialize(const LayerInfo& layer, const Packet& packet) noexcep
 
 std::ostream& TCPHeader::print(std::ostream& os) const noexcept
 {
-    if (header_)
+    if (!header_)
     {
         os << "TCP: [invalid]";
         return os;

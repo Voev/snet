@@ -132,14 +132,15 @@ Status Pcap::configure(const io::Config& config)
 
 Status Pcap::start()
 {
-    if (!device_.empty())
+    if (mode_ == Mode::Passive && !device_.empty())
     {
         return startLive();
     }
-    else
+    else if (mode_ == Mode::ReadFile)
     {
         return startOffline();
     }
+    return Status::Error;
 }
 
 Status Pcap::stop()
@@ -167,6 +168,11 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
     uint16_t i{};
     PcapPacket* pcapPacket{nullptr};
     int ret{};
+
+    if (!handle_)
+    {
+        return RecvStatus::Error;
+    }
 
     for (i = 0; i < maxCount; ++i)
     {

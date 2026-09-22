@@ -120,6 +120,11 @@ protected:
             .setDescription("Read timeout (ms)")
             .build()
         );
+        addOption(OptionBuilder("mode", Value(&mode_))
+            .setDefaultValue(Mode::None)
+            .setDescription("Driver mode: none|passive|inline|readfile")
+            .build()
+        );
         // clang-fromat on
     }
 
@@ -129,6 +134,7 @@ protected:
         msgPoolSize_ = getOption("msg_pool_size").get<std::size_t>();
         snaplen_ = getOption("snaplen").get<std::size_t>();
         timeout_ = getOption("timeout").get<unsigned>();
+        mode_ = getOption("mode").get<Mode>();
     }
 
 private:

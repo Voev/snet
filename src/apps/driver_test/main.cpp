@@ -3,6 +3,8 @@
 #include <casket/opt/opt.hpp>
 #include <casket/log/log.hpp>
 
+#include <casket/signal/signal_handler.hpp>
+
 #include <snet/io.hpp>
 
 using namespace casket;
@@ -57,6 +59,36 @@ private:
     Parameters args_;
 };
 
+enum class LoopAction
+{
+    Continue,
+    StopOk,
+    StopError
+};
+
+LoopAction handleStatus(RecvStatus st, bool stopRequested)
+{
+    switch (st)
+    {
+    case RecvStatus::Ok:
+    case RecvStatus::Timeout:
+    case RecvStatus::WouldBlock:
+    case RecvStatus::NoBuffer:
+        return stopRequested ? LoopAction::StopOk : LoopAction::Continue;
+
+    case RecvStatus::Interrupted:
+        return LoopAction::StopOk;
+
+    case RecvStatus::Eof:
+        return LoopAction::StopOk;
+
+    case RecvStatus::NoMemory:
+    case RecvStatus::Error:
+        return LoopAction::StopError;
+    }
+    return LoopAction::StopError;
+}
+
 int main(int argc, char* argv[])
 {
     LogWorker logWorker(std::make_unique<ConsoleSink>());
@@ -105,6 +137,81 @@ int main(int argc, char* argv[])
         {
             std::cout << info << std::endl;
         }
+
+        casket::SignalHandler sigHandler;
+        std::atomic<bool> g_stop{false};
+
+        snet::io::DriverGuard guard(driver.get());
+
+        int sigs[] = {SIGINT, SIGTERM};
+        std::error_code ec;
+        sigHandler.registerSignals(
+            sigs,
+            [&](int /*signum*/)
+            {
+                g_stop.store(true, std::memory_order_relaxed);
+                guard.interrupt();
+            },
+            ec);
+        if (ec)
+            throw std::system_error(ec);
+
+        driver->start();
+        std::cout << "listening... (Ctrl+C to stop)\n";
+
+        constexpr uint16_t batchSize = 32;
+        snet::layers::Packet* packets[batchSize];
+        uint16_t received = 0;
+        RecvStatus recvStatus = RecvStatus::Ok;
+        std::uint64_t total = 0;
+
+        while (!g_stop.load(std::memory_order_relaxed))
+        {
+            sigHandler.processSignals(ec);
+            if (ec)
+            {
+                std::cerr << "signal handling error: " << ec.message() << '\n';
+                break;
+            }
+
+            received = 0;
+            recvStatus = driver->receivePackets(packets, &received, batchSize);
+
+            for (uint16_t i = 0; i < received; ++i)
+            {
+                snet::layers::Packet* pkt = packets[i];
+                if (!pkt)
+                    continue;
+
+                pkt->parse();
+                std::cout << *pkt << std::endl;
+                ++total;
+
+                (void)driver->finalizePacket(pkt, Verdict::Pass);
+            }
+
+            const bool stopReq = g_stop.load(std::memory_order_relaxed);
+            switch (handleStatus(recvStatus, stopReq))
+            {
+            case LoopAction::Continue:
+                if (recvStatus == RecvStatus::NoBuffer ||  recvStatus == RecvStatus::WouldBlock)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                continue;
+
+            case LoopAction::StopOk:
+                goto done;
+
+            case LoopAction::StopError:
+                std::cerr << "driver error, last status=" << static_cast<int>(status) << '\n';
+                ret = EXIT_FAILURE;
+                goto done;
+            }
+        }
+
+done:
+        std::cout << "\nDone. packets=" << total << ", driver status=" << static_cast<int>(recvStatus) << '\n';
     }
     catch (std::exception& e)
     {
