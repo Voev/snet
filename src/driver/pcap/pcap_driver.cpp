@@ -35,7 +35,7 @@ using BpfProgramPtr = std::unique_ptr<bpf_program, BpfProgramDeleter>;
 namespace snet::driver
 {
 
-Pcap::Pcap(const io::DriverConfig& config)
+Pcap::Pcap(const io::DriverSpec& config)
     : DriverBase(config)
     , handle_(nullptr)
     , fp_(nullptr)
@@ -60,7 +60,7 @@ Pcap::~Pcap() noexcept
     }
 }
 
-std::shared_ptr<io::Driver> Pcap::create(const io::DriverConfig& config)
+std::shared_ptr<io::Driver> Pcap::create(const io::DriverSpec& config)
 {
     return std::make_shared<Pcap>(config);
 }

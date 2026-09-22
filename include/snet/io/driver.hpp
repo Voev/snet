@@ -5,7 +5,7 @@
 
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
-#include <snet/io/driver_config.hpp>
+#include <snet/io/driver_spec.hpp>
 #include <snet/io/config.hpp>
 
 #include <snet/layers/link_type.hpp>
@@ -121,6 +121,6 @@ public:
 };
 
 /// @brief Driver creation function type.
-using DriverCreator = std::shared_ptr<Driver>(const DriverConfig&);
+using DriverCreator = std::shared_ptr<Driver>(const DriverSpec&);
 
 } // namespace snet::io

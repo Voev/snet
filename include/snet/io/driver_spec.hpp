@@ -6,14 +6,14 @@
 namespace snet::io
 {
 
-class DriverConfig final
+class DriverSpec final
 {
 public:
     using LoggerType = casket::AsyncLogger;
 
-    DriverConfig() = default;
+    DriverSpec() = default;
 
-    ~DriverConfig() noexcept = default;
+    ~DriverSpec() noexcept = default;
 
     void setPath(std::string path)
     {

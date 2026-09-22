@@ -34,8 +34,6 @@ static std::string NameGenerator(const testing::TestParamInfo<TestParam>& info)
 
 void PcapTestImpl::setUp(const TestParam& param)
 {
-    io::Controller controller;
-
     auto option = param.second.find("pcap");
     ASSERT_NE(option, param.second.end());
 

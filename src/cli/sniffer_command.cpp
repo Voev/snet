@@ -37,6 +37,7 @@ struct SnifferManager
 {
     SnifferManager()
         : recordPool(1024)
+        , controller(options)
         , printRecords(false)
     {
     }
@@ -45,6 +46,7 @@ struct SnifferManager
     tls::SecretNodeManager secretManager;
     crypto::KeyPtr serverKey;
     SessionManager sessions;
+    casket::opt::ConfigOptions options;
     io::Controller controller;
     bool printRecords;
 };
@@ -158,7 +160,7 @@ public:
 
         SnifferManager manager;
 
-        io::DriverConfig drvConfig;
+        io::DriverSpec drvConfig;
         drvConfig.setPath(options_.driverPath);
 
         auto driver = manager.controller.load(drvConfig);
