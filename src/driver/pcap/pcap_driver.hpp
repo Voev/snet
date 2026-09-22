@@ -20,14 +20,14 @@ public:
     using PcapPacketPoolPtr = std::unique_ptr<PcapPacketPool>;
 
     /// @brief Constructs a PCAP driver instance
-    /// @param[in] config Driver configuration parameters
+    /// @param[in] config Driver specification
     explicit Pcap(const io::DriverSpec& config);
 
     /// @brief Destructor, releases PCAP resources
     ~Pcap() noexcept;
 
     /// @brief Factory method for creating PCAP driver instances
-    /// @param[in] config Driver configuration parameters
+    /// @param[in] config Driver specification
     /// @return Shared pointer to created driver instance
     static std::shared_ptr<io::Driver> create(const io::DriverSpec& config);
 
