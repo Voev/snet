@@ -5,5 +5,6 @@
 #include <snet/io/driver_spec.hpp>
 #include <snet/io/driver.hpp>
 #include <snet/io/driver_base.hpp>
+#include <snet/io/driver_guard.hpp>
 #include <snet/io/config.hpp>
 #include <snet/io/controller.hpp>
