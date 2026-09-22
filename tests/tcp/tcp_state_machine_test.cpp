@@ -7,8 +7,6 @@
 #include <cstring>
 #include <chrono>
 
-#include <snet/tcp/tcp_state.hpp>
-#include <snet/tcp/tcp_connection.hpp>
 #include <snet/tcp/tcp_state_machine.hpp>
 #include <snet/layers/l3/ip_address.hpp>
 
@@ -32,10 +30,23 @@ TcpConnection makeConnection()
     c.remoteIP = ip("127.0.0.1");
     c.localPort = 12345;
     c.remotePort = 80;
+    c.rxRing = new snet::RxRingBuffer();
+    c.txRing = new snet::TxRingBuffer();
     return c;
 }
 
-TcpSegment makeSeg(TcpFlags f, uint32_t seq, uint32_t ack, uint16_t win = 65535, const uint8_t* data = nullptr,
+void cleanupConnection(TcpConnection* c)
+{
+    if (c)
+    {
+        delete c->rxRing;
+        delete c->txRing;
+    }
+}
+
+TcpSegment makeSeg(TcpFlags f, uint32_t seq, uint32_t ack,
+                   uint16_t win = 65535,
+                   const uint8_t* data = nullptr,
                    size_t len = 0)
 {
     TcpSegment s;
@@ -47,6 +58,14 @@ TcpSegment makeSeg(TcpFlags f, uint32_t seq, uint32_t ack, uint16_t win = 65535,
     s.payloadLen = len;
     return s;
 }
+
+TcpFlags flagsSyn()                     { TcpFlags f; f.setSyn(true); return f; }
+TcpFlags flagsAck()                     { TcpFlags f; f.setAck(true); return f; }
+TcpFlags flagsSynAck()                  { TcpFlags f; f.setSyn(true).setAck(true); return f; }
+TcpFlags flagsFin()                     { TcpFlags f; f.setFin(true); return f; }
+TcpFlags flagsFinAck()                  { TcpFlags f; f.setFin(true).setAck(true); return f; }
+TcpFlags flagsRst()                     { TcpFlags f; f.setRst(true); return f; }
+TcpFlags flagsRstAck()                  { TcpFlags f; f.setRst(true).setAck(true); return f; }
 
 const uint8_t kPayload[] = "hello";
 
@@ -93,56 +112,145 @@ TEST(TcpStateNameTest, UnknownState)
 TEST(TcpFlagsTest, FromByteAllBits)
 {
     auto f = TcpFlags::fromByte(0x3F);
-    EXPECT_TRUE(f.fin);
-    EXPECT_TRUE(f.syn);
-    EXPECT_TRUE(f.rst);
-    EXPECT_TRUE(f.psh);
-    EXPECT_TRUE(f.ack);
-    EXPECT_TRUE(f.urg);
+    EXPECT_TRUE(f.hasFin());
+    EXPECT_TRUE(f.hasSyn());
+    EXPECT_TRUE(f.hasRst());
+    EXPECT_TRUE(f.hasPsh());
+    EXPECT_TRUE(f.hasAck());
+    EXPECT_TRUE(f.hasUrg());
 }
 
 TEST(TcpFlagsTest, FromByteNone)
 {
     auto f = TcpFlags::fromByte(0x00);
-    EXPECT_FALSE(f.fin);
-    EXPECT_FALSE(f.syn);
-    EXPECT_FALSE(f.rst);
-    EXPECT_FALSE(f.psh);
-    EXPECT_FALSE(f.ack);
-    EXPECT_FALSE(f.urg);
+    EXPECT_FALSE(f.hasFin());
+    EXPECT_FALSE(f.hasSyn());
+    EXPECT_FALSE(f.hasRst());
+    EXPECT_FALSE(f.hasPsh());
+    EXPECT_FALSE(f.hasAck());
+    EXPECT_FALSE(f.hasUrg());
 }
 
 TEST(TcpFlagsTest, FromByteIndividualBits)
 {
-    EXPECT_TRUE(TcpFlags::fromByte(0x01).fin);
-    EXPECT_TRUE(TcpFlags::fromByte(0x02).syn);
-    EXPECT_TRUE(TcpFlags::fromByte(0x04).rst);
-    EXPECT_TRUE(TcpFlags::fromByte(0x08).psh);
-    EXPECT_TRUE(TcpFlags::fromByte(0x10).ack);
-    EXPECT_TRUE(TcpFlags::fromByte(0x20).urg);
+    EXPECT_TRUE(TcpFlags::fromByte(0x01).hasFin());
+    EXPECT_TRUE(TcpFlags::fromByte(0x02).hasSyn());
+    EXPECT_TRUE(TcpFlags::fromByte(0x04).hasRst());
+    EXPECT_TRUE(TcpFlags::fromByte(0x08).hasPsh());
+    EXPECT_TRUE(TcpFlags::fromByte(0x10).hasAck());
+    EXPECT_TRUE(TcpFlags::fromByte(0x20).hasUrg());
 }
 
-TEST(TcpOutputTest, Factories)
+TEST(TcpFlagsTest, ToByteRoundtrip)
+{
+    auto f = TcpFlags::fromByte(0x12);   // SYN | ACK
+    EXPECT_EQ(f.toByte(), 0x12);
+}
+
+TEST(TcpFlagsTest, Setters)
+{
+    TcpFlags f;
+    f.setSyn(true).setAck(true).setPsh(true);
+    EXPECT_TRUE(f.hasSyn());
+    EXPECT_TRUE(f.hasAck());
+    EXPECT_TRUE(f.hasPsh());
+    EXPECT_FALSE(f.hasFin());
+
+    f.setSyn(false);
+    EXPECT_FALSE(f.hasSyn());
+    EXPECT_TRUE(f.hasAck());
+}
+
+TEST(TcpFlagsTest, Predicates)
+{
+    EXPECT_TRUE(flagsSyn().isSynOnly());
+    EXPECT_FALSE(flagsSynAck().isSynOnly());
+    EXPECT_TRUE(flagsSynAck().isSynAck());
+    EXPECT_FALSE(flagsSyn().isSynAck());
+    EXPECT_TRUE(flagsFin().isFinOrRst());
+    EXPECT_TRUE(flagsRst().isFinOrRst());
+    EXPECT_FALSE(flagsAck().isFinOrRst());
+    EXPECT_TRUE(flagsFin().isFinRstNoData(0));
+    EXPECT_FALSE(flagsFin().isFinRstNoData(5));
+}
+
+TEST(TcpFlagsTest, EqualityOperators)
+{
+    EXPECT_TRUE(flagsSynAck() == flagsSynAck());
+    EXPECT_TRUE(flagsSyn() != flagsAck());
+    EXPECT_TRUE(flagsRstAck() == TcpFlags::fromByte(0x14));
+}
+
+TEST(TcpOutputTest, None)
 {
     auto none = TcpOutput::none();
     EXPECT_EQ(none.type, TcpOutput::Type::None);
+}
 
-    auto s = TcpOutput::send({.syn = true}, 1, 2, 3, kPayload, 5);
+TEST(TcpOutputTest, SendSyn)
+{
+    auto s = TcpOutput::sendSyn(1000, 65535);
     EXPECT_EQ(s.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(s.flags.syn);
-    EXPECT_EQ(s.seq, 1u);
-    EXPECT_EQ(s.ack, 2u);
-    EXPECT_EQ(s.window, 3u);
+    EXPECT_TRUE(s.flags.hasSyn());
+    EXPECT_FALSE(s.flags.hasAck());
+    EXPECT_EQ(s.seq, 1000u);
+    EXPECT_EQ(s.ack, 0u);
+    EXPECT_EQ(s.window, 65535u);
+    EXPECT_EQ(s.payloadLen, 0u);
+}
+
+TEST(TcpOutputTest, SendSynAck)
+{
+    auto s = TcpOutput::sendSynAck(1000, 2000, 65535);
+    EXPECT_EQ(s.type, TcpOutput::Type::Send);
+    EXPECT_TRUE(s.flags.hasSyn());
+    EXPECT_TRUE(s.flags.hasAck());
+    EXPECT_EQ(s.seq, 1000u);
+    EXPECT_EQ(s.ack, 2000u);
+}
+
+TEST(TcpOutputTest, SendAck)
+{
+    auto s = TcpOutput::sendAck(1000, 2000, 65535);
+    EXPECT_EQ(s.type, TcpOutput::Type::Send);
+    EXPECT_FALSE(s.flags.hasSyn());
+    EXPECT_TRUE(s.flags.hasAck());
+    EXPECT_EQ(s.seq, 1000u);
+    EXPECT_EQ(s.ack, 2000u);
+}
+
+TEST(TcpOutputTest, SendFinAck)
+{
+    auto s = TcpOutput::sendFinAck(1000, 2000, 65535);
+    EXPECT_EQ(s.type, TcpOutput::Type::Send);
+    EXPECT_TRUE(s.flags.hasFin());
+    EXPECT_TRUE(s.flags.hasAck());
+}
+
+TEST(TcpOutputTest, SendData)
+{
+    auto s = TcpOutput::sendData(1000, 2000, 65535, kPayload, 5);
+    EXPECT_EQ(s.type, TcpOutput::Type::Send);
+    EXPECT_TRUE(s.flags.hasPsh());
+    EXPECT_TRUE(s.flags.hasAck());
+    EXPECT_EQ(s.seq, 1000u);
+    EXPECT_EQ(s.ack, 2000u);
     EXPECT_EQ(s.payload, kPayload);
     EXPECT_EQ(s.payloadLen, 5u);
+}
 
-    auto r = TcpOutput::reset(10, 20);
+TEST(TcpOutputTest, SendRst)
+{
+    auto r = TcpOutput::sendRst(10, 20);
     EXPECT_EQ(r.type, TcpOutput::Type::SendReset);
-    EXPECT_TRUE(r.flags.rst);
-    EXPECT_TRUE(r.flags.ack);
+    EXPECT_TRUE(r.flags.hasRst());
+    EXPECT_TRUE(r.flags.hasAck());
     EXPECT_EQ(r.seq, 10u);
     EXPECT_EQ(r.ack, 20u);
+}
 
+TEST(TcpOutputTest, Close)
+{
     auto c = TcpOutput::close();
     EXPECT_EQ(c.type, TcpOutput::Type::Close);
 }
@@ -169,6 +277,7 @@ TEST(TcpConnectionTest, InEstablishedAndTerminal)
     EXPECT_TRUE(c.isTerminal());
     c.state = TcpState::Established;
     EXPECT_FALSE(c.isTerminal());
+    cleanupConnection(&c);
 }
 
 TEST(TcpConnectionTest, ResetClearsFields)
@@ -184,6 +293,7 @@ TEST(TcpConnectionTest, ResetClearsFields)
     EXPECT_EQ(c.sndUna, 0u);
     EXPECT_EQ(c.sndNxt, 0u);
     EXPECT_EQ(c.packetsReceived, 0u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, ActiveOpenSendsSyn)
@@ -192,12 +302,13 @@ TEST(TcpFsmTest, ActiveOpenSendsSyn)
     auto out = TcpStateMachine::onActiveOpen(c, 1000);
     EXPECT_EQ(c.state, TcpState::SynSent);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.syn);
-    EXPECT_FALSE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasSyn());
+    EXPECT_FALSE(out.flags.hasAck());
     EXPECT_EQ(out.seq, 1000u);
     EXPECT_EQ(c.iss, 1000u);
     EXPECT_EQ(c.sndUna, 1000u);
     EXPECT_EQ(c.sndNxt, 1000u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, ActiveOpenIgnoredIfNotClosed)
@@ -206,30 +317,35 @@ TEST(TcpFsmTest, ActiveOpenIgnoredIfNotClosed)
     c.state = TcpState::Established;
     auto out = TcpStateMachine::onActiveOpen(c, 1000);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, PassiveOpenSendsSynAck)
 {
     TcpConnection c = makeConnection();
-    auto out = TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    auto out = TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
     EXPECT_EQ(c.state, TcpState::SynReceived);
     EXPECT_TRUE(c.passiveOpen);
     EXPECT_EQ(c.irs, 500u);
     EXPECT_EQ(c.rcvNxt, 501u);
     EXPECT_EQ(c.iss, 9000u);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.syn);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasSyn());
+    EXPECT_TRUE(out.flags.hasAck());
     EXPECT_EQ(out.seq, 9000u);
     EXPECT_EQ(out.ack, 501u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, PassiveOpenIgnoredIfNotClosed)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::Established;
-    auto out = TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 1, 2);
+    auto out = TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 1, 2);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppSendInEstablished)
@@ -242,9 +358,10 @@ TEST(TcpFsmTest, AppSendInEstablished)
 
     auto out = TcpStateMachine::onAppSend(c, kPayload, 5);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.psh);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasPsh());
+    EXPECT_TRUE(out.flags.hasAck());
     EXPECT_EQ(out.payloadLen, 5u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppSendNotEstablished)
@@ -252,6 +369,7 @@ TEST(TcpFsmTest, AppSendNotEstablished)
     TcpConnection c = makeConnection();
     auto out = TcpStateMachine::onAppSend(c, kPayload, 5);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppSendZeroLength)
@@ -260,6 +378,7 @@ TEST(TcpFsmTest, AppSendZeroLength)
     c.state = TcpState::Established;
     auto out = TcpStateMachine::onAppSend(c, nullptr, 0);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppSendZeroWindow)
@@ -270,6 +389,7 @@ TEST(TcpFsmTest, AppSendZeroWindow)
     c.cwnd = 0;
     auto out = TcpStateMachine::onAppSend(c, kPayload, 5);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppCloseFromEstablished)
@@ -280,8 +400,9 @@ TEST(TcpFsmTest, AppCloseFromEstablished)
     EXPECT_EQ(c.state, TcpState::FinWait1);
     EXPECT_TRUE(c.finSent);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.fin);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasFin());
+    EXPECT_TRUE(out.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppCloseFromCloseWait)
@@ -292,7 +413,8 @@ TEST(TcpFsmTest, AppCloseFromCloseWait)
     EXPECT_EQ(c.state, TcpState::LastAck);
     EXPECT_TRUE(c.finSent);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.fin);
+    EXPECT_TRUE(out.flags.hasFin());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppCloseIgnoredInOtherStates)
@@ -301,6 +423,7 @@ TEST(TcpFsmTest, AppCloseIgnoredInOtherStates)
     c.state = TcpState::SynSent;
     auto out = TcpStateMachine::onAppClose(c);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, AppAbort)
@@ -314,41 +437,46 @@ TEST(TcpFsmTest, AppAbort)
     EXPECT_TRUE(c.resetSent);
     EXPECT_TRUE(c.closed);
     EXPECT_EQ(out.type, TcpOutput::Type::SendReset);
-    EXPECT_TRUE(out.flags.rst);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasRst());
+    EXPECT_TRUE(out.flags.hasAck());
     EXPECT_EQ(out.seq, 100u);
     EXPECT_EQ(out.ack, 200u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RxRstClosesConnection)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::Established;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.rst = true}, 0, 0));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsRst(), 0, 0));
     EXPECT_EQ(c.state, TcpState::Closed);
     EXPECT_TRUE(c.closed);
     EXPECT_TRUE(res.closed);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Close);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RxInClosedWithAckSendsRst)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::Closed;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 100, 200));
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
     EXPECT_EQ(res.output.seq, 200u);
     EXPECT_EQ(res.output.ack, 0u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RxInClosedWithoutAckSendsRst)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::Closed;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true}, 100, 0, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSyn(), 100, 0, 65535, kPayload, 5));
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
     EXPECT_EQ(res.output.seq, 0u);
     EXPECT_EQ(res.output.ack, 106u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynSentReceivesSynAck)
@@ -356,14 +484,16 @@ TEST(TcpFsmTest, SynSentReceivesSynAck)
     TcpConnection c = makeConnection();
     TcpStateMachine::onActiveOpen(c, 1000);
     c.sndNxt = 1001;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true, .ack = true}, 5000, 1001));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSynAck(), 5000, 1001));
     EXPECT_EQ(c.state, TcpState::Established);
     EXPECT_TRUE(res.connectionEstablished);
     EXPECT_EQ(c.irs, 5000u);
     EXPECT_EQ(c.rcvNxt, 5001u);
     EXPECT_EQ(c.sndUna, 1001u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynSentReceivesSynAckBadAck)
@@ -371,8 +501,10 @@ TEST(TcpFsmTest, SynSentReceivesSynAckBadAck)
     TcpConnection c = makeConnection();
     TcpStateMachine::onActiveOpen(c, 1000);
     c.sndNxt = 1001;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true, .ack = true}, 5000, 9999));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSynAck(), 5000, 9999));
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynSentReceivesSynOnly)
@@ -380,64 +512,79 @@ TEST(TcpFsmTest, SynSentReceivesSynOnly)
     TcpConnection c = makeConnection();
     TcpStateMachine::onActiveOpen(c, 1000);
     c.sndNxt = 1001;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true}, 5000, 0));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSyn(), 5000, 0));
     EXPECT_EQ(c.state, TcpState::SynReceived);
     EXPECT_EQ(c.irs, 5000u);
     EXPECT_EQ(c.rcvNxt, 5001u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.syn);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasSyn());
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynSentIgnoresOtherSegments)
 {
     TcpConnection c = makeConnection();
     TcpStateMachine::onActiveOpen(c, 1000);
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 1));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 1));
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
     EXPECT_EQ(c.state, TcpState::SynSent);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynReceivedAcceptsAck)
 {
     TcpConnection c = makeConnection();
-    TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
     c.sndNxt = 9001;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 501, 9001));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 501, 9001));
     EXPECT_EQ(c.state, TcpState::Established);
     EXPECT_TRUE(res.connectionEstablished);
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynReceivedAcceptsAckWithData)
 {
     TcpConnection c = makeConnection();
-    TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
     c.sndNxt = 9001;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 501, 9001, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 501, 9001, 65535, kPayload, 5));
     EXPECT_EQ(c.state, TcpState::Established);
     EXPECT_TRUE(res.deliverToApp);
     EXPECT_EQ(c.rcvNxt, 506u);
     EXPECT_EQ(c.bytesReceived, 5u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynReceivedRetransmittedSyn)
 {
     TcpConnection c = makeConnection();
-    TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true}, 500, 0));
+    TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSyn(), 500, 0));
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.syn);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasSyn());
+    EXPECT_TRUE(res.output.flags.hasAck());
     EXPECT_EQ(res.output.seq, 9000u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, SynReceivedUnexpectedSegmentSendsRst)
 {
     TcpConnection c = makeConnection();
-    TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 9999, 9999));
+    TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 9999, 9999));
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedProcessesData)
@@ -449,12 +596,14 @@ TEST(TcpFsmTest, EstablishedProcessesData)
     c.sndUna = 200;
     c.sndWnd = 65535;
     c.cwnd = 10;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 100, 200, 65535, kPayload, 5));
     EXPECT_TRUE(res.deliverToApp);
     EXPECT_EQ(c.rcvNxt, 105u);
     EXPECT_EQ(c.bytesReceived, 5u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedProcessesOutOfOrderData)
@@ -464,9 +613,11 @@ TEST(TcpFsmTest, EstablishedProcessesOutOfOrderData)
     c.rcvNxt = 100;
     c.sndNxt = 200;
     c.sndUna = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 200, 200, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 200, 200, 65535, kPayload, 5));
     EXPECT_FALSE(res.deliverToApp);
     EXPECT_EQ(c.dupAcks, 1u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedProcessesRetransmit)
@@ -476,8 +627,10 @@ TEST(TcpFsmTest, EstablishedProcessesRetransmit)
     c.rcvNxt = 200;
     c.sndNxt = 300;
     c.sndUna = 300;
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 197, 300, 65535, kPayload, 5));
+    TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 197, 300, 65535, kPayload, 5));
     EXPECT_EQ(c.rcvNxt, 200u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedFinClosesToCloseWait)
@@ -487,15 +640,14 @@ TEST(TcpFsmTest, EstablishedFinClosesToCloseWait)
     c.rcvNxt = 100;
     c.sndNxt = 200;
     c.sndUna = 200;
-    TcpFlags flags;
-    flags.ack = true;
-    flags.fin = true;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flags, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsFinAck(), 100, 200));
     EXPECT_EQ(c.state, TcpState::CloseWait);
     EXPECT_TRUE(c.finReceived);
     EXPECT_EQ(c.rcvNxt, 101u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedAckOnlyNoPendingData)
@@ -505,8 +657,10 @@ TEST(TcpFsmTest, EstablishedAckOnlyNoPendingData)
     c.rcvNxt = 100;
     c.sndNxt = 200;
     c.sndUna = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 100, 200));
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, EstablishedAckAdvancesSndUna)
@@ -518,9 +672,11 @@ TEST(TcpFsmTest, EstablishedAckAdvancesSndUna)
     c.sndNxt = 200;
     c.rcvNxt = 500;
     c.ssthresh = 100;
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 500, 150, 1000));
+    TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 500, 150, 1000));
     EXPECT_EQ(c.sndUna, 150u);
     EXPECT_EQ(c.sndWnd, 1000u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait1AckTransitionsToFinWait2)
@@ -530,9 +686,11 @@ TEST(TcpFsmTest, FinWait1AckTransitionsToFinWait2)
     c.sndNxt = 200;
     c.sndUna = 200;
     c.rcvNxt = 100;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 100, 200));
     EXPECT_EQ(c.state, TcpState::FinWait2);
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait1AckWithFinTransitionsToClosing)
@@ -542,16 +700,14 @@ TEST(TcpFsmTest, FinWait1AckWithFinTransitionsToClosing)
     c.sndNxt = 200;
     c.sndUna = 200;
     c.rcvNxt = 100;
-    TcpFlags flags;
-    flags.ack = true;
-    flags.fin = true;
-
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flags, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsFinAck(), 100, 200));
     EXPECT_EQ(c.state, TcpState::Closing);
     EXPECT_TRUE(c.finReceived);
     EXPECT_EQ(c.rcvNxt, 101u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait1FinOnlySimultaneousClose)
@@ -561,9 +717,10 @@ TEST(TcpFsmTest, FinWait1FinOnlySimultaneousClose)
     c.sndNxt = 200;
     c.sndUna = 200;
     c.rcvNxt = 100;
-    TcpStateMachine::onRxSegment(c, makeSeg({.fin = true}, 100, 0));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsFin(), 100, 0));
     EXPECT_EQ(c.state, TcpState::Closing);
     EXPECT_TRUE(c.finReceived);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait1DataDelivery)
@@ -573,9 +730,11 @@ TEST(TcpFsmTest, FinWait1DataDelivery)
     c.sndNxt = 200;
     c.sndUna = 200;
     c.rcvNxt = 100;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 100, 200, 65535, kPayload, 5));
     EXPECT_TRUE(res.deliverToApp);
     EXPECT_EQ(c.rcvNxt, 105u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait2FinTransitionsToTimeWait)
@@ -584,12 +743,14 @@ TEST(TcpFsmTest, FinWait2FinTransitionsToTimeWait)
     c.state = TcpState::FinWait2;
     c.rcvNxt = 100;
     c.sndNxt = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.fin = true}, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsFin(), 100, 200));
     EXPECT_EQ(c.state, TcpState::TimeWait);
     EXPECT_TRUE(c.finReceived);
     EXPECT_EQ(c.rcvNxt, 101u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait2DataDelivery)
@@ -598,26 +759,30 @@ TEST(TcpFsmTest, FinWait2DataDelivery)
     c.state = TcpState::FinWait2;
     c.rcvNxt = 100;
     c.sndNxt = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 100, 200, 65535, kPayload, 5));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 100, 200, 65535, kPayload, 5));
     EXPECT_TRUE(res.deliverToApp);
     EXPECT_EQ(c.rcvNxt, 105u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, FinWait2NoDataNoFin)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::FinWait2;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 1));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 1));
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, CloseWaitIgnoresSegment)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::CloseWait;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 1));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 1));
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
     EXPECT_EQ(c.state, TcpState::CloseWait);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, ClosingAckTransitionsToTimeWait)
@@ -626,8 +791,9 @@ TEST(TcpFsmTest, ClosingAckTransitionsToTimeWait)
     c.state = TcpState::Closing;
     c.sndNxt = 200;
     c.sndUna = 200;
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 200));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 200));
     EXPECT_EQ(c.state, TcpState::TimeWait);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, ClosingNonMatchingAckIgnored)
@@ -635,9 +801,11 @@ TEST(TcpFsmTest, ClosingNonMatchingAckIgnored)
     TcpConnection c = makeConnection();
     c.state = TcpState::Closing;
     c.sndNxt = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 999));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 1, 999));
     EXPECT_EQ(c.state, TcpState::Closing);
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, LastAckAckClosesConnection)
@@ -645,11 +813,13 @@ TEST(TcpFsmTest, LastAckAckClosesConnection)
     TcpConnection c = makeConnection();
     c.state = TcpState::LastAck;
     c.sndNxt = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 1, 200));
     EXPECT_EQ(c.state, TcpState::Closed);
     EXPECT_TRUE(c.closed);
     EXPECT_TRUE(res.closed);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Close);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, LastAckNonMatchingAckIgnored)
@@ -657,9 +827,11 @@ TEST(TcpFsmTest, LastAckNonMatchingAckIgnored)
     TcpConnection c = makeConnection();
     c.state = TcpState::LastAck;
     c.sndNxt = 200;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 999));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 1, 999));
     EXPECT_EQ(c.state, TcpState::LastAck);
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, TimeWaitFinResendsAck)
@@ -668,18 +840,21 @@ TEST(TcpFsmTest, TimeWaitFinResendsAck)
     c.state = TcpState::TimeWait;
     c.sndNxt = 200;
     c.rcvNxt = 100;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.fin = true}, 100, 200));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsFin(), 100, 200));
     EXPECT_EQ(c.rcvNxt, 101u);
     EXPECT_EQ(res.output.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(res.output.flags.ack);
+    EXPECT_TRUE(res.output.flags.hasAck());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, TimeWaitNonFinIgnored)
 {
     TcpConnection c = makeConnection();
     c.state = TcpState::TimeWait;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 1));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 1));
     EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RxUnknownStateSendsRst)
@@ -688,8 +863,9 @@ TEST(TcpFsmTest, RxUnknownStateSendsRst)
     c.state = static_cast<TcpState>(200);
     c.sndNxt = 10;
     c.rcvNxt = 20;
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 1, 1));
+    auto res = TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 1, 1));
     EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RetransmitInClosedReturnsNone)
@@ -698,6 +874,7 @@ TEST(TcpFsmTest, RetransmitInClosedReturnsNone)
     c.state = TcpState::Closed;
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RetransmitSynSent)
@@ -706,23 +883,27 @@ TEST(TcpFsmTest, RetransmitSynSent)
     TcpStateMachine::onActiveOpen(c, 1000);
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.syn);
+    EXPECT_TRUE(out.flags.hasSyn());
     EXPECT_EQ(out.seq, 1000u);
     EXPECT_EQ(c.retransmits, 1u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RetransmitSynReceived)
 {
     TcpConnection c = makeConnection();
-    TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.syn);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasSyn());
+    EXPECT_TRUE(out.flags.hasAck());
     EXPECT_EQ(out.seq, 9000u);
     EXPECT_EQ(out.ack, 501u);
+    cleanupConnection(&c);
 }
 
+// NOTE: disabled — requires TxRingBuffer::peekAt + onSegmentSent fix
 TEST(TcpFsmTest, DISABLED_RetransmitPendingData)
 {
     TcpConnection c = makeConnection();
@@ -741,9 +922,10 @@ TEST(TcpFsmTest, DISABLED_RetransmitPendingData)
 
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.ack);
+    EXPECT_TRUE(out.flags.hasAck());
     EXPECT_EQ(out.seq, c.sndUna);
     EXPECT_GT(out.payloadLen, 0u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RetransmitFin)
@@ -755,7 +937,8 @@ TEST(TcpFsmTest, RetransmitFin)
     c.finSent = true;
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::Send);
-    EXPECT_TRUE(out.flags.fin);
+    EXPECT_TRUE(out.flags.hasFin());
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, RetransmitNoDataNoFin)
@@ -765,6 +948,7 @@ TEST(TcpFsmTest, RetransmitNoDataNoFin)
     c.finSent = false;
     auto out = TcpStateMachine::onRetransmitTimeout(c);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, TimeWaitExpiredCloses)
@@ -775,6 +959,7 @@ TEST(TcpFsmTest, TimeWaitExpiredCloses)
     EXPECT_EQ(c.state, TcpState::Closed);
     EXPECT_TRUE(c.closed);
     EXPECT_EQ(out.type, TcpOutput::Type::Close);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, TimeWaitExpiredInOtherStateNoop)
@@ -783,6 +968,7 @@ TEST(TcpFsmTest, TimeWaitExpiredInOtherStateNoop)
     c.state = TcpState::Established;
     auto out = TcpStateMachine::onTimeWaitExpired(c);
     EXPECT_EQ(out.type, TcpOutput::Type::None);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, OnSegmentSentIgnoresNonSend)
@@ -792,25 +978,28 @@ TEST(TcpFsmTest, OnSegmentSentIgnoresNonSend)
     TcpOutput o = TcpOutput::none();
     TcpStateMachine::onSegmentSent(c, o);
     EXPECT_EQ(c.sndNxt, 100u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, OnSegmentSentAdvancesSndNxtWithSyn)
 {
     TcpConnection c = makeConnection();
     c.sndNxt = 100;
-    TcpOutput o = TcpOutput::send({.syn = true}, 100, 0, 65535);
+    TcpOutput o = TcpOutput::sendSyn(100, 65535);
     TcpStateMachine::onSegmentSent(c, o);
     EXPECT_EQ(c.sndNxt, 101u);
     EXPECT_EQ(c.packetsSent, 1u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, OnSegmentSentAdvancesSndNxtWithFin)
 {
     TcpConnection c = makeConnection();
     c.sndNxt = 100;
-    TcpOutput o = TcpOutput::send({.fin = true}, 100, 0, 65535);
+    TcpOutput o = TcpOutput::sendFinAck(100, 0, 65535);
     TcpStateMachine::onSegmentSent(c, o);
     EXPECT_EQ(c.sndNxt, 101u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, OnSegmentSentAdvancesSndNxtWithPayload)
@@ -829,6 +1018,7 @@ TEST(TcpFsmTest, OnSegmentSentAdvancesSndNxtWithPayload)
     EXPECT_EQ(c.sndNxt, before + 5u);
     EXPECT_EQ(c.bytesSent, 5u);
     EXPECT_EQ(c.packetsSent, 1u);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmScenario, ActiveOpenHandshakeAndClose)
@@ -838,11 +1028,12 @@ TEST(TcpFsmScenario, ActiveOpenHandshakeAndClose)
     c.cwnd = 10;
 
     auto syn = TcpStateMachine::onActiveOpen(c, 1000);
-    ASSERT_TRUE(syn.flags.syn);
+    ASSERT_TRUE(syn.flags.hasSyn());
     TcpStateMachine::onSegmentSent(c, syn);
     EXPECT_EQ(c.sndNxt, 1001u);
 
-    auto res = TcpStateMachine::onRxSegment(c, makeSeg({.syn = true, .ack = true}, 5000, 1001));
+    auto res = TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsSynAck(), 5000, 1001));
     EXPECT_EQ(c.state, TcpState::Established);
     TcpStateMachine::onSegmentSent(c, res.output);
 
@@ -850,54 +1041,55 @@ TEST(TcpFsmScenario, ActiveOpenHandshakeAndClose)
     ASSERT_EQ(data.type, TcpOutput::Type::Send);
     TcpStateMachine::onSegmentSent(c, data);
 
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 5001, c.sndNxt));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 5001, c.sndNxt));
     EXPECT_EQ(c.state, TcpState::Established);
 
     auto fin = TcpStateMachine::onAppClose(c);
     EXPECT_EQ(c.state, TcpState::FinWait1);
-    ASSERT_TRUE(fin.flags.fin);
+    ASSERT_TRUE(fin.flags.hasFin());
 
     c.sndNxt += 1;
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 5001, c.sndNxt));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 5001, c.sndNxt));
     EXPECT_EQ(c.state, TcpState::FinWait2);
 
-    TcpStateMachine::onRxSegment(c, makeSeg({.fin = true}, 5001, c.sndNxt));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsFin(), 5001, c.sndNxt));
     EXPECT_EQ(c.state, TcpState::TimeWait);
 
     auto r3 = TcpStateMachine::onTimeWaitExpired(c);
     EXPECT_EQ(c.state, TcpState::Closed);
     EXPECT_EQ(r3.type, TcpOutput::Type::Close);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmScenario, PassiveOpenHandshakeAndPeerClose)
 {
     TcpConnection c = makeConnection();
 
-    auto synack = TcpStateMachine::onPassiveOpen(c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
-    ASSERT_TRUE(synack.flags.syn);
-    ASSERT_TRUE(synack.flags.ack);
+    auto synack = TcpStateMachine::onPassiveOpen(
+        c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
+    ASSERT_TRUE(synack.flags.hasSyn());
+    ASSERT_TRUE(synack.flags.hasAck());
     TcpStateMachine::onSegmentSent(c, synack);
 
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 501, 9001));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 501, 9001));
     EXPECT_EQ(c.state, TcpState::Established);
 
-    TcpFlags flags;
-    flags.ack = true;
-    flags.fin = true;
-
-    TcpStateMachine::onRxSegment(c, makeSeg(flags, 501, 9001, 65535, kPayload, 5));
+    // Peer sends FIN + data
+    TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsFinAck(), 501, 9001, 65535, kPayload, 5));
     EXPECT_EQ(c.state, TcpState::CloseWait);
     EXPECT_TRUE(c.finReceived);
     EXPECT_EQ(c.rcvNxt, 507u);
 
     auto fin = TcpStateMachine::onAppClose(c);
     EXPECT_EQ(c.state, TcpState::LastAck);
-    ASSERT_TRUE(fin.flags.fin);
+    ASSERT_TRUE(fin.flags.hasFin());
 
     c.sndNxt += 1;
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 507, c.sndNxt));
+    TcpStateMachine::onRxSegment(c, makeSeg(flagsAck(), 507, c.sndNxt));
     EXPECT_EQ(c.state, TcpState::Closed);
     EXPECT_TRUE(c.closed);
+    cleanupConnection(&c);
 }
 
 TEST(TcpFsmTest, ProcessAckWindowUpdate)
@@ -912,6 +1104,8 @@ TEST(TcpFsmTest, ProcessAckWindowUpdate)
     c.sndWl1 = 150;
     c.sndWl2 = 150;
 
-    TcpStateMachine::onRxSegment(c, makeSeg({.ack = true}, 500, 150, 2000));
+    TcpStateMachine::onRxSegment(
+        c, makeSeg(flagsAck(), 500, 150, 2000));
     EXPECT_EQ(c.sndWnd, 2000u);
+    cleanupConnection(&c);
 }

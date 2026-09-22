@@ -6,6 +6,7 @@
 #include <snet/session/session_handler.hpp>
 
 using namespace snet;
+using namespace snet::layers;
 using namespace snet::session;
 
 namespace
@@ -120,7 +121,7 @@ public:
         return true;
     }
 
-    PacketStatus processPacket(Session*, layers::Packet*, PacketStatus status) override
+    layers::PacketStatus processPacket(Session*, layers::Packet*, layers::PacketStatus status) override
     {
         return status;
     }
@@ -156,13 +157,13 @@ struct CountingHandler : public ISessionHandler<FakeSessionManager>
         return true;
     }
 
-    PacketStatus processPacket(Session* s, layers::Packet* p, PacketStatus status) override
+    layers::PacketStatus processPacket(Session* s, layers::Packet* p, layers::PacketStatus status) override
     {
         ++processCalls;
         lastSession = s;
         lastPacket = p;
         lastStatus = status;
-        return PacketHandled;
+        return layers::PacketHandled;
     }
 };
 

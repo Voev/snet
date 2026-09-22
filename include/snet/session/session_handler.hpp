@@ -2,26 +2,10 @@
 #include <cstdint>
 #include <memory>
 #include <snet/layers/packet.hpp>
+#include <snet/layers/packet_status.hpp>
 
 namespace snet::session
 {
-
-enum PacketStatus
-{
-    UnknownStatus = 0,
-    PacketHandled,
-    Error_NoContext,
-    Error_NoMemory,
-    TcpMessageHandled,
-    OutOfOrderTcpMessageBuffered,
-    FIN_RSTWithNoData,
-    Ignore_PacketWithNoData,
-    Ignore_PacketOfClosedFlow,
-    Ignore_Retransimission,
-    NonIpPacket,
-    NonTcpPacket,
-    Error_PacketDoesNotMatchFlow,
-};
 
 template <typename SessionManagerType>
 class ISessionHandler
@@ -38,7 +22,7 @@ public:
 
     virtual bool destroyContext(Session* session) = 0;
 
-    virtual PacketStatus processPacket(Session* session, layers::Packet* packet, PacketStatus status) = 0;
+    virtual layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) = 0;
 
     void setNext(std::shared_ptr<ISessionHandler> next)
     {
@@ -56,7 +40,7 @@ public:
     }
 
 protected:
-    inline PacketStatus passToNext(Session* session, layers::Packet* packet, PacketStatus status)
+    inline layers::PacketStatus passToNext(Session* session, layers::Packet* packet, layers::PacketStatus status)
     {
         if (next_)
         {

@@ -1,75 +1,16 @@
 #pragma once
-#include <random>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <string>
+
+#include <snet/tcp/tcp_types.hpp>
+
 #include <casket/log/log.hpp>
-#include <snet/tcp/tcp_connection.hpp>
 
 namespace snet::tcp
 {
-
-struct TcpSegment
-{
-    TcpFlags flags;
-    uint32_t seq{0};
-    uint32_t ack{0};
-    uint16_t window{0};
-    const uint8_t* payload{nullptr};
-    size_t payloadLen{0};
-};
-
-struct TcpOutput
-{
-    enum class Type : uint8_t
-    {
-        None,
-        Send,
-        SendReset,
-        Close
-    };
-
-    Type type{Type::None};
-    TcpFlags flags;
-    uint32_t seq{0};
-    uint32_t ack{0};
-    uint16_t window{0};
-    const uint8_t* payload{nullptr};
-    size_t payloadLen{0};
-
-    static TcpOutput none()
-    {
-        return {};
-    }
-
-    static TcpOutput send(TcpFlags f, uint32_t seq, uint32_t ack, uint16_t win, const uint8_t* data = nullptr,
-                          size_t len = 0)
-    {
-        TcpOutput o;
-        o.type = Type::Send;
-        o.flags = f;
-        o.seq = seq;
-        o.ack = ack;
-        o.window = win;
-        o.payload = data;
-        o.payloadLen = len;
-        return o;
-    }
-
-    static TcpOutput reset(uint32_t seq, uint32_t ack)
-    {
-        TcpOutput o;
-        o.type = Type::SendReset;
-        o.flags = {.rst = true, .ack = true};
-        o.seq = seq;
-        o.ack = ack;
-        return o;
-    }
-
-    static TcpOutput close()
-    {
-        TcpOutput o;
-        o.type = Type::Close;
-        return o;
-    }
-};
 
 /// @brief TCP FSM — pure logic, no packet I/O.
 class TcpStateMachine
@@ -83,24 +24,29 @@ public:
         bool connectionEstablished{false};
     };
 
-    // ============================================================
-    // Application events
-    // ============================================================
-
     static TcpOutput onActiveOpen(TcpConnection& conn, uint32_t iss)
     {
         if (conn.state != TcpState::Closed)
             return TcpOutput::none();
+
         conn.iss = iss;
         conn.sndUna = iss;
         conn.sndNxt = iss;
-        conn.txRing.initAt(iss);
+        if (conn.txRing) conn.txRing->initAt(iss);
         conn.state = TcpState::SynSent;
-        return TcpOutput::send({.syn = true}, iss, 0, conn.rcvWnd);
+
+        CSK_LOG_DEBUG("TCP [%u] CLOSED -> SYN_SENT (iss=%u)",
+                      conn.localPort, iss);
+
+        return TcpOutput::sendSyn(iss, conn.rcvWnd);
     }
 
-    static TcpOutput onPassiveOpen(TcpConnection& conn, const layers::IPAddress& localIP, uint16_t localPort,
-                                   const layers::IPAddress& remoteIP, uint16_t remotePort, uint32_t clientISN,
+    static TcpOutput onPassiveOpen(TcpConnection& conn,
+                                   const layers::IPAddress& localIP,
+                                   uint16_t localPort,
+                                   const layers::IPAddress& remoteIP,
+                                   uint16_t remotePort,
+                                   uint32_t clientISN,
                                    uint32_t ourISN)
     {
         if (conn.state != TcpState::Closed)
@@ -114,28 +60,33 @@ public:
 
         conn.irs = clientISN;
         conn.rcvNxt = clientISN + 1;
-        conn.rxRing.initAt(conn.rcvNxt);
+        if (conn.rxRing) conn.rxRing->initAt(conn.rcvNxt);
 
         conn.iss = ourISN;
         conn.sndUna = ourISN;
         conn.sndNxt = ourISN;
-        conn.txRing.initAt(ourISN);
+        if (conn.txRing) conn.txRing->initAt(ourISN);
 
         conn.state = TcpState::SynReceived;
         conn.lastActivity = std::chrono::steady_clock::now();
 
-        CSK_LOG_DEBUG("TCP [%u] CLOSED -> SYN_RECEIVED (client_isn=%u, our_isn=%u)", localPort, clientISN, ourISN);
+        CSK_LOG_DEBUG("TCP [%u] CLOSED -> SYN_RECEIVED "
+                      "(client_isn=%u, our_isn=%u)",
+                      localPort, clientISN, ourISN);
 
-        return TcpOutput::send({.syn = true, .ack = true}, ourISN, conn.rcvNxt, conn.rcvWnd);
+        return TcpOutput::sendSynAck(ourISN, conn.rcvNxt, conn.rcvWnd);
     }
 
-    static TcpOutput onAppSend(TcpConnection& conn, const uint8_t* data, size_t len)
+    static TcpOutput onAppSend(TcpConnection& conn,
+                               const uint8_t* data, size_t len)
     {
-        if (!conn.inEstablished())
+        if (!conn.inEstablished() || !conn.txRing)
             return TcpOutput::none();
-        const size_t accepted = conn.txRing.write(data, len);
+
+        const size_t accepted = conn.txRing->write(data, len);
         if (accepted == 0)
             return TcpOutput::none();
+
         return buildSendSegment(conn);
     }
 
@@ -147,12 +98,14 @@ public:
             conn.finSent = true;
             conn.state = TcpState::FinWait1;
             CSK_LOG_DEBUG("TCP [%u] ESTABLISHED -> FIN_WAIT_1", conn.localPort);
-            return TcpOutput::send({.fin = true, .ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendFinAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+
         case TcpState::CloseWait:
             conn.finSent = true;
             conn.state = TcpState::LastAck;
             CSK_LOG_DEBUG("TCP [%u] CLOSE_WAIT -> LAST_ACK", conn.localPort);
-            return TcpOutput::send({.fin = true, .ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendFinAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+
         default:
             return TcpOutput::none();
         }
@@ -163,12 +116,8 @@ public:
         conn.resetSent = true;
         conn.closed = true;
         conn.state = TcpState::Closed;
-        return TcpOutput::reset(conn.sndNxt, conn.rcvNxt);
+        return TcpOutput::sendRst(conn.sndNxt, conn.rcvNxt);
     }
-
-    // ============================================================
-    // RX event
-    // ============================================================
 
     static RxResult onRxSegment(TcpConnection& conn, const TcpSegment& seg)
     {
@@ -176,9 +125,12 @@ public:
         conn.packetsReceived++;
         conn.lastActivity = std::chrono::steady_clock::now();
 
-        if (seg.flags.rst)
+        // Any RST → abort connection immediately
+        if (seg.flags.hasRst())
         {
-            CSK_LOG_DEBUG("TCP [%u] RST in state %s", conn.localPort, std::string(tcpStateName(conn.state)).c_str());
+            CSK_LOG_DEBUG("TCP [%u] RST in state %s",
+                          conn.localPort,
+                          std::string(tcpStateName(conn.state)).c_str());
             conn.state = TcpState::Closed;
             conn.closed = true;
             result.closed = true;
@@ -219,7 +171,7 @@ public:
             result.output = handleTimeWait(conn, seg, result);
             break;
         default:
-            result.output = TcpOutput::reset(conn.sndNxt, conn.rcvNxt);
+            result.output = TcpOutput::sendRst(conn.sndNxt, conn.rcvNxt);
             break;
         }
 
@@ -228,32 +180,35 @@ public:
         return result;
     }
 
-    // ============================================================
-    // Timers
-    // ============================================================
-
     static TcpOutput onRetransmitTimeout(TcpConnection& conn)
     {
-        if (!conn.inEstablished() && conn.state != TcpState::SynSent && conn.state != TcpState::SynReceived)
+        if (!conn.inEstablished() &&
+            conn.state != TcpState::SynSent &&
+            conn.state != TcpState::SynReceived)
             return TcpOutput::none();
 
         conn.retransmits++;
 
         if (conn.state == TcpState::SynSent)
-            return TcpOutput::send({.syn = true}, conn.iss, 0, conn.rcvWnd);
+            return TcpOutput::sendSyn(conn.iss, conn.rcvWnd);
 
         if (conn.state == TcpState::SynReceived)
-            return TcpOutput::send({.syn = true, .ack = true}, conn.iss, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendSynAck(conn.iss, conn.rcvNxt, conn.rcvWnd);
 
-        auto [data, len] = conn.txRing.peek();
-        if (data && len > 0)
+        // Retransmit from sndUna (not from pending position)
+        if (conn.txRing)
         {
-            const size_t chunk = std::min<size_t>(len, conn.mss);
-            return TcpOutput::send({.ack = true}, conn.sndUna, conn.rcvNxt, conn.rcvWnd, data, chunk);
+            auto [data, len] = conn.txRing->peekAt(conn.sndUna);
+            if (data && len > 0)
+            {
+                const size_t chunk = std::min<size_t>(len, conn.mss);
+                return TcpOutput::sendData(conn.sndUna, conn.rcvNxt,
+                                           conn.rcvWnd, data, chunk);
+            }
         }
 
         if (conn.finSent)
-            return TcpOutput::send({.fin = true, .ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendFinAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
 
         return TcpOutput::none();
     }
@@ -262,78 +217,89 @@ public:
     {
         if (conn.state != TcpState::TimeWait)
             return TcpOutput::none();
+
         conn.state = TcpState::Closed;
         conn.closed = true;
         return TcpOutput::close();
     }
 
-    // ============================================================
-    // Post-send hook
-    // ============================================================
-
+    /// @brief Updates sequence numbers after a segment has been sent.
+    ///
+    /// Must be called ONLY by the handler that actually transmitted the
+    /// segment (i.e. TcpTransmitHandler).
     static void onSegmentSent(TcpConnection& conn, const TcpOutput& out)
     {
         if (out.type != TcpOutput::Type::Send)
             return;
+
         uint32_t adv = static_cast<uint32_t>(out.payloadLen);
-        if (out.flags.syn)
-            adv++;
-        if (out.flags.fin)
-            adv++;
+        if (out.flags.hasSyn()) adv++;
+        if (out.flags.hasFin()) adv++;
+
         conn.sndNxt += adv;
         conn.packetsSent++;
         conn.bytesSent += out.payloadLen;
-        if (out.payloadLen > 0)
-            conn.txRing.advance(out.payloadLen);
+
+        if (out.payloadLen > 0 && conn.txRing)
+            conn.txRing->advance(out.payloadLen);
     }
 
 private:
-    // ============================================================
-    // State handlers
-    // ============================================================
 
     static TcpOutput handleClosed(TcpConnection&, const TcpSegment& seg)
     {
-        if (seg.flags.ack)
-            return TcpOutput::reset(seg.ack, 0);
-        return TcpOutput::reset(0, seg.seq + static_cast<uint32_t>(seg.payloadLen) + (seg.flags.syn ? 1 : 0));
+        // Any segment in CLOSED → send RST
+        if (seg.flags.hasAck())
+            return TcpOutput::sendRst(seg.ack, 0);
+
+        const uint32_t ack = seg.seq
+            + static_cast<uint32_t>(seg.payloadLen)
+            + (seg.flags.hasSyn() ? 1u : 0u);
+        return TcpOutput::sendRst(0, ack);
     }
 
-    static TcpOutput handleSynSent(TcpConnection& conn, const TcpSegment& seg, RxResult& result)
+    static TcpOutput handleSynSent(TcpConnection& conn,
+                                   const TcpSegment& seg,
+                                   RxResult& result)
     {
-        if (seg.flags.syn && seg.flags.ack)
+        // SYN + ACK → ESTABLISHED
+        if (seg.flags.isSynAck())
         {
             if (seg.ack != conn.sndNxt)
-                return TcpOutput::reset(seg.ack, 0);
+                return TcpOutput::sendRst(seg.ack, 0);
 
             conn.irs = seg.seq;
             conn.rcvNxt = seg.seq + 1;
             conn.sndUna = seg.ack;
             conn.sndWnd = seg.window;
             conn.state = TcpState::Established;
-            conn.rxRing.initAt(conn.rcvNxt);
+            if (conn.rxRing) conn.rxRing->initAt(conn.rcvNxt);
 
             CSK_LOG_DEBUG("TCP [%u] SYN_SENT -> ESTABLISHED", conn.localPort);
             result.connectionEstablished = true;
 
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
 
-        if (seg.flags.syn && !seg.flags.ack)
+        // SYN only (simultaneous open) → SYN_RECEIVED
+        if (seg.flags.isSynOnly())
         {
             conn.irs = seg.seq;
             conn.rcvNxt = seg.seq + 1;
             conn.state = TcpState::SynReceived;
             CSK_LOG_DEBUG("TCP [%u] SYN_SENT -> SYN_RECEIVED", conn.localPort);
-            return TcpOutput::send({.syn = true, .ack = true}, conn.iss, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendSynAck(conn.iss, conn.rcvNxt, conn.rcvWnd);
         }
 
         return TcpOutput::none();
     }
 
-    static TcpOutput handleSynReceived(TcpConnection& conn, const TcpSegment& seg, RxResult& result)
+    static TcpOutput handleSynReceived(TcpConnection& conn,
+                                       const TcpSegment& seg,
+                                       RxResult& result)
     {
-        if (seg.flags.ack && seg.ack == conn.sndNxt)
+        // ACK of our SYN → ESTABLISHED
+        if (seg.flags.hasAck() && seg.ack == conn.sndNxt)
         {
             conn.sndUna = seg.ack;
             conn.sndWnd = seg.window;
@@ -341,10 +307,11 @@ private:
             CSK_LOG_DEBUG("TCP [%u] SYN_RECEIVED -> ESTABLISHED", conn.localPort);
             result.connectionEstablished = true;
 
-            if (seg.payloadLen > 0 && seg.seq == conn.rcvNxt)
+            // Fast path: ACK may carry data
+            if (seg.payloadLen > 0 && seg.seq == conn.rcvNxt && conn.rxRing)
             {
-                conn.rxRing.writeAt(seg.seq, seg.payload, seg.payloadLen);
-                conn.rxRing.advanceContiguous();
+                conn.rxRing->writeAt(seg.seq, seg.payload, seg.payloadLen);
+                conn.rxRing->advanceContiguous();
                 conn.rcvNxt += static_cast<uint32_t>(seg.payloadLen);
                 conn.bytesReceived += seg.payloadLen;
                 result.deliverToApp = true;
@@ -352,144 +319,155 @@ private:
             return TcpOutput::none();
         }
 
-        // Retransmitted SYN
-        if (seg.flags.syn && !seg.flags.ack && seg.seq == conn.irs)
+        // Retransmitted SYN → resend SYN-ACK
+        if (seg.flags.isSynOnly() && seg.seq == conn.irs)
         {
-            CSK_LOG_DEBUG("TCP [%u] SYN_RECEIVED: retransmitted SYN -> resend SYN-ACK", conn.localPort);
-            return TcpOutput::send({.syn = true, .ack = true}, conn.iss, conn.rcvNxt, conn.rcvWnd);
+            CSK_LOG_DEBUG("TCP [%u] SYN_RECEIVED: retransmitted SYN → "
+                          "resend SYN-ACK", conn.localPort);
+            return TcpOutput::sendSynAck(conn.iss, conn.rcvNxt, conn.rcvWnd);
         }
 
-        return TcpOutput::reset(conn.sndNxt, conn.rcvNxt);
+        return TcpOutput::sendRst(conn.sndNxt, conn.rcvNxt);
     }
 
-    static TcpOutput handleEstablished(TcpConnection& conn, const TcpSegment& seg, RxResult& result)
+    static TcpOutput handleEstablished(TcpConnection& conn,
+                                       const TcpSegment& seg,
+                                       RxResult& result)
     {
-        if (seg.flags.ack)
+        if (seg.flags.hasAck())
             processAck(conn, seg.ack, seg.window);
 
-        if (seg.payloadLen > 0)
+        if (seg.payloadLen > 0 && conn.rxRing)
         {
             const int32_t diff = static_cast<int32_t>(seg.seq - conn.rcvNxt);
 
             if (diff == 0)
             {
-                conn.rxRing.writeAt(seg.seq, seg.payload, seg.payloadLen);
-                conn.rxRing.advanceContiguous();
+                conn.rxRing->writeAt(seg.seq, seg.payload, seg.payloadLen);
+                conn.rxRing->advanceContiguous();
                 conn.rcvNxt += static_cast<uint32_t>(seg.payloadLen);
                 conn.bytesReceived += seg.payloadLen;
                 result.deliverToApp = true;
             }
             else if (diff > 0)
             {
-                // Out-of-order — writeAt handles holes
-                conn.rxRing.writeAt(seg.seq, seg.payload, seg.payloadLen);
-                conn.rxRing.advanceContiguous();
+                // Out-of-order: writeAt handles holes via bitmap
+                conn.rxRing->writeAt(seg.seq, seg.payload, seg.payloadLen);
+                conn.rxRing->advanceContiguous();
                 conn.dupAcks++;
             }
             else
             {
-                // Retransmit — trim front
+                // Retransmit: trim front
                 const size_t skip = static_cast<size_t>(-diff);
                 if (skip < seg.payloadLen)
                 {
-                    conn.rxRing.writeAt(
-                        seg.seq + static_cast<uint32_t>(skip), seg.payload + skip, seg.payloadLen - skip);
-                    conn.rxRing.advanceContiguous();
+                    conn.rxRing->writeAt(
+                        seg.seq + static_cast<uint32_t>(skip),
+                        seg.payload + skip,
+                        seg.payloadLen - skip);
+                    conn.rxRing->advanceContiguous();
                 }
             }
         }
 
-        if (seg.flags.fin)
+        if (seg.flags.hasFin())
         {
             conn.rcvNxt++;
             conn.finReceived = true;
             conn.state = TcpState::CloseWait;
             CSK_LOG_DEBUG("TCP [%u] ESTABLISHED -> CLOSE_WAIT", conn.localPort);
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
 
         if (result.deliverToApp)
-        {
-            // Send ACK for received data
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
-        }
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
 
         return buildSendSegment(conn);
     }
 
-    static TcpOutput handleFinWait1(TcpConnection& conn, const TcpSegment& seg, RxResult& result)
+    static TcpOutput handleFinWait1(TcpConnection& conn,
+                                    const TcpSegment& seg,
+                                    RxResult& result)
     {
-        if (seg.flags.ack && seg.ack == conn.sndNxt)
+        // ACK of our FIN
+        if (seg.flags.hasAck() && seg.ack == conn.sndNxt)
         {
             conn.sndUna = seg.ack;
-            if (seg.flags.fin)
+
+            if (seg.flags.hasFin())
             {
                 conn.rcvNxt++;
                 conn.finReceived = true;
                 conn.state = TcpState::Closing;
                 CSK_LOG_DEBUG("TCP [%u] FIN_WAIT_1 -> CLOSING", conn.localPort);
-                return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+                return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
             }
+
             conn.state = TcpState::FinWait2;
             CSK_LOG_DEBUG("TCP [%u] FIN_WAIT_1 -> FIN_WAIT_2", conn.localPort);
         }
 
-        if (seg.flags.fin)
+        // FIN from peer (simultaneous close)
+        if (seg.flags.hasFin())
         {
             conn.rcvNxt++;
             conn.finReceived = true;
             if (conn.state == TcpState::FinWait1)
             {
                 conn.state = TcpState::Closing;
-                CSK_LOG_DEBUG("TCP [%u] FIN_WAIT_1 -> CLOSING (simultaneous)", conn.localPort);
+                CSK_LOG_DEBUG("TCP [%u] FIN_WAIT_1 -> CLOSING (simultaneous)",
+                              conn.localPort);
             }
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
 
-        if (seg.payloadLen > 0)
+        // Data (rare in FIN_WAIT_1)
+        if (seg.payloadLen > 0 && conn.rxRing)
         {
-            conn.rxRing.writeAt(seg.seq, seg.payload, seg.payloadLen);
-            conn.rxRing.advanceContiguous();
+            conn.rxRing->writeAt(seg.seq, seg.payload, seg.payloadLen);
+            conn.rxRing->advanceContiguous();
             conn.rcvNxt += static_cast<uint32_t>(seg.payloadLen);
             result.deliverToApp = true;
         }
         return TcpOutput::none();
     }
 
-    static TcpOutput handleFinWait2(TcpConnection& conn, const TcpSegment& seg, RxResult& result)
+    static TcpOutput handleFinWait2(TcpConnection& conn,
+                                    const TcpSegment& seg,
+                                    RxResult& result)
     {
-        if (seg.payloadLen > 0)
+        if (seg.payloadLen > 0 && conn.rxRing)
         {
-            conn.rxRing.writeAt(seg.seq, seg.payload, seg.payloadLen);
-            conn.rxRing.advanceContiguous();
+            conn.rxRing->writeAt(seg.seq, seg.payload, seg.payloadLen);
+            conn.rxRing->advanceContiguous();
             conn.rcvNxt += static_cast<uint32_t>(seg.payloadLen);
             result.deliverToApp = true;
         }
 
-        if (seg.flags.fin)
+        if (seg.flags.hasFin())
         {
             conn.rcvNxt++;
             conn.finReceived = true;
             conn.state = TcpState::TimeWait;
             conn.timeWaitStart = std::chrono::steady_clock::now();
             CSK_LOG_DEBUG("TCP [%u] FIN_WAIT_2 -> TIME_WAIT", conn.localPort);
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
         return TcpOutput::none();
     }
 
-    static TcpOutput handleCloseWait(TcpConnection& conn, const TcpSegment& seg, RxResult& res)
+    static TcpOutput handleCloseWait(TcpConnection&, const TcpSegment&, RxResult&)
     {
-        (void)conn;
-        (void)seg;
-        (void)res;
         // Nothing to do — application must call onAppClose()
         return TcpOutput::none();
     }
 
-    static TcpOutput handleClosing(TcpConnection& conn, const TcpSegment& seg, RxResult&)
+    static TcpOutput handleClosing(TcpConnection& conn,
+                                   const TcpSegment& seg,
+                                   RxResult&)
     {
-        if (seg.flags.ack && seg.ack == conn.sndNxt)
+        if (seg.flags.hasAck() && seg.ack == conn.sndNxt)
         {
             conn.sndUna = seg.ack;
             conn.state = TcpState::TimeWait;
@@ -499,9 +477,11 @@ private:
         return TcpOutput::none();
     }
 
-    static TcpOutput handleLastAck(TcpConnection& conn, const TcpSegment& seg, RxResult&)
+    static TcpOutput handleLastAck(TcpConnection& conn,
+                                   const TcpSegment& seg,
+                                   RxResult&)
     {
-        if (seg.flags.ack && seg.ack == conn.sndNxt)
+        if (seg.flags.hasAck() && seg.ack == conn.sndNxt)
         {
             conn.state = TcpState::Closed;
             conn.closed = true;
@@ -511,33 +491,42 @@ private:
         return TcpOutput::none();
     }
 
-    static TcpOutput handleTimeWait(TcpConnection& conn, const TcpSegment& seg, RxResult&)
+    static TcpOutput handleTimeWait(TcpConnection& conn,
+                                    const TcpSegment& seg,
+                                    RxResult&)
     {
-        if (seg.flags.fin)
+        // Retransmitted FIN → re-ACK
+        if (seg.flags.hasFin())
         {
             conn.rcvNxt = seg.seq + 1;
-            return TcpOutput::send({.ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
+            return TcpOutput::sendAck(conn.sndNxt, conn.rcvNxt, conn.rcvWnd);
         }
         return TcpOutput::none();
     }
 
     static void processAck(TcpConnection& conn, uint32_t ack, uint16_t window)
     {
-        if (static_cast<int32_t>(ack - conn.sndUna) < 0)
-            return;
-        if (static_cast<int32_t>(ack - conn.sndNxt) > 0)
-            return;
+        // Ignore ACKs outside [sndUna, sndNxt]
+        if (static_cast<int32_t>(ack - conn.sndUna) < 0) return;
+        if (static_cast<int32_t>(ack - conn.sndNxt) > 0) return;
 
         const uint32_t ackedBytes = ack - conn.sndUna;
         if (ackedBytes > 0)
         {
-            conn.txRing.ack(ackedBytes);
+            if (conn.txRing) conn.txRing->ack(ackedBytes);
             conn.sndUna = ack;
-            conn.cwnd += (conn.cwnd < conn.ssthresh) ? 1 : 1;
+
+            // Slow start / congestion avoidance
+            if (conn.cwnd < conn.ssthresh)
+                conn.cwnd += 1;         // slow start
+            else
+                conn.cwnd += 1;         // simplified; real impl uses 1/cwnd
         }
 
+        // Window update (RFC 793 §3.9)
         if (window > 0 &&
-            (static_cast<int32_t>(conn.sndNxt - conn.sndWl1) > 0 || static_cast<int32_t>(ack - conn.sndWl2) >= 0))
+            (static_cast<int32_t>(conn.sndNxt - conn.sndWl1) > 0 ||
+             static_cast<int32_t>(ack - conn.sndWl2) >= 0))
         {
             conn.sndWnd = window;
             conn.sndWl1 = conn.sndNxt;
@@ -547,23 +536,25 @@ private:
 
     static TcpOutput buildSendSegment(TcpConnection& conn)
     {
-        if (!conn.txRing.initialized())
-            return TcpOutput::none();
-        const size_t pending = conn.txRing.pending();
-        if (pending == 0)
+        if (!conn.txRing || !conn.txRing->initialized())
             return TcpOutput::none();
 
-        const size_t cwndBytes = conn.cwnd * conn.mss;
-        const size_t effective = std::min<size_t>({static_cast<size_t>(conn.sndWnd), cwndBytes, conn.mss});
+        if (conn.txRing->pending() == 0)
+            return TcpOutput::none();
+
+        const size_t cwndBytes = static_cast<size_t>(conn.cwnd) * conn.mss;
+        const size_t effective = std::min<size_t>(
+            {static_cast<size_t>(conn.sndWnd), cwndBytes, conn.mss});
         if (effective == 0)
             return TcpOutput::none();
 
-        auto [data, len] = conn.txRing.peek();
+        auto [data, len] = conn.txRing->peek();
         if (!data || len == 0)
             return TcpOutput::none();
 
         const size_t chunk = std::min(len, effective);
-        return TcpOutput::send({.psh = true, .ack = true}, conn.sndNxt, conn.rcvNxt, conn.rcvWnd, data, chunk);
+        return TcpOutput::sendData(conn.sndNxt, conn.rcvNxt,
+                                   conn.rcvWnd, data, chunk);
     }
 };
 

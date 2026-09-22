@@ -67,6 +67,37 @@ public:
         return {buffer_.data() + offset, firstChunk};
     }
 
+    /// @brief Peek data at an absolute sequence number.
+    ///
+    /// Used for retransmit — returns data starting from `sndUna`
+    /// (already sent but not yet ACKed).
+    ///
+    /// @param seq Absolute sequence number to peek from.
+    /// @return {data pointer, contiguous length} or {nullptr, 0}
+    ///         if seq is out of [ackedPos_, writePos_) range.
+    std::pair<const uint8_t*, size_t> peekAt(uint32_t seq) const noexcept
+    {
+        if (!initialized_)
+            return {nullptr, 0};
+
+        // seq must be within [seqBase_, seqBase_ + writePos_)
+        const int32_t diff = static_cast<int32_t>(seq - seqBase_);
+        if (diff < 0)
+            return {nullptr, 0};
+
+        const size_t pos = static_cast<size_t>(diff);
+
+        // Only unacked data can be retransmitted
+        if (pos < ackedPos_ || pos >= writePos_)
+            return {nullptr, 0};
+
+        const size_t offset = pos % capacity_;
+        const size_t available = writePos_ - pos;
+        const size_t firstChunk = std::min(available, capacity_ - offset);
+
+        return {buffer_.data() + offset, firstChunk};
+    }
+
     /// @brief Marks n bytes as sent (moves read pointer).
     void advance(size_t n) noexcept
     {
