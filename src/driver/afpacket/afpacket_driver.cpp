@@ -29,7 +29,7 @@ using namespace snet::io;
 namespace snet::driver
 {
 
-AFPacketDriver::AFPacketDriver(const io::DriverConfig& config)
+AFPacketDriver::AFPacketDriver(const io::DriverSpec& config)
     : DriverBase(config)
 {
 }
@@ -37,7 +37,7 @@ AFPacketDriver::AFPacketDriver(const io::DriverConfig& config)
 AFPacketDriver::~AFPacketDriver() noexcept
 {}
 
-std::shared_ptr<io::Driver> AFPacketDriver::create(const io::DriverConfig& config)
+std::shared_ptr<io::Driver> AFPacketDriver::create(const io::DriverSpec& config)
 {
     return std::make_shared<AFPacketDriver>(config);
 }

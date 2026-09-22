@@ -156,7 +156,7 @@ int ProcessMessages(const void* buffer, size_t numbytes, unsigned int portid, Nf
     return 0;
 }
 
-NfQueue::NfQueue(const io::DriverConfig& config)
+NfQueue::NfQueue(const io::DriverSpec& config)
     : DriverBase(config)
     , buffer_(nullptr)
     , bufferSize_(0)
@@ -323,7 +323,7 @@ Status NfQueue::configure(const io::Config& config)
     return Status::Success;
 }
 
-std::shared_ptr<io::Driver> NfQueue::create(const io::DriverConfig& config)
+std::shared_ptr<io::Driver> NfQueue::create(const io::DriverSpec& config)
 {
     return std::make_shared<NfQueue>(config);
 }

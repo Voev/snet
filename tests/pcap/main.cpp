@@ -27,7 +27,7 @@ void ParseCommandLine(int argc, char* argv[])
         {
             if (i + 1 < argc)
             {
-                snet::io::DriverConfig config;
+                snet::io::DriverSpec config;
                 config.setPath(argv[++i]);
                 snet::ControllerManager::Instance().loadDriver(config);
             }

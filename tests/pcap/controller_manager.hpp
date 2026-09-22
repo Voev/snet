@@ -1,6 +1,7 @@
 #pragma once
 #include <snet/io.hpp>
 #include <casket/utils/singleton.hpp>
+#include <casket/opt/opt.hpp>
 
 namespace snet
 {
@@ -8,11 +9,13 @@ namespace snet
 class ControllerManager final : public casket::Singleton<ControllerManager>
 {
 public:
-    ControllerManager() = default;
+    ControllerManager()
+        : controller_(options_)
+    {}
 
     ~ControllerManager() = default;
 
-    void loadDriver(const io::DriverConfig& config)
+    void loadDriver(const io::DriverSpec& config)
     {
         controller_.load(config);
     }
@@ -23,6 +26,7 @@ public:
     }
 
 private:
-    io::Controller controller_;
+    casket::opt::ConfigOptions options_;
+    snet::io::Controller controller_;
 };
 } // namespace snet

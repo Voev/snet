@@ -15,7 +15,7 @@ public:
 
     DriverBase() noexcept = default;
 
-    explicit DriverBase(const snet::io::DriverConfig& cfg)
+    explicit DriverBase(const snet::io::DriverSpec& cfg)
         : log_(cfg.getLogger())
     {
         logInfo("driver '%s' constructed", cfg.getPath().c_str());

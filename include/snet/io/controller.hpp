@@ -4,7 +4,7 @@
 #include <functional>
 #include <unordered_map>
 #include <snet/io/driver.hpp>
-#include <snet/io/driver_config.hpp>
+#include <snet/io/driver_spec.hpp>
 #include <snet/io/config.hpp>
 
 namespace snet::io
@@ -13,9 +13,9 @@ namespace snet::io
 class Controller final
 {
 public:
-    using DriverOptions = casket::opt::ConfigOptions;
+    using Options = casket::opt::ConfigOptions;
 
-    Controller();
+    explicit Controller(Options& options);
     ~Controller() noexcept;
 
     Controller(const Controller&) = delete;
@@ -24,18 +24,18 @@ public:
     Controller(Controller&&) = delete;
     Controller& operator=(Controller&&) = delete;
 
-    std::shared_ptr<Driver> load(const DriverConfig& config);
+    std::shared_ptr<Driver> load(const DriverSpec& config);
 
     void unload(const std::string& name);
 
     std::shared_ptr<Driver> get(const std::string& name);
 
-    DriverOptions& options() noexcept
+    Options& options() noexcept
     {
         return options_;
     }
 
-    const DriverOptions& options() const noexcept
+    const Options& options() const noexcept
     {
         return options_;
     }
@@ -50,11 +50,9 @@ public:
         return dynamic_cast<const Config*>(options_.find(name));
     }
 
-    Status configure(const std::string& configPath);
+    Status configure(const std::string& name);
 
-    Status configure(const std::string& configPath, const std::string& name);
-
-    Status apply();
+    Status configureAll();
 
 private:
     struct LoadedDriver
@@ -64,7 +62,7 @@ private:
     };
 
     std::unordered_map<std::string, LoadedDriver> drivers_;
-    DriverOptions options_;
+    Options& options_;
 };
 
 } // namespace snet::io

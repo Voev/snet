@@ -21,7 +21,7 @@ public:
 
     /// @brief Constructs a Netfilter queue driver instance
     /// @param[in] config Driver configuration parameters (queue number, buffer size, etc.)
-    explicit NfQueue(const io::DriverConfig& config);
+    explicit NfQueue(const io::DriverSpec& config);
 
     /// @brief Destructor, releases Netfilter queue resources
     ~NfQueue() noexcept;
@@ -29,7 +29,7 @@ public:
     /// @brief Factory method for creating NfQueue driver instances
     /// @param[in] config Driver configuration parameters
     /// @return Shared pointer to created driver instance
-    static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
+    static std::shared_ptr<io::Driver> create(const io::DriverSpec& config);
 
     /// @brief Registers driver-specific options in the shared config section.
     ///

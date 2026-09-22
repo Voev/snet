@@ -23,10 +23,10 @@ public:
     using AFPacketPoolPtr = std::unique_ptr<AFPacketPool>;
     using AFPacketInstancePtr = std::unique_ptr<Instance>;
 
-    explicit AFPacketDriver(const io::DriverConfig& config);
+    explicit AFPacketDriver(const io::DriverSpec& config);
     ~AFPacketDriver() noexcept;
 
-    static std::shared_ptr<io::Driver> create(const io::DriverConfig& config);
+    static std::shared_ptr<io::Driver> create(const io::DriverSpec& config);
 
     const char* getName() const override;
 

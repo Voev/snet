@@ -66,7 +66,7 @@ int main(int argc, char* argv[])
     {
         std::vector<nonstd::string_view> args(argv + 1, argv + argc);
         CmdLineProcessor cli;
-        
+
         cli.getParser().parse(args);
         if (cli.getParser().isUsed("help"))
         {
@@ -74,20 +74,30 @@ int main(int argc, char* argv[])
             logWorker.stop();
             return EXIT_SUCCESS;
         }
-        
+
         cli.getParser().validate();
         const auto& params = cli.getParameters();
 
         AsyncLogger::getInstance().setLevel(LogLevel::DEBUG);
 
-        snet::io::DriverConfig driverConfig;
-        driverConfig.setPath(params.driverPath);
-        driverConfig.setLogger(&AsyncLogger::getInstance());
+        casket::opt::ConfigOptions options;
+        snet::io::Controller controller(options);
 
-        snet::io::Controller controller;
-        auto driver = controller.load(driverConfig);
+        snet::io::DriverSpec driverSpec;
+        driverSpec.setPath(params.driverPath);
+        driverSpec.setLogger(&AsyncLogger::getInstance());
 
-        controller.configure(params.configPath, driver->getName());
+        auto driver = controller.load(driverSpec);
+
+        casket::opt::ConfigOptionsReader reader;
+        std::ifstream ifs(params.configPath);
+        if (!ifs)
+        {
+            throw std::system_error(errno, std::system_category(), "failed to open config file: " + params.configPath);
+        }
+        reader.read(ifs, options);
+
+        controller.configure(driver->getName());
 
         snet::io::PacketPoolInfo info;
         auto status = driver->getMsgPoolInfo(info);

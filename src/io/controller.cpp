@@ -14,7 +14,8 @@ constexpr const char* kCreateSymbol = "CreateDriver";
 namespace snet::io
 {
 
-Controller::Controller()
+Controller::Controller(Controller::Options& options)
+    : options_(options)
 {
 }
 
@@ -23,7 +24,7 @@ Controller::~Controller() noexcept
     drivers_.clear();
 }
 
-std::shared_ptr<Driver> Controller::load(const DriverConfig& drvConfig)
+std::shared_ptr<Driver> Controller::load(const DriverSpec& drvConfig)
 {
     const std::string& path = drvConfig.getPath();
     if (path.empty())
@@ -84,26 +85,7 @@ std::shared_ptr<Driver> Controller::get(const std::string& name)
     return driver->second.driver;
 }
 
-Status Controller::configure(const std::string& configPath)
-{
-    try
-    {
-        casket::opt::ConfigOptionsReader reader;
-        std::ifstream ifs(configPath);
-        if (!ifs)
-            return Status::Error;
-
-        reader.read(ifs, options_);
-    }
-    catch (const std::exception&)
-    {
-        return Status::Error;
-    }
-
-    return apply();
-}
-
-Status Controller::configure(const std::string& configPath, const std::string& name)
+Status Controller::configure(const std::string& name)
 {
     auto it = drivers_.find(name);
     if (it == drivers_.end())
@@ -111,21 +93,16 @@ Status Controller::configure(const std::string& configPath, const std::string& n
         return Status::Error;
     }
 
-    casket::opt::ConfigOptionsReader reader;
-    std::ifstream ifs(configPath);
-    if (!ifs)
-        return Status::Error;
-
-    reader.read(ifs, options_);
-
     auto* section = sectionFor(name);
     if (!section)
+    {
         return Status::Error;
+    }
 
     return it->second.driver->configure(*section);
 }
 
-Status Controller::apply()
+Status Controller::configureAll()
 {
     for (auto& [name, l] : drivers_)
     {
