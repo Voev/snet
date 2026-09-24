@@ -215,6 +215,11 @@ public:
         return writeSeq_;
     }
 
+    size_t freeSpace() const noexcept
+    {
+        return capacity_ - static_cast<size_t>(writeSeq_ - consumedSeq_);
+    }
+
     /// @brief Returns true if there is a hole between consumed and write.
     bool hasHole() const noexcept
     {
