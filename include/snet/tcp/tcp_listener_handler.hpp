@@ -33,7 +33,7 @@ struct TcpListenerHandlerConfig
 ///   - Detect pure SYN (SYN set, ACK cleared).
 ///   - Look up TcpListener by dstIP:dstPort.
 ///   - Create TcpConnection context (first handler in pipeline).
-///   - Drive FSM: Closed → SynReceived via onPassiveOpen.
+///   - Drive FSM: Closed -> SynReceived via onPassiveOpen.
 ///   - Store FSM output (SYN-ACK) in TcpConnection for the TX handler.
 ///   - Optionally mark RST-to-unknown-port request.
 ///   - Consume SYN (do not pass further).
@@ -167,7 +167,7 @@ public:
 
         lst->halfOpen++;
 
-        CSK_LOG_DEBUG("TcpListener: SYN %s:%u → %s:%u, queued SYN-ACK (iss=%u)",
+        CSK_LOG_DEBUG("TcpListener: SYN %s:%u -> %s:%u, queued SYN-ACK (iss=%u)",
                       srcIP.toString().c_str(),
                       hdr.srcPort(),
                       dstIP.toString().c_str(),
