@@ -31,7 +31,7 @@ public:
         if (!conn->txRing)
             return;
 
-        // Zero-copy echo: rxRing → txRing
+        // Zero-copy echo: rxRing -> txRing
         while (reader.available() > 0)
         {
             auto [data, len] = reader.peek();
