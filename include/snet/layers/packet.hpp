@@ -396,6 +396,8 @@ private:
         {
         case LinkLayerType::LINKTYPE_ETHERNET:
             return Ethernet;
+        case LinkLayerType::LINKTYPE_RAW:
+            return IPv4;
         default:
             return UnknownProtocol;
         }
