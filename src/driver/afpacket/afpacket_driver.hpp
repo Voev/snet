@@ -14,6 +14,8 @@
 #include "afpacket_instance.hpp"
 #include "afpacket_fanout.hpp"
 
+#include <pcap.h>
+
 namespace snet::driver
 {
 
@@ -64,6 +66,8 @@ private:
     void updateHwStats();
     bool transmitPacket(Instance* egress, const uint8_t* data, uint32_t len);
 
+    bool applyFilter();
+
     RingEntry* findPacket();
     RecvStatus waitForPacket();
     void releaseAllOutstandingFrames();
@@ -71,6 +75,8 @@ private:
 private:
     std::vector<AFPacketInstancePtr> instances_;
     AFPacketPoolPtr pool_;
+    std::string filter_;
+    struct bpf_program fcode_;
     size_t currInstanceIdx_{0};
     std::atomic<bool> interrupted_{false};
     Stats stats_{};

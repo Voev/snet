@@ -24,11 +24,36 @@
 #define POLLRDHUP 0x2000
 #endif
 
+#include <pcap.h>
+#include <pthread.h>
+
 using namespace casket::opt;
 using namespace snet::io;
 
 namespace snet::driver
 {
+
+bool AFPacketDriver::applyFilter()
+{
+    if (filter_.empty())
+    {
+        return true;
+    }
+
+    struct bpf_program fcode;
+
+    if (pcap_compile_nopcap(snaplen_, DLT_EN10MB, &fcode, filter_.c_str(), 1, PCAP_NETMASK_UNKNOWN) == -1)
+    {
+        logError("BPF state machine compilation failed");
+        return false;
+    }
+
+    pcap_freecode(&fcode_);
+    fcode_.bf_len = fcode.bf_len;
+    fcode_.bf_insns = fcode.bf_insns;
+
+    return true;
+}
 
 AFPacketDriver::AFPacketDriver(const io::DriverSpec& config)
     : DriverBase(config)
@@ -72,6 +97,10 @@ Status AFPacketDriver::declareOptions(io::Config& config)
         .setDefaultValue(afpacket::Fanout::Flags::None)
         .setDescription("Fanout flags: none|rollover|uniqueid|defrag")
         .build());
+    config.addDriverOption(OptionBuilder("bpf_filter", Value(&filter_))
+        .setDescription("BPF filter string")
+        .build());
+
     // clang-format on
     return Status::Success;
 }
@@ -235,6 +264,9 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
 
     pool_ = std::make_unique<AFPacketPool>(poolSize);
     currInstanceIdx_ = 0;
+
+    applyFilter();
+
     return Status::Success;
 }
 
@@ -485,6 +517,18 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
             tag->tci = htons(hdr->tp_vlan_tci);
 
             tpSnaplen += kVlanTagLen;
+        }
+
+        if (fcode_.bf_insns && bpf_filter(fcode_.bf_insns, data, tpLen, tpSnaplen) == 0)
+        {
+            stats_.packetsFiltered++;
+            transmitPacket(instance->peer, data, tpSnaplen);
+
+            auto* hdr = reinterpret_cast<tpacket2_hdr*>(entry->raw);
+            hdr->tp_status = TP_STATUS_KERNEL;
+
+            pool_->release(wrapper);
+            continue;
         }
 
         stats_.packetsReceived++;

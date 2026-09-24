@@ -39,6 +39,18 @@ bool Instance::create(const std::string& name)
         return false;
     }
 
+    int on = 1;
+    if (::setsockopt(fd_, SOL_PACKET, PACKET_IGNORE_OUTGOING, &on, sizeof(on)) < 0)
+    {
+        // На старых ядрах (< 4.20) этой опции нет — не критично
+        driver_.logWarning("PACKET_IGNORE_OUTGOING not supported: %s", std::strerror(errno));
+        // не возвращаем false — продолжаем работу
+    }
+    else
+    {
+        driver_.logInfo("PACKET_IGNORE_OUTGOING enabled on %s", name.c_str());
+    }
+
     struct ifreq ifr{};
     std::strncpy(ifr.ifr_name, name_.c_str(), sizeof(ifr.ifr_name) - 1);
     if (::ioctl(fd_, SIOCGIFINDEX, &ifr) == -1)
