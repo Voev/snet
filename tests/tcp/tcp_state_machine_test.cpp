@@ -583,7 +583,8 @@ TEST(TcpFsmTest, SynReceivedUnexpectedSegmentSendsRst)
         c, ip("10.0.0.1"), 80, ip("10.0.0.2"), 5000, 500, 9000);
     auto res = TcpStateMachine::onRxSegment(
         c, makeSeg(flagsAck(), 9999, 9999));
-    EXPECT_EQ(res.output.type, TcpOutput::Type::SendReset);
+    EXPECT_EQ(res.output.type, TcpOutput::Type::None);
+    EXPECT_EQ(c.state, TcpState::SynReceived);
     cleanupConnection(&c);
 }
 

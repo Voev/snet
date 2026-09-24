@@ -10,6 +10,7 @@
 #include <snet/layers/packet_builder.hpp>
 #include <snet/layers/packet_sink.hpp>
 #include <snet/layers/l3/ip_address.hpp>
+#include <snet/layers/l4/tcp_options.hpp>
 
 #include <snet/session/session_handler.hpp>
 #include <snet/session/session_manager.hpp>
@@ -24,6 +25,9 @@ namespace snet::tcp
 
 struct TcpTransmitHandlerConfig
 {
+    size_t maxPacketSize{65536};
+    size_t packetHeadroom{14};
+
     /// Send pending data automatically when new data appears in txRing
     /// or when an ACK opens the window.
     bool autoPumpOnAck{true};
@@ -33,7 +37,7 @@ struct TcpTransmitHandlerConfig
     uint32_t maxSegmentsPerPump{1};
 
     /// Send FIN automatically when peer closed and we've drained
-    /// (CLOSE_WAIT → LAST_ACK).
+    /// (CLOSE_WAIT -> LAST_ACK).
     bool autoFinOnCloseWait{false};
 
     /// Send RST on abort.
@@ -70,13 +74,11 @@ public:
     using Session = typename SessionManagerType::Session;
     using TcpConnection = snet::tcp::TcpConnection;
 
-    static constexpr size_t MAX_PACKET_SIZE = 65536;
-
-    TcpTransmitHandler(snet::layers::IPacketSink* sink, TxRingPool* txPool, TcpTransmitHandlerConfig config = {})
-        : sink_(sink)
-        , txPool_(txPool)
+    TcpTransmitHandler(TxRingPool* txPool, snet::layers::IPacketSink* sink, TcpTransmitHandlerConfig config = {})
+        : txPool_(txPool)
+        , sink_(sink)
         , config_(config)
-        , packet_(MAX_PACKET_SIZE)
+        , packet_(config.maxPacketSize, config.packetHeadroom)
     {
     }
 
@@ -316,34 +318,8 @@ public:
         {
             if (emit(conn, out))
             {
-                // NOTE: for retransmit we do NOT call onSegmentSent,
-                // because sndNxt must not advance (data was already sent).
-                // However, onSegmentSent also bumps stats — we want those.
-                // See TcpStateMachine::onSegmentSent doc.
-                //
-                // The current FSM's onSegmentSent does NOT check for
-                // retransmit — it always advances. To make retransmit
-                // safe, we must guard here:
-                const uint32_t nextToSend =
-                    conn->txRing ? conn->txRing->seqBase() +
-                                       static_cast<uint32_t>(conn->txRing->pending() > 0 ? 0 : 0) // placeholder
-                                 : 0;
-                (void)nextToSend;
-
-                // Simple heuristic: if out.seq < conn->sndNxt, it's a
-                // retransmit, so do not advance sndNxt.
-                // We still bump counters.
-                if (out.seq == conn->sndNxt)
-                {
-                    TcpStateMachine::onSegmentSent(*conn, out);
-                }
-                else
-                {
-                    // Retransmit — bump stats only
-                    conn->retransmits++;
-                    conn->packetsSent++;
-                    conn->bytesSent += out.payloadLen;
-                }
+                conn->packetsSent++;
+                conn->bytesSent += out.payloadLen;
             }
         }
 
@@ -463,8 +439,17 @@ private:
         // so layers are cleared. The InMemoryPacket buffer is reused.
         snet::layers::PacketBuilder<snet::layers::InMemoryPacket> builder(&packet_);
         constexpr uint16_t IP_HDR_LEN = 20;
-        constexpr uint16_t TCP_HDR_LEN = 20;
-        const uint16_t ipTotalLen = IP_HDR_LEN + TCP_HDR_LEN + static_cast<uint16_t>(out.payloadLen);
+
+        // Build TCP options if needed
+        layers::TcpOptions opts;
+        const bool withOptions = out.flags.hasSyn();
+        if (withOptions)
+        {
+            opts.mss(conn->mss).sackPermitted().padTo4(); // doff станет 7 (28 байт)
+        }
+
+        const uint8_t tcpDoff = opts.empty() ? 5 : opts.doff();
+        const uint16_t ipTotalLen = IP_HDR_LEN + (tcpDoff * 4) + static_cast<uint16_t>(out.payloadLen);
         constexpr uint16_t IP_FLAG_DF = 0x4000; // Don't Fragment
 
         builder.ipv4()
@@ -479,20 +464,26 @@ private:
             .set(&ipv4_header::daddr, conn->remoteIP.toIPv4().toNetwork())
             .build();
 
-        builder.tcp()
-            .set(&tcp_header::source, casket::host_to_be(conn->localPort))
+        auto tcp = builder.tcp();
+
+        tcp.set(&tcp_header::source, casket::host_to_be(conn->localPort))
             .set(&tcp_header::dest, casket::host_to_be(conn->remotePort))
             .set(&tcp_header::seq, casket::host_to_be(out.seq))
             .set(&tcp_header::ack_seq, casket::host_to_be(out.ack))
-            .apply(setTcpDoffFlags, uint8_t{5}, out.flags.toByte())
+            .apply(setTcpDoffFlags, tcpDoff, out.flags.toByte())
             .set(&tcp_header::window, casket::host_to_be(out.window))
             .set(&tcp_header::urg_ptr, 0);
+
+        if (!opts.empty())
+            tcp.append(opts.data(), opts.size());
+
+        tcp.build();
 
         if (out.payloadLen > 0 && out.payload)
             builder.payload(out.payload, out.payloadLen);
 
         // build() computes IP and TCP checksums and sets raw data
-        auto* built = builder.build();
+        auto* built = builder.build(LINKTYPE_RAW);
         if (!built)
         {
             CSK_LOG_ERROR("TcpTransmit: build() failed");
@@ -510,8 +501,8 @@ private:
     }
 
 private:
-    snet::layers::IPacketSink* sink_{nullptr};
     TxRingPool* txPool_{nullptr};
+    snet::layers::IPacketSink* sink_{nullptr};
     TcpTransmitHandlerConfig config_;
 
     /// Single reusable packet — buffer allocated once in ctor.

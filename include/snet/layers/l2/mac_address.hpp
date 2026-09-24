@@ -50,9 +50,25 @@ struct MacAddress
         return MacAddress{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     }
 
+    bool isBroadcast() const noexcept
+    {
+        for (auto b : bytes)
+            if (b != 0xFF)
+                return false;
+        return true;
+    }
+
     static MacAddress zero()
     {
         return MacAddress{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    }
+
+    bool isZero() const noexcept
+    {
+        for (auto b : bytes)
+            if (b)
+                return false;
+        return true;
     }
 
     static MacAddress parse(const std::string& str)

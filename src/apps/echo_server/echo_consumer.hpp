@@ -24,21 +24,19 @@ public:
     void onStreamData(Session* session, int8_t side, snet::tcp::IStreamReader& reader) override
     {
         (void)side;
-    
+
         auto* conn = mgr_->template getContext<TcpConnection>(session);
         if (!conn || conn->closed)
             return;
         if (!conn->txRing)
             return;
 
-        // Zero-copy echo: rxRing → txRing
         while (reader.available() > 0)
         {
             auto [data, len] = reader.peek();
             if (!data || len == 0)
                 break;
 
-            // Backpressure: ограничиваем по свободному месту в txRing
             const size_t free = conn->txRing->freeSpace();
             if (free == 0)
             {
@@ -50,8 +48,7 @@ public:
             const size_t written = conn->txRing->write(data, toEcho);
             reader.consume(written);
 
-            CSK_LOG_DEBUG(
-                "Echo: echoed %zu bytes", written);
+            CSK_LOG_DEBUG("Echo: echoed %zu bytes", written);
 
             if (written < toEcho)
                 break;
