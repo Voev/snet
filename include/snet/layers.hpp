@@ -5,10 +5,15 @@
 #include <snet/layers/layer.hpp>
 #include <snet/layers/packet.hpp>
 #include <snet/layers/packet_builder.hpp>
+#include <snet/layers/network_sink.hpp>
 
 #include <snet/layers/in_memory_packet.hpp>
 
 #include <snet/layers/l2/mac_address.hpp>
 #include <snet/layers/l2/eth_header.hpp>
 
+#include <snet/layers/l3/ipv4_header.hpp>
+
+#include <snet/layers/l4/tcp_options.hpp>
+#include <snet/layers/l4/tcp_header.hpp>
 #include <snet/layers/l4/tcp_reassembly.hpp>

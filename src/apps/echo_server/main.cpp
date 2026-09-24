@@ -9,19 +9,15 @@
 #include <casket/signal/signal_handler.hpp>
 
 #include <snet/io.hpp>
+#include <snet/layers.hpp>
+#include <snet/session.hpp>
 
-#include <snet/session/session_manager.hpp>
-#include <snet/session/session_pipeline.hpp>
 #include <snet/tcp/tcp_listener_handler.hpp>
 #include <snet/tcp/tcp_receive_handler.hpp>
 #include <snet/tcp/tcp_transmit_handler.hpp>
 #include <snet/tcp/tcp_listener.hpp>
-#include <snet/layers/packet_sink.hpp>
-#include <snet/layers/l3/ip_address.hpp>
 
 #include <snet/utils/print_hex.hpp>
-
-#include <snet/layers/ethernet_sink.hpp>
 
 #include "echo_consumer.hpp"
 
@@ -165,7 +161,7 @@ int main(int argc, char* argv[])
 
         pipeline->addHandler<TcpListenerHandler<SessionManager>>(&listeners);
         pipeline->addHandler<TcpReceiveHandler<SessionManager>>(rxPool.get(), nullptr, echoConsumer.get());
-        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(sink.get(), txPool.get());
+        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(txPool.get(), sink.get());
 
         mgr.setPipeline(std::move(pipeline));
 

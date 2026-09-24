@@ -74,9 +74,9 @@ public:
     using Session = typename SessionManagerType::Session;
     using TcpConnection = snet::tcp::TcpConnection;
 
-    TcpTransmitHandler(snet::layers::IPacketSink* sink, TxRingPool* txPool, TcpTransmitHandlerConfig config = {})
-        : sink_(sink)
-        , txPool_(txPool)
+    TcpTransmitHandler(TxRingPool* txPool, snet::layers::IPacketSink* sink, TcpTransmitHandlerConfig config = {})
+        : txPool_(txPool)
+        , sink_(sink)
         , config_(config)
         , packet_(config.maxPacketSize, config.packetHeadroom)
     {
@@ -501,8 +501,8 @@ private:
     }
 
 private:
-    snet::layers::IPacketSink* sink_{nullptr};
     TxRingPool* txPool_{nullptr};
+    snet::layers::IPacketSink* sink_{nullptr};
     TcpTransmitHandlerConfig config_;
 
     /// Single reusable packet — buffer allocated once in ctor.
