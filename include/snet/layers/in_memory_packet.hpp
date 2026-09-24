@@ -73,14 +73,14 @@ public:
         // data_ remains allocated
     }
 
-    void setData(const uint8_t* data, size_t len)
+    void setData(const uint8_t* data, size_t len, LinkLayerType linkType = LINKTYPE_ETHERNET)
     {
         if (!data || len == 0 || len > getCapacity())
             return;
 
         uint8_t* dst = getData();
         std::memcpy(dst, data, len);
-        packet_.setRawData(nonstd::span<const uint8_t>(dst, len), layers::LINKTYPE_ETHERNET);
+        packet_.setRawData(nonstd::span<const uint8_t>(dst, len), linkType);
         packet_.setTimestamp(layers::Timestamp::currentTime());
     }
 
