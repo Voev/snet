@@ -4,6 +4,7 @@
 #include <cstring>
 #include <casket/nonstd/span.hpp>
 #include <snet/layers/header_builder.hpp>
+#include <snet/layers/checksums.hpp>
 
 namespace snet::layers
 {
@@ -64,7 +65,7 @@ public:
         return payload(data.data(), data.size());
     }
 
-    PacketType* build() noexcept
+    PacketType* build(LinkLayerType linkType = LINKTYPE_ETHERNET) noexcept
     {
         if (!pkt_ || offset_ == 0)
         {
@@ -72,7 +73,7 @@ public:
         }
 
         updateChecksums();
-        updatePacketView();
+        updatePacketView(linkType);
 
         built_ = true;
         return pkt_;
@@ -104,114 +105,44 @@ public:
     }
 
 private:
+    /// @todo: refact this.
     void updateChecksums() noexcept
     {
-        if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header))
+        if (offset_ < sizeof(ipv4_header))
             return;
 
-        auto* ip = tryGetIp();
-        if (ip && ip->protocol == 6)
-        {
-            auto* tcp = tryGetTcp(ip);
-            if (tcp)
-            {
-                size_t ip_len = offset_ - sizeof(ethernet_header);
-                ip->tot_len = htobe16(ip_len);
-                ip->check = 0;
-                ip->check = ipChecksum(ip);
+        auto* ip = reinterpret_cast<ipv4_header*>(buffer_);
+        if (ip->version != 4 || ip->protocol != 6)
+            return;
 
-                tcp->check = 0;
-                tcp->check = tcpChecksum(ip, tcp);
-            }
-        }
+        const size_t ipSize = ip->ihl * 4;
+        if (offset_ < ipSize + sizeof(tcp_header))
+            return;
+
+        auto* tcp = reinterpret_cast<tcp_header*>(buffer_ + ipSize);
+        const size_t tcpLen = offset_ - ipSize;
+
+        ip->check = 0;
+        ScalarBuffer<uint16_t> ipVec[1];
+        ipVec[0].buffer = reinterpret_cast<uint16_t*>(ip);
+        ipVec[0].len = ipSize; // 20
+        ip->check =  casket::host_to_be(computeChecksum(ipVec, 1));
+
+        IPAddress srcIP(IPv4Address(ip->saddr));
+        IPAddress dstIP(IPv4Address(ip->daddr));
+        tcp->check = 0;
+        auto tcpCs = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcp),
+                                              tcpLen,
+                                              IPAddress::IPv4,
+                                              6, // IPPROTO_TCP
+                                              srcIP,
+                                              dstIP);
+        tcp->check = casket::host_to_be(tcpCs);
     }
 
-    void updatePacketView() noexcept
+    inline void updatePacketView(LinkLayerType linkType) noexcept
     {
-        pkt_->asPacket()->setRawData(nonstd::span<const uint8_t>(buffer_, offset_), LINKTYPE_ETHERNET);
-    }
-
-    ipv4_header* tryGetIp() noexcept
-    {
-        if (offset_ < sizeof(ethernet_header) + sizeof(ipv4_header))
-        {
-            return nullptr;
-        }
-
-        auto* ip = reinterpret_cast<ipv4_header*>(buffer_ + sizeof(ethernet_header));
-        return (ip->version == 4) ? ip : nullptr;
-    }
-
-    tcp_header* tryGetTcp(const ipv4_header* ip) noexcept
-    {
-        size_t ip_size = ip->ihl * 4;
-        if (offset_ < sizeof(ethernet_header) + ip_size + sizeof(tcp_header))
-        {
-            return nullptr;
-        }
-
-        return reinterpret_cast<tcp_header*>(buffer_ + sizeof(ethernet_header) + ip_size);
-    }
-
-    static uint16_t ipChecksum(const ipv4_header* ip) noexcept
-    {
-        uint32_t sum = 0;
-        const uint16_t* ptr = reinterpret_cast<const uint16_t*>(ip);
-        size_t words = ip->ihl * 2;
-
-        for (size_t i = 0; i < words; ++i)
-        {
-            sum += be16toh(ptr[i]);
-            if (sum & 0x80000000)
-                sum = (sum & 0xFFFF) + (sum >> 16);
-        }
-
-        while (sum >> 16)
-            sum = (sum & 0xFFFF) + (sum >> 16);
-        return htobe16(~sum & 0xFFFF);
-    }
-
-    static uint16_t tcpChecksum(const ipv4_header* ip, const tcp_header* tcp) noexcept
-    {
-        struct Pseudo
-        {
-            uint32_t src, dst;
-            uint8_t zero, proto;
-            uint16_t len;
-        };
-
-        //size_t ip_size = ip->ihl * 4;
-        size_t tcp_len = tcp->u.bits.doff * 4;
-
-        Pseudo pseudo;
-        pseudo.src = ip->saddr;
-        pseudo.dst = ip->daddr;
-        pseudo.zero = 0;
-        pseudo.proto = 6;
-        pseudo.len = htobe16(tcp_len);
-
-        uint32_t sum = 0;
-        const uint16_t* ptr = reinterpret_cast<const uint16_t*>(&pseudo);
-        for (size_t i = 0; i < sizeof(Pseudo) / 2; ++i)
-        {
-            sum += be16toh(ptr[i]);
-            if (sum & 0x80000000)
-                sum = (sum & 0xFFFF) + (sum >> 16);
-        }
-
-        const uint16_t* tcpPtr = reinterpret_cast<const uint16_t*>(tcp);
-        size_t words = (tcp_len + 1) / 2;
-        for (size_t i = 0; i < words; ++i)
-        {
-            uint16_t val = (i * 2 + 1 < tcp_len) ? be16toh(tcpPtr[i]) : 0;
-            sum += val;
-            if (sum & 0x80000000)
-                sum = (sum & 0xFFFF) + (sum >> 16);
-        }
-
-        while (sum >> 16)
-            sum = (sum & 0xFFFF) + (sum >> 16);
-        return htobe16(~sum & 0xFFFF);
+        pkt_->asPacket()->setRawData(nonstd::span<const uint8_t>(buffer_, offset_), linkType);
     }
 
     PacketType* pkt_;
