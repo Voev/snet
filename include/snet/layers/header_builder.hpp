@@ -34,6 +34,7 @@ public:
         : callback_(std::move(callback))
         , buffer_(buffer)
         , capacity_(capacity)
+        , appendedLen_(0)
         , header_(nullptr)
         , built_(false)
     {
@@ -51,6 +52,21 @@ public:
         {
             setField(field, std::forward<ValueType>(value));
         }
+        return *this;
+    }
+
+    HeaderBuilder& append(const void* data, size_t len) noexcept
+    {
+        if (!header_ || built_ || !data || len == 0)
+            return *this;
+
+        const size_t maxExtra = capacity_ - sizeof(HeaderType);
+        if (appendedLen_ + len > maxExtra)
+            return *this;
+
+        uint8_t* dst = reinterpret_cast<uint8_t*>(header_) + sizeof(HeaderType) + appendedLen_;
+        std::memcpy(dst, data, len);
+        appendedLen_ += len;
         return *this;
     }
 
@@ -78,7 +94,8 @@ public:
     {
         built_ = true;
         size_t size = getHeaderSize();
-        if (callback_) callback_(size);
+        if (callback_)
+            callback_(size);
         return size;
     }
 
@@ -86,14 +103,17 @@ public:
     {
         return header_;
     }
+
     const HeaderType* raw() const noexcept
     {
         return header_;
     }
+
     bool isBuilt() const noexcept
     {
         return built_;
     }
+
     bool isValid() const noexcept
     {
         return header_ != nullptr;
@@ -131,6 +151,11 @@ private:
         }
     }
 
+    size_t appendedLength() const noexcept
+    {
+        return appendedLen_;
+    }
+
     size_t getHeaderSize() const noexcept
     {
         if (!header_)
@@ -138,7 +163,7 @@ private:
 
         if constexpr (std::is_same_v<HeaderType, ethernet_header>)
         {
-            if (be16toh(header_->etherType) == 0x8100)
+            if (casket::be_to_host(header_->etherType) == 0x8100)
                 return sizeof(ethernet_header) + 4;
             return sizeof(ethernet_header);
         }
@@ -160,6 +185,7 @@ private:
     AdvanceCallback callback_;
     uint8_t* buffer_;
     size_t capacity_;
+    size_t appendedLen_{0};
     HeaderType* header_;
     bool built_;
 };
