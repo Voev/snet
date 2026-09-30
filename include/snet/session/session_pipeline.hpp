@@ -61,41 +61,6 @@ public:
         return add(std::move(handler));
     }
 
-    bool createContext(Session* session)
-    {
-        if (pipeline_.empty() || !session)
-        {
-            return false;
-        }
-
-        for (auto& handler : pipeline_)
-        {
-            if (!handler->createContext(session))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool destroyContext(Session* session)
-    {
-        if (pipeline_.empty() || !session)
-        {
-            return false;
-        }
-
-        bool success = true;
-        for (auto it = pipeline_.rbegin(); it != pipeline_.rend(); ++it)
-        {
-            if (!(*it)->destroyContext(session))
-            {
-                success = false;
-            }
-        }
-        return success;
-    }
-
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         if (pipeline_.empty() || !session || !packet)
