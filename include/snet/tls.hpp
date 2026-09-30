@@ -11,7 +11,7 @@
 #include <snet/tls/record_printer.hpp>
 
 #include <snet/tls/tls_decrypt_context.hpp>
-#include <snet/tls/tls_decrypt_handler.hpp>
+#include <snet/tls/tls_decrypt_ctx_factory.hpp>
 #include <snet/tls/tls_stream_consumer.hpp>
 
 #include <snet/tls/settings.hpp>

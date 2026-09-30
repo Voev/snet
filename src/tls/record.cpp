@@ -39,8 +39,8 @@ void Record::deserializeHeader(nonstd::span<const uint8_t> data)
     casket::ThrowIfTrue(recordLength == 0, "Received a empty record");
     expectedLength_ = recordLength;
 }
-
 size_t Record::serializeHeader(nonstd::span<uint8_t> output)
+
 {
     casket::ThrowIfTrue(output.size() < TLS_HEADER_SIZE, "Output buffer is too small");
     output[0] = static_cast<uint8_t>(type_);

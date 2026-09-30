@@ -2,7 +2,7 @@
 #include "decrypt_by_keylog_test.hpp"
 
 #include <snet/tls.hpp>
-#include <snet/layers/l4/tcp_reassembly.hpp>
+#include <snet/tcp/tcp_conn_ctx_factory.hpp>
 
 #include <casket/utils/string.hpp>
 #include <casket/utils/to_number.hpp>
@@ -33,13 +33,19 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
     ThrowIfTrue(found == section.end(), "not found required option 'decrypted_records_count'");
     to_number(found->second, expectedDecryptedRecordCount_);
 
+    TcpReceiveHandlerConfig config;
+    config.replayMode = true;
+
     consumer_ = std::make_unique<TlsDecryptStreamConsumer<SessionManager>>(&sessionManager_, &secretManager_, options);
-    auto receiver = std::make_shared<TcpReceiveHandler<SessionManager>>(&rxPool_, nullptr, consumer_.get());
-    auto decryption = std::make_shared<TlsDecryptHandler<SessionManager>>(&recordPool_);
-    
+    auto receiver = std::make_shared<TcpReceiveHandler<SessionManager>>(nullptr, consumer_.get(), config);
+
+    auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
+    fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(&rxPool_, nullptr);
+    fRegistry->addFactory<TlsDecryptCtxFactory<SessionManager>>(&recordPool_);
+    sessionManager_.setFactoryRegistry(std::move(fRegistry));
+
     auto pipeline = std::make_unique<SessionManager::Pipeline>();
     pipeline->add(receiver);
-    pipeline->add(decryption);
     sessionManager_.setPipeline(std::move(pipeline));
 }
 

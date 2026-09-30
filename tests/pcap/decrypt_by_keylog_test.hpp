@@ -5,6 +5,7 @@
 #include <snet/tls.hpp>
 #include <snet/tcp/tcp_types.hpp>
 #include <snet/tcp/tcp_receive_handler.hpp>
+#include <snet/tcp/tcp_listener_handler.hpp>
 
 #include <snet/config_parser/config_parser.hpp>
 #include "pcap_test.hpp"
