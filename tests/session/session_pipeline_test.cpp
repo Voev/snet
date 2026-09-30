@@ -93,20 +93,6 @@ struct NamedHandler : public ISessionHandler<FakeSessionManager>
         return handlerName.c_str();
     }
 
-    bool createContext(Session* s) override
-    {
-        ++createCalls;
-        lastSession = s;
-        return createResult;
-    }
-
-    bool destroyContext(Session* s) override
-    {
-        ++destroyCalls;
-        lastSession = s;
-        return destroyResult;
-    }
-
     PacketStatus processPacket(Session* s, Packet* p, PacketStatus status) override
     {
         ++processCalls;
@@ -122,14 +108,6 @@ struct AnotherHandler : public ISessionHandler<FakeSessionManager>
     const char* name() const override
     {
         return "AnotherHandler";
-    }
-    bool createContext(Session*) override
-    {
-        return true;
-    }
-    bool destroyContext(Session*) override
-    {
-        return true;
     }
     PacketStatus processPacket(Session*, Packet*, PacketStatus) override
     {
@@ -246,94 +224,6 @@ TEST(SessionPipelineTest, ConstructorManagerPropagatesToAddedHandlers)
     EXPECT_EQ(a->getSessionManager(), &mgr);
 }
 
-TEST(SessionPipelineTest, CreateContextOnEmptyReturnsFalse)
-{
-    Pipeline p;
-    FakeSession session;
-    EXPECT_FALSE(p.createContext(&session));
-}
-
-TEST(SessionPipelineTest, CreateContextOnNullSessionReturnsFalse)
-{
-    Pipeline p;
-    p.addHandler<NamedHandler>("A");
-    EXPECT_FALSE(p.createContext(nullptr));
-}
-
-TEST(SessionPipelineTest, CreateContextAllSuccess)
-{
-    Pipeline p;
-    auto a = makeHandler("A");
-    auto b = makeHandler("B");
-    p.add(a).add(b);
-
-    FakeSession session;
-    EXPECT_TRUE(p.createContext(&session));
-    EXPECT_EQ(a->createCalls, 1);
-    EXPECT_EQ(b->createCalls, 1);
-}
-
-TEST(SessionPipelineTest, CreateContextStopsOnFirstFailure)
-{
-    Pipeline p;
-    auto a = makeHandler("A");
-    auto b = makeHandler("B");
-    auto c = makeHandler("C");
-    b->createResult = false;
-    p.add(a).add(b).add(c);
-
-    FakeSession session;
-    EXPECT_FALSE(p.createContext(&session));
-    EXPECT_EQ(a->createCalls, 1);
-    EXPECT_EQ(b->createCalls, 1);
-    EXPECT_EQ(c->createCalls, 0);
-}
-
-TEST(SessionPipelineTest, DestroyContextOnEmptyReturnsFalse)
-{
-    Pipeline p;
-    FakeSession session;
-    EXPECT_FALSE(p.destroyContext(&session));
-}
-
-TEST(SessionPipelineTest, DestroyContextOnNullSessionReturnsFalse)
-{
-    Pipeline p;
-    p.addHandler<NamedHandler>("A");
-    EXPECT_FALSE(p.destroyContext(nullptr));
-}
-
-TEST(SessionPipelineTest, DestroyContextReverseOrder)
-{
-    Pipeline p;
-    auto a = makeHandler("A");
-    auto b = makeHandler("B");
-    auto c = makeHandler("C");
-    p.add(a).add(b).add(c);
-
-    FakeSession session;
-    EXPECT_TRUE(p.destroyContext(&session));
-    EXPECT_EQ(a->destroyCalls, 1);
-    EXPECT_EQ(b->destroyCalls, 1);
-    EXPECT_EQ(c->destroyCalls, 1);
-}
-
-TEST(SessionPipelineTest, DestroyContextContinuesOnFailure)
-{
-    Pipeline p;
-    auto a = makeHandler("A");
-    auto b = makeHandler("B");
-    auto c = makeHandler("C");
-    b->destroyResult = false;
-    p.add(a).add(b).add(c);
-
-    FakeSession session;
-    EXPECT_FALSE(p.destroyContext(&session));
-    EXPECT_EQ(a->destroyCalls, 1);
-    EXPECT_EQ(b->destroyCalls, 1);
-    EXPECT_EQ(c->destroyCalls, 1);
-}
-
 TEST(SessionPipelineTest, ProcessPacketOnNullPacketReturnsError)
 {
     Pipeline p;
@@ -376,14 +266,7 @@ struct OtherBaseHandler : public ISessionHandler<FakeSessionManager>
     {
         return "OtherBaseHandler";
     }
-    bool createContext(Session*) override
-    {
-        return true;
-    }
-    bool destroyContext(Session*) override
-    {
-        return true;
-    }
+
     PacketStatus processPacket(Session*, Packet*, PacketStatus) override
     {
         return PacketHandled;

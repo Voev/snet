@@ -111,16 +111,6 @@ public:
         return "TestHandler";
     }
 
-    bool createContext(Session*) override
-    {
-        return true;
-    }
-
-    bool destroyContext(Session*) override
-    {
-        return true;
-    }
-
     layers::PacketStatus processPacket(Session*, layers::Packet*, layers::PacketStatus status) override
     {
         return status;
@@ -128,10 +118,6 @@ public:
 
     using Base::passToNext;
     using Base::getContext;
-    using Base::setContext;
-    using Base::allocateContext;
-    using Base::removeContext;
-    using Base::deallocateContext;
     using Base::getSessionManager;
 };
 
@@ -145,16 +131,6 @@ struct CountingHandler : public ISessionHandler<FakeSessionManager>
     const char* name() const override
     {
         return "CountingHandler";
-    }
-
-    bool createContext(Session*) override
-    {
-        return true;
-    }
-
-    bool destroyContext(Session*) override
-    {
-        return true;
     }
 
     layers::PacketStatus processPacket(Session* s, layers::Packet* p, layers::PacketStatus status) override
@@ -218,110 +194,6 @@ TEST(ISessionHandlerTest, GetContextForwardsToManager)
     EXPECT_EQ(mgr.lastGetIndex, 3u);
 }
 
-TEST(ISessionHandlerTest, SetContextWithoutManagerReturnsFalse)
-{
-    TestHandler h;
-    FakeSession session;
-    TestCtx ctx;
-    EXPECT_FALSE(h.setContext<TestCtx>(&session, &ctx));
-}
-
-TEST(ISessionHandlerTest, SetContextWithNullSessionReturnsFalse)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    h.setSessionManager(&mgr);
-    TestCtx ctx;
-    EXPECT_FALSE(h.setContext<TestCtx>(nullptr, &ctx));
-}
-
-TEST(ISessionHandlerTest, SetContextForwardsToManager)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    FakeSession session;
-    TestCtx ctx;
-    h.setSessionManager(&mgr);
-
-    EXPECT_TRUE(h.setContext<TestCtx>(&session, &ctx, 2));
-    EXPECT_EQ(mgr.setContextCalls, 1);
-    EXPECT_EQ(mgr.lastSetSession, &session);
-    EXPECT_EQ(mgr.lastSetCtx, &ctx);
-    EXPECT_EQ(mgr.lastSetIndex, 2u);
-}
-
-TEST(ISessionHandlerTest, AllocateContextWithoutManagerReturnsNull)
-{
-    TestHandler h;
-    EXPECT_EQ(h.allocateContext<TestCtx>(), nullptr);
-}
-
-TEST(ISessionHandlerTest, AllocateContextForwardsToManager)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    h.setSessionManager(&mgr);
-
-    h.allocateContext<TestCtx>();
-    EXPECT_EQ(mgr.allocateContextCalls, 1);
-}
-
-TEST(ISessionHandlerTest, AllocateContextWithArgsWithoutManagerReturnsNull)
-{
-    TestHandler h;
-    EXPECT_EQ(h.allocateContext<TestCtx>(42), nullptr);
-}
-
-TEST(ISessionHandlerTest, AllocateContextWithArgsForwardsToManager)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    h.setSessionManager(&mgr);
-
-    h.allocateContext<TestCtx>(42, 3.14);
-    EXPECT_EQ(mgr.allocateContextArgsCalls, 1);
-}
-
-TEST(ISessionHandlerTest, RemoveContextWithoutManagerReturnsNull)
-{
-    TestHandler h;
-    FakeSession session;
-    EXPECT_EQ(h.removeContext<TestCtx>(&session), nullptr);
-}
-
-TEST(ISessionHandlerTest, RemoveContextForwardsToManager)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    FakeSession session;
-    h.setSessionManager(&mgr);
-
-    h.removeContext<TestCtx>(&session, 1);
-    EXPECT_EQ(mgr.removeContextCalls, 1);
-    EXPECT_EQ(mgr.lastRemoveSession, &session);
-    EXPECT_EQ(mgr.lastRemoveIndex, 1u);
-}
-
-TEST(ISessionHandlerTest, DeallocateContextWithoutManagerDoesNothing)
-{
-    TestHandler h;
-    TestCtx ctx;
-    h.deallocateContext<TestCtx>(&ctx);
-    EXPECT_EQ(0, 0);
-}
-
-TEST(ISessionHandlerTest, DeallocateContextForwardsToManager)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    h.setSessionManager(&mgr);
-    TestCtx ctx;
-
-    h.deallocateContext<TestCtx>(&ctx);
-    EXPECT_EQ(mgr.deallocateContextCalls, 1);
-    EXPECT_EQ(mgr.lastDeallocate, &ctx);
-}
-
 TEST(ISessionHandlerTest, GetContextDefaultIndexIsZero)
 {
     TestHandler h;
@@ -333,25 +205,3 @@ TEST(ISessionHandlerTest, GetContextDefaultIndexIsZero)
     EXPECT_EQ(mgr.lastGetIndex, 0u);
 }
 
-TEST(ISessionHandlerTest, SetContextDefaultIndexIsZero)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    FakeSession session;
-    TestCtx ctx;
-    h.setSessionManager(&mgr);
-
-    h.setContext<TestCtx>(&session, &ctx);
-    EXPECT_EQ(mgr.lastSetIndex, 0u);
-}
-
-TEST(ISessionHandlerTest, RemoveContextDefaultIndexIsZero)
-{
-    TestHandler h;
-    FakeSessionManager mgr;
-    FakeSession session;
-    h.setSessionManager(&mgr);
-
-    h.removeContext<TestCtx>(&session);
-    EXPECT_EQ(mgr.lastRemoveIndex, 0u);
-}
