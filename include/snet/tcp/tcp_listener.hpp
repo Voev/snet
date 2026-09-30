@@ -10,7 +10,6 @@ struct TcpListener
 {
     layers::IPAddress localIP;
     uint32_t backlog{128};
-    uint32_t halfOpen{0};
     uint32_t established{0};
     uint16_t localPort{0};
     bool active{true};

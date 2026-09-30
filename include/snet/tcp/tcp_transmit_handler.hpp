@@ -74,9 +74,8 @@ public:
     using Session = typename SessionManagerType::Session;
     using TcpConnection = snet::tcp::TcpConnection;
 
-    TcpTransmitHandler(TxRingPool* txPool, snet::layers::IPacketSink* sink, TcpTransmitHandlerConfig config = {})
-        : txPool_(txPool)
-        , sink_(sink)
+    TcpTransmitHandler(snet::layers::IPacketSink* sink, TcpTransmitHandlerConfig config = {})
+        : sink_(sink)
         , config_(config)
         , packet_(config.maxPacketSize, config.packetHeadroom)
     {
@@ -85,81 +84,6 @@ public:
     const char* name() const override
     {
         return "TcpTransmitHandler";
-    }
-
-    /// @brief Acquires a TX ring from the pool and installs it into
-    ///        the session's TcpConnection.
-    bool createContext(Session* session) override
-    {
-        if (!session)
-            return false;
-
-        auto* conn = this->template getContext<TcpConnection>(session);
-        if (!conn)
-        {
-            conn = this->template allocateContext<TcpConnection>();
-            if (!conn)
-            {
-                CSK_LOG_ERROR("TcpTransmit: cannot allocate TcpConnection");
-                return false;
-            }
-
-            conn->reset();
-
-            if (!this->template setContext<TcpConnection>(session, conn))
-            {
-                this->template deallocateContext<TcpConnection>(conn);
-                CSK_LOG_ERROR("TcpTransmit: cannot set TcpConnection");
-                return false;
-            }
-        }
-
-        if (conn->txRing != nullptr)
-            return true;
-
-        if (!txPool_)
-        {
-            CSK_LOG_ERROR("TcpTransmit: no TX pool configured");
-            return false;
-        }
-
-        TxRingBuffer* ring = txPool_->acquire();
-        if (!ring)
-        {
-            CSK_LOG_WARNING("TcpTransmit: TX pool exhausted (capacity=%zu)", txPool_->capacity());
-            return false;
-        }
-
-        // FixedObjectPool doesn't reset on acquire — do it manually
-        ring->reset();
-
-        conn->txRing = ring;
-        conn->txRingOwnedByTransmit = true;
-
-        CSK_LOG_DEBUG("TcpTransmit: TX ring acquired for session");
-        return true;
-    }
-
-    bool destroyContext(Session* session) override
-    {
-        if (!session)
-            return false;
-
-        auto* conn = this->template getContext<TcpConnection>(session);
-        if (!conn)
-            return true;
-
-        if (conn->txRing && conn->txRingOwnedByTransmit && txPool_)
-        {
-            conn->txRing->reset();
-            txPool_->release(conn->txRing);
-            conn->txRing = nullptr;
-            conn->txRingOwnedByTransmit = false;
-
-            CSK_LOG_DEBUG("TcpTransmit: TX ring returned to pool");
-        }
-
-        return true;
     }
 
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
@@ -174,29 +98,7 @@ public:
         if (conn->closed)
             return this->passToNext(session, packet, layers::PacketStatus::Ignore_PacketOfClosedFlow);
 
-        // Emit pending output from FSM (SYN-ACK, ACK, RST, FIN)
-        // Listener/Receiver store pendingOutput; we are the only one who actually emits it.
-        if (conn->hasPendingOutput)
-        {
-            auto out = conn->pendingOutput;
-            conn->pendingOutput = {};
-            conn->hasPendingOutput = false;
-
-            if (out.type == TcpOutput::Type::Close)
-            {
-                conn->closed = true;
-                return this->passToNext(session, packet, layers::PacketStatus::Ignore_PacketOfClosedFlow);
-            }
-
-            if (out.type == TcpOutput::Type::Send || out.type == TcpOutput::Type::SendReset)
-            {
-                if (emit(conn, out) && out.type == TcpOutput::Type::Send)
-                {
-                    // Only advance seq numbers after successful transmit
-                    TcpStateMachine::onSegmentSent(*conn, out);
-                }
-            }
-        }
+        emitPendingOutput(conn);
 
         // Pump pending data from txRing
         if (config_.autoPumpOnAck && conn->inEstablished() && conn->txRing && conn->txRing->pending() > 0)
@@ -340,7 +242,60 @@ public:
             conn->closed = true;
     }
 
+    /// @brief Emit pending output and drain txRing for a session.
+    ///
+    /// Called externally to trigger sending without an incoming packet for this session.
+    void pump(Session* session)
+    {
+        if (!session)
+            return;
+
+        auto* conn = this->template getContext<TcpConnection>(session);
+        if (!conn || conn->closed)
+            return;
+
+        // Emit pending output from FSM (SYN, SYN-ACK, ACK, RST, FIN)
+        emitPendingOutput(conn);
+
+        // Drain txRing if established
+        if (config_.autoPumpOnAck && conn->inEstablished() && conn->txRing && conn->txRing->pending() > 0)
+        {
+            pumpPendingData(conn);
+        }
+    }
+
 private:
+
+    /// @brief Emit conn->pendingOutput if present.
+    void emitPendingOutput(TcpConnection* conn)
+    {
+        // Emit pending output from FSM (SYN-ACK, ACK, RST, FIN)
+        // Listener/Receiver store pendingOutput; we are the only one who actually emits it.
+        if (!conn->hasPendingOutput)
+        {
+            return;
+        }
+
+        auto out = conn->pendingOutput;
+        conn->pendingOutput = {};
+        conn->hasPendingOutput = false;
+
+        if (out.type == TcpOutput::Type::Close)
+        {
+            conn->closed = true;
+            return;
+        }
+
+        if (out.type == TcpOutput::Type::Send || out.type == TcpOutput::Type::SendReset)
+        {
+            if (emit(conn, out) && out.type == TcpOutput::Type::Send)
+            {
+                // Only advance seq numbers after successful transmit
+                TcpStateMachine::onSegmentSent(*conn, out);
+            }
+        }
+    }
+
     size_t pumpPendingData(TcpConnection* conn)
     {
         if (!conn || conn->closed || !conn->txRing)
@@ -501,7 +456,6 @@ private:
     }
 
 private:
-    TxRingPool* txPool_{nullptr};
     snet::layers::IPacketSink* sink_{nullptr};
     TcpTransmitHandlerConfig config_;
 
