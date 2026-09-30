@@ -15,7 +15,8 @@ struct TlsDecryptContext
 
     void reset() noexcept
     {
-        session->reset();
+        if(session)
+            session->reset();
         decryptedRecords = 0;
     }
 };

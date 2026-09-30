@@ -11,19 +11,20 @@ namespace snet::tls
 {
 
 template <typename SessionManagerType>
-class TlsDecryptHandler : public snet::session::ISessionHandler<SessionManagerType>
+class TlsDecryptCtxFactory : public snet::session::ISessionCtxFactory<SessionManagerType>
 {
 public:
     using SessionType = typename SessionManagerType::Session;
 
-    TlsDecryptHandler(RecordPool* recordPool)
+    TlsDecryptCtxFactory(RecordPool* recordPool)
         : recordPool_(recordPool)
     {
+        assert(recordPool_ != nullptr);
     }
 
     const char* name() const override
     {
-        return "TlsDecryptHandler";
+        return "TlsDecryptFactory";
     }
 
     bool createContext(SessionType* session) override
@@ -33,21 +34,21 @@ public:
             return false;
         }
 
-        auto* tls = this->template allocateContext<TlsDecryptContext>();
-        if (!tls)
+        auto* ctx = this->template allocateContext<TlsDecryptContext>();
+        if (!ctx)
         {
             CSK_LOG_ERROR("cannot allocate TlsDecryptionContext");
             return false;
         }
 
-        tls->session = std::make_unique<snet::tls::Session>(*recordPool_);
-
-        if (!this->template setContext<TlsDecryptContext>(session, tls))
+        if (!this->template setContext<TlsDecryptContext>(session, ctx))
         {
-            this->template deallocateContext<TlsDecryptContext>(tls);
+            this->template deallocateContext<TlsDecryptContext>(ctx);
             CSK_LOG_ERROR("failed to set TlsDecryptionContext");
             return false;
         }
+
+        ctx->session = std::make_unique<snet::tls::Session>(*recordPool_);
         return true;
     }
 
@@ -58,23 +59,17 @@ public:
             return false;
         }
 
-        auto* tls = this->template getContext<TlsDecryptContext>(session);
-        if (tls)
+        auto* ctx = this->template getContext<TlsDecryptContext>(session);
+        if (ctx)
         {
             this->template removeContext<TlsDecryptContext>(session);
-            this->template deallocateContext<TlsDecryptContext>(tls);
+            this->template deallocateContext<TlsDecryptContext>(ctx);
         }
-
         return true;
-    }
-
-    layers::PacketStatus processPacket(SessionType* session, layers::Packet* packet, layers::PacketStatus status) override
-    {
-        return this->passToNext(session, packet, status);
     }
 
 private:
     RecordPool* recordPool_{nullptr};
 };
 
-} // namespace snet::tcp
+} // namespace snet::tls

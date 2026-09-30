@@ -43,46 +43,55 @@ public:
     void onStreamData(Session* session, int8_t sideIndex, snet::tcp::IStreamReader& reader) override
     {
         auto* ctx = sessionManager_->template getContext<TlsDecryptContext>(session);
-        if (!ctx)
-        {
+        if (!ctx || !ctx->session)
             return;
-        }
 
-        auto stream = reader.peek();
-        try
+        while (reader.available() > 0)
         {
-            ctx->session->readRecords({stream.first, stream.second});
-            ctx->session->processPendingRecords(
-                sideIndex,
-                [&ctx, this](const int8_t sideIndex, Record* record)
-                {
-                    if (options_.printRecords)
-                    {
-                        PrintRecord(sideIndex, ctx->session.get(), record);
-                    }
+            auto [data, len] = reader.peek();
+            if (!data || len == 0)
+                break;
 
-                    if (sessionManager_ && record->getHandshakeType() == HandshakeType::ClientHelloCode)
-                    {
-                        auto& clientHello = record->getHandshake<ClientHello>();
-                        ClientRandom random{clientHello.random.begin(), clientHello.random.end()};
+            size_t consumed = 0;
+            try
+            {
+                consumed = ctx->session->readRecords({data, len});
 
-                        auto secrets = secretManager_->getSecretNode(random);
-                        if (secrets)
+                ctx->session->processPendingRecords(
+                    sideIndex,
+                    [&ctx, this](const int8_t si, Record* record)
+                    {
+                        if (options_.printRecords)
+                            PrintRecord(si, ctx->session.get(), record);
+
+                        if (sessionManager_ && record->getHandshakeType() == HandshakeType::ClientHelloCode)
                         {
-                            ctx->session->setSecrets(secrets);
-                        }
-                    }
+                            auto& clientHello = record->getHandshake<ClientHello>();
+                            ClientRandom random{clientHello.random.begin(), clientHello.random.end()};
 
-                    if (record->isPlaintext())
-                    {
-                        ctx->decryptedRecords++;
-                        stats_.decryptedRecords++;
-                    }
-                });
-        }
-        catch (const std::exception& e)
-        {
-            CSK_LOG_ERROR("error processing stream with length %lu: %s", stream.second, e.what());
+                            if (auto secrets = secretManager_->getSecretNode(random))
+                                ctx->session->setSecrets(secrets);
+                        }
+
+                        if (record->isPlaintext())
+                        {
+                            ctx->decryptedRecords++;
+                            stats_.decryptedRecords++;
+                        }
+                    });
+            }
+            catch (const std::exception& e)
+            {
+                CSK_LOG_ERROR("error processing stream with length %lu: %s", len, e.what());
+                // Политика при ошибке: НЕ consume — ждём ещё данных
+                break;
+            }
+
+            // ✅ Ключевой фикс: consume то, что readRecords реально съел
+            if (consumed == 0)
+                break; // не продвинулись — выходим, чтобы не зациклиться
+
+            reader.consume(consumed);
         }
     }
 
