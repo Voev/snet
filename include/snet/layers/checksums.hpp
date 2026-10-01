@@ -1,86 +1,87 @@
 #pragma once
 
-#include <snet/layers/packet.hpp>
+#include <cstdint>
+#include <span>
+#include <array>
+
 #include <snet/layers/l3/ip_address.hpp>
 
 namespace snet::layers
 {
-/**
- * A struct that represent a single buffer
- */
-template <typename T>
-struct ScalarBuffer
-{
-    /**
-     * The pointer to the buffer
-     */
-    T* buffer;
 
-    /**
-     * Buffer length
-     */
-    size_t len;
-};
+/// A contiguous read-only buffer of bytes.
+using ByteSpan = std::span<const uint8_t>;
+
+/// A set of byte buffers, logically concatenated into a single byte stream.
+using ByteSpanVec = std::span<const ByteSpan>;
 
 /**
- * Computes the checksum for a vector of buffers
- * @param[in] vec The vector of buffers
- * @param[in] vecSize Number of ScalarBuffers in vector
- * @return The checksum result
+ * Computes the Internet checksum (RFC 1071) over a vector of byte buffers.
+ *
+ * All buffers are treated as one continuous big-endian byte stream.
+ * If the total length is odd, the final byte is interpreted as the high
+ * byte of a 16-bit word (low byte = 0), as required by RFC 1071 §3.
+ *
+ * @param[in] vec  Vector of byte buffers.
+ * @return Checksum in network byte order (big-endian).
  */
-uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize);
+uint16_t computeChecksum(ByteSpanVec vec);
 
 /**
- * Computes the checksum for Pseudo header
- * @param[in] dataPtr Data pointer
- * @param[in] dataLen Data length
- * @param[in] ipAddrType IP address type(4/6)
- * @param[in] protocolType Current protocol type @ref IPProtocolTypes
- * @param[in] srcIPAddress Source IP Address
- * @param[in] dstIPAddress Destination IP Address
- * @return The checksum result
+ * Computes the checksum for a transport-layer pseudo header (IPv4/IPv6)
+ * combined with the payload.
+ *
+ * @param[in] data          Transport payload (TCP/UDP/etc.).
+ * @param[in] ipAddrType    IP address family: 4 or 6.
+ * @param[in] protocolType  IP protocol number (e.g. TCP=6, UDP=17).
+ * @param[in] srcIPAddress  Source IP address.
+ * @param[in] dstIPAddress  Destination IP address.
+ * @return Checksum in network byte order (big-endian).
  */
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
+uint16_t computePseudoHdrChecksum(ByteSpan data,
                                   uint8_t ipAddrType,
-                                  uint8_t protocolType, IPAddress srcIPAddress,
-                                  IPAddress dstIPAddress);
+                                  uint8_t protocolType,
+                                  const IPAddress& srcIPAddress,
+                                  const IPAddress& dstIPAddress);
 
 /**
- * Computes Fowler-Noll-Vo (FNV-1) 32bit hash function on an array of byte
- * buffers. The hash is calculated on each byte in each byte buffer, as if all
- * byte buffers were one long byte buffer
- * @param[in] vec An array of byte buffers (ScalarBuffer of type uint8_t)
- * @param[in] vecSize The length of vec
- * @return The 32bit hash value
+ * Computes the Fowler-Noll-Vo (FNV-1a, 32-bit) hash over a vector of byte
+ * buffers, as if they were one continuous byte stream.
+ *
+ * @param[in] vec  Vector of byte buffers.
+ * @return 32-bit hash value.
  */
-uint32_t fnvHash(ScalarBuffer<uint8_t> vec[], size_t vecSize);
+uint32_t fnvHash(ByteSpanVec vec);
 
 /**
- * Computes Fowler-Noll-Vo (FNV-1) 32bit hash function on a byte buffer
- * @param[in] buffer The byte buffer
- * @param[in] bufSize The size of the byte buffer
- * @return The 32bit hash value
+ * Computes the Fowler-Noll-Vo (FNV-1a, 32-bit) hash over a single byte buffer.
+ *
+ * @param[in] buffer  Byte buffer.
+ * @return 32-bit hash value.
  */
-uint32_t fnvHash(uint8_t* buffer, size_t bufSize);
+uint32_t fnvHash(ByteSpan buffer);
 
 /// @brief Computes a hash value from a 5-tuple network flow identifier.
-/// 
+///
 /// Generates a hash based on the standard 5-tuple (source IP, destination IP,
-/// source port, destination port, protocol) used to uniquely identify network flows.
-/// The hash can optionally be made direction-agnostic by sorting the source and
-/// destination addresses and ports.
-/// 
-/// @param [in] addrSrc Source IP address.
-/// @param [in] addrDst Destination IP address.
-/// @param [in] portSrc Source port number.
-/// @param [in] portDst Destination port number.
-/// @param [in] protocol IP protocol number (e.g., TCP=6, UDP=17).
-/// @param [in] directionUnique When true, hash is direction-independent by swapping
-///                              source and destination fields to ensure the same
-///                              hash for both directions of a flow.
+/// source port, destination port, protocol) used to uniquely identify network
+/// flows. When @p directionUnique is false, the hash is made
+/// direction-agnostic by sorting the endpoints so that both directions of a
+/// flow produce the same hash.
+///
+/// @param [in] addrSrc         Source IP address.
+/// @param [in] addrDst         Destination IP address.
+/// @param [in] portSrc         Source port number (host order).
+/// @param [in] portDst         Destination port number (host order).
+/// @param [in] protocol        IP protocol number (e.g. TCP=6, UDP=17).
+/// @param [in] directionUnique When true, hash depends on direction of the flow.
 ///
 /// @return Hash value computed from the 5-tuple.
-uint32_t hash5Tuple(const IPAddress& addrSrc, const IPAddress& addrDst, uint16_t portSrc, uint16_t portDst,
-                    uint8_t protocol, bool const& directionUnique = false);
+uint32_t hash5Tuple(const IPAddress& addrSrc,
+                    const IPAddress& addrDst,
+                    uint16_t portSrc,
+                    uint16_t portDst,
+                    uint8_t protocol,
+                    bool directionUnique = true);
 
 } // namespace snet::layers

@@ -2,7 +2,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
 #include <casket/nonstd/span.hpp>
+#include <casket/utils/load_store.hpp>
+
 #include <snet/layers/header_builder.hpp>
 #include <snet/layers/checksums.hpp>
 
@@ -105,7 +108,6 @@ public:
     }
 
 private:
-    /// @todo: refact this.
     void updateChecksums() noexcept
     {
         if (offset_ < sizeof(ipv4_header))
@@ -123,21 +125,18 @@ private:
         const size_t tcpLen = offset_ - ipSize;
 
         ip->check = 0;
-        ScalarBuffer<uint16_t> ipVec[1];
-        ipVec[0].buffer = reinterpret_cast<uint16_t*>(ip);
-        ipVec[0].len = ipSize; // 20
-        ip->check =  casket::host_to_be(computeChecksum(ipVec, 1));
+        const ByteSpan ipSpan{reinterpret_cast<const uint8_t*>(ip), ipSize};
+        ip->check = computeChecksum(ByteSpanVec{&ipSpan, 1});
 
-        IPAddress srcIP(IPv4Address(ip->saddr));
-        IPAddress dstIP(IPv4Address(ip->daddr));
+        IPAddress srcIP(IPv4Address::fromNetwork(ip->saddr));
+        IPAddress dstIP(IPv4Address::fromNetwork(ip->daddr));
         tcp->check = 0;
-        auto tcpCs = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcp),
-                                              tcpLen,
+        const ByteSpan tcpSpan{reinterpret_cast<const uint8_t*>(tcp), tcpLen};
+        tcp->check = computePseudoHdrChecksum(tcpSpan,
                                               4, // IPv4,
                                               6, // IPPROTO_TCP
                                               srcIP,
-                                               dstIP);
-        tcp->check = casket::host_to_be(tcpCs);
+                                              dstIP);
     }
 
     inline void updatePacketView(LinkLayerType linkType) noexcept

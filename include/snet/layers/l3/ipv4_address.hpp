@@ -72,7 +72,7 @@ public:
 
     static nonstd::optional<IPv4Address> fromString(nonstd::string_view str);
 
-    IPv4Address fromNetwork(uint32_t addrBE) noexcept;
+    static IPv4Address fromNetwork(uint32_t addrBE) noexcept;
 
 private:
     InAddrType addr_; // BE
