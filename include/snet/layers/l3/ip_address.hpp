@@ -1,4 +1,6 @@
 #pragma once
+#include <stdexcept>
+
 #include <snet/layers/l3/ipv4_address.hpp>
 #include <snet/layers/l3/ipv6_address.hpp>
 
@@ -68,6 +70,28 @@ public:
             return nonstd::get<IPv6Address>(ip_).asData();
         }
         return nullptr;
+    }
+
+    size_t size() const noexcept
+    {
+        if (nonstd::holds_alternative<IPv4Address>(ip_))
+        {
+            return IPv4Address::kBytesCount;
+        }
+        else if (nonstd::holds_alternative<IPv6Address>(ip_))
+        {
+            return IPv6Address::kBytesCount;
+        }
+        return 0U;
+    }
+
+    static IPAddress fromRaw(const uint8_t* data, size_t len)
+    {
+        if (len == IPv4Address::kBytesCount)
+            return IPAddress(IPv4Address({data, len}));
+        if (len == IPv6Address::kBytesCount)
+            return IPAddress(IPv6Address({data, len}));
+        throw std::invalid_argument("IPAddress::fromRaw: invalid length");
     }
 
 private:

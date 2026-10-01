@@ -1,154 +1,181 @@
-#include <casket/utils/endianness.hpp>
-
 #include <snet/layers/checksums.hpp>
+
+#include <algorithm>
+#include <array>
+#include <utility>
+
+#include <casket/utils/load_store.hpp>
 
 using namespace casket;
 
 namespace snet::layers
 {
+namespace
+{
 
-uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
+/// Folds a 32-bit accumulator into a 16-bit ones'-complement sum.
+inline constexpr uint32_t fold(uint32_t sum) noexcept
+{
+    while (sum >> 16)
+        sum = (sum & 0xffffu) + (sum >> 16);
+    return sum;
+}
+
+constexpr uint32_t kFnvPrime = 16777619u;
+constexpr uint32_t kFnvOffset = 2166136261u;
+
+} // namespace
+
+uint16_t computeChecksum(ByteSpanVec vec)
 {
     uint32_t sum = 0;
-    for (size_t i = 0; i < vecSize; i++)
+
+    for (auto buf : vec)
     {
         uint32_t localSum = 0;
+        const size_t n = buf.size();
+        size_t i = 0;
 
-        // vec len is in bytes
-        for (size_t j = 0; j < vec[i].len / 2; j++)
-        {
-            localSum += vec[i].buffer[j];
-        }
+        // Process 16-bit big-endian words.
+        for (; i + 1 < n; i += 2)
+            localSum += load_be<uint16_t>(buf.data(), i / 2);
 
-        // check if there is one byte left
-        if (vec[i].len % 2)
-        {
-            // access to the last byte using an uint8_t pointer
-            uint8_t* vecBytes = (uint8_t*)vec[i].buffer;
-            uint8_t lastByte = vecBytes[vec[i].len - 1];
-            // We have read the latest byte manually but this byte should be
-            // properly interpreted as a 0xFF on LE and a 0xFF00 on BE to have a
-            // proper checksum computation
-            localSum += be_to_host<uint16_t>(lastByte << 8);
-        }
+        // Odd trailing byte: treated as the high byte of a 16-bit word.
+        if (i < n)
+            localSum += static_cast<uint16_t>(buf[i]) << 8;
 
-        // carry count is added to the sum
-        while (localSum >> 16)
-        {
-            localSum = (localSum & 0xffff) + (localSum >> 16);
-        }
-        sum += localSum;
+        sum += fold(localSum);
     }
 
-    while (sum >> 16)
-    {
-        sum = (sum & 0xffff) + (sum >> 16);
-    }
+    sum = fold(sum);
 
-    // To obtain the checksum we take the ones' complement of this result
-    uint16_t result = sum;
-    result = ~result;
-
-    // We return the result in BigEndian byte order
+    // One's complement, returned in network byte order.
+    const uint16_t result = static_cast<uint16_t>(~sum);
     return host_to_be(result);
 }
 
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, uint8_t ipAddrType, uint8_t protocolType,
-                                  IPAddress srcIPAddress, IPAddress dstIPAddress)
+uint16_t computePseudoHdrChecksum(ByteSpan data, uint8_t ipAddrType, uint8_t protocolType,
+                                  const IPAddress& srcIPAddress, const IPAddress& dstIPAddress)
 {
-    uint16_t checksumRes = 0;
-    ScalarBuffer<uint16_t> vec[2];
-    vec[0].buffer = (uint16_t*)dataPtr;
-    vec[0].len = dataLen;
-
     if (ipAddrType == 4)
     {
-        uint32_t srcIP = srcIPAddress.toIPv4().toHost();
-        uint32_t dstIP = dstIPAddress.toIPv4().toHost();
-        uint16_t pseudoHeader[6];
-        pseudoHeader[0] = srcIP >> 16;
-        pseudoHeader[1] = srcIP & 0xFFFF;
-        pseudoHeader[2] = dstIP >> 16;
-        pseudoHeader[3] = dstIP & 0xFFFF;
-        pseudoHeader[4] = 0xffff & host_to_be<uint16_t>(dataLen);
-        pseudoHeader[5] = host_to_be<uint16_t>(0x00ff & protocolType);
-        vec[1].buffer = pseudoHeader;
-        vec[1].len = 12;
-        checksumRes = computeChecksum(vec, 2);
+        const uint32_t srcIP = srcIPAddress.toIPv4().toHost();
+        const uint32_t dstIP = dstIPAddress.toIPv4().toHost();
+        const uint16_t len = static_cast<uint16_t>(data.size());
+
+        // IPv4 pseudo header (RFC 793):
+        //   +--------+--------+--------+--------+
+        //   |           Source Address          |
+        //   +--------+--------+--------+--------+
+        //   |         Destination Address       |
+        //   +--------+--------+--------+--------+
+        //   |  zero  |  Proto |    TCP Length   |
+        //   +--------+--------+--------+--------+
+        std::array<uint8_t, 12> ph{};
+        store_be<uint32_t>(srcIP, ph.data(), 0);
+        store_be<uint32_t>(dstIP, ph.data(), 1);
+        ph[8] = 0;
+        ph[9] = protocolType;
+        store_be<uint16_t>(len, ph.data(), 5);
+
+        const std::array<ByteSpan, 2> vec{ByteSpan{ph}, data};
+        return computeChecksum(vec);
     }
-    else if (ipAddrType == 6)
+
+    if (ipAddrType == 6)
     {
-        std::array<uint16_t, 18> pseudoHeader{};
-        auto srcIP = srcIPAddress.toIPv6();
-        auto dstIP = dstIPAddress.toIPv6();
+        const uint32_t len = static_cast<uint32_t>(data.size());
 
-        std::copy(srcIP.begin(), srcIP.end(), pseudoHeader.begin());
-        std::copy(dstIP.begin(), dstIP.end(), pseudoHeader.begin() + 8);
+        // IPv6 pseudo header (RFC 8200 §8.1):
+        //   +--------+--------+--------+--------+
+        //   |          Source Address (16)      |
+        //   +--------+--------+--------+--------+
+        //   |       Destination Address (16)    |
+        //   +--------+--------+--------+--------+
+        //   |        Upper-Layer Length (32)    |
+        //   +--------+--------+--------+--------+
+        //   |  zero  |  zero  |  zero  | NextHdr|
+        //   +--------+--------+--------+--------+
+        std::array<uint8_t, 40> ph{};
 
-        pseudoHeader[16] = 0xffff & host_to_be<uint16_t>(dataLen);
-        pseudoHeader[17] = host_to_be<uint16_t>(0x00ff & protocolType);
-        vec[1].buffer = pseudoHeader.data();
-        vec[1].len = 36;
-        checksumRes = computeChecksum(vec, 2);
+        const auto srcIP = srcIPAddress.toIPv6();
+        const auto dstIP = dstIPAddress.toIPv6();
+
+        std::copy(srcIP.begin(), srcIP.end(), ph.begin());
+        std::copy(dstIP.begin(), dstIP.end(), ph.begin() + 16);
+
+        store_be<uint32_t>(len, ph.data(), 8); // 32..35
+
+        ph[36] = 0;
+        ph[37] = 0;
+        ph[38] = 0;
+        ph[39] = protocolType;
+
+        const std::array<ByteSpan, 2> vec{ByteSpan{ph}, data};
+        return computeChecksum(vec);
     }
 
-    return checksumRes;
+    return 0;
 }
 
-static const uint32_t FNV_PRIME = 16777619u;
-static const uint32_t OFFSET_BASIS = 2166136261u;
-
-uint32_t fnvHash(ScalarBuffer<uint8_t> vec[], size_t vecSize)
+uint32_t fnvHash(ByteSpanVec vec)
 {
-    uint32_t hash = OFFSET_BASIS;
-    for (size_t i = 0; i < vecSize; ++i)
+    uint32_t hash = kFnvOffset;
+    for (auto buf : vec)
     {
-        for (size_t j = 0; j < vec[i].len; ++j)
+        for (uint8_t b : buf)
         {
-            hash *= FNV_PRIME;
-            hash ^= vec[i].buffer[j];
+            hash ^= b;
+            hash *= kFnvPrime;
         }
     }
     return hash;
 }
 
-uint32_t fnvHash(uint8_t* buffer, size_t bufSize)
+uint32_t fnvHash(ByteSpan buffer)
 {
-    ScalarBuffer<uint8_t> scalarBuf;
-    scalarBuf.buffer = buffer;
-    scalarBuf.len = bufSize;
-    return fnvHash(&scalarBuf, 1);
+    const ByteSpan one[1] = {buffer};
+    return fnvHash(ByteSpanVec{one, 1});
 }
 
 uint32_t hash5Tuple(const IPAddress& addrSrc, const IPAddress& addrDst, uint16_t portSrc, uint16_t portDst,
-                    uint8_t protocol, bool const& directionUnique)
+                    uint8_t protocol, bool directionUnique)
 {
-    ScalarBuffer<uint8_t> vec[5];
+    const IPAddress* pSrcAddr = &addrSrc;
+    const IPAddress* pDstAddr = &addrDst;
+    uint16_t pSrcPort = portSrc;
+    uint16_t pDstPort = portDst;
 
-    int srcPosition = 0;
-
+    // For direction-agnostic hashing, order endpoints consistently.
     if (!directionUnique)
     {
-        if (portDst < portSrc)
-            srcPosition = 1;
+        const bool swap = (*pDstAddr < *pSrcAddr) || (!(*pSrcAddr < *pDstAddr) && pDstPort < pSrcPort);
+        if (swap)
+        {
+            std::swap(pSrcAddr, pDstAddr);
+            std::swap(pSrcPort, pDstPort);
+        }
     }
 
-    vec[0 + srcPosition].buffer = (uint8_t*)&portSrc;
-    vec[0 + srcPosition].len = 2;
-    vec[1 - srcPosition].buffer = (uint8_t*)&portDst;
-    vec[1 - srcPosition].len = 2;
+    // Serialize ports in a fixed byte order so that the hash is
+    // platform-independent.
+    std::array<uint8_t, 2> portSrcBe{};
+    std::array<uint8_t, 2> portDstBe{};
+    store_be<uint16_t>(pSrcPort, portSrcBe.data(), 0);
+    store_be<uint16_t>(pDstPort, portDstBe.data(), 0);
 
-    if (!directionUnique && portSrc == portDst && addrDst < addrSrc)
-        srcPosition = 1;
+    const ByteSpan srcBytes{pSrcAddr->asData(), pSrcAddr->size()};
+    const ByteSpan dstBytes{pDstAddr->asData(), pDstAddr->size()};
 
-    vec[2 + srcPosition].buffer = const_cast<uint8_t*>(addrSrc.asData());
-    vec[2 + srcPosition].len = 4;
-    vec[3 - srcPosition].buffer = const_cast<uint8_t*>(addrDst.asData());
-    vec[3 - srcPosition].len = 4;
-    vec[4].buffer = &protocol;
-    vec[4].len = 1;
+    const std::array<ByteSpan, 5> vec{
+        ByteSpan{portSrcBe},
+        ByteSpan{portDstBe},
+        srcBytes,
+        dstBytes,
+        ByteSpan{&protocol, 1},
+    };
 
-    return fnvHash(vec, 5);
+    return fnvHash(vec);
 }
 
 } // namespace snet::layers
