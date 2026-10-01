@@ -4,6 +4,7 @@
 #include <chrono>
 
 #include <snet/layers/packet.hpp>
+#include <snet/layers/packet_utils.hpp>
 #include <snet/layers/l3/ip_address.hpp>
 
 #include <snet/session/session_handler.hpp>
@@ -80,10 +81,6 @@ public:
     using Acceptor = IConnectionAcceptor<SessionManagerType>;
     using Consumer = IStreamConsumer<SessionManagerType>;
 
-    static constexpr int8_t kClientSide = 0;
-    static constexpr int8_t kServerSide = 1;
-    static constexpr int8_t kSideUnknown = -1;
-
     TcpReceiveHandler(Acceptor* acceptor, Consumer* consumer, TcpReceiveHandlerConfig config = {})
         : acceptor_(acceptor)
         , consumer_(consumer)
@@ -114,11 +111,11 @@ public:
         if (!session || !packet)
             return this->passToNext(session, packet, layers::PacketStatus::Error_NoMemory);
 
-        snet::layers::IPAddress srcIP, dstIP;
-        snet::layers::TCPHeader hdr;
-        const snet::layers::LayerInfo* tcpLayer = nullptr;
+        layers::IPAddress srcIP, dstIP;
+        layers::TCPHeader hdr;
+        const layers::LayerInfo* tcpLayer = nullptr;
 
-        if (!extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
+        if (!layers::extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
             return this->passToNext(session, packet, layers::PacketStatus::NonTcpPacket);
 
         return config_.replayMode ? processReplay(session, packet, srcIP, dstIP, hdr, tcpLayer, status)
@@ -275,7 +272,7 @@ private:
         }
 
         TcpSegment seg;
-        seg.flags = snet::layers::TcpFlags::fromByte(hdr.flagsByte());
+        seg.flags = layers::TcpFlags::fromByte(hdr.flagsByte());
         seg.seq = hdr.seqNum();
         seg.ack = hdr.ackNum();
         seg.window = hdr.window();
@@ -308,8 +305,8 @@ private:
     // Live mode (real network)
     // ============================================================
 
-    layers::PacketStatus processLive(Session* session, layers::Packet* packet, const snet::layers::IPAddress& srcIP,
-                                     const snet::layers::TCPHeader& hdr, const snet::layers::LayerInfo* tcpLayer,
+    layers::PacketStatus processLive(Session* session, layers::Packet* packet, const layers::IPAddress& srcIP,
+                                     const layers::TCPHeader& hdr, const layers::LayerInfo* tcpLayer,
                                      layers::PacketStatus status)
     {
         const int8_t idx = determineContextIndex(session, srcIP, hdr.srcPort());
@@ -334,7 +331,7 @@ private:
         }
 
         TcpSegment seg;
-        seg.flags = snet::layers::TcpFlags::fromByte(hdr.flagsByte());
+        seg.flags = layers::TcpFlags::fromByte(hdr.flagsByte());
         seg.seq = hdr.seqNum();
         seg.ack = hdr.ackNum();
         seg.window = hdr.window();
@@ -377,7 +374,7 @@ private:
     ///   ctx 1: local = client, remote = server
     ///
     /// @return 0, 1, or -1 (unknown).
-    int8_t determineContextIndex(Session* session, const snet::layers::IPAddress& srcIP, uint16_t srcPort) const
+    int8_t determineContextIndex(Session* session, const layers::IPAddress& srcIP, uint16_t srcPort) const
     {
         // Check ctx 0: packet from client?
         auto* conn0 = this->template getContext<TcpConnection>(session, kClientSide);
@@ -394,24 +391,6 @@ private:
         }
 
         return kSideUnknown;
-    }
-
-    bool extractPacketInfo(layers::Packet* packet, snet::layers::IPAddress& srcIP, snet::layers::IPAddress& dstIP,
-                           snet::layers::TCPHeader& hdr, const snet::layers::LayerInfo*& tcpLayer)
-    {
-        auto ipHeader = packet->getHeader<snet::layers::IPv4Header>(snet::layers::IPv4);
-        if (!ipHeader.isValid())
-            return false;
-
-        srcIP = snet::layers::IPAddress(ipHeader.srcAddr());
-        dstIP = snet::layers::IPAddress(ipHeader.dstAddr());
-
-        tcpLayer = packet->findLayer(snet::layers::TCP);
-        if (!tcpLayer)
-            return false;
-
-        hdr = packet->getHeader<snet::layers::TCPHeader>(*tcpLayer);
-        return true;
     }
 
 private:

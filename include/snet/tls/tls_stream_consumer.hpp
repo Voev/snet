@@ -83,13 +83,11 @@ public:
             catch (const std::exception& e)
             {
                 CSK_LOG_ERROR("error processing stream with length %lu: %s", len, e.what());
-                // Политика при ошибке: НЕ consume — ждём ещё данных
                 break;
             }
 
-            // ✅ Ключевой фикс: consume то, что readRecords реально съел
             if (consumed == 0)
-                break; // не продвинулись — выходим, чтобы не зациклиться
+                break;
 
             reader.consume(consumed);
         }
