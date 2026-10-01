@@ -61,7 +61,7 @@ public:
 
     static IPv6Address any() noexcept;
 
-    static std::optional<IPv6Address> fromString(nonstd::string_view str);
+    static nonstd::optional<IPv6Address> fromString(nonstd::string_view str);
 
     const uint8_t* asData() const noexcept
     {

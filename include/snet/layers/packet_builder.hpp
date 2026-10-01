@@ -133,10 +133,10 @@ private:
         tcp->check = 0;
         auto tcpCs = computePseudoHdrChecksum(reinterpret_cast<uint8_t*>(tcp),
                                               tcpLen,
-                                              IPAddress::IPv4,
+                                              4, // IPv4,
                                               6, // IPPROTO_TCP
                                               srcIP,
-                                              dstIP);
+                                               dstIP);
         tcp->check = casket::host_to_be(tcpCs);
     }
 

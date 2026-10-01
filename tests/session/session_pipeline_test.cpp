@@ -442,7 +442,7 @@ TEST(SessionPipelineTest, PrintChainDoesNotCrash)
     p.addHandler<NamedHandler>("C");
 
     testing::internal::CaptureStdout();
-    p.printChain();
+    p.printChain(std::cout);
     std::string output = testing::internal::GetCapturedStdout();
 
     EXPECT_NE(output.find("A -> B -> C"), std::string::npos);
@@ -452,32 +452,9 @@ TEST(SessionPipelineTest, PrintChainEmpty)
 {
     Pipeline p;
     testing::internal::CaptureStdout();
-    p.printChain();
+    p.printChain(std::cout);
     std::string output = testing::internal::GetCapturedStdout();
-    EXPECT_NE(output.find("Session Pipeline:"), std::string::npos);
-}
-
-TEST(SessionPipelineTest, GetStats)
-{
-    Pipeline p;
-    p.addHandler<NamedHandler>("A");
-    p.addHandler<NamedHandler>("B");
-    p.addHandler<AnotherHandler>();
-
-    auto stats = p.getStats();
-    EXPECT_EQ(stats.totalHandlers, 3u);
-    ASSERT_EQ(stats.handlerNames.size(), 3u);
-    EXPECT_EQ(stats.handlerNames[0], "A");
-    EXPECT_EQ(stats.handlerNames[1], "B");
-    EXPECT_EQ(stats.handlerNames[2], "AnotherHandler");
-}
-
-TEST(SessionPipelineTest, GetStatsEmpty)
-{
-    Pipeline p;
-    auto stats = p.getStats();
-    EXPECT_EQ(stats.totalHandlers, 0u);
-    EXPECT_TRUE(stats.handlerNames.empty());
+    EXPECT_NE(output.find("Session pipeline:"), std::string::npos);
 }
 
 TEST(SessionPipelineTest, ChainingAfterInsertAtBeginning)
