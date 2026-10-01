@@ -42,9 +42,7 @@ bool Instance::create(const std::string& name)
     int on = 1;
     if (::setsockopt(fd_, SOL_PACKET, PACKET_IGNORE_OUTGOING, &on, sizeof(on)) < 0)
     {
-        // На старых ядрах (< 4.20) этой опции нет — не критично
         driver_.logWarning("PACKET_IGNORE_OUTGOING not supported: %s", std::strerror(errno));
-        // не возвращаем false — продолжаем работу
     }
     else
     {

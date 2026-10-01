@@ -49,7 +49,9 @@ protected:
     ContextType* getContext(Session* session, size_t index = 0) const
     {
         if (!sessionManager_ || !session)
+        {
             return nullptr;
+        }
         return sessionManager_->template getContext<ContextType>(session, index);
     }
 

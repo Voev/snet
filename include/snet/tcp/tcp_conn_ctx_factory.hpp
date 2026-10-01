@@ -36,10 +36,6 @@ public:
         return "TcpConnectionCtxFactory";
     }
 
-    // ============================================================
-    // createContext: allocate ctx[0] and ctx[1] with their rings
-    // ============================================================
-
     bool createContext(Session* session) override
     {
         if (!session)
@@ -54,14 +50,12 @@ public:
             return true;
         }
 
-        // ─── ctx 0: client → server ───
         if (!createOne(session, kClientSide))
         {
             CSK_LOG_ERROR("TcpConnectionCtxFactory: ctx[0] failed");
             return false;
         }
 
-        // ─── ctx 1: server → client ───
         if (!createOne(session, kServerSide))
         {
             CSK_LOG_ERROR("TcpConnectionCtxFactory: ctx[1] failed, rolling back");
@@ -77,16 +71,11 @@ public:
         return true;
     }
 
-    // ============================================================
-    // destroyContext: release ctx[1] and ctx[0] (reverse order)
-    // ============================================================
-
     bool destroyContext(Session* session) override
     {
         if (!session)
             return false;
 
-        // Reverse order: ctx[1] first, then ctx[0]
         destroyOne(session, kServerSide);
         destroyOne(session, kClientSide);
 
@@ -94,9 +83,6 @@ public:
     }
 
 private:
-    // ============================================================
-    // createOne / destroyOne
-    // ============================================================
 
     bool createOne(Session* session, size_t idx)
     {
@@ -110,7 +96,7 @@ private:
         // Reset FSM state — but keep ring pointers null (we'll set them next).
         ctx->reset();
 
-        // ─── RX ring ───
+        // RX ring
         if (rxPool_)
         {
             RxRingBuffer* rx = rxPool_->acquire();
@@ -126,7 +112,7 @@ private:
             ctx->rxRing = rx;
         }
 
-        // ─── TX ring ───
+        // TX ring
         if (txPool_)
         {
             TxRingBuffer* tx = txPool_->acquire();
@@ -149,7 +135,7 @@ private:
             ctx->txRing = tx;
         }
 
-        // ─── Install in session ───
+        // Install in session
         if (!this->template setContext<TcpConnection>(session, ctx, idx))
         {
             // Roll back rings

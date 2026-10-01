@@ -155,36 +155,19 @@ public:
         return false;
     }
 
-    void printChain() const
+    void printChain(std::ostream& os) const
     {
-        printf("Session Pipeline: ");
+        os << "Session pipeline: ";
         for (size_t i = 0; i < pipeline_.size(); ++i)
         {
-            printf("%s", pipeline_[i]->name());
+            os << pipeline_[i]->name();
+
             if (i < pipeline_.size() - 1)
             {
-                printf(" -> ");
+                os << " -> ";
             }
         }
-        printf("\n");
-    }
-
-    struct PipelineStats
-    {
-        size_t totalHandlers{0};
-        std::vector<std::string> handlerNames;
-    };
-
-    PipelineStats getStats() const
-    {
-        PipelineStats stats;
-        stats.totalHandlers = pipeline_.size();
-        stats.handlerNames.reserve(pipeline_.size());
-        for (const auto& handler : pipeline_)
-        {
-            stats.handlerNames.push_back(handler->name());
-        }
-        return stats;
+        os << std::endl;
     }
 
 private:

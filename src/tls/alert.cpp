@@ -1,5 +1,3 @@
-/// @brief Определение класса сообщения протокола оповещения (Alert).
-
 #include <snet/tls/alert.hpp>
 #include <casket/utils/exception.hpp>
 

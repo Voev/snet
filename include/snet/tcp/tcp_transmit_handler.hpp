@@ -400,7 +400,7 @@ private:
         const bool withOptions = out.flags.hasSyn();
         if (withOptions)
         {
-            opts.mss(conn->mss).sackPermitted().padTo4(); // doff станет 7 (28 байт)
+            opts.mss(conn->mss).sackPermitted().padTo4();
         }
 
         const uint8_t tcpDoff = opts.empty() ? 5 : opts.doff();

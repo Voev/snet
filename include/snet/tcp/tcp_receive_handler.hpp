@@ -68,8 +68,8 @@ struct TcpReceiveHandlerConfig
 /// TcpConnectionCtxFactory (installed via SessionPipeline::addFactory).
 ///
 /// Contexts used:
-///   - TcpConnection[0] — client → server direction
-///   - TcpConnection[1] — server → client direction
+///   - TcpConnection[0] — client -> server direction
+///   - TcpConnection[1] — server -> client direction
 ///
 /// The correct index is determined from the 5-tuple on each packet.
 template <typename SessionManagerType>
@@ -102,10 +102,6 @@ public:
         return "TcpReceiveHandler";
     }
 
-    // ============================================================
-    // Packet processing
-    // ============================================================
-
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
         if (!session || !packet)
@@ -123,15 +119,11 @@ public:
     }
 
 private:
-    // ============================================================
-    // Replay mode (pcap): passive observation
-    // ============================================================
-
     layers::PacketStatus processReplay(Session* session, layers::Packet* packet, const snet::layers::IPAddress& srcIP,
                                        const snet::layers::IPAddress& dstIP, const snet::layers::TCPHeader& hdr,
                                        const snet::layers::LayerInfo* tcpLayer, layers::PacketStatus status)
     {
-        // ─── Pure SYN: initialize client-side (ctx 0) ───
+        // Pure SYN: initialize client-side (ctx 0)
         if (hdr.isSYN() && !hdr.isACK())
         {
             auto* conn = this->template getContext<TcpConnection>(session, kClientSide);
@@ -176,7 +168,7 @@ private:
             return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
         }
 
-        // ─── SYN-ACK: initialize server-side (ctx 1) ───
+        // SYN-ACK: initialize server-side (ctx 1)
         if (hdr.isSYN() && hdr.isACK())
         {
             auto* conn = this->template getContext<TcpConnection>(session, kServerSide);
@@ -217,19 +209,17 @@ private:
             return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
         }
 
-        // ─── ACK от клиента: ctx[0] SynReceived → Established ───
+        // ACK from client: ctx[0] SynReceived -> Established
         if (hdr.isACK() && !hdr.isSYN() && !hdr.isRST())
         {
             auto* conn0 = this->template getContext<TcpConnection>(session, kClientSide);
             if (conn0 && conn0->state == TcpState::SynReceived)
             {
-                // Смотрим serverISN из ctx[1]
                 auto* conn1 = this->template getContext<TcpConnection>(session, kServerSide);
                 if (conn1 && conn1->irs != 0)
                 {
                     const uint32_t serverISN = conn1->irs;
 
-                    // ACK должен подтвердить наш SYN: ack = serverISN + 1
                     if (hdr.ackNum() == serverISN + 1)
                     {
                         conn0->iss = serverISN;
@@ -243,7 +233,7 @@ private:
                             conn0->txRing->initAt(conn0->sndNxt);
 
                         CSK_LOG_DEBUG("Replay: ACK from client, "
-                                      "ctx[0] SynReceived → Established "
+                                      "ctx[0] SynReceived -> Established "
                                       "(serverISN=%u)",
                                       serverISN);
                     }
@@ -251,7 +241,7 @@ private:
             }
         }
 
-        // ─── Other packets: dispatch to the correct context ───
+        // Other packets: dispatch to the correct context
         const int8_t idx = determineContextIndex(session, srcIP, hdr.srcPort());
         if (idx < 0)
         {

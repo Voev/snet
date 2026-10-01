@@ -121,7 +121,6 @@ void CipherListCommand::execute(const std::vector<std::string_view>& args)
         std::uint16_t firstValue = static_cast<std::uint16_t>(std::stoi(firstPart, nullptr, 16));
         std::uint16_t secondValue = static_cast<std::uint16_t>(std::stoi(secondPart, nullptr, 16));
 
-        // Объединяем два значения в одно 16-битное число
         std::uint16_t result = (firstValue << 8) | secondValue;
         auto cipherSuite = tls::CipherSuiteManager::getInstance().getCipherSuiteById(result);
         casket::ThrowIfFalse(cipherSuite, "Cipher suite '" + suite_ + "' not found");
