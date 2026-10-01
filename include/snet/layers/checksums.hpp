@@ -34,15 +34,14 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize);
  * Computes the checksum for Pseudo header
  * @param[in] dataPtr Data pointer
  * @param[in] dataLen Data length
- * @param[in] ipAddrType IP address type(IPv4/IPv6) type @ref
- * IPAddress::AddressType
+ * @param[in] ipAddrType IP address type(4/6)
  * @param[in] protocolType Current protocol type @ref IPProtocolTypes
  * @param[in] srcIPAddress Source IP Address
  * @param[in] dstIPAddress Destination IP Address
  * @return The checksum result
  */
 uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen,
-                                  IPAddress::Type ipAddrType,
+                                  uint8_t ipAddrType,
                                   uint8_t protocolType, IPAddress srcIPAddress,
                                   IPAddress dstIPAddress);
 

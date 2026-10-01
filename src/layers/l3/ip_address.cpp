@@ -3,119 +3,84 @@
 namespace snet::layers
 {
 
-IPAddress::IPAddress(Type type) noexcept
-    : type_(type)
-    , ipv4_()
-    , ipv6_()
-{
-}
+IPAddress::IPAddress() noexcept
+    : ip_(IPv4Address{})
+{}
 
 IPAddress::IPAddress(const IPv4Address& addr) noexcept
-    : type_(IPv4)
-    , ipv4_(addr)
-    , ipv6_()
+    : ip_(addr)
 {
 }
 
 IPAddress::IPAddress(const IPv6Address& addr) noexcept
-    : type_(IPv6)
-    , ipv4_()
-    , ipv6_(addr)
+    : ip_(addr)
 {
 }
 
 IPAddress::~IPAddress() = default;
 
 IPAddress::IPAddress(const IPAddress& other) noexcept
-    : type_(other.type_)
-    , ipv4_(other.ipv4_)
-    , ipv6_(other.ipv6_)
+    : ip_(other.ip_)
 {
 }
 
 IPAddress::IPAddress(IPAddress&& other) noexcept
-    : type_(other.type_)
-    , ipv4_(other.ipv4_)
-    , ipv6_(other.ipv6_)
+    : ip_(std::move(other.ip_))
 {
 }
 
 IPAddress& IPAddress::operator=(const IPAddress& other) noexcept
 {
-    type_ = other.type_;
-    ipv4_ = other.ipv4_;
-    ipv6_ = other.ipv6_;
+    ip_ = other.ip_;
     return *this;
 }
 
 IPAddress& IPAddress::operator=(IPAddress&& other) noexcept
 {
-    type_ = other.type_;
-    ipv4_ = other.ipv4_;
-    ipv6_ = other.ipv6_;
+    ip_ = std::move(other.ip_);
     return *this;
 }
 
 IPAddress& IPAddress::operator=(const IPv4Address& other) noexcept
 {
-    type_ = IPv4;
-    ipv4_ = other;
-    ipv6_ = IPv6Address();
+    ip_ = other;
     return *this;
 }
 
 IPAddress& IPAddress::operator=(const IPv6Address& other) noexcept
 {
-    type_ = IPv6;
-    ipv4_ = IPv4Address();
-    ipv6_ = other;
+    ip_ = other;
     return *this;
 }
 
 std::string IPAddress::toString() const
 {
-    if (type_ == IPv6)
-    {
-        return ipv6_.toString();
-    }
-    return ipv4_.toString();
+    return nonstd::visit([](const auto& addr) { return addr.toString(); }, ip_);
 }
 
 bool IPAddress::isIPv4() const noexcept
 {
-    return type_ == IPv4;
+    return nonstd::holds_alternative<IPv4Address>(ip_);
 }
 
 bool IPAddress::isIPv6() const noexcept
 {
-    return type_ == IPv6;
+    return nonstd::holds_alternative<IPv6Address>(ip_);
 }
 
 IPv4Address IPAddress::toIPv4() const
 {
-    if (type_ != IPv4)
-    {
-        throw std::bad_cast();
-    }
-    return ipv4_;
+    return nonstd::get<IPv4Address>(ip_);
 }
 
 IPv6Address IPAddress::toIPv6() const
 {
-    if (type_ != IPv6)
-    {
-        throw std::bad_cast();
-    }
-    return ipv6_;
+    return nonstd::get<IPv6Address>(ip_);
 }
 
 bool IPAddress::operator==(const IPAddress& rhs) const noexcept
 {
-    if (type_ != rhs.type_)
-        return false;
-    if (type_ == IPv6)
-        return ipv6_ == rhs.ipv6_;
-    return ipv4_ == rhs.ipv4_;
+    return ip_ == rhs.ip_;
 }
 
 bool IPAddress::operator!=(const IPAddress& rhs) const noexcept
@@ -125,13 +90,7 @@ bool IPAddress::operator!=(const IPAddress& rhs) const noexcept
 
 bool IPAddress::operator<(const IPAddress& rhs) const noexcept
 {
-    if (type_ < rhs.type_)
-        return true;
-    if (type_ > rhs.type_)
-        return false;
-    if (type_ == IPv6)
-        return ipv6_ < rhs.ipv6_;
-    return ipv4_ < rhs.ipv4_;
+    return ip_ < rhs.ip_;
 }
 
 bool IPAddress::operator>(const IPAddress& rhs) const noexcept
@@ -149,12 +108,14 @@ bool IPAddress::operator>=(const IPAddress& rhs) const noexcept
     return !(*this < rhs);
 }
 
-IPAddress IPAddress::any(Type type) noexcept
+IPAddress IPAddress::any(bool ipv4) noexcept
 {
-    return IPAddress(type);
+    if (ipv4)
+        return IPAddress(IPv4Address::any());
+    return IPAddress(IPv6Address::any());
 }
 
-std::optional<IPAddress> IPAddress::fromString(const char* str)
+nonstd::optional<IPAddress> IPAddress::fromString(const char* str)
 {
     auto ipv6 = IPv6Address::fromString(str);
     if (ipv6.has_value())

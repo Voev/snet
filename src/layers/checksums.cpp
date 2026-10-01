@@ -53,7 +53,7 @@ uint16_t computeChecksum(ScalarBuffer<uint16_t> vec[], size_t vecSize)
     return host_to_be(result);
 }
 
-uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::Type ipAddrType, uint8_t protocolType,
+uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, uint8_t ipAddrType, uint8_t protocolType,
                                   IPAddress srcIPAddress, IPAddress dstIPAddress)
 {
     uint16_t checksumRes = 0;
@@ -61,7 +61,7 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::T
     vec[0].buffer = (uint16_t*)dataPtr;
     vec[0].len = dataLen;
 
-    if (ipAddrType == IPAddress::IPv4)
+    if (ipAddrType == 4)
     {
         uint32_t srcIP = srcIPAddress.toIPv4().toHost();
         uint32_t dstIP = dstIPAddress.toIPv4().toHost();
@@ -76,7 +76,7 @@ uint16_t computePseudoHdrChecksum(uint8_t* dataPtr, size_t dataLen, IPAddress::T
         vec[1].len = 12;
         checksumRes = computeChecksum(vec, 2);
     }
-    else if (ipAddrType == IPAddress::IPv6)
+    else if (ipAddrType == 6)
     {
         std::array<uint16_t, 18> pseudoHeader{};
         auto srcIP = srcIPAddress.toIPv6();

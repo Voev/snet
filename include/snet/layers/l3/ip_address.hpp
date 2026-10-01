@@ -2,25 +2,22 @@
 #include <snet/layers/l3/ipv4_address.hpp>
 #include <snet/layers/l3/ipv6_address.hpp>
 
+#include <casket/nonstd/variant.hpp>
+#include <casket/nonstd/optional.hpp>
+
 namespace snet::layers
 {
 
 class IPAddress final
 {
 public:
-    enum Type
-    {
-        IPv4,
-        IPv6
-    };
-
-    IPAddress(Type type = IPv4) noexcept;
+    IPAddress() noexcept;
 
     IPAddress(const IPv4Address& addr) noexcept;
 
     IPAddress(const IPv6Address& addr) noexcept;
 
-    ~IPAddress();
+    ~IPAddress() noexcept;
 
     IPAddress(const IPAddress& other) noexcept;
 
@@ -56,24 +53,25 @@ public:
 
     bool operator>=(const IPAddress& rhs) const noexcept;
 
-    static IPAddress any(Type type = IPv4) noexcept;
+    static IPAddress any(bool ipv4 = true) noexcept;
 
-    static std::optional<IPAddress> fromString(const char* str);
+    static nonstd::optional<IPAddress> fromString(const char* str);
 
     const uint8_t* asData() const noexcept
     {
-        if (type_ == IPv6)
+        if (nonstd::holds_alternative<IPv4Address>(ip_))
         {
-            return ipv6_.asData();
+            return nonstd::get<IPv4Address>(ip_).asData();
         }
-        return ipv4_.asData();
+        else if (nonstd::holds_alternative<IPv6Address>(ip_))
+        {
+            return nonstd::get<IPv6Address>(ip_).asData();
+        }
+        return nullptr;
     }
 
 private:
-    Type type_;
-
-    IPv4Address ipv4_;
-    IPv6Address ipv6_;
+    nonstd::variant<IPv4Address, IPv6Address> ip_;
 };
 
 } // namespace snet::layers

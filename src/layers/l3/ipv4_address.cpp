@@ -176,12 +176,12 @@ bool decrement(IPv4Address& addr)
     return reachedEnd;
 }
 
-IPv4Address any() noexcept
+IPv4Address IPv4Address::any() noexcept
 {
     return IPv4Address();
 }
 
-std::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
+nonstd::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
 {
     std::uint8_t addr[kBytesCount];
     if (inet_pton(AF_INET, str.data(), addr) <= 0)
