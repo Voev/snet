@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <snet/layers/packet.hpp>
+#include <snet/layers/packet_utils.hpp>
 #include <snet/layers/l3/ip_address.hpp>
 
 #include <snet/session/session_handler.hpp>
@@ -63,59 +64,16 @@ public:
         return "TcpListenerHandler";
     }
 
-    bool createContext(Session* session) override
-    {
-        if (!session)
-            return false;
-
-        auto* conn = this->template getContext<TcpConnection>(session);
-        if (conn)
-            return true;
-
-        conn = this->template allocateContext<TcpConnection>();
-        if (!conn)
-        {
-            CSK_LOG_ERROR("TcpListener: cannot allocate TcpConnection");
-            return false;
-        }
-
-        conn->reset();
-
-        if (!this->template setContext<TcpConnection>(session, conn))
-        {
-            this->template deallocateContext<TcpConnection>(conn);
-            CSK_LOG_ERROR("TcpListener: cannot set TcpConnection");
-            return false;
-        }
-
-        return true;
-    }
-
-    bool destroyContext(Session* session) override
-    {
-        if (!session)
-            return false;
-
-        auto* conn = this->template getContext<TcpConnection>(session);
-        if (conn)
-        {
-            // Rings are owned by other handlers; they'll release them.
-            this->template removeContext<TcpConnection>(session);
-            this->template deallocateContext<TcpConnection>(conn);
-        }
-        return true;
-    }
-
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
         if (!session || !packet)
             return this->passToNext(session, packet, layers::PacketStatus::Error_NoMemory);
 
-        snet::layers::IPAddress srcIP, dstIP;
-        snet::layers::TCPHeader hdr;
-        const snet::layers::LayerInfo* tcpLayer = nullptr;
+        layers::IPAddress srcIP, dstIP;
+        layers::TCPHeader hdr;
+        const layers::LayerInfo* tcpLayer = nullptr;
 
-        if (!extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
+        if (!layers::extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
             return this->passToNext(session, packet, layers::PacketStatus::NonTcpPacket);
 
         // Only pure SYN (SYN set, ACK cleared) — everything else
@@ -165,8 +123,6 @@ public:
             conn->hasPendingOutput = true;
         }
 
-        lst->halfOpen++;
-
         CSK_LOG_DEBUG("TcpListener: SYN %s:%u -> %s:%u, queued SYN-ACK (iss=%u)",
                       srcIP.toString().c_str(),
                       hdr.srcPort(),
@@ -206,24 +162,6 @@ private:
         CSK_LOG_DEBUG("TcpListener: no listener for port %u — "
                       "RST not sent (no session)",
                       hdr.dstPort());
-    }
-
-    bool extractPacketInfo(layers::Packet* packet, snet::layers::IPAddress& srcIP, snet::layers::IPAddress& dstIP,
-                           snet::layers::TCPHeader& hdr, const snet::layers::LayerInfo*& tcpLayer)
-    {
-        auto ipHeader = packet->getHeader<snet::layers::IPv4Header>(snet::layers::IPv4);
-        if (!ipHeader.isValid())
-            return false;
-
-        srcIP = snet::layers::IPAddress(ipHeader.srcAddr());
-        dstIP = snet::layers::IPAddress(ipHeader.dstAddr());
-
-        tcpLayer = packet->findLayer(snet::layers::TCP);
-        if (!tcpLayer)
-            return false;
-
-        hdr = packet->getHeader<snet::layers::TCPHeader>(*tcpLayer);
-        return true;
     }
 
     uint32_t nextISN()

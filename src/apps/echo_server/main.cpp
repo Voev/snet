@@ -16,6 +16,7 @@
 #include <snet/tcp/tcp_receive_handler.hpp>
 #include <snet/tcp/tcp_transmit_handler.hpp>
 #include <snet/tcp/tcp_listener.hpp>
+#include <snet/tcp/tcp_conn_ctx_factory.hpp>
 
 #include <snet/utils/print_hex.hpp>
 
@@ -157,11 +158,15 @@ int main(int argc, char* argv[])
         auto rxPool = std::make_unique<RxRingPool>(1024);
         auto txPool = std::make_unique<TxRingPool>(1024);
 
+        auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
+        fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
+        mgr.setFactoryRegistry(std::move(fRegistry));
+
         auto pipeline = std::make_unique<SessionManager::Pipeline>();
 
         pipeline->addHandler<TcpListenerHandler<SessionManager>>(&listeners);
-        pipeline->addHandler<TcpReceiveHandler<SessionManager>>(rxPool.get(), nullptr, echoConsumer.get());
-        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(txPool.get(), sink.get());
+        pipeline->addHandler<TcpReceiveHandler<SessionManager>>(nullptr, echoConsumer.get());
+        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(sink.get());
 
         mgr.setPipeline(std::move(pipeline));
 

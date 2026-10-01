@@ -128,13 +128,10 @@ TEST(SessionCtxContainerTest, CtxAOverwritesCtxBSlot)
     CtxA a;  a.value = 111;
     CtxB b;  b.value = 222;
 
-    // Легально кладём CtxB в его слот 0
     EXPECT_TRUE(c.set<CtxB>(&b, 0));
 
-    // Нелегальный индекс для CtxA (MAX_INSTANCES=1) — не должен проходить
     EXPECT_FALSE(c.set<CtxA>(&a, 1));
 
-    // Если CtxB всё ещё на месте — всё ок
     EXPECT_EQ(c.get<CtxB>(0), &b);
     EXPECT_EQ(c.get<CtxB>(0)->value, 222);
 }

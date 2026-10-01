@@ -10,6 +10,7 @@
 
 #include <snet/session/session_ctx_container.hpp>
 #include <snet/session/session_ctx_pool_manager.hpp>
+#include <snet/session/session_ctx_factory_registry.hpp>
 #include <snet/session/session_pipeline.hpp>
 
 #include <casket/types/flat_hash_table.hpp>
@@ -42,7 +43,9 @@ class SessionManager
 {
 public:
     using Key = KeyType;
-    using Pipeline = SessionPipeline<SessionManager<KeyType, ContextTypesTuple, Hash, KeyEqual>>;
+    using Manager = SessionManager<KeyType, ContextTypesTuple, Hash, KeyEqual>;
+    using FactoryRegistry = SessionCtxFactoryRegistry<Manager>;
+    using Pipeline = SessionPipeline<Manager>;
     using ContextContainer = typename SessionCtxContainerFromTuple<ContextTypesTuple>::type;
     using PoolManager = typename SessionCtxPoolManagerFromTuple<ContextTypesTuple>::type;
 
@@ -98,6 +101,15 @@ public:
         }
     }
 
+    void setFactoryRegistry(std::unique_ptr<FactoryRegistry> fRegistry)
+    {
+        fRegistry_ = std::move(fRegistry);
+        if (fRegistry_)
+        {
+            fRegistry_->setSessionManager(this);
+        }
+    }
+
     layers::PacketStatus processPacket(layers::Packet* packet)
     {
         if (!packet)
@@ -128,58 +140,28 @@ public:
             layers::hash5Tuple(srcIP, dstIP, tcpHeader.srcPort(), tcpHeader.dstPort(), ipHeader.protocol(), false);
 
         auto* session = findSession(flowKey);
-        bool isNewSession = false;
-
         if (!session)
         {
-            session = newSession(flowKey);
+            session = createSession(flowKey);
             if (!session)
             {
                 return layers::PacketStatus::Error_NoMemory;
             }
-            isNewSession = true;
+
+            if (fRegistry_)
+            {
+                fRegistry_->createContext(session);
+            }
         }
 
         updateSession(session);
 
         if (pipeline_)
         {
-            if (isNewSession)
-            {
-                pipeline_->createContext(session);
-            }
             return pipeline_->processPacket(session, packet);
         }
 
         return layers::PacketStatus::TcpMessageHandled;
-    }
-
-    template <typename ContextType>
-    Session* getOrCreate(const Key& key, ContextType* ctx)
-    {
-        processRemovalQueue();
-
-        auto* session = findSession(key);
-        if (session)
-        {
-            updateSession(session);
-            return session;
-        }
-        return createSession(key, ctx);
-    }
-
-    template <typename... ContextTypes>
-    Session* getOrCreate(const Key& key, ContextTypes*... ctxs)
-    {
-        processRemovalQueue();
-
-        auto* session = findSession(key);
-        if (session)
-        {
-            updateSession(session);
-            return session;
-        }
-        return createSession(key, ctxs...);
     }
 
     Session* find(const Key& key)
@@ -211,7 +193,7 @@ public:
     }
 
     template <typename ContextType>
-    ContextType* getContext(Session* session, size_t index = 0)
+    ContextType* getContext(Session* session, size_t index = 0) const
     {
         if (!session)
             return nullptr;
@@ -343,6 +325,7 @@ private:
     casket::RingBuffer<Key> removal_queue_;
     PoolManager context_pools_;
     std::unique_ptr<Pipeline> pipeline_;
+    std::unique_ptr<FactoryRegistry> fRegistry_;
     uint64_t session_counter_{0};
 
     Session* findSession(const Key& key)
@@ -370,9 +353,9 @@ private:
             auto* session = session_map_.find(key);
             if (session)
             {
-                if (pipeline_)
+                if (fRegistry_)
                 {
-                    pipeline_->destroyContext(session);
+                    fRegistry_->destroyContext(session);
                 }
                 session->contexts.clearAll();
                 session_map_.erase(key);
@@ -383,51 +366,7 @@ private:
         return processed;
     }
 
-    template <typename ContextType>
-    Session* createSession(const Key& key, ContextType* ctx)
-    {
-        if (session_map_.size() >= config_.max_sessions)
-        {
-            processRemovalQueue();
-
-            if (session_map_.size() >= config_.max_sessions)
-            {
-                evictOldestSession();
-            }
-        }
-
-        if (session_map_.size() >= session_map_.capacity() * 0.85f)
-        {
-            session_map_.reserve(session_map_.capacity() * 2);
-        }
-
-        Session session;
-        session.key = key;
-        session.flags = 0;
-        session.created_at = getCurrentTimestamp();
-        session.last_activity = session.created_at;
-        session.timeout_at = session.created_at + static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
-        session.contexts = ContextContainer();
-
-        if (ctx)
-        {
-            session.contexts.template set<ContextType>(ctx);
-        }
-
-        if (!session_map_.insert(key, std::move(session)))
-        {
-            if (ctx)
-            {
-                context_pools_.template deallocate<ContextType>(ctx);
-            }
-            return nullptr;
-        }
-
-        session_counter_++;
-        return session_map_.find(key);
-    }
-
-    Session* newSession(const Key& key)
+    Session* createSession(const Key& key)
     {
         if (session_map_.size() >= config_.max_sessions)
         {
@@ -454,44 +393,6 @@ private:
 
         if (!session_map_.insert(key, std::move(session)))
         {
-            return nullptr;
-        }
-
-        session_counter_++;
-        return session_map_.find(key);
-    }
-
-    template <typename... ContextTypes>
-    Session* createSession(const Key& key, ContextTypes*... ctxs)
-    {
-        if (session_map_.size() >= config_.max_sessions)
-        {
-            processRemovalQueue();
-
-            if (session_map_.size() >= config_.max_sessions)
-            {
-                evictOldestSession();
-            }
-        }
-
-        if (session_map_.size() >= session_map_.capacity() * 0.85f)
-        {
-            session_map_.reserve(session_map_.capacity() * 2);
-        }
-
-        Session session;
-        session.key = key;
-        session.flags = 0;
-        session.created_at = getCurrentTimestamp();
-        session.last_activity = session.created_at;
-        session.timeout_at = session.created_at + static_cast<uint64_t>(config_.session_timeout_sec) * 1000000ULL;
-        session.contexts = ContextContainer();
-
-        (initializeContext(&session, ctxs), ...);
-
-        if (!session_map_.insert(key, std::move(session)))
-        {
-            (context_pools_.template deallocate<ContextTypes>(ctxs), ...);
             return nullptr;
         }
 
@@ -502,11 +403,13 @@ private:
     bool destroySession(Session* session)
     {
         if (!session)
-            return false;
-
-        if (pipeline_)
         {
-            pipeline_->destroyContext(session);
+            return false;
+        }
+
+        if (fRegistry_)
+        {
+            fRegistry_->destroyContext(session);
         }
 
         session->contexts.clearAll();
@@ -567,9 +470,10 @@ private:
         for (; it != end; ++it)
         {
             auto* session = &(*it).second;
-            if (pipeline_)
+
+            if (fRegistry_)
             {
-                pipeline_->destroyContext(session);
+                fRegistry_->destroyContext(session);
             }
             session->contexts.clearAll();
         }

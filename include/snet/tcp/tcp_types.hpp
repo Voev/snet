@@ -14,6 +14,10 @@
 namespace snet::tcp
 {
 
+static constexpr int8_t kClientSide = 0;
+static constexpr int8_t kServerSide = 1;
+static constexpr int8_t kSideUnknown = -1;
+
 using RxRingPool = casket::FixedObjectPool<RxRingBuffer>;
 using TxRingPool = casket::FixedObjectPool<TxRingBuffer>;
 
@@ -160,7 +164,7 @@ struct TcpOutput
 /// `struct tcp_sock`. One instance per TCP connection.
 struct TcpConnection
 {
-    static constexpr size_t MAX_INSTANCES = 1;
+    static constexpr size_t MAX_INSTANCES = 2;
 
     layers::IPAddress localIP;
     layers::IPAddress remoteIP;
@@ -183,15 +187,12 @@ struct TcpConnection
     uint32_t cwnd{1}; // congestion window (in MSS)
     uint32_t ssthresh{65535};
 
-    TxRingBuffer* txRing{nullptr};
-    bool txRingOwnedByTransmit{false};
-
     uint32_t rcvNxt{0}; // next seq expected
     uint32_t rcvWnd{65535};
     uint32_t irs{0}; // initial receive seq (peer's ISS)
 
+    TxRingBuffer* txRing{nullptr};
     RxRingBuffer* rxRing{nullptr};
-    bool rxRingOwnedByReceive{false};
 
     std::chrono::steady_clock::time_point lastActivity;
     std::chrono::steady_clock::time_point timeWaitStart;

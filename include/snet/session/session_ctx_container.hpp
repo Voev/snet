@@ -99,10 +99,6 @@ public:
 
         if (slot.data && slot.data != data)
         {
-            if constexpr (std::is_destructible_v<ContextType>)
-            {
-                static_cast<ContextType*>(slot.data)->~ContextType();
-            }
             activeCount_--;
             slotMask_ &= ~(1u << slotIndex);
         }
@@ -139,10 +135,6 @@ public:
         auto& slot = slots[slotIndex];
         if (slot.data)
         {
-            if constexpr (std::is_destructible_v<ContextType>)
-            {
-                static_cast<ContextType*>(slot.data)->~ContextType();
-            }
             slot.data = nullptr;
             slot.typeId = 0;
             slotMask_ &= ~(1u << slotIndex);

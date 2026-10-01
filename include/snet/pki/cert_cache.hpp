@@ -30,7 +30,7 @@ struct CacheConfig
 {
     std::chrono::seconds l1Ttl{3600};     // L1 cache TTL
     std::chrono::seconds l2Ttl{300};      // L2 cache TTL
-    std::chrono::seconds staleTtl{86400}; // Stale TTL для fallback
+    std::chrono::seconds staleTtl{86400};
     size_t workerThreads{4};
     size_t batchSize{8};
     std::chrono::milliseconds queueTimeout{100};
@@ -248,7 +248,6 @@ public:
         auto key = CertFingerprintGenerator::generate(originCert, EVP_sha1());
         auto now = Clock::now();
 
-        // L1 lookup (очень быстрый)
         if (auto value = tl_L1Cache->get(key, now))
         {
             return crypto::Cert::shallowCopy(*value);

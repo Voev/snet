@@ -2,77 +2,19 @@
 #include "decrypt_by_keylog_test.hpp"
 
 #include <snet/tls.hpp>
-#include <snet/layers/l4/tcp_reassembly.hpp>
+#include <snet/tcp/tcp_conn_ctx_factory.hpp>
 
 #include <casket/utils/string.hpp>
 #include <casket/utils/to_number.hpp>
 
 using namespace snet;
+using namespace snet::tcp;
 using namespace snet::tls;
 using namespace casket;
 
-void tcpReassemblyMsgReadyCallback(const int8_t sideIndex, const layers::TcpStreamData& tcpData, void* userCookie)
-{
-    auto* test = static_cast<DecryptByKeylog*>(userCookie);
-
-    if (tcpData.getMissingByteCount() == 0)
-    {
-        auto session = test->sessions_.find(tcpData.getConnectionData().flowKey);
-        if (session == test->sessions_.end())
-        {
-            auto flowKey = tcpData.getConnectionData().flowKey;
-            auto result =
-                test->sessions_.emplace(std::make_pair(flowKey, std::make_shared<Session>(test->recordPool_)));
-            if (result.second)
-            {
-                session = result.first;
-            }
-        }
-
-        if (session->second)
-        {
-            try
-            {
-                auto state = session->second;
-                state->readRecords({tcpData.getData(), tcpData.getDataLength()});
-                state->processPendingRecords(sideIndex,
-                                             [&test, &state](const int8_t sideIndex, Record* record)
-                                             {
-                                                 if (test->printRecords_)
-                                                 {
-                                                     PrintRecord(sideIndex, state.get(), record);
-                                                 }
-
-                                                 if (record->getHandshakeType() == HandshakeType::ClientHelloCode)
-                                                 {
-                                                     auto& clientHello = record->getHandshake<ClientHello>();
-                                                     ClientRandom random{clientHello.random.begin(),
-                                                                         clientHello.random.end()};
-                                                     auto secrets = test->secretManager_.getSecretNode(random);
-                                                     if (secrets)
-                                                     {
-                                                         state->setSecrets(secrets);
-                                                     }
-                                                 }
-
-                                                 if (record->isPlaintext())
-                                                 {
-                                                     test->actualDecryptedRecordCount_ += 1;
-                                                 }
-                                             });
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << "Error processing payload with length " << tcpData.getDataLength() << ": " << e.what()
-                          << '\n';
-            }
-        }
-    }
-}
-
 DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
-    : recordPool_(1024)
-    , reassembler_(tcpReassemblyMsgReadyCallback, this)
+    : rxPool_(512, 64 * 1024)
+    , recordPool_(256)
 {
     auto found = section.find("keylog");
     if (found != section.end())
@@ -80,15 +22,31 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
         secretManager_.parseKeyLogFile(found->second);
     }
 
+    TlsDecryptOptions options;
     found = section.find("print_records");
     if (found != section.end() && iequals(found->second, "yes"))
     {
-        printRecords_ = true;
+        options.printRecords = true;
     }
 
     found = section.find("decrypted_records_count");
     ThrowIfTrue(found == section.end(), "not found required option 'decrypted_records_count'");
     to_number(found->second, expectedDecryptedRecordCount_);
+
+    TcpReceiveHandlerConfig config;
+    config.replayMode = true;
+
+    consumer_ = std::make_unique<TlsDecryptStreamConsumer<SessionManager>>(&sessionManager_, &secretManager_, options);
+    auto receiver = std::make_shared<TcpReceiveHandler<SessionManager>>(nullptr, consumer_.get(), config);
+
+    auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
+    fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(&rxPool_, nullptr);
+    fRegistry->addFactory<TlsDecryptCtxFactory<SessionManager>>(&recordPool_);
+    sessionManager_.setFactoryRegistry(std::move(fRegistry));
+
+    auto pipeline = std::make_unique<SessionManager::Pipeline>();
+    pipeline->add(receiver);
+    sessionManager_.setPipeline(std::move(pipeline));
 }
 
 void DecryptByKeylog::execute()
@@ -107,13 +65,14 @@ void DecryptByKeylog::execute()
             if (packet)
             {
                 packet->parse();
-                reassembler_.reassemblePacket(packet);
+                sessionManager_.processPacket(packet);
                 driver_->finalizePacket(packet, Verdict::Pass);
             }
         }
     } while (status == RecvStatus::Ok);
 
-    casket::ThrowIfFalse(actualDecryptedRecordCount_ == expectedDecryptedRecordCount_,
-                         "actual: {}, expected: {}; mismatch decrypted records", actualDecryptedRecordCount_,
+    auto stats = consumer_->getStats();
+    casket::ThrowIfFalse(stats.decryptedRecords == expectedDecryptedRecordCount_,
+                         "actual: {}, expected: {}; mismatch decrypted records", stats.decryptedRecords,
                          expectedDecryptedRecordCount_);
 }

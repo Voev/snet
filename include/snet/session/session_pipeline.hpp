@@ -61,41 +61,6 @@ public:
         return add(std::move(handler));
     }
 
-    bool createContext(Session* session)
-    {
-        if (pipeline_.empty() || !session)
-        {
-            return false;
-        }
-
-        for (auto& handler : pipeline_)
-        {
-            if (!handler->createContext(session))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool destroyContext(Session* session)
-    {
-        if (pipeline_.empty() || !session)
-        {
-            return false;
-        }
-
-        bool success = true;
-        for (auto it = pipeline_.rbegin(); it != pipeline_.rend(); ++it)
-        {
-            if (!(*it)->destroyContext(session))
-            {
-                success = false;
-            }
-        }
-        return success;
-    }
-
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         if (pipeline_.empty() || !session || !packet)
@@ -190,36 +155,19 @@ public:
         return false;
     }
 
-    void printChain() const
+    void printChain(std::ostream& os) const
     {
-        printf("Session Pipeline: ");
+        os << "Session pipeline: ";
         for (size_t i = 0; i < pipeline_.size(); ++i)
         {
-            printf("%s", pipeline_[i]->name());
+            os << pipeline_[i]->name();
+
             if (i < pipeline_.size() - 1)
             {
-                printf(" -> ");
+                os << " -> ";
             }
         }
-        printf("\n");
-    }
-
-    struct PipelineStats
-    {
-        size_t totalHandlers{0};
-        std::vector<std::string> handlerNames;
-    };
-
-    PipelineStats getStats() const
-    {
-        PipelineStats stats;
-        stats.totalHandlers = pipeline_.size();
-        stats.handlerNames.reserve(pipeline_.size());
-        for (const auto& handler : pipeline_)
-        {
-            stats.handlerNames.push_back(handler->name());
-        }
-        return stats;
+        os << std::endl;
     }
 
 private:

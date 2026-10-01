@@ -164,7 +164,7 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 
 // TLS 1.2 AEAD cipher suites
 constexpr std::array<uint16_t, 35> gTLSv12AeadCipherSuites = {
-    // TLS 1.2 ECDHE + ECDSA (с PFS)
+    // TLS 1.2 ECDHE + ECDSA (with PFS)
     casket::make_uint16(0xC0, 0x2C), /// TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
     casket::make_uint16(0xC0, 0x30), /// TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
     casket::make_uint16(0x00, 0xA3), /// TLS_DHE_DSS_WITH_AES_256_GCM_SHA384
