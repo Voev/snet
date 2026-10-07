@@ -35,21 +35,22 @@ void ServerHello::parse(nonstd::span<const uint8_t> input)
     cipherSuite = reader.get_uint16_t();
     compMethod = reader.get_byte();
 
-    if (version == ProtocolVersion::SSLv3_0)
-    {
-        if (reader.remaining_bytes() > 0)
-        {
-            auto extensionsLength = reader.peek_uint16_t();
-            casket::ThrowIfFalse(extensionsLength == reader.remaining_bytes() - 2, "Invalid extesions length");
-            extensions = reader.get_span_remaining();
-        }
-    }
-    else
+    // Extensions in ServerHello:
+    //   - TLS 1.3 / HRR  — mandatory;
+    //   - TLS 1.0–1.2    — optional (may be absent);
+    //   - SSLv3          — never present.
+    //
+    // Safe approach: read the extensions block only if bytes remain
+    // in the buffer. On the wire the format is: [len:2][ext...].
+    if (reader.remaining_bytes() > 0)
     {
         auto extensionsLength = reader.peek_uint16_t();
-        casket::ThrowIfFalse(extensionsLength == reader.remaining_bytes() - 2, "Invalid extesions length");
+        casket::ThrowIfFalse(extensionsLength == reader.remaining_bytes() - 2,
+                             "Invalid extensions length");
         extensions = reader.get_span_remaining();
     }
+
+    reader.assert_done();
 }
 
 ServerHello ServerHello::deserialize(nonstd::span<const uint8_t> input)
