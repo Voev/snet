@@ -7,6 +7,8 @@
 #include <snet/io.hpp>
 #include <snet/io/driver_base.hpp>
 
+#include <snet/layers/l2/mac_address.hpp>
+
 #include <casket/types/fixed_object_pool.hpp>
 
 #include "afpacket_types.hpp"
@@ -52,6 +54,8 @@ public:
 
     Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
 
+    Status injectPacket(layers::Packet* rawPacket) override;
+
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
 private:
@@ -71,6 +75,14 @@ private:
     RingEntry* findPacket();
     RecvStatus waitForPacket();
     void releaseAllOutstandingFrames();
+
+    void rewriteEthernetForBridge(Instance* self, Instance* peer, uint8_t* frame, size_t len) const noexcept;
+
+    Instance* findEgress(uint32_t dstIp) const noexcept;
+
+    bool lookupNeighborMac(uint32_t dstIp, layers::MacAddress& mac) const;
+
+    bool transmitWithEthernet(Instance* egress, const uint8_t* ipData, uint32_t ipLen);
 
 private:
     std::vector<AFPacketInstancePtr> instances_;

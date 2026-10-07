@@ -79,6 +79,9 @@ public:
     /// @return Status indicating success or failure
     Status inject(const uint8_t* data, uint32_t dataLength) override;
 
+    Status injectPacket(layers::Packet* rawPacket) override;
+
+
     /// @brief Gets the snapshot length (snaplen) for captured packets
     /// @return Maximum captured packet length in bytes
     int getSnaplen() const override;

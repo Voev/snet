@@ -1,9 +1,12 @@
 #pragma once
+#include <array>
 #include <string>
 #include <cstdint>
 #include "afpacket_types.hpp"
 
 #include <linux/if_packet.h>
+
+#include <snet/layers/l2/mac_address.hpp>
 
 namespace snet::driver
 {
@@ -105,8 +108,26 @@ public:
     uint32_t tpVersion{0};
     uint32_t tpReserve{0};
 
+    const layers::MacAddress& mac() const noexcept
+    {
+        return mac_;
+    }
+
+    [[nodiscard]] uint32_t ip() const noexcept
+    {
+        return ip_;
+    }
+
+    [[nodiscard]] uint32_t netmask() const noexcept
+    {
+        return netmask_;
+    }
+
 private:
     AFPacketDriver& driver_;
+    layers::MacAddress mac_{};
+    uint32_t ip_{0};
+    uint32_t netmask_{0};
     int fd_{-1};
     uint32_t index_{0};
     uint32_t tpReserve_{0};

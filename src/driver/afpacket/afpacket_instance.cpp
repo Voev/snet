@@ -51,12 +51,37 @@ bool Instance::create(const std::string& name)
 
     struct ifreq ifr{};
     std::strncpy(ifr.ifr_name, name_.c_str(), sizeof(ifr.ifr_name) - 1);
+
     if (::ioctl(fd_, SIOCGIFINDEX, &ifr) == -1)
     {
         driver_.logError("could not find index for device %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
+
     index_ = static_cast<uint32_t>(ifr.ifr_ifindex);
+
+    const int ctl = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (ctl >= 0)
+    {
+        if (::ioctl(ctl, SIOCGIFHWADDR, &ifr) == 0)
+        {
+            std::memcpy(mac_.data(), ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+        }
+
+        if (::ioctl(ctl, SIOCGIFADDR, &ifr) == 0)
+        {
+            auto* sin = reinterpret_cast<sockaddr_in*>(&ifr.ifr_addr);
+            ip_ = sin->sin_addr.s_addr;
+        }
+
+        if (::ioctl(ctl, SIOCGIFNETMASK, &ifr) == 0)
+        {
+            auto* sin = reinterpret_cast<sockaddr_in*>(&ifr.ifr_netmask);
+            netmask_ = sin->sin_addr.s_addr;
+        }
+
+        ::close(ctl);
+    }
 
     int val = TPACKET_V2;
     socklen_t len = sizeof(val);

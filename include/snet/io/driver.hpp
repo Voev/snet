@@ -114,6 +114,8 @@ public:
     /// @return Status indicating success or failure.
     virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
 
+    virtual Status injectPacket(layers::Packet* rawPacket) = 0;
+
     /// @brief Gets packet pool information.
     /// @param[out] info Structure to fill with pool statistics.
     /// @return Status indicating success or failure.

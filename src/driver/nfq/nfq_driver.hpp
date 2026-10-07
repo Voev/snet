@@ -70,6 +70,8 @@ public:
     /// @return Status indicating success or failure
     Status inject(const uint8_t* data, uint32_t data_len) override;
 
+    Status injectPacket(layers::Packet* rawPacket) override;
+
     /// @brief Finalizes packet processing with verdict
     /// @param[in] packet Packet to finalize
     /// @param[in] verdict Processing decision (ACCEPT, DROP, STOLEN, etc.)

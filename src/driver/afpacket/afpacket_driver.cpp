@@ -20,6 +20,9 @@
 #include <casket/log/log.hpp>
 #include <casket/opt/opt.hpp>
 
+#include <snet/layers/header_builder.hpp>
+#include <snet/layers/in_memory_packet.hpp>
+
 #ifndef POLLRDHUP
 #define POLLRDHUP 0x2000
 #endif
@@ -351,12 +354,31 @@ Status AFPacketDriver::inject(const uint8_t* data, uint32_t dataLen)
         logError("no instances to inject from");
         return Status::InvalidArgument;
     }
-    Instance* egress = instances_.front().get();
-    if (!transmitPacket(egress, data, dataLen))
+
+    if (!data || dataLen < 20)
+        return Status::InvalidArgument;
+
+    const uint8_t version = data[0] >> 4;
+    if (version != 4)
     {
-        logError("error sending packet via %s", egress->name().c_str());
+        logError("inject: unsupported L3 version %u", version);
+        return Status::InvalidArgument;
+    }
+
+    /// @todo: use IPv4Address. And IPv6?
+    uint32_t dstIp = 0;
+    std::memcpy(&dstIp, data + 16, sizeof(dstIp));
+
+    Instance* egress = findEgress(dstIp);
+    if (!egress)
+    {
+        logError("inject: no egress for dst IP");
         return Status::Error;
     }
+
+    if (!transmitWithEthernet(egress, data, dataLen))
+        return Status::Error;
+
     stats_.packetsInjected++;
     return Status::Success;
 }
@@ -570,9 +592,17 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
 
     if (pass && wrapper->instance()->peer)
     {
-        if (!transmitPacket(wrapper->instance()->peer, wrapper->asPacket()->getData(), wrapper->caplen()))
+        Instance* self = wrapper->instance();
+        Instance* peer = self->peer;
+
+        uint8_t* frame = const_cast<uint8_t*>(wrapper->asPacket()->getData());
+        const size_t len = wrapper->caplen();
+
+        rewriteEthernetForBridge(self, peer, frame, len);
+
+        if (!transmitPacket(peer, frame, len))
         {
-            logError("failed to forward packet out of %s", wrapper->instance()->peer->name().c_str());
+            logError("failed to forward packet out of %s", peer->name().c_str());
         }
     }
 
@@ -580,6 +610,77 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
     hdr->tp_status = TP_STATUS_KERNEL;
 
     pool_->release(wrapper);
+    return Status::Success;
+}
+
+Status AFPacketDriver::injectPacket(layers::Packet* rawPacket)
+{
+    if (!rawPacket)
+    {
+        return Status::InvalidArgument;
+    }
+
+    auto* memPkt = layers::InMemoryPacket::fromPacket(rawPacket);
+    if (!memPkt)
+    {
+        logError("inject: packet isn't an in-memory type");
+        return Status::Error;
+    }
+
+    const size_t headroom = memPkt->headroom();
+    if (headroom < ETH_HLEN)
+    {
+        logError("inject: headroom %zu < ETH_HLEN %d", headroom, ETH_HLEN);
+        return Status::InvalidArgument;
+    }
+
+    const uint8_t* ipData = rawPacket->getData();
+    const uint32_t ipLen = static_cast<uint32_t>(rawPacket->getDataLen());
+
+    if (ipLen < 20 || (ipData[0] >> 4) != 4)
+    {
+        logError("inject: not IPv4");
+        return Status::InvalidArgument;
+    }
+
+    /// @todo: use IPv4Address. And IPv6?
+    uint32_t dstIp = 0;
+    std::memcpy(&dstIp, ipData + 16, sizeof(dstIp));
+
+    Instance* egress = findEgress(dstIp);
+    if (!egress)
+    {
+        logError("inject: no egress for dst IP");
+        return Status::Error;
+    }
+
+    layers::MacAddress dstMac;
+    if (!lookupNeighborMac(dstIp, dstMac))
+    {
+        logError("inject: no ARP entry for dst IP");
+        return Status::Error;
+    }
+
+    const layers::MacAddress srcMac = egress->mac();
+    uint8_t* eth = memPkt->getBufferStart();
+
+    layers::HeaderBuilder<layers::ethernet_header> builder(eth,
+                                                           headroom,
+                                                           [](size_t) noexcept
+                                                           {
+                                                           });
+
+    builder.set(&layers::ethernet_header::dstMac, dstMac.bytes)
+        .set(&layers::ethernet_header::srcMac, srcMac.bytes)
+        .set(&layers::ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(layers::EtherType::IP)))
+        .build();
+
+    const uint32_t frameLen = ETH_HLEN + ipLen;
+
+    if (!transmitPacket(egress, eth, frameLen))
+        return Status::Error;
+
+    stats_.packetsInjected++;
     return Status::Success;
 }
 
@@ -798,6 +899,90 @@ void AFPacketDriver::releaseAllOutstandingFrames()
                 hdr->tp_status = TP_STATUS_KERNEL;
         }
     }
+}
+
+void AFPacketDriver::rewriteEthernetForBridge(Instance* self, Instance* peer, uint8_t* frame, size_t len) const noexcept
+{
+    if (!self || !peer || !frame || len < ETH_HLEN)
+        return;
+
+    uint32_t dstIp = 0;
+    std::memcpy(&dstIp, frame + ETH_HLEN + 16, sizeof(dstIp));
+
+    layers::MacAddress dstMac{};
+    if (!lookupNeighborMac(dstIp, dstMac))
+    {
+        logError("bridge: no ARP for dst IP on %s", peer->name().c_str());
+        return;
+    }
+
+    std::memcpy(frame, dstMac.data(), ETH_ALEN);
+    std::memcpy(frame + ETH_ALEN, peer->mac().data(), ETH_ALEN);
+}
+
+/// @todo: use IPv4Address. And IPv6?
+Instance* AFPacketDriver::findEgress(uint32_t dstIp) const noexcept
+{
+    for (const auto& inst : instances_)
+    {
+        if (inst->netmask() == 0)
+            continue;
+        if ((dstIp & inst->netmask()) == (inst->ip() & inst->netmask()))
+            return inst.get();
+    }
+    return nullptr;
+}
+
+/// @todo: use IPv4Address. And IPv6?
+bool AFPacketDriver::lookupNeighborMac(uint32_t dstIp, layers::MacAddress& mac) const
+{
+    std::FILE* f = std::fopen("/proc/net/arp", "r");
+    if (!f)
+        return false;
+
+    char line[256];
+    if (!std::fgets(line, sizeof(line), f))
+    {
+        std::fclose(f);
+        return false;
+    }
+
+    while (std::fgets(line, sizeof(line), f))
+    {
+        char ipStr[64]{};
+        char hwStr[64]{};
+        char maskStr[64]{};
+        char devStr[64]{};
+        unsigned hwType = 0;
+        unsigned flags = 0;
+
+        // Format of /proc/net/arp:
+        //   IP address  HW type  Flags  HW address       Mask  Device
+        //   10.0.1.1    0x1      0x2    fa:11:e2:5b:66:c2 *     veth-ps
+        const int n =
+            std::sscanf(line, "%63s 0x%x 0x%x %63s %63s %63s", ipStr, &hwType, &flags, hwStr, maskStr, devStr);
+        if (n != 6)
+            continue;
+
+        struct in_addr addr{};
+        if (::inet_aton(ipStr, &addr) == 0)
+            continue;
+        if (addr.s_addr != dstIp)
+            continue;
+
+        unsigned m[6]{};
+        if (std::sscanf(hwStr, "%x:%x:%x:%x:%x:%x", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5]) != 6)
+            continue;
+
+        for (size_t i = 0; i < mac.bytes.size(); ++i)
+            mac.bytes[i] = static_cast<uint8_t>(m[i]);
+
+        std::fclose(f);
+        return true;
+    }
+
+    std::fclose(f);
+    return false;
 }
 
 } // namespace snet::driver

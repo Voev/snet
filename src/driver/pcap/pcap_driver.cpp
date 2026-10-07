@@ -281,6 +281,17 @@ Status Pcap::inject(const uint8_t* data, uint32_t dataLength)
     return Status::Success;
 }
 
+Status Pcap::injectPacket(layers::Packet* rawPacket)
+{
+    if (0 > pcap_inject(handle_, rawPacket->getData(), rawPacket->getDataLen()))
+    {
+        return Status::Error;
+    }
+
+    stats_.packetsInjected++;
+    return Status::Success;
+}
+
 int Pcap::getSnaplen() const
 {
     return snaplen_;
