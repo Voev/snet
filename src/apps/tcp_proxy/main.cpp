@@ -3,6 +3,7 @@
 
 #include <iostream>
 
+#include <casket/thread/pool.hpp>
 #include <casket/opt/opt.hpp>
 #include <casket/log/log.hpp>
 
@@ -12,25 +13,28 @@
 #include <snet/layers.hpp>
 #include <snet/session.hpp>
 
+#include <snet/tcp/tcp_conn_ctx_factory.hpp>
 #include <snet/tcp/tcp_listener_handler.hpp>
 #include <snet/tcp/tcp_receive_handler.hpp>
 #include <snet/tcp/tcp_transmit_handler.hpp>
 #include <snet/tcp/tcp_listener.hpp>
-#include <snet/tcp/tcp_conn_ctx_factory.hpp>
+
+#include <snet/proxy/proxy_context_factory.hpp>
+#include <snet/proxy/proxy_context.hpp>
+#include <snet/proxy/transparent_proxy_acceptor.hpp>
+#include <snet/proxy/transparent_proxy_consumer.hpp>
 
 #include <snet/utils/print_hex.hpp>
-
-#include "echo_consumer.hpp"
 
 using namespace casket;
 using namespace casket::opt;
 using namespace snet::layers;
 using namespace snet::tcp;
-using namespace echo;
+using namespace snet::proxy;
 
 namespace fs = std::filesystem;
 
-using SessionContexts = std::tuple<TcpConnection>;
+using SessionContexts = std::tuple<TcpConnection, ProxyContext>;
 using SessionManager = snet::session::SessionManager<uint32_t, SessionContexts>;
 
 class CmdLineProcessor final
@@ -69,7 +73,6 @@ public:
     {
         return parser_;
     }
-
     const Parameters& getParameters() const noexcept
     {
         return args_;
@@ -98,8 +101,6 @@ LoopAction handleStatus(RecvStatus st, bool stopRequested)
         return stopRequested ? LoopAction::StopOk : LoopAction::Continue;
 
     case RecvStatus::Interrupted:
-        return LoopAction::StopOk;
-
     case RecvStatus::Eof:
         return LoopAction::StopOk;
 
@@ -137,7 +138,7 @@ int main(int argc, char* argv[])
         snet::io::Controller controller(options);
 
         SessionManager::Config sessCfg;
-        sessCfg.max_sessions = 10000;
+        sessCfg.max_sessions = 100000;
         SessionManager mgr(sessCfg);
 
         snet::io::DriverSpec driverSpec;
@@ -147,23 +148,55 @@ int main(int argc, char* argv[])
         auto driver = controller.load(driverSpec);
 
         auto sink = std::make_unique<NetworkSink>(driver.get());
-        TcpListenerRegistry listeners;
-        listeners.add(IPAddress::any(), 8080);
-
-        auto echoConsumer = std::make_unique<EchoConsumer<SessionManager>>(&mgr);
 
         auto rxPool = std::make_unique<RxRingPool>(1024);
         auto txPool = std::make_unique<TxRingPool>(1024);
 
         auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
         fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
+        fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
         mgr.setFactoryRegistry(std::move(fRegistry));
+
+        TcpTransmitHandlerConfig txCfg;
+        txCfg.packetHeadroom = 14;
+        txCfg.maxPacketSize = 65536;
+        txCfg.ttl = 64;
+
+        auto threadPool = std::make_shared<casket::thread::ThreadPool>(2);
+        auto submitFn = [threadPool](std::function<void()> task)
+        {
+            threadPool->addTask(std::move(task));
+        };
+
+        snet::proxy::TlsProbeConnection probe{submitFn};
+        snet::proxy::DecisionCache cache{snet::proxy::DecisionCache::Config{}};
+
+        auto policy = [](std::string_view sni,
+                         const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
+        {
+            if (sni == "test")
+                return snet::proxy::InspectionDecision::Block;
+            if (sni == "inspect.example.com")
+                return snet::proxy::InspectionDecision::Mitm;
+            (void)chain;
+            return snet::proxy::InspectionDecision::Bypass;
+        };
+
+        snet::proxy::TlsDecisionEngine engine{probe, cache, policy};
+
+        auto tx = std::make_shared<TcpTransmitHandler<SessionManager>>(sink.get(), txCfg);
+
+        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, tx.get());
+
+        auto consumer = std::make_shared<snet::proxy::TransparentProxyConsumer<SessionManager>>(
+            &mgr, tx.get(), &engine, acceptor.get());
+
+        auto rx = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
 
         auto pipeline = std::make_unique<SessionManager::Pipeline>();
 
-        pipeline->addHandler<TcpListenerHandler<SessionManager>>(&listeners);
-        pipeline->addHandler<TcpReceiveHandler<SessionManager>>(nullptr, echoConsumer.get());
-        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(sink.get());
+        pipeline->add(rx);
+        pipeline->add(tx);
 
         mgr.setPipeline(std::move(pipeline));
 
@@ -203,8 +236,8 @@ int main(int argc, char* argv[])
             throw std::system_error(ec);
 
         driver->start();
-        std::cout << "listening... (Ctrl+C to stop)\n";
 
+        std::cout << "\n=== Transparent TCP Proxy ===\n";
         constexpr uint16_t batchSize = 32;
         snet::layers::Packet* packets[batchSize];
         uint16_t received = 0;
@@ -230,20 +263,21 @@ int main(int argc, char* argv[])
                     continue;
 
                 pkt->parse();
-                std::cout << *pkt << std::endl;
 
-                mgr.processPacket(pkt);
+                CSK_LOG_INFO("RX packet: pkt=%p, %s", pkt, pkt->toString().c_str());
+
+                auto status = mgr.processPacket(pkt);
 
                 ++total;
 
-                (void)driver->finalizePacket(pkt, Verdict::Block);
+                (void)driver->finalizePacket(pkt, status.passes() ? Verdict::Pass : Verdict::Block);
             }
 
             const bool stopReq = g_stop.load(std::memory_order_relaxed);
             switch (handleStatus(recvStatus, stopReq))
             {
             case LoopAction::Continue:
-                if (recvStatus == RecvStatus::NoBuffer ||  recvStatus == RecvStatus::WouldBlock)
+                if (recvStatus == RecvStatus::NoBuffer || recvStatus == RecvStatus::WouldBlock)
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
@@ -259,7 +293,7 @@ int main(int argc, char* argv[])
             }
         }
 
-done:
+    done:
         std::cout << "\nDone. packets=" << total << ", driver status=" << static_cast<int>(recvStatus) << '\n';
     }
     catch (std::exception& e)

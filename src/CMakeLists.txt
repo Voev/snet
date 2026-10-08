@@ -6,6 +6,7 @@ add_subdirectory(crypto)
 add_subdirectory(pki)
 add_subdirectory(pki_fetch)
 add_subdirectory(tls)
+add_subdirectory(proxy)
 add_subdirectory(event)
 add_subdirectory(socket)
 

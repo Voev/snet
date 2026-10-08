@@ -598,11 +598,31 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
         uint8_t* frame = const_cast<uint8_t*>(wrapper->asPacket()->getData());
         const size_t len = wrapper->caplen();
 
-        rewriteEthernetForBridge(self, peer, frame, len);
-
-        if (!transmitPacket(peer, frame, len))
+        bool isLocal = false;
+        if (len >= ETH_HLEN + 20 && frame[12] == 0x08 && frame[13] == 0x00)
         {
-            logError("failed to forward packet out of %s", peer->name().c_str());
+            uint32_t dstIp = 0;
+            std::memcpy(&dstIp, frame + ETH_HLEN + 16, sizeof(dstIp));
+            if (dstIp == self->ip() || dstIp == peer->ip())
+            {
+                isLocal = true;
+            }
+        }
+
+        if (!isLocal)
+        {
+            rewriteEthernetForBridge(self, peer, frame, len);
+
+            logDebug("finalize packet=%p, pass=%d, %s", rawPacket, pass, rawPacket->toString().c_str());
+
+            if (!transmitPacket(peer, frame, len))
+            {
+                logError("failed to forward packet out of %s", peer->name().c_str());
+            }
+        }
+        else
+        {
+            logDebug("finalize: skip bridge, dst IP is local");
         }
     }
 
@@ -676,6 +696,8 @@ Status AFPacketDriver::injectPacket(layers::Packet* rawPacket)
         .build();
 
     const uint32_t frameLen = ETH_HLEN + ipLen;
+
+    logDebug("inject packet=%p, %s", rawPacket, rawPacket->toString().c_str());
 
     if (!transmitPacket(egress, eth, frameLen))
         return Status::Error;

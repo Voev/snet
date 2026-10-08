@@ -430,12 +430,65 @@ private:
     /// @return LayerInfo if parsing succeeded, nullopt otherwise.
     nonstd::optional<LayerInfo> parseLayer(ProtocolType protocol, size_t globalOffset, size_t remaining) noexcept;
 
+public:
+    std::string toString() const
+    {
+        using namespace snet::layers;
+        std::ostringstream oss;
+
+        if (this->layerCount() == 0)
+        {
+            oss << "Empty packet (no layers parsed)";
+            return oss.str();
+        }
+
+        oss << "Packet (" << this->getDataLen() << " bytes):\n";
+
+        for (const auto& layer : *this)
+        {
+            oss << "  [" << static_cast<int>(layer.protocol) << "] ";
+
+            switch (layer.protocol)
+            {
+            case Ethernet:
+            {
+                auto eth = this->getHeader<EthernetHeader>(layer);
+                oss << eth;
+                break;
+            }
+
+            case IPv4:
+            {
+                auto ip = this->getHeader<IPv4Header>(layer);
+                oss << ip;
+                break;
+            }
+
+            case TCP:
+            {
+                auto tcp = this->getHeader<TCPHeader>(layer);
+                oss << tcp;
+                break;
+            }
+
+            default:
+                oss << "Unknown protocol: " << static_cast<int>(layer.protocol);
+                break;
+            }
+
+            size_t payloadSize = this->getDataLen() - layer.payloadOffset;
+            oss << " [payload=" << payloadSize << " bytes]\n";
+        }
+
+        return oss.str();
+    }
+
 private:
-    const uint8_t* rawData_{nullptr};          ///< Pointer to raw packet data.
-    size_t rawDataLen_{0UL};                   ///< Length of raw packet data in bytes.
-    Timestamp timestamp_;                      ///< Packet timestamp.
-    std::array<LayerInfo, 8> layers_;          ///< Array of parsed layers (max 8).
-    size_t layerCount_ = 0;                    ///< Number of parsed layers.
+    const uint8_t* rawData_{nullptr};                ///< Pointer to raw packet data.
+    size_t rawDataLen_{0UL};                         ///< Length of raw packet data in bytes.
+    Timestamp timestamp_;                            ///< Packet timestamp.
+    std::array<LayerInfo, 8> layers_;                ///< Array of parsed layers (max 8).
+    size_t layerCount_ = 0;                          ///< Number of parsed layers.
     LinkLayerType linkLayerType_{LINKTYPE_ETHERNET}; ///< Link layer type.
 };
 

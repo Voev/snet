@@ -13,6 +13,8 @@
 #include <snet/tcp/tcp_state_machine.hpp>
 #include <snet/tcp/tcp_stream.hpp>
 
+#include <snet/proxy/proxy_context.hpp>
+
 #include <casket/log/log.hpp>
 
 namespace snet::tcp
@@ -104,33 +106,54 @@ public:
 
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
+        (void)status;
+
+        using namespace snet::layers;
+
         if (!session || !packet)
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoMemory);
+            return PacketStatus::drop(PacketReason::InvalidParameters);
 
-        layers::IPAddress srcIP, dstIP;
-        layers::TCPHeader hdr;
-        const layers::LayerInfo* tcpLayer = nullptr;
+        IPAddress srcIP, dstIP;
+        TCPHeader hdr;
+        const LayerInfo* tcpLayer = nullptr;
 
-        if (!layers::extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
-            return this->passToNext(session, packet, layers::PacketStatus::NonTcpPacket);
+        if (!extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
+        {
+            return PacketStatus::drop(PacketReason::NonTcpPacket);
+        }
 
-        return config_.replayMode ? processReplay(session, packet, srcIP, dstIP, hdr, tcpLayer, status)
-                                  : processLive(session, packet, srcIP, hdr, tcpLayer, status);
+        auto* pctx = this->template getContext<snet::proxy::ProxyContext>(session);
+        bool replay = pctx && pctx->isObserving();
+
+        return (config_.replayMode || replay) ? processReplay(session, packet, srcIP, dstIP, hdr, tcpLayer)
+                                              : processLive(session, packet, srcIP, hdr, tcpLayer);
     }
 
 private:
+    layers::PacketStatus currentVerdict(Session* session) const
+    {
+        auto* pctx = this->template getContext<snet::proxy::ProxyContext>(session);
+        if (pctx && pctx->pair)
+        {
+            return snet::proxy::verdictFromPhase(pctx->pair->phase);
+        }
+        return layers::PacketStatus::pass(layers::PacketReason::NonProxyPacket);
+    }
+
     layers::PacketStatus processReplay(Session* session, layers::Packet* packet, const snet::layers::IPAddress& srcIP,
                                        const snet::layers::IPAddress& dstIP, const snet::layers::TCPHeader& hdr,
-                                       const snet::layers::LayerInfo* tcpLayer, layers::PacketStatus status)
+                                       const snet::layers::LayerInfo* tcpLayer)
     {
+        using namespace snet::layers;
+
         // Pure SYN: initialize client-side (ctx 0)
         if (hdr.isSYN() && !hdr.isACK())
         {
             auto* conn = this->template getContext<TcpConnection>(session, kClientSide);
             if (!conn)
             {
-                CSK_LOG_ERROR("Replay: ctx[0] missing — factory not installed?");
-                return this->passToNext(session, packet, layers::PacketStatus::Error_NoContext);
+                CSK_LOG_ERROR("Replay: ctx[0] missing - factory not installed?");
+                return PacketStatus::drop(PacketReason::ErrorNoContext);
             }
 
             // Set endpoints on first packet of this direction
@@ -165,7 +188,7 @@ private:
                 CSK_LOG_DEBUG("Replay: SYN (retransmit) ctx[0] clientISN=%u", conn->irs);
             }
 
-            return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
+            return currentVerdict(session);
         }
 
         // SYN-ACK: initialize server-side (ctx 1)
@@ -175,7 +198,7 @@ private:
             if (!conn)
             {
                 CSK_LOG_ERROR("Replay: ctx[1] missing — factory not installed?");
-                return this->passToNext(session, packet, layers::PacketStatus::Error_NoContext);
+                return PacketStatus::drop(PacketReason::ErrorNoContext);
             }
 
             // Set endpoints on first packet of this direction
@@ -190,7 +213,7 @@ private:
             if (conn->state == TcpState::Established)
             {
                 CSK_LOG_DEBUG("Replay: SYN-ACK (retransmit) ctx[1] — ignored");
-                return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
+                return currentVerdict(session);
             }
 
             conn->irs = hdr.seqNum();
@@ -206,7 +229,7 @@ private:
             if (acceptor_)
                 acceptor_->onAccept(session, *conn);
 
-            return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
+            return currentVerdict(session);
         }
 
         // ACK from client: ctx[0] SynReceived -> Established
@@ -232,6 +255,9 @@ private:
                         if (conn0->txRing)
                             conn0->txRing->initAt(conn0->sndNxt);
 
+                        if (acceptor_)
+                            acceptor_->onAccept(session, *conn0);
+
                         CSK_LOG_DEBUG("Replay: ACK from client, "
                                       "ctx[0] SynReceived -> Established "
                                       "(serverISN=%u)",
@@ -245,20 +271,26 @@ private:
         const int8_t idx = determineContextIndex(session, srcIP, hdr.srcPort());
         if (idx < 0)
         {
+            // Не наша сессия (endpoints не совпали). Это не ошибка.
+            return PacketStatus::pass(PacketReason::NonProxyPacket);
+        }
+        
+        if (idx < 0)
+        {
             CSK_LOG_DEBUG("Replay: cannot determine ctx for %s:%u", srcIP.toString().c_str(), hdr.srcPort());
-            return this->passToNext(session, packet, layers::PacketStatus::Error_PacketDoesNotMatchFlow);
+            return PacketStatus::drop(PacketReason::ErrorPacketMismatch);
         }
 
         auto* conn = this->template getContext<TcpConnection>(session, idx);
         if (!conn || conn->state == TcpState::Closed)
         {
-            return this->passToNext(session, packet, layers::PacketStatus::Ignore_PacketOfClosedFlow);
+            return PacketStatus::drop(PacketReason::Closed);
         }
 
         if (!conn->rxRing)
         {
             CSK_LOG_WARNING("Replay: no RX ring for ctx=%d", idx);
-            return this->passToNext(session, packet, status);
+            return PacketStatus::drop(PacketReason::InvalidParameters);
         }
 
         TcpSegment seg;
@@ -285,10 +317,7 @@ private:
             consumer_->onStreamClose(session, idx, 0);
         }
 
-        return this->passToNext(
-            session,
-            packet,
-            result.closed ? layers::PacketStatus::Ignore_PacketOfClosedFlow : layers::PacketStatus::TcpMessageHandled);
+        return currentVerdict(session);
     }
 
     // ============================================================
@@ -296,28 +325,37 @@ private:
     // ============================================================
 
     layers::PacketStatus processLive(Session* session, layers::Packet* packet, const layers::IPAddress& srcIP,
-                                     const layers::TCPHeader& hdr, const layers::LayerInfo* tcpLayer,
-                                     layers::PacketStatus status)
+                                     const layers::TCPHeader& hdr, const layers::LayerInfo* tcpLayer)
     {
+        using namespace snet::layers;
+
         const int8_t idx = determineContextIndex(session, srcIP, hdr.srcPort());
         if (idx < 0)
-            return this->passToNext(session, packet, status);
-
-        auto* conn = this->template getContext<TcpConnection>(session, idx);
-        if (!conn)
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoContext);
+        {
+            return PacketStatus::drop(PacketReason::ErrorPacketMismatch);
+        }
 
         // Pure SYN — handled by TcpListenerHandler
         if (hdr.isSYN() && !hdr.isACK())
-            return this->passToNext(session, packet, status);
+        {
+            return PacketStatus::pass(PacketReason::Bypass);
+        }
+
+        auto* conn = this->template getContext<TcpConnection>(session, idx);
+        if (!conn)
+        {
+            return PacketStatus::drop(PacketReason::ErrorNoContext);
+        }
 
         if (conn->closed || conn->state == TcpState::Closed)
-            return this->passToNext(session, packet, layers::PacketStatus::Ignore_PacketOfClosedFlow);
+        {
+            return PacketStatus::drop(PacketReason::Closed);
+        }
 
         if (!conn->rxRing)
         {
             CSK_LOG_WARNING("TcpReceive: no RX ring for ctx=%d", idx);
-            return this->passToNext(session, packet, status);
+            return PacketStatus::pass(PacketReason::Bypass);
         }
 
         TcpSegment seg;
@@ -346,12 +384,11 @@ private:
         }
 
         if (result.closed && consumer_)
+        {
             consumer_->onStreamClose(session, idx, 0);
+        }
 
-        return this->passToNext(
-            session,
-            packet,
-            result.closed ? layers::PacketStatus::Ignore_PacketOfClosedFlow : layers::PacketStatus::TcpMessageHandled);
+        return currentVerdict(session);
     }
 
     // ============================================================

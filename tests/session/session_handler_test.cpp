@@ -124,7 +124,7 @@ public:
 struct CountingHandler : public ISessionHandler<FakeSessionManager>
 {
     int processCalls{0};
-    PacketStatus lastStatus{UnknownStatus};
+    PacketStatus lastStatus{};
     Session* lastSession{nullptr};
     layers::Packet* lastPacket{nullptr};
 
@@ -139,7 +139,7 @@ struct CountingHandler : public ISessionHandler<FakeSessionManager>
         lastSession = s;
         lastPacket = p;
         lastStatus = status;
-        return layers::PacketHandled;
+        return layers::PacketStatus::pass();
     }
 };
 

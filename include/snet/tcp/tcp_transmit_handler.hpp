@@ -88,15 +88,25 @@ public:
 
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
+        (void)status;
+
+        using namespace snet::layers;
+
         if (!session || !packet)
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoMemory);
+        {
+            return PacketStatus::drop(PacketReason::InvalidParameters);
+        }
 
         auto* conn = this->template getContext<TcpConnection>(session);
         if (!conn)
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoContext);
+        {
+            return PacketStatus::drop(PacketReason::ErrorNoContext);
+        }
 
         if (conn->closed)
-            return this->passToNext(session, packet, layers::PacketStatus::Ignore_PacketOfClosedFlow);
+        {
+            return PacketStatus::drop(PacketReason::Closed);
+        }
 
         emitPendingOutput(conn);
 
@@ -113,7 +123,7 @@ public:
             closeConnection(session);
         }
 
-        return this->passToNext(session, packet, status);
+        return PacketStatus::pass(PacketReason::TcpMessageHandled);
     }
 
     /// @brief Application writes data — buffered and flushed.

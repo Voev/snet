@@ -78,8 +78,8 @@ struct NamedHandler : public ISessionHandler<FakeSessionManager>
     int processCalls{0};
     bool createResult{true};
     bool destroyResult{true};
-    PacketStatus processResult{PacketHandled};
-    PacketStatus lastProcessStatus{UnknownStatus};
+    PacketStatus processResult{snet::layers::PacketStatus::TcpMessageHandled};
+    PacketStatus lastProcessStatus{snet::layers::PacketStatus::Error_NoContext};
     Session* lastSession{nullptr};
     Packet* lastPacket{nullptr};
 
@@ -111,7 +111,7 @@ struct AnotherHandler : public ISessionHandler<FakeSessionManager>
     }
     PacketStatus processPacket(Session*, Packet*, PacketStatus) override
     {
-        return PacketHandled;
+        return PacketStatus::pass();
     }
 };
 
@@ -269,7 +269,7 @@ struct OtherBaseHandler : public ISessionHandler<FakeSessionManager>
 
     PacketStatus processPacket(Session*, Packet*, PacketStatus) override
     {
-        return PacketHandled;
+        return PacketStatus::pass();
     }
 };
 
