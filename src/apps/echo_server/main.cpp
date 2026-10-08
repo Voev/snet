@@ -146,10 +146,7 @@ int main(int argc, char* argv[])
 
         auto driver = controller.load(driverSpec);
 
-        auto srcMac = MacAddress::parse("46:4d:4b:6e:83:12");
-        auto dstMac = MacAddress::parse("7a:5b:82:12:7a:81");
-
-        auto sink = std::make_unique<NetworkSink>(driver.get(), srcMac, dstMac);
+        auto sink = std::make_unique<NetworkSink>(driver.get());
         TcpListenerRegistry listeners;
         listeners.add(IPAddress::any(), 8080);
 

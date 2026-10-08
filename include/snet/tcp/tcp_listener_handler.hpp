@@ -66,20 +66,30 @@ public:
 
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet, layers::PacketStatus status) override
     {
+        (void)status;
+
+        using namespace snet::layers;
+
         if (!session || !packet)
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoMemory);
+        {
+            return PacketStatus::drop(PacketReason::InvalidParameters);
+        }
 
         layers::IPAddress srcIP, dstIP;
         layers::TCPHeader hdr;
         const layers::LayerInfo* tcpLayer = nullptr;
 
         if (!layers::extractPacketInfo(packet, srcIP, dstIP, hdr, tcpLayer))
-            return this->passToNext(session, packet, layers::PacketStatus::NonTcpPacket);
+        {
+            return PacketStatus::drop(PacketReason::NonTcpPacket);
+        }
 
         // Only pure SYN (SYN set, ACK cleared) — everything else
         // (ACK, data, FIN) goes to the reassembler.
         if (!hdr.isSYN() || hdr.isACK())
-            return this->passToNext(session, packet, status);
+        {
+            return PacketStatus::pass(PacketReason::Bypass);
+        }
 
         // Look up listener by destination endpoint.
         auto* lst = listeners_ ? listeners_->find(dstIP, hdr.dstPort()) : nullptr;
@@ -92,19 +102,21 @@ public:
             {
                 markRstToUnknownPort(session, srcIP, dstIP, hdr);
             }
-            return this->passToNext(session, packet, status);
+            return PacketStatus::drop(PacketReason::NonTcpPacket);
         }
 
         auto* conn = this->template getContext<TcpConnection>(session);
         if (!conn)
         {
             CSK_LOG_ERROR("TcpListener: no TcpConnection context");
-            return this->passToNext(session, packet, layers::PacketStatus::Error_NoContext);
+            return PacketStatus::drop(PacketReason::ErrorNoContext);
         }
 
         // Already open? Not our job — pass through.
         if (conn->state != TcpState::Closed)
-            return this->passToNext(session, packet, status);
+        {
+            return PacketStatus::pass(PacketReason::Bypass);
+        }
 
         const uint32_t ourISN = nextISN();
 
@@ -131,7 +143,7 @@ public:
                       ourISN);
 
         // TX handler downstream will see pendingOutput and emit SYN-ACK.
-        return this->passToNext(session, packet, layers::PacketStatus::TcpMessageHandled);
+        return PacketStatus::pass(PacketReason::Bypass);
     }
 
 private:

@@ -49,6 +49,12 @@ public:
     using ContextContainer = typename SessionCtxContainerFromTuple<ContextTypesTuple>::type;
     using PoolManager = typename SessionCtxPoolManagerFromTuple<ContextTypesTuple>::type;
 
+    enum SessionFlags : uint32_t
+    {
+        FlagNone      = 0,
+        FlagProtected = 1u << 0,
+    };
+
     struct Session
     {
         Key key;
@@ -172,6 +178,42 @@ public:
     const Session* find(const Key& key) const
     {
         return findSession(key);
+    }
+
+    Session* findOrCreate(const Key& key)
+    {
+        if (auto* existing = findSession(key))
+        {
+            return existing;
+        }
+
+        auto* session = createSession(key);
+        if (!session)
+        {
+            return nullptr;
+        }
+
+        if (fRegistry_)
+        {
+            fRegistry_->createContext(session);
+        }
+
+        return session;
+    }
+
+    void setSessionFlag(Session* session, uint32_t flag) noexcept
+    {
+        if (session) session->flags |= flag;
+    }
+
+    void clearSessionFlag(Session* session, uint32_t flag) noexcept
+    {
+        if (session) session->flags &= ~flag;
+    }
+
+    bool hasSessionFlag(const Session* session, uint32_t flag) const noexcept
+    {
+        return session && (session->flags & flag);
     }
 
     template <typename ContextType>
@@ -430,6 +472,10 @@ private:
         for (; it != end; ++it)
         {
             auto& session = (*it).second;
+
+            if (session.flags & FlagProtected)
+                continue;
+
             if (session.last_activity < oldest_time)
             {
                 oldest_time = session.last_activity;

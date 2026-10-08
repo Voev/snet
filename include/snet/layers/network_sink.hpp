@@ -20,24 +20,8 @@ namespace snet::layers
 class NetworkSink : public IPacketSink
 {
 public:
-    static constexpr size_t ETH_HEADER_LEN = 14;
-    static constexpr uint16_t ETH_TYPE_IPv4 = 0x0800;
-
-    NetworkSink(snet::io::Driver* driver, const MacAddress& srcMac, const MacAddress& defaultDstMac = {})
-        : driver_(driver)
-        , srcMac_(srcMac)
-        , defaultDstMac_(defaultDstMac)
-    {
-    }
-
-    void setDefaultDstMac(const MacAddress& mac) noexcept
-    {
-        defaultDstMac_ = mac;
-    }
-    void setSrcMac(const MacAddress& mac) noexcept
-    {
-        srcMac_ = mac;
-    }
+    explicit NetworkSink(snet::io::Driver* driver)
+        : driver_(driver) {}
 
     bool transmit(Packet* packet) override
     {
@@ -96,8 +80,6 @@ public:
 
 private:
     snet::io::Driver* driver_{nullptr};
-    MacAddress srcMac_{};
-    MacAddress defaultDstMac_{};
 };
 
 } // namespace snet::layers
