@@ -81,6 +81,12 @@ public:
     /// @return Status indicating success or failure.
     virtual Status inject(const uint8_t* data, uint32_t data_len) = 0;
 
+    virtual Status injectPacket(layers::Packet* rawPacket)
+    {
+        (void)rawPacket;
+        return Status::NotSupported;
+    }
+
     /// @brief Interrupts ongoing operations.
     /// @return Status indicating success or failure.
     virtual Status interrupt() = 0;

@@ -1,12 +1,9 @@
-// xdp_driver.cpp
 #include "xdp_driver.hpp"
 
 #include <cerrno>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
 
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
@@ -25,20 +22,23 @@
 #include <snet/layers/header_builder.hpp>
 #include <snet/layers/in_memory_packet.hpp>
 
+#include <xdp/libxdp.h>
+
 using namespace casket::opt;
 using namespace snet::io;
 
 namespace snet::driver
 {
 
-/// Returns the interface index for the given name, or 0 on error.
-static uint32_t getIfIndex(const std::string& ifname)
+namespace
+{
+
+uint32_t getIfIndex(const std::string& ifname)
 {
     return if_nametoindex(ifname.c_str());
 }
 
-/// Reads IPv4 address and netmask of the given interface.
-static bool getIfIpAndMask(const std::string& ifname, uint32_t& ip, uint32_t& mask)
+bool getIfIpAndMask(const std::string& ifname, uint32_t& ip, uint32_t& mask)
 {
     struct ifreq ifr{};
     std::strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ - 1);
@@ -62,8 +62,7 @@ static bool getIfIpAndMask(const std::string& ifname, uint32_t& ip, uint32_t& ma
     return ok;
 }
 
-/// Reads the hardware (MAC) address of the given interface.
-static bool getIfMac(const std::string& ifname, layers::MacAddress& mac)
+bool getIfMac(const std::string& ifname, layers::MacAddress& mac)
 {
     struct ifreq ifr{};
     std::strncpy(ifr.ifr_name, ifname.c_str(), IFNAMSIZ - 1);
@@ -82,6 +81,22 @@ static bool getIfMac(const std::string& ifname, layers::MacAddress& mac)
     ::close(fd);
     return ok;
 }
+
+bool isPowerOfTwo(uint32_t v)
+{
+    return v != 0 && (v & (v - 1)) == 0;
+}
+
+/// Disables LRO on the interface. XDP requires LRO to be off on veth and
+/// hv_netvsc, otherwise attaching the program fails.
+bool disableLro(const std::string& ifname)
+{
+    std::string cmd = "ethtool -K " + ifname + " lro off 2>/dev/null";
+    int rc = std::system(cmd.c_str());
+    return rc == 0;
+}
+
+} // namespace
 
 XdpDriver::XdpDriver(const io::DriverSpec& config)
     : DriverBase(config)
@@ -160,6 +175,11 @@ Status XdpDriver::declareOptions(io::Config& config)
     config.addDriverOption(OptionBuilder("bpf_filter", Value(&bpfFilter_))
         .setDescription("BPF filter string (e.g. 'tcp port 80')")
         .build());
+
+    config.addDriverOption(OptionBuilder("bpf_obj_path", Value(&bpfObjPath_))
+        .setDefaultValue("xdp_redirect.bpf.o")
+        .setDescription("Path to the compiled XDP BPF object file")
+        .build());
     // clang-format on
 
     return Status::Success;
@@ -169,7 +189,6 @@ Status XdpDriver::configure(const snet::io::Config& config)
 {
     snaplen_ = config.getSnaplen();
 
-    // Parse the colon-separated device list, same convention as AFPacketDriver.
     const std::string& devs = config.getInput();
     if (devs.empty() || devs.front() == ':' || devs.back() == ':')
     {
@@ -202,11 +221,8 @@ Status XdpDriver::configure(const snet::io::Config& config)
         return Status::InvalidArgument;
     }
 
-    // Ring sizes and UMEM frame count must be powers of two.
-    auto isPowerOfTwo = [](uint32_t v) { return v != 0 && (v & (v - 1)) == 0; };
-    if (!isPowerOfTwo(umemNumFrames_) || !isPowerOfTwo(fillRingSize_) ||
-        !isPowerOfTwo(completionRingSize_) || !isPowerOfTwo(rxRingSize_) ||
-        !isPowerOfTwo(txRingSize_))
+    if (!isPowerOfTwo(umemNumFrames_) || !isPowerOfTwo(fillRingSize_) || !isPowerOfTwo(completionRingSize_) ||
+        !isPowerOfTwo(rxRingSize_) || !isPowerOfTwo(txRingSize_))
     {
         logError("ring sizes and UMEM frame count must be powers of two");
         return Status::InvalidArgument;
@@ -235,19 +251,75 @@ Status XdpDriver::configure(const snet::io::Config& config)
             return Status::Error;
         }
 
+        // XDP requires LRO to be off.
+        if (!disableLro(name))
+        {
+            logWarning("could not disable LRO on %s, XDP attach may fail", name.c_str());
+        }
+
         instances_.push_back(std::move(inst));
     }
 
+    // Pair interfaces for transparent bridge forwarding.
+    if (instances_.size() == 1)
+    {
+        instances_[0]->peer = instances_[0].get();
+    }
+    else
+    {
+        for (size_t i = 0; i + 1 < instances_.size(); i += 2)
+        {
+            instances_[i]->peer = instances_[i + 1].get();
+            instances_[i + 1]->peer = instances_[i].get();
+        }
+    }
+
+    for (auto& inst : instances_)
+{
+    struct xdp_multiprog* mp = xdp_multiprog__get_from_ifindex(
+        static_cast<int>(inst->ifindex));
+    if (mp)
+    {
+        int err = xdp_multiprog__detach(mp);
+        if (err)
+            logWarning("xdp_multiprog__detach failed on %s: %s",
+                       inst->name.c_str(), std::strerror(-err));
+        else
+            logInfo("Detached stale XDP program from %s", inst->name.c_str());
+        xdp_multiprog__close(mp);
+    }
+}
+
+    // Shared UMEM for all interfaces.
     if (!setupUmem(umemNumFrames_, umemFrameSize_))
         return Status::Error;
 
-    // For simplicity a single AF_XDP socket is used on the first device.
-    // Multi-device setups need one XSK per interface/queue.
-    if (!setupSocket(devices_[0], queueId_))
-        return Status::Error;
+    for (size_t i = 0; i < instances_.size(); ++i)
+    {
+        if (!setupSocket(*instances_[i], queueId_, i == 0))
+            return Status::Error;
+    }
 
-    if (!loadXdpProgram(devices_[0], xskMapFd_))
-        return Status::Error;
+    // Load BPF object for each interface. Each interface gets its own
+    // instance of the XDP program and its own XSK map, because the program
+    // is attached per-interface.
+    for (auto& inst : instances_)
+    {
+        if (!loadXdpProgram(*inst))
+            return Status::Error;
+    }
+
+    // Attach the program to the interface before inserting the XSK fd,
+    // because xsk_socket__create already registered the socket in the
+    // kernel-side XSK map. The map must exist and the program must be
+    // attached for traffic to be redirected.
+    for (auto& inst : instances_)
+    {
+        if (!attachXdpProgram(*inst))
+            return Status::Error;
+        if (!insertXskIntoMap(*inst, queueId_))
+            return Status::Error;
+    }
 
     uint32_t poolSize = config.getMsgPoolSize();
     if (poolSize == 0)
@@ -259,23 +331,27 @@ Status XdpDriver::configure(const snet::io::Config& config)
     pool_ = std::make_unique<XdpPool>(poolSize);
 
     if (!refillFillRing(fillRingSize_))
+    {
+        logError("fill ring refill failed");
         return Status::Error;
+    }
+    logInfo("Fill ring refilled with %u entries", fillRingSize_);
 
-    logInfo("XdpDriver configured: %zu device(s), queue=%u, umem_frames=%u",
-            instances_.size(), queueId_, umemNumFrames_);
+    logInfo("XdpDriver configured: %zu interface(s), queue=%u, umem_frames=%u",
+            instances_.size(),
+            queueId_,
+            umemNumFrames_);
 
     return Status::Success;
 }
 
 bool XdpDriver::setupUmem(uint32_t numFrames, uint32_t frameSize)
 {
-    // Align frame size up to a page boundary.
     frameSize = (frameSize + getpagesize() - 1) & ~(getpagesize() - 1);
 
     size_t totalSize = static_cast<size_t>(numFrames) * frameSize;
 
-    umem_.buffer = ::mmap(nullptr, totalSize, PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    umem_.buffer = ::mmap(nullptr, totalSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (umem_.buffer == MAP_FAILED)
     {
         logError("failed to allocate UMEM: %s", std::strerror(errno));
@@ -329,8 +405,7 @@ bool XdpDriver::setupUmem(uint32_t numFrames, uint32_t frameSize)
     umemCfg.frame_headroom = 0;
     umemCfg.flags = 0;
 
-    if (xsk_umem__create(&umem_.umem, umem_.buffer, totalSize,
-                         &umem_.fill, &umem_.comp, &umemCfg) != 0)
+    if (xsk_umem__create(&umem_.umem, umem_.buffer, totalSize, &umem_.fill, &umem_.comp, &umemCfg) != 0)
     {
         logError("xsk_umem__create failed");
         ::close(fd);
@@ -338,16 +413,15 @@ bool XdpDriver::setupUmem(uint32_t numFrames, uint32_t frameSize)
     }
 
     ::close(fd);
-    logInfo("UMEM created: %u frames x %u bytes = %zu MB",
-            numFrames, frameSize, totalSize / (1024 * 1024));
+    logInfo("UMEM created: %u frames x %u bytes = %zu MB", numFrames, frameSize, totalSize / (1024 * 1024));
     return true;
 }
 
-bool XdpDriver::setupSocket(const std::string& ifname, uint32_t queueId)
+bool XdpDriver::setupSocket(XdpInstance& inst, uint32_t queueId, bool isFirst)
 {
     struct xsk_socket_config cfg{};
-    cfg.rx_ring_size = rxRingSize_;
-    cfg.tx_ring_size = txRingSize_;
+    cfg.rx_size = rxRingSize_;
+    cfg.tx_size = txRingSize_;
     cfg.libbpf_flags = 0;
     cfg.xdp_flags = useSkbMode_ ? XDP_FLAGS_SKB_MODE : XDP_FLAGS_DRV_MODE;
     cfg.bind_flags = 0;
@@ -357,62 +431,165 @@ bool XdpDriver::setupSocket(const std::string& ifname, uint32_t queueId)
     else
         cfg.bind_flags |= XDP_COPY;
 
-    int ret = xsk_socket__create(&socket_.xsk, ifname.c_str(), queueId,
-                                  umem_.umem, &socket_.rx, &socket_.tx, &cfg);
+    int ret;
+    if (isFirst)
+    {
+        ret = xsk_socket__create(
+            &inst.socket.xsk, inst.name.c_str(), queueId, umem_.umem, &inst.socket.rx, &inst.socket.tx, &cfg);
+    }
+    else
+    {
+        ret = xsk_socket__create_shared(&inst.socket.xsk,
+                                        inst.name.c_str(),
+                                        queueId,
+                                        umem_.umem,
+                                        &inst.socket.rx,
+                                        &inst.socket.tx,
+                                        &umem_.fill,
+                                        &umem_.comp,
+                                        &cfg);
+    }
+
     if (ret != 0)
     {
-        logError("xsk_socket__create failed on %s queue %u: %s",
-                 ifname.c_str(), queueId, std::strerror(-ret));
+        logError("xsk_socket__create%s failed on %s queue %u: %s",
+                 isFirst ? "" : "_shared",
+                 inst.name.c_str(),
+                 queueId,
+                 std::strerror(-ret));
         return false;
     }
 
-    socket_.fill = &umem_.fill;
-    socket_.comp = &umem_.comp;
-    socket_.rxBatchSize = batchSize_;
-    socket_.txBatchSize = batchSize_;
+    inst.socket.rxBatchSize = batchSize_;
+    inst.socket.txBatchSize = batchSize_;
 
-    xskMapFd_ = xsk_socket__fd(socket_.xsk);
-    if (xskMapFd_ < 0)
+    inst.xskFd = xsk_socket__fd(inst.socket.xsk);
+    if (inst.xskFd < 0)
     {
-        logError("failed to get XSK socket fd");
+        logError("failed to get XSK socket fd for %s", inst.name.c_str());
         return false;
     }
 
-    logInfo("AF_XDP socket created on %s queue %u (zero-copy=%d)",
-            ifname.c_str(), queueId, zeroCopy_);
+    logInfo("AF_XDP socket created on %s queue %u (zero-copy=%d, shared=%d)",
+            inst.name.c_str(),
+            queueId,
+            zeroCopy_,
+            !isFirst);
     return true;
 }
 
-bool XdpDriver::loadXdpProgram(const std::string& ifname, int xskMapFd)
+bool XdpDriver::loadXdpProgram(XdpInstance& inst)
 {
-    // The XDP program is expected to redirect packets to the XSK map using
-    // bpf_redirect_map() keyed by the RX queue index. A minimal program:
-    //
-    //   SEC("xdp")
-    //   int xdp_redirect_prog(struct xdp_md *ctx) {
-    //       int index = ctx->rx_queue_index;
-    //       if (bpf_map_lookup_elem(&xsks_map, &index))
-    //           return bpf_redirect_map(&xsks_map, index, 0);
-    //       return XDP_PASS;
-    //   }
-    //
-    // A production version would load this program with libbpf and attach it
-    // to the interface via bpf_program__attach_xdp(). Here we only log the
-    // expectation so the rest of the driver remains usable for integration.
+    struct bpf_object* obj = bpf_object__open_file(bpfObjPath_.c_str(), nullptr);
+    if (!obj)
+    {
+        logError("failed to open BPF object '%s' for %s", bpfObjPath_.c_str(), inst.name.c_str());
+        return false;
+    }
 
-    logInfo("XDP program should be loaded for interface '%s' "
-            "(redirect to XSK map fd=%d). "
-            "Use a BPF program with BPF_MAP_TYPE_XSKMAP and bpf_redirect_map().",
-            ifname.c_str(), xskMapFd);
+    if (bpf_object__load(obj) != 0)
+    {
+        logError("failed to load BPF object '%s' for %s", bpfObjPath_.c_str(), inst.name.c_str());
+        bpf_object__close(obj);
+        return false;
+    }
 
-    xdpProgFd_ = -1;
+    struct bpf_program* prog = bpf_object__find_program_by_name(obj, "xdp_redirect_prog");
+    if (!prog)
+    {
+        logError("BPF program 'xdp_redirect_prog' not found in '%s'", bpfObjPath_.c_str());
+        bpf_object__close(obj);
+        return false;
+    }
+
+    struct bpf_map* map = bpf_object__find_map_by_name(obj, "xsks_map");
+    if (!map)
+    {
+        logError("BPF map 'xsks_map' not found in '%s'", bpfObjPath_.c_str());
+        bpf_object__close(obj);
+        return false;
+    }
+
+    inst.xdpProgFd = bpf_program__fd(prog);
+    inst.xskMapFd = bpf_map__fd(map);
+    inst.bpfObj = obj;
+
+    logInfo("BPF object loaded for %s: prog_fd=%d, map_fd=%d", inst.name.c_str(), inst.xdpProgFd, inst.xskMapFd);
     return true;
+}
+
+bool XdpDriver::attachXdpProgram(XdpInstance& inst)
+{
+    __u32 flags = useSkbMode_ ? XDP_FLAGS_SKB_MODE : XDP_FLAGS_DRV_MODE;
+    flags |= XDP_FLAGS_UPDATE_IF_NOEXIST;
+
+    int err = bpf_xdp_attach(static_cast<int>(inst.ifindex), inst.xdpProgFd, flags, nullptr);
+
+    if (err < 0 && (err == -EBUSY || errno == EBUSY))
+    {
+        // На интерфейсе уже висит XDP-программа от предыдущего запуска.
+        // Отвязываем её и пробуем снова.
+        logWarning("XDP already attached to %s, detaching old program first", inst.name.c_str());
+
+        // fd = -1 означает "отвязать текущую программу"
+        int detachErr = bpf_xdp_attach(static_cast<int>(inst.ifindex), -1, flags, nullptr);
+        if (detachErr < 0)
+        {
+            logError("failed to detach old XDP program from %s: %s", inst.name.c_str(), std::strerror(-detachErr));
+            return false;
+        }
+
+        // Повторная попытка привязки
+        err = bpf_xdp_attach(static_cast<int>(inst.ifindex), inst.xdpProgFd, flags, nullptr);
+    }
+
+    if (err < 0)
+    {
+        logError("failed to attach XDP program to %s (ifindex=%u): %s",
+                 inst.name.c_str(),
+                 inst.ifindex,
+                 std::strerror(-err));
+        return false;
+    }
+
+    logInfo("XDP program attached to %s (ifindex=%u, flags=0x%x)", inst.name.c_str(), inst.ifindex, flags);
+    return true;
+}
+
+bool XdpDriver::insertXskIntoMap(XdpInstance& inst, uint32_t queueId)
+{
+    uint32_t key = queueId;
+    if (bpf_map_update_elem(inst.xskMapFd, &key, &inst.xskFd, BPF_ANY) != 0)
+    {
+        logError("failed to insert XSK fd into XSK map for %s: %s", inst.name.c_str(), std::strerror(errno));
+        return false;
+    }
+
+    logInfo("XSK fd %d inserted into XSK map for %s (queue %u)", inst.xskFd, inst.name.c_str(), queueId);
+    return true;
+}
+
+void XdpDriver::unloadXdpProgram(XdpInstance& inst)
+{
+    if (inst.ifindex && inst.xdpProgFd >= 0)
+    {
+        bpf_xdp_detach(static_cast<int>(inst.ifindex), 0, nullptr);
+    }
+    if (inst.bpfObj)
+    {
+        bpf_object__close(inst.bpfObj);
+        inst.bpfObj = nullptr;
+    }
+    inst.xdpProgFd = -1;
+    inst.xskMapFd = -1;
 }
 
 bool XdpDriver::refillFillRing(uint32_t count)
 {
     uint32_t idx = 0;
     uint32_t produced = xsk_ring_prod__reserve(&umem_.fill, count, &idx);
+    logInfo("refillFillRing: count=%u, produced=%u", count, produced);
+
     if (produced == 0)
     {
         logWarning("fill ring is full, cannot reserve %u entries", count);
@@ -421,13 +598,25 @@ bool XdpDriver::refillFillRing(uint32_t count)
 
     for (uint32_t i = 0; i < produced; ++i)
     {
-        uint64_t addr = reinterpret_cast<uint64_t>(umem_.buffer) +
-                        (static_cast<uint64_t>(idx + i) * umem_.frameSize);
+        uint64_t addr = reinterpret_cast<uint64_t>(umem_.buffer) + (static_cast<uint64_t>(idx + i) * umem_.frameSize);
         *xsk_ring_prod__fill_addr(&umem_.fill, idx + i) = addr;
     }
 
     xsk_ring_prod__submit(&umem_.fill, produced);
     return true;
+}
+
+void XdpDriver::releaseFrame(uint64_t frameAddr) noexcept
+{
+    if (!umem_.umem)
+        return;
+
+    uint32_t fillIdx = 0;
+    if (xsk_ring_prod__reserve(&umem_.fill, 1, &fillIdx) == 1)
+    {
+        *xsk_ring_prod__fill_addr(&umem_.fill, fillIdx) = frameAddr;
+        xsk_ring_prod__submit(&umem_.fill, 1);
+    }
 }
 
 bool XdpDriver::processCompletionRing()
@@ -441,7 +630,6 @@ bool XdpDriver::processCompletionRing()
     {
         uint64_t addr = *xsk_ring_cons__comp_addr(&umem_.comp, idx + i);
 
-        // Return the completed frame back into the fill ring.
         uint32_t fillIdx = 0;
         if (xsk_ring_prod__reserve(&umem_.fill, 1, &fillIdx) == 1)
         {
@@ -451,20 +639,31 @@ bool XdpDriver::processCompletionRing()
     }
 
     xsk_ring_cons__release(&umem_.comp, completed);
-    socket_.outstandingTx -= completed;
+
+    // Decrement per-socket outstanding counters. A single global counter
+    // is not enough because completion is tracked per socket, but the
+    // counter is only used for frame rotation in transmitPacket.
+    for (auto& inst : instances_)
+    {
+        if (inst->socket.outstandingTx >= completed)
+            inst->socket.outstandingTx -= completed;
+        else
+            inst->socket.outstandingTx = 0;
+    }
+
     return true;
 }
 
 Status XdpDriver::start()
 {
-    if (!socket_.xsk)
+    if (instances_.empty())
     {
         logError("start() called before configure()");
         return Status::InvalidArgument;
     }
 
     resetStats();
-    logInfo("XdpDriver started");
+    logInfo("XdpDriver started with %zu interface(s)", instances_.size());
     return Status::Success;
 }
 
@@ -481,9 +680,7 @@ Status XdpDriver::interrupt()
     return Status::Success;
 }
 
-RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
-                                      uint16_t* packetCount,
-                                      uint16_t maxCount)
+RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount)
 {
     if (!rawPacket || !packetCount || maxCount == 0)
     {
@@ -492,7 +689,7 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
         return RecvStatus::Ok;
     }
 
-    if (!pool_ || !socket_.xsk)
+    if (!pool_ || instances_.empty())
     {
         logError("receivePackets called before configure()");
         *packetCount = 0;
@@ -502,7 +699,6 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
     uint16_t idx = 0;
     RecvStatus status = RecvStatus::Ok;
 
-    // Reclaim TX frames before processing RX.
     processCompletionRing();
 
     while (idx < maxCount)
@@ -522,9 +718,25 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
             break;
         }
 
+        XdpInstance* inst = nullptr;
         uint32_t rxIdx = 0;
-        uint32_t rcvd = xsk_ring_cons__peek(&socket_.rx, 1, &rxIdx);
-        if (rcvd == 0)
+        const size_t n = instances_.size();
+        for (size_t i = 0; i < n; ++i)
+        {
+            const size_t cur = (currInstanceIdx_ + 1 + i) % n;
+
+            auto peekResult = xsk_ring_cons__peek(&instances_[cur]->socket.rx, 1, &rxIdx);
+            logWarning("peek on %s: result=%u", instances_[cur]->name.c_str(), peekResult);
+
+            if (peekResult == 1)
+            {
+                inst = instances_[cur].get();
+                currInstanceIdx_ = cur;
+                break;
+            }
+        }
+
+        if (!inst)
         {
             pool_->release(wrapper);
             if (idx != 0)
@@ -538,21 +750,19 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
             continue;
         }
 
-        const struct xdp_desc* desc = xsk_ring_cons__rx_desc(&socket_.rx, rxIdx);
-        uint64_t addr = desc->addr;
-        uint32_t len = desc->len;
-
+        const struct xdp_desc* desc = xsk_ring_cons__rx_desc(&inst->socket.rx, rxIdx);
+        const uint64_t addr = desc->addr;
+        const uint32_t len = desc->len;
         uint8_t* data = reinterpret_cast<uint8_t*>(addr);
 
-        wrapper->attach(data, len, len, nullptr, nullptr);
+        wrapper->attach(data, len, len, addr, inst);
         rawPacket[idx++] = wrapper->asPacket();
 
-        xsk_ring_cons__release(&socket_.rx, 1);
+        xsk_ring_cons__release(&inst->socket.rx, 1);
 
         stats_.packetsReceived++;
     }
 
-    // Replenish the fill ring with frames consumed during this call.
     refillFillRing(fillRingSize_ / 2);
 
     *packetCount = idx;
@@ -561,10 +771,18 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket,
 
 RecvStatus XdpDriver::waitForPacket()
 {
-    struct pollfd pfd{};
-    pfd.fd = xsk_socket__fd(socket_.xsk);
-    pfd.events = POLLIN;
-    pfd.revents = 0;
+    std::vector<pollfd> pfds;
+    pfds.reserve(instances_.size());
+    for (auto& inst : instances_)
+    {
+        if (!inst->socket.xsk)
+            continue;
+        struct pollfd pfd{};
+        pfd.fd = xsk_socket__fd(inst->socket.xsk);
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        pfds.push_back(pfd);
+    }
 
     while (true)
     {
@@ -574,13 +792,16 @@ RecvStatus XdpDriver::waitForPacket()
             return RecvStatus::Interrupted;
         }
 
-        int ret = ::poll(&pfd, 1, 1000);
+        int ret = ::poll(pfds.data(), pfds.size(), 1000);
         if (ret > 0)
         {
-            if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+            for (auto& p : pfds)
             {
-                logError("error condition on AF_XDP socket");
-                return RecvStatus::Error;
+                if (p.revents & (POLLHUP | POLLERR | POLLNVAL))
+                {
+                    logError("error condition on AF_XDP socket");
+                    return RecvStatus::Error;
+                }
             }
             return RecvStatus::Ok;
         }
@@ -609,22 +830,44 @@ Status XdpDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdic
 
     stats_.verdicts[static_cast<size_t>(verdict)]++;
 
-    const bool pass = (verdict == Verdict::Pass ||
-                       verdict == Verdict::Replace ||
-                       verdict == Verdict::Ignore);
+    const bool pass = (verdict == Verdict::Pass || verdict == Verdict::Replace || verdict == Verdict::Ignore);
 
-    if (pass)
+    XdpInstance* inst = wrapper->instance();
+
+    if (pass && inst && inst->peer)
     {
-        // In AF_XDP, "pass" means pushing the packet back to the network.
-        // The frame is placed into the TX ring so the kernel driver sends
-        // it out via XDP_TX without ever entering the network stack.
-        const uint8_t* frame = rawPacket->getData();
-        uint32_t len = static_cast<uint32_t>(rawPacket->getDataLen());
+        const uint64_t frameAddr = wrapper->frameAddr();
+        const uint32_t caplen = wrapper->caplen();
 
-        if (!transmitPacket(frame, len))
-            logError("failed to transmit packet in finalizePacket");
+        uint32_t txIdx = 0;
+        if (xsk_ring_prod__reserve(&inst->peer->socket.tx, 1, &txIdx) == 1)
+        {
+            struct xdp_desc* desc = xsk_ring_prod__tx_desc(&inst->peer->socket.tx, txIdx);
+            desc->addr = frameAddr;
+            desc->len = caplen;
+            xsk_ring_prod__submit(&inst->peer->socket.tx, 1);
+
+            if (::sendto(xsk_socket__fd(inst->peer->socket.xsk), nullptr, 0, MSG_DONTWAIT, nullptr, 0) < 0)
+            {
+                if (errno != EAGAIN && errno != ENOBUFS)
+                {
+                    logError("sendto failed on %s: %s", inst->peer->name.c_str(), std::strerror(errno));
+                }
+            }
+
+            // Frame goes out through the peer TX ring. It will be returned
+            // to the fill ring by the kernel via the completion ring once
+            // transmission completes.
+            pool_->release(wrapper);
+            return Status::Success;
+        }
+
+        logWarning("TX ring on %s is full, dropping packet", inst->peer->name.c_str());
     }
 
+    // Packet was dropped or no peer is available. Return the frame to the
+    // fill ring so it can be reused.
+    releaseFrame(wrapper->frameAddr());
     pool_->release(wrapper);
     return Status::Success;
 }
@@ -641,7 +884,20 @@ Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
         return Status::InvalidArgument;
     }
 
-    if (!transmitPacket(data, dataLen))
+    if (instances_.empty())
+    {
+        logError("inject: no interfaces configured");
+        return Status::Error;
+    }
+
+    uint32_t dstIp = 0;
+    std::memcpy(&dstIp, data + 16, sizeof(dstIp));
+
+    XdpInstance* egress = findEgress(dstIp);
+    if (!egress)
+        egress = instances_[0].get();
+
+    if (!transmitPacket(*egress, data, dataLen))
         return Status::Error;
 
     stats_.packetsInjected++;
@@ -674,64 +930,66 @@ Status XdpDriver::injectPacket(layers::Packet* rawPacket)
     layers::MacAddress srcMac = instances_[0]->mac;
     layers::MacAddress dstMac{};
 
-    // Broadcast MAC is used as a placeholder; a real implementation would
+    // Broadcast MAC is used as a placeholder. A real implementation would
     // look up the neighbour entry, for example via /proc/net/arp.
     std::memset(dstMac.bytes.data(), 0xFF, ETH_ALEN);
 
-    layers::HeaderBuilder<layers::ethernet_header> builder(eth, headroom,
-        [](size_t) noexcept {});
+    layers::HeaderBuilder<layers::ethernet_header> builder(eth,
+                                                           headroom,
+                                                           [](size_t) noexcept
+                                                           {
+                                                           });
     builder.set(&layers::ethernet_header::dstMac, dstMac.bytes)
-           .set(&layers::ethernet_header::srcMac, srcMac.bytes)
-           .set(&layers::ethernet_header::etherType,
-                casket::host_to_be(static_cast<uint16_t>(layers::EtherType::IP)))
-           .build();
+        .set(&layers::ethernet_header::srcMac, srcMac.bytes)
+        .set(&layers::ethernet_header::etherType, casket::host_to_be(static_cast<uint16_t>(layers::EtherType::IP)))
+        .build();
 
     uint32_t frameLen = ETH_HLEN + ipLen;
 
-    if (!transmitPacket(eth, frameLen))
+    if (!transmitPacket(*instances_[0], eth, frameLen))
         return Status::Error;
 
     stats_.packetsInjected++;
     return Status::Success;
 }
 
-bool XdpDriver::transmitPacket(const uint8_t* data, uint32_t len)
+bool XdpDriver::transmitPacket(XdpInstance& inst, const uint8_t* data, uint32_t len)
 {
-    if (!socket_.xsk)
+    if (!inst.socket.xsk)
         return false;
 
     uint32_t txIdx = 0;
-    if (xsk_ring_prod__reserve(&socket_.tx, 1, &txIdx) != 1)
+    if (xsk_ring_prod__reserve(&inst.socket.tx, 1, &txIdx) != 1)
     {
-        logError("TX ring is full");
+        logError("TX ring on %s is full", inst.name.c_str());
         return false;
     }
 
-    struct xdp_desc* desc = xsk_ring_prod__tx_desc(&socket_.tx, txIdx);
+    struct xdp_desc* desc = xsk_ring_prod__tx_desc(&inst.socket.tx, txIdx);
 
-    // Simple rotating allocation of UMEM frames for TX.
-    uint64_t addr = reinterpret_cast<uint64_t>(umem_.buffer) +
-                    (socket_.outstandingTx % umem_.numFrames) * umem_.frameSize;
+    // Simple rotating allocation of UMEM frames for TX. This path is used
+    // by inject(), which operates on external buffers, not on frames that
+    // already live in the UMEM.
+    const uint64_t addr =
+        reinterpret_cast<uint64_t>(umem_.buffer) + (inst.socket.outstandingTx % umem_.numFrames) * umem_.frameSize;
 
     std::memcpy(reinterpret_cast<void*>(addr), data, len);
 
     desc->addr = addr;
     desc->len = len;
-    socket_.outstandingTx++;
+    inst.socket.outstandingTx++;
 
-    xsk_ring_prod__submit(&socket_.tx, 1);
+    xsk_ring_prod__submit(&inst.socket.tx, 1);
 
-    if (::sendto(xsk_socket__fd(socket_.xsk), nullptr, 0, MSG_DONTWAIT,
-                 nullptr, 0) < 0)
+    if (::sendto(xsk_socket__fd(inst.socket.xsk), nullptr, 0, MSG_DONTWAIT, nullptr, 0) < 0)
     {
         if (errno != EAGAIN && errno != ENOBUFS)
         {
-            logError("sendto failed: %s", std::strerror(errno));
+            logError("sendto failed on %s: %s", inst.name.c_str(), std::strerror(errno));
             return false;
         }
     }
 
-    stats_.packetsSent++;
     return true;
 }
 
@@ -768,7 +1026,7 @@ Status XdpDriver::getMsgPoolInfo(snet::io::PacketPoolInfo& info)
     return Status::Success;
 }
 
-XdpDriver::XdpInstance* XdpDriver::findEgress(uint32_t dstIp) const noexcept
+XdpInstance* XdpDriver::findEgress(uint32_t dstIp) const noexcept
 {
     for (const auto& inst : instances_)
     {
@@ -782,10 +1040,14 @@ XdpDriver::XdpInstance* XdpDriver::findEgress(uint32_t dstIp) const noexcept
 
 void XdpDriver::cleanup()
 {
-    if (socket_.xsk)
+    for (auto& inst : instances_)
     {
-        xsk_socket__delete(socket_.xsk);
-        socket_.xsk = nullptr;
+        unloadXdpProgram(*inst);
+        if (inst->socket.xsk)
+        {
+            xsk_socket__delete(inst->socket.xsk);
+            inst->socket.xsk = nullptr;
+        }
     }
 
     if (umem_.umem)
@@ -801,15 +1063,11 @@ void XdpDriver::cleanup()
         umem_.buffer = nullptr;
     }
 
-    if (xdpProgFd_ >= 0)
-    {
-        ::close(xdpProgFd_);
-        xdpProgFd_ = -1;
-    }
-
     pool_.reset();
+    instances_.clear();
+    currInstanceIdx_ = 0;
 }
 
 } // namespace snet::driver
 
-SNET_DLL_ALIAS(snet::driver::XdpDriver::create, CreateXdpDriver)
+SNET_DLL_ALIAS(snet::driver::XdpDriver::create, CreateDriver)

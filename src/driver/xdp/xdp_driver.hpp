@@ -1,4 +1,3 @@
-// xdp_driver.hpp
 #pragma once
 
 #include <memory>
@@ -17,38 +16,21 @@
 #include <xdp/xsk.h>
 #include <linux/if_link.h>
 
+#include "xdp_instance.hpp"
+#include "xdp_wrapper.hpp"
+
 namespace snet::driver
 {
 
-/// UMEM and fill/completion ring state shared between kernel and userspace.
-struct XdpUmemInfo
-{
-    void* buffer{nullptr};
-    struct xsk_ring_prod fill{};
-    struct xsk_ring_cons comp{};
-    struct xsk_umem* umem{nullptr};
-    uint64_t frameSize{0};
-    uint32_t numFrames{0};
-};
-
-/// Per-socket AF_XDP state (RX/TX rings and batching hints).
-struct XdpSocketInfo
-{
-    struct xsk_ring_cons rx{};
-    struct xsk_ring_prod tx{};
-    struct xsk_socket* xsk{nullptr};
-    struct xsk_ring_prod* fill{nullptr};
-    struct xsk_ring_cons* comp{nullptr};
-    uint32_t outstandingTx{0};
-    uint32_t rxBatchSize{64};
-    uint32_t txBatchSize{64};
-};
-
-/// AF_XDP based driver.
+/// AF_XDP based driver for transparent TCP proxy.
 ///
-/// Unlike AF_PACKET, packets are redirected to userspace via XDP_REDIRECT
-/// directly from the NIC driver, bypassing the kernel network stack. This
-/// avoids traffic duplication: each packet is delivered exactly once.
+/// The driver manages one or more network interfaces, each with its own
+/// AF_XDP socket, XSK map and XDP program. All interfaces share a single
+/// UMEM so frames can be forwarded between interfaces without copying.
+///
+/// Interfaces are paired: a packet received on one interface is normally
+/// forwarded through its peer, which is the standard transparent bridge
+/// setup for inline proxies.
 class XdpDriver final : public snet::io::DriverBase
 {
 public:
@@ -82,27 +64,23 @@ public:
 
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
-private:
-    /// Describes a single network interface bound to the driver.
-    struct XdpInstance
-    {
-        std::string name;
-        uint32_t ifindex{0};
-        uint32_t ip{0};
-        uint32_t netmask{0};
-        layers::MacAddress mac;
-    };
+    /// Releases a UMEM frame back into the shared fill ring.
+    void releaseFrame(uint64_t frameAddr) noexcept;
 
+private:
     bool setupUmem(uint32_t numFrames, uint32_t frameSize);
-    bool setupSocket(const std::string& ifname, uint32_t queueId);
-    bool loadXdpProgram(const std::string& ifname, int xskMapFd);
+    bool setupSocket(XdpInstance& inst, uint32_t queueId, bool isFirst);
+    bool loadXdpProgram(XdpInstance& inst);
+    bool attachXdpProgram(XdpInstance& inst);
+    void unloadXdpProgram(XdpInstance& inst);
+    bool insertXskIntoMap(XdpInstance& inst, uint32_t queueId);
 
     bool refillFillRing(uint32_t count);
     bool processCompletionRing();
 
     RecvStatus waitForPacket();
 
-    bool transmitPacket(const uint8_t* data, uint32_t len);
+    bool transmitPacket(XdpInstance& inst, const uint8_t* data, uint32_t len);
     XdpInstance* findEgress(uint32_t dstIp) const noexcept;
 
     void cleanup();
@@ -120,11 +98,10 @@ private:
     bool zeroCopy_{true};
     bool useSkbMode_{false};
     std::string bpfFilter_;
+    std::string bpfObjPath_{"xdp_redirect.bpf.o"};
 
+    /// Shared UMEM across all interfaces.
     XdpUmemInfo umem_;
-    XdpSocketInfo socket_;
-    int xskMapFd_{-1};
-    int xdpProgFd_{-1};
 
     XdpPoolPtr pool_;
     std::atomic<bool> interrupted_{false};
@@ -132,6 +109,7 @@ private:
     size_t snaplen_{0};
 
     std::vector<std::unique_ptr<XdpInstance>> instances_;
+    size_t currInstanceIdx_{0};
 };
 
 } // namespace snet::driver
