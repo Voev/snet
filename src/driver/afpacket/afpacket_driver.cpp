@@ -42,16 +42,24 @@ bool AFPacketDriver::applyFilter()
 
     struct bpf_program fcode;
 
-    if (pcap_compile_nopcap(snaplen_, DLT_EN10MB, &fcode, filter_.c_str(), 1, PCAP_NETMASK_UNKNOWN) == -1)
+    pcap_t* pcap = pcap_open_dead(DLT_EN10MB, snaplen_);
+    if (pcap == nullptr)
     {
-        logError("BPF state machine compilation failed");
+        logError("AFPacketDriver: pcap_open_dead failed");
         return false;
     }
 
-    pcap_freecode(&fcode_);
-    fcode_.bf_len = fcode.bf_len;
-    fcode_.bf_insns = fcode.bf_insns;
+    if (pcap_compile(pcap, &fcode, filter_.c_str(), 1, PCAP_NETMASK_UNKNOWN) == -1)
+    {
+        logError("AFPacketDriver: pcap_compile failed: %s", pcap_geterr(pcap));
+        pcap_close(pcap);
+        return false;
+    }
 
+    pcap_close(pcap);
+
+    pcap_freecode(&fcode_);
+    fcode_ = fcode;
     return true;
 }
 
