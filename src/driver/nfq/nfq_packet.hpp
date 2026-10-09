@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <snet/layers/packet.hpp>
 #include <casket/utils/container_of.hpp>
 #include <casket/utils/endianness.hpp>

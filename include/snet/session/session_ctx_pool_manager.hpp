@@ -1,8 +1,31 @@
 #pragma once
+#include <tuple>
 #include <casket/types/fixed_object_pool.hpp>
 
 namespace snet::session
 {
+
+namespace detail
+{
+template <typename T, typename... Ts>
+struct TypeIndex;
+
+template <typename T, typename... Rest>
+struct TypeIndex<T, T, Rest...>
+{
+    static constexpr std::size_t value = 0;
+};
+
+template <typename T, typename U, typename... Rest>
+struct TypeIndex<T, U, Rest...>
+{
+    static constexpr std::size_t value = 1 + TypeIndex<T, Rest...>::value;
+};
+
+template <typename T, typename... Ts>
+inline constexpr std::size_t type_index_v = TypeIndex<T, Ts...>::value;
+
+} // namespace detail
 
 template <typename ContextType>
 struct PoolTraits
@@ -68,13 +91,13 @@ private:
     template <typename ContextType>
     casket::FixedObjectPool<ContextType>& getPool()
     {
-        return std::get<casket::FixedObjectPool<ContextType>>(pools_);
+        return std::get<detail::type_index_v<ContextType, ContextTypes...>>(pools_);
     }
 
     template <typename ContextType>
     const casket::FixedObjectPool<ContextType>& getPool() const
     {
-        return std::get<casket::FixedObjectPool<ContextType>>(pools_);
+        return std::get<detail::type_index_v<ContextType, ContextTypes...>>(pools_);
     }
 
     static auto createPools()
