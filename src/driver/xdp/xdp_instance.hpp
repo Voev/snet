@@ -1,69 +1,94 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
-
-#include <snet/layers/l2/mac_address.hpp>
+#include <string>
 
 #include <xdp/xsk.h>
-#include <bpf/libbpf.h>
 
 namespace snet::driver
 {
 
-/// UMEM and fill/completion ring state shared between kernel and userspace.
-/// A single UMEM is shared across all interfaces so frames can be forwarded
-/// between interfaces without copying.
-struct XdpUmemInfo
+class XdpDriver;
+
+/// @brief Per-queue AF_XDP endpoint.
+///
+/// One instance == one (iface, queueId) pair == one AF_XDP socket registered
+/// in the BPF program's XSKMAP under key = queueId.
+class XdpInstance final
 {
-    void* buffer{nullptr};
-    struct xsk_ring_prod fill{};
-    struct xsk_ring_cons comp{};
-    struct xsk_umem* umem{nullptr};
-    uint64_t frameSize{0};
-    uint32_t numFrames{0};
-};
+public:
+    explicit XdpInstance(XdpDriver& driver);
+    ~XdpInstance() noexcept;
 
-/// Per-socket AF_XDP state (RX/TX rings).
-struct XdpSocketInfo
-{
-    struct xsk_ring_cons rx{};
-    struct xsk_ring_prod tx{};
-    struct xsk_socket* xsk{nullptr};
+    XdpInstance(const XdpInstance&) = delete;
+    XdpInstance& operator=(const XdpInstance&) = delete;
 
-    /// fd of the XSK socket, also stored here for convenience.
-    int xskFd{-1};
-};
+    /// @brief Prepare the instance: resolve ifindex, remember queue.
+    bool create(const std::string& iface, uint32_t queueId);
 
-/// Describes a single network interface bound to the driver.
-/// Each interface has its own AF_XDP socket, XSK map and XDP program,
-/// but shares the driver's UMEM with all other interfaces.
-struct XdpInstance
-{
-    std::string name;
-    uint32_t ifindex{0};
-    uint32_t ip{0};
-    uint32_t netmask{0};
-    layers::MacAddress mac;
+    /// @brief Bind AF_XDP socket to the shared UMEM.
+    bool bindTo(struct xsk_umem* umem, const struct xsk_socket_config& cfg);
 
-    /// Index of the peer interface in the driver's instance vector.
-    /// Using an index (rather than a raw pointer) keeps peer references
-    /// stable even if the vector is reallocated.
-    size_t peerIdx{static_cast<size_t>(-1)};
+    void destroy() noexcept;
 
-    XdpSocketInfo socket;
+    int fd() const noexcept
+    {
+        return fd_;
+    }
+    const std::string& name() const noexcept
+    {
+        return name_;
+    }
+    uint32_t queueId() const noexcept
+    {
+        return queueId_;
+    }
+    uint32_t ifindex() const noexcept
+    {
+        return ifindex_;
+    }
+    bool active() const noexcept
+    {
+        return active_;
+    }
+    void setActive(bool v) noexcept
+    {
+        active_ = v;
+    }
 
-    /// fd of the BPF_MAP_TYPE_XSKMAP used by the XDP program attached
-    /// to this interface.
-    int xskMapFd{-1};
+    struct xsk_ring_cons* rxRing() noexcept
+    {
+        return &rx_;
+    }
+    struct xsk_ring_prod* txRing() noexcept
+    {
+        return &tx_;
+    }
+    struct xsk_ring_prod* fqRing() noexcept
+    {
+        return &fq_;
+    }
+    struct xsk_ring_cons* cqRing() noexcept
+    {
+        return &cq_;
+    }
 
-    /// fd of the loaded XDP program attached to this interface.
-    int xdpProgFd{-1};
+    /// @brief Peer instance for in-kernel-ish forwarding (Pass verdict).
+    XdpInstance* peer{nullptr};
 
-    /// Owning BPF object, closed on cleanup.
-    struct bpf_object* bpfObj{nullptr};
+private:
+    XdpDriver& driver_;
+    std::string name_;
+    uint32_t queueId_{0};
+    uint32_t ifindex_{0};
+    int fd_{-1};
+    bool active_{false};
 
-    bool hasIp() const noexcept { return ip != 0 && netmask != 0; }
+    struct xsk_socket* xsk_{nullptr};
+    struct xsk_ring_cons rx_{};
+    struct xsk_ring_prod tx_{};
+    struct xsk_ring_prod fq_{};
+    struct xsk_ring_cons cq_{};
 };
 
 } // namespace snet::driver

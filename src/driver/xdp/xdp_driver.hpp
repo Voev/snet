@@ -2,40 +2,43 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include <snet/io.hpp>
 #include <snet/io/driver_base.hpp>
-#include <snet/layers/l2/mac_address.hpp>
 
 #include <casket/types/fixed_object_pool.hpp>
 
-#include <bpf/libbpf.h>
-#include <bpf/bpf.h>
+#include "xdp_types.hpp"
+#include "xdp_wrapper.hpp"
+#include "xdp_instance.hpp"
+
+#include <xdp/libxdp.h>
 #include <xdp/xsk.h>
 #include <linux/if_link.h>
 
-#include "xdp_instance.hpp"
-#include "xdp_wrapper.hpp"
+struct xsk_umem;
+struct xdp_program;
 
 namespace snet::driver
 {
 
-/// AF_XDP based driver for transparent TCP proxy.
-///
-/// The driver manages one or more network interfaces, each with its own
-/// AF_XDP socket. All interfaces share a single UMEM so that frames can be
-/// forwarded between interfaces without copying.
-///
-/// Interfaces are paired: a packet received on one interface is normally
-/// forwarded through its peer. This is the standard transparent bridge
-/// setup for inline proxies.
+/// @brief Forwarding topology between endpoints.
+enum class ForwardTopology : uint8_t
+{
+    Pairs,   ///< 0<->1, 2<->3, ... (default)
+    Ring,    ///< 0->1->...->N-1->0
+    Single,  ///< each endpoint forwards to itself
+};
+
 class XdpDriver final : public snet::io::DriverBase
 {
 public:
-    using XdpPool = casket::FixedObjectPool<XdpWrapper>;
-    using XdpPoolPtr = std::unique_ptr<XdpPool>;
+    using XdpPool         = casket::FixedObjectPool<XdpWrapper>;
+    using XdpPoolPtr      = std::unique_ptr<XdpPool>;
+    using XdpInstancePtr  = std::unique_ptr<XdpInstance>;
 
     explicit XdpDriver(const io::DriverSpec& config);
     ~XdpDriver() noexcept override;
@@ -51,87 +54,103 @@ public:
     Status interrupt() override;
 
     Status inject(const uint8_t* data, uint32_t dataLen) override;
-    Status injectPacket(layers::Packet* rawPacket) override;
 
     Status getStats(Stats* stats) override;
-    void resetStats() override;
+    void   resetStats() override;
 
     int getSnaplen() const override;
     snet::layers::LinkLayerType getDataLinkType() const override;
 
-    RecvStatus receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount) override;
-    Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
+    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    Status     finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
 
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
 private:
-    // --- setup ---
-    bool setupUmem(uint32_t numFrames, uint32_t frameSize);
-    bool setupSocket(XdpInstance& inst, uint32_t queueId);
-    bool loadXdpProgram(XdpInstance& inst);
-    bool attachXdpProgram(XdpInstance& inst);
-    void unloadXdpProgram(XdpInstance& inst) noexcept;
+    /// One endpoint as parsed from the input string.
+    struct Endpoint
+    {
+        std::string iface;
+        uint32_t    queue{0};
+    };
 
-    // --- ring management ---
-    void replenishFillRingFromCache() noexcept;
-    void processCompletionRing() noexcept;
-    uint64_t allocTxFrame() noexcept;
-    void freeTxFrame(uint64_t frameAddr) noexcept;
+    /// Per-iface BPF program + XSKMAP + the instances bound to it.
+    struct IfaceContext
+    {
+        std::string            iface;
+        uint32_t               ifindex{0};
+        struct xdp_program*    program{nullptr};
+        int                    xskmapFd{-1};
+        std::vector<XdpInstance*> instances;   ///< non-owning, see instancesOwned_
+    };
 
-    // --- forwarding ---
-    bool forwardFrame(XdpInstance& egress, uint64_t frameAddr, uint32_t len) noexcept;
-    bool transmitCopy(XdpInstance& egress, const uint8_t* data, uint32_t len) noexcept;
+    Status parseEndpoints(const std::string& input);
+    Status parseTopology();
 
-    XdpInstance* peerOf(const XdpInstance& inst) const noexcept;
-    XdpInstance* findEgressByIp(uint32_t dstIp) const noexcept;
+    bool   setupRlimit();
+    bool   createUmem();
+    void   destroyUmem() noexcept;
+    bool   openBpfForIface(IfaceContext& ctx);
+    void   closeBpfForIface(IfaceContext& ctx) noexcept;
+    void   buildPeers();
+    void   clearAll();
 
-    // --- receive internals ---
-    RecvStatus tryReceiveBurst(layers::Packet** rawPacket,
-                               uint16_t* packetCount,
-                               uint16_t maxCount) noexcept;
-    void pollForEvents(int timeoutMs) noexcept;
+    uint32_t refillFq(XdpInstance& inst, uint32_t max);
+    uint32_t processCq(XdpInstance& inst, uint32_t max);
+    bool     kickTx(XdpInstance& inst);
 
-    void cleanup() noexcept;
+    uint64_t acquireFrame();
+    void     releaseFrame(uint64_t addr);
+
+    bool transmitFrame(XdpInstance* egress, uint64_t frameAddr, uint32_t len);
+    void swapMacInPlace(uint64_t frameAddr, uint32_t len) noexcept;
 
 private:
-    // --- config ---
-    std::vector<std::string> devices_;
-    uint32_t queueId_{0};
-    uint32_t umemNumFrames_{8192};
-    uint32_t umemFrameSize_{2048};
-    uint32_t fillRingSize_{4096};
-    uint32_t completionRingSize_{4096};
-    uint32_t rxRingSize_{2048};
-    uint32_t txRingSize_{2048};
-    uint32_t batchSize_{64};
-    bool zeroCopy_{false};        // VirtualBox: false (copy mode)
-    bool useSkbMode_{true};       // VirtualBox: true (generic XDP)
-    std::string bpfFilter_;
-    std::string bpfObjPath_{"xdp_redirect.bpf.o"};
+    std::string           endpointsStr_;
+    std::vector<Endpoint> endpoints_;
 
-    // --- shared UMEM ---
-    XdpUmemInfo umem_;
+    std::string           bpfObject_;
+    std::string           bpfSection_{"xdp"};
+    bool                  zeroCopy_{true};
+    bool                  needWakeup_{true};
 
-    // --- TX frame pool: reserved frames for inject path ---
-    // Frames [0, txPoolSize_) are reserved exclusively for transmitCopy(),
-    // so they are never handed out to the RX fill ring.
-    std::vector<uint64_t> txFreeFrames_;
-    uint32_t txPoolSize_{0};
+    uint32_t              numFrames_{xdp::kDefaultNumFrames};
+    uint32_t              frameSize_{xdp::kDefaultFrameSize};
+    uint32_t              headroom_{xdp::kDefaultHeadroom};
+    uint32_t              fillSize_{xdp::kDefaultFillSize};
+    uint32_t              compSize_{xdp::kDefaultCompSize};
+    uint32_t              rxSize_{xdp::kDefaultRxSize};
+    uint32_t              txSize_{xdp::kDefaultTxSize};
+    uint32_t              batchSize_{xdp::kDefaultBatchSize};
 
-    // --- runtime ---
-    XdpPoolPtr pool_;
-    std::atomic<bool> interrupted_{false};
-    Stats stats_{};
-    size_t snaplen_{0};
+    size_t                snaplen_{xdp::kDefaultFrameSize};
+    int32_t               timeoutMs_{-1};
 
-    std::vector<std::unique_ptr<XdpInstance>> instances_;
-    size_t currInstanceIdx_{0};
+    std::string           topologyStr_{"pairs"};
+    ForwardTopology       topology_{ForwardTopology::Pairs};
 
-    // Shared BPF program / map fds for the "one program for all ifaces" case.
-    // The implementation below loads a separate bpf_object per interface,
-    // so these are only used if you switch to single-program mode.
-    struct bpf_object* sharedBpfObj_{nullptr};
-    int sharedXskMapFd_{-1};
+    bool                  swapMac_{false};
+
+    void*                 umemArea_{nullptr};
+    size_t                umemAreaSize_{0};
+    struct xsk_umem*      umem_{nullptr};
+    struct xsk_ring_prod  umemFq_{};        ///< dummy, required by API
+    struct xsk_ring_cons  umemCq_{};        ///< dummy, required by API
+
+    std::vector<uint64_t> freeFrames_;
+    std::mutex            poolMutex_;
+
+    std::vector<std::unique_ptr<IfaceContext>> ifaces_;
+
+    std::vector<XdpInstancePtr> instancesOwned_;  ///< owning
+    std::vector<XdpInstance*>   instances_;       ///< flat, non-owning view
+
+    XdpPoolPtr            pool_;
+
+    size_t                currInstanceIdx_{0};
+    std::atomic<bool>     interrupted_{false};
+    Stats                 stats_{};
+    uint64_t              packetsSentCounter_{0};
 };
 
 } // namespace snet::driver
