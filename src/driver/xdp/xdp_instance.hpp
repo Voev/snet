@@ -24,15 +24,15 @@ struct XdpUmemInfo
     uint32_t numFrames{0};
 };
 
-/// Per-socket AF_XDP state (RX/TX rings and batching hints).
+/// Per-socket AF_XDP state (RX/TX rings).
 struct XdpSocketInfo
 {
     struct xsk_ring_cons rx{};
     struct xsk_ring_prod tx{};
     struct xsk_socket* xsk{nullptr};
-    uint32_t outstandingTx{0};
-    uint32_t rxBatchSize{64};
-    uint32_t txBatchSize{64};
+
+    /// fd of the XSK socket, also stored here for convenience.
+    int xskFd{-1};
 };
 
 /// Describes a single network interface bound to the driver.
@@ -46,22 +46,24 @@ struct XdpInstance
     uint32_t netmask{0};
     layers::MacAddress mac;
 
-    /// Paired interface for transparent bridge forwarding.
-    XdpInstance* peer{nullptr};
+    /// Index of the peer interface in the driver's instance vector.
+    /// Using an index (rather than a raw pointer) keeps peer references
+    /// stable even if the vector is reallocated.
+    size_t peerIdx{static_cast<size_t>(-1)};
 
     XdpSocketInfo socket;
 
-    /// fd of the XSK socket, used as the value in the XSK map.
-    int xskFd{-1};
-
-    /// fd of the BPF_MAP_TYPE_XSKMAP used by the XDP program.
+    /// fd of the BPF_MAP_TYPE_XSKMAP used by the XDP program attached
+    /// to this interface.
     int xskMapFd{-1};
 
-    /// fd of the loaded XDP program.
+    /// fd of the loaded XDP program attached to this interface.
     int xdpProgFd{-1};
 
     /// Owning BPF object, closed on cleanup.
     struct bpf_object* bpfObj{nullptr};
+
+    bool hasIp() const noexcept { return ip != 0 && netmask != 0; }
 };
 
 } // namespace snet::driver
