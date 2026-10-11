@@ -1,6 +1,7 @@
 
 #pragma once
-#include <variant>
+
+#include <casket/nonstd/variant.hpp>
 #include <snet/tls/msgs/tls1_certificate.hpp>
 #include <snet/tls/msgs/tls13_certificate.hpp>
 #include <snet/tls/version.hpp>
@@ -13,7 +14,7 @@ class Session;
 
 struct Certificate final
 {
-    std::variant<TLSv1Certificate, TLSv13Certificate> message;
+    nonstd::variant<TLSv1Certificate, TLSv13Certificate> message;
 
     void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 

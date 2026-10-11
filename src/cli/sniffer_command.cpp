@@ -144,7 +144,7 @@ public:
 
     ~Command() = default;
 
-    void execute(const std::vector<std::string_view>& args) override
+    void execute(const std::vector<nonstd::string_view>& args) override
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))

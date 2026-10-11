@@ -40,7 +40,7 @@ inline void swapMacAddresses(uint8_t* pkt) noexcept
         std::swap(pkt[i], pkt[i + kMacLen]);
 }
 
-inline std::string trimCopy(std::string_view s)
+inline std::string trimCopy(nonstd::string_view s)
 {
     size_t b = 0;
     size_t e = s.size();
@@ -152,7 +152,7 @@ Status XdpDriver::parseEndpoints(const std::string& input)
         if (comma == std::string::npos)
             comma = input.size();
 
-        std::string tok = trimCopy(std::string_view{input}.substr(pos, comma - pos));
+        std::string tok = trimCopy(nonstd::string_view{input}.substr(pos, comma - pos));
         if (!tok.empty())
         {
             Endpoint ep;
@@ -164,8 +164,8 @@ Status XdpDriver::parseEndpoints(const std::string& input)
             }
             else
             {
-                ep.iface = trimCopy(std::string_view{tok}.substr(0, colon));
-                const std::string qstr = trimCopy(std::string_view{tok}.substr(colon + 1));
+                ep.iface = trimCopy(nonstd::string_view{tok}.substr(0, colon));
+                const std::string qstr = trimCopy(nonstd::string_view{tok}.substr(colon + 1));
                 if (qstr.empty())
                 {
                     logError("XdpDriver: empty queue in '%s'", tok.c_str());

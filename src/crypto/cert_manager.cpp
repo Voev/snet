@@ -54,7 +54,7 @@ CertManager& CertManager::loadDirectory(const std::filesystem::path& path)
     return *this;
 }
 
-CertManager& CertManager::loadStore(std::string_view uri)
+CertManager& CertManager::loadStore(nonstd::string_view uri)
 {
     casket::ThrowIfTrue(uri.empty(), "URI is empty");
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)

@@ -14,7 +14,7 @@ bool SignatureScheme::isSet() const noexcept
     return code_ != NONE;
 }
 
-std::string_view SignatureScheme::toString() const noexcept
+nonstd::string_view SignatureScheme::toString() const noexcept
 {
     switch (code_)
     {
@@ -77,7 +77,7 @@ std::string_view SignatureScheme::toString() const noexcept
     }
 }
 
-std::string_view SignatureScheme::getHashAlgorithm() const noexcept
+nonstd::string_view SignatureScheme::getHashAlgorithm() const noexcept
 {
     switch (code_)
     {

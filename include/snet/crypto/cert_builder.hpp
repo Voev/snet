@@ -1,7 +1,6 @@
 #pragma once
 
-#include <string_view>
-
+#include <casket/nonstd/string_view.hpp>
 #include <casket/nonstd/chrono.hpp>
 #include <casket/utils/noncopyable.hpp>
 
@@ -49,9 +48,9 @@ public:
 
     CertBuilder& addExtension(X509Ext* ext);
 
-    CertBuilder& addExtension(int extNid, std::string_view value);
+    CertBuilder& addExtension(int extNid, nonstd::string_view value);
 
-    CertBuilder& addExtension(std::string_view name, std::string_view value);
+    CertBuilder& addExtension(nonstd::string_view name, nonstd::string_view value);
 
     CertBuilder& signedBy(Key* issuerPrivateKey, X509Cert* issuerCert);
 

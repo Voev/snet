@@ -312,7 +312,7 @@ KeyShare::KeyShare(nonstd::span<const uint8_t> input, HandshakeType messageType)
 size_t KeyShare::serialize(Side whoami, nonstd::span<uint8_t> output) const
 {
     (void)whoami;
-    return std::visit([output](const auto& keyShare) { return keyShare.serialize(output); }, keyShare_);
+    return nonstd::visit([output](const auto& keyShare) { return keyShare.serialize(output); }, keyShare_);
 }
 
 KeyShare::KeyShare(const std::vector<GroupParams>& supportedGroups)
@@ -336,22 +336,22 @@ KeyShare::~KeyShare() noexcept
 
 bool KeyShare::empty() const
 {
-    return std::visit([](const auto& inner) { return inner.empty(); }, keyShare_);
+    return nonstd::visit([](const auto& inner) { return inner.empty(); }, keyShare_);
 }
 
 std::vector<GroupParams> KeyShare::offeredGroups() const
 {
-    return std::visit([](const auto& inner) { return inner.offeredGroups(); }, keyShare_);
+    return nonstd::visit([](const auto& inner) { return inner.offeredGroups(); }, keyShare_);
 }
 
 GroupParams KeyShare::selectedGroup() const
 {
-    return std::visit([](const auto& inner) { return inner.selectedGroup(); }, keyShare_);
+    return nonstd::visit([](const auto& inner) { return inner.selectedGroup(); }, keyShare_);
 }
 
 void KeyShare::setPublicKey(const Key* key)
 {
-    return std::visit(
+    return nonstd::visit(
         [&](auto&& inner)
         {
             using T = std::decay_t<decltype(inner)>;
@@ -369,7 +369,7 @@ void KeyShare::setPublicKey(const Key* key)
 
 void KeyShare::setPublicKey(const size_t idx, const Key* key)
 {
-    return std::visit(
+    return nonstd::visit(
         [&](auto&& inner)
         {
             using T = std::decay_t<decltype(inner)>;
@@ -387,7 +387,7 @@ void KeyShare::setPublicKey(const size_t idx, const Key* key)
 
 crypto::KeyPtr KeyShare::getPublicKey(size_t i)
 {
-    return std::visit(
+    return nonstd::visit(
         [&](auto&& inner) -> crypto::KeyPtr
         {
             using T = std::decay_t<decltype(inner)>;
@@ -410,7 +410,7 @@ crypto::KeyPtr KeyShare::getPublicKey(size_t i)
 
 void KeyShare::retryOffer(const KeyShare& retryRequestKeyShare, const std::vector<GroupParams>& supportedGroups)
 {
-    std::visit(
+    nonstd::visit(
         [&](auto&& arg1, auto&& arg2)
         {
             using T1 = std::decay_t<decltype(arg1)>;

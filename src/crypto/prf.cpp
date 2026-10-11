@@ -74,7 +74,7 @@ void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> cli
     }
 }
 
-void tls1Prf(std::string_view algorithm, nonstd::span<const uint8_t> secret, std::string_view label,
+void tls1Prf(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::string_view label,
              nonstd::span<const uint8_t> clientRandom, nonstd::span<const uint8_t> serverRandom,
              nonstd::span<uint8_t> out)
 {
@@ -163,7 +163,7 @@ void GenerateSecret(const Hash* hashAlg, nonstd::span<const uint8_t> prevSecret,
     ThrowIfFalse(0 < EVP_PKEY_derive(pctx, outSecret.data(), &mdlen));
 }
 
-void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
+void HkdfExpand(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> label,
                 nonstd::span<const uint8_t> data, nonstd::span<uint8_t> out)
 {
     ThrowIfFalse(labelPrefix.size() + label.size() <= kMaxFullLabelSize, "label too large");
@@ -246,7 +246,7 @@ void HkdfExpand(std::string_view algorithm, nonstd::span<const uint8_t> secret, 
 #endif
 }
 
-void DeriveFinishedKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
+void DeriveFinishedKey(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
     static constexpr std::array<unsigned char, 8> finishedLabel = {0x66, 0x69, 0x6E, 0x69, 0x73, 0x68, 0x65, 0x64};
 
@@ -286,21 +286,21 @@ void DeriveServerApTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secr
     HkdfExpand(HashTraits::getName(hashAlg), secret, server_application_traffic, data, out);
 }
 
-void DeriveKey(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
+void DeriveKey(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
     static constexpr std::array<unsigned char, 3> keyLabel = {0x6B, 0x65, 0x79};
 
     HkdfExpand(algorithm, secret, keyLabel, {}, out);
 }
 
-void DeriveIV(std::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
+void DeriveIV(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, nonstd::span<uint8_t> out)
 {
     static constexpr std::array<unsigned char, 2> ivLabel = {0x69, 0x76};
 
     HkdfExpand(algorithm, secret, ivLabel, {}, out);
 }
 
-void UpdateTrafficSecret(std::string_view algorithm, nonstd::span<uint8_t> secret)
+void UpdateTrafficSecret(nonstd::string_view algorithm, nonstd::span<uint8_t> secret)
 {
     static constexpr std::array<unsigned char, 11> trafficUpdateLabel = {0x74, 0x72, 0x61, 0x66, 0x66, 0x69,
                                                                          0x63, 0x20, 0x75, 0x70, 0x64};

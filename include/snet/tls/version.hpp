@@ -2,8 +2,8 @@
 /// @brief Declaration of the ProtocolVersion class.
 
 #pragma once
-#include <optional>
-#include <string_view>
+#include <casket/nonstd/optional.hpp>
+#include <casket/nonstd/string_view.hpp>
 #include <snet/tls/types.hpp>
 
 namespace snet::tls
@@ -145,7 +145,7 @@ public:
     /// @brief Creates a ProtocolVersion from a string.
     /// @param str The string representation of the version.
     /// @return An optional containing the ProtocolVersion if successful, otherwise std::nullopt.
-    static std::optional<ProtocolVersion> fromString(std::string_view str);
+    static nonstd::optional<ProtocolVersion> fromString(nonstd::string_view str);
 
 private:
     uint16_t version_;
@@ -156,6 +156,6 @@ using ProtocolVersionRange = std::pair<ProtocolVersion, ProtocolVersion>;
 /// @brief Parses a protocol version range from a string.
 /// @param str The string representation of the version range.
 /// @return An optional containing the ProtocolVersionRange if successful, otherwise std::nullopt.
-std::optional<ProtocolVersionRange> ParseProtocolVersionRange(std::string_view str);
+nonstd::optional<ProtocolVersionRange> ParseProtocolVersionRange(nonstd::string_view str);
 
 } // namespace snet::tls

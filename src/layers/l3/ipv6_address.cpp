@@ -24,7 +24,7 @@ IPv6Address::IPv6Address(nonstd::span<const std::uint8_t> bytes)
     std::copy(bytes.begin(), bytes.end(), std::begin(addr_.as_bytes));
 }
 
-IPv6Address::IPv6Address(std::string_view str)
+IPv6Address::IPv6Address(nonstd::string_view str)
 {
     if (inet_pton(AF_INET6, str.data(), &addr_.as_bytes) <= 0)
     {
@@ -77,7 +77,7 @@ IPv6Address::const_iterator IPv6Address::end() const
     return addr_.as_bytes + kBytesCount;
 }
 
-nonstd::optional<IPv6Address> IPv6Address::fromString(std::string_view str)
+nonstd::optional<IPv6Address> IPv6Address::fromString(nonstd::string_view str)
 {
     std::uint8_t addr[IPv6Address::kBytesCount];
     if (inet_pton(AF_INET6, str.data(), addr) <= 0)

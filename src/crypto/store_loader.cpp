@@ -29,7 +29,7 @@ std::string storeInfoTypeToStr(int type)
 namespace snet::crypto
 {
 
-StoreLoader::StoreLoader(std::string_view uri, const UiMethod* meth, void* data)
+StoreLoader::StoreLoader(nonstd::string_view uri, const UiMethod* meth, void* data)
     : ctx_(OSSL_STORE_open(uri.data(), meth, data, nullptr, nullptr))
 {
 

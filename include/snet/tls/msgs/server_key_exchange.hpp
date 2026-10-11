@@ -1,6 +1,7 @@
 #pragma once
-#include <variant>
+#include <casket/nonstd/variant.hpp>
 #include <casket/nonstd/span.hpp>
+
 #include <snet/tls/version.hpp>
 #include <snet/tls/meta_info.hpp>
 
@@ -69,7 +70,7 @@ struct EcdheParams final
 struct ServerKeyExchange final
 {
     /// @brief Variant type representing different key exchange parameters.
-    using Params = std::variant<DhParams, EcdheParams>;
+    using Params = nonstd::variant<DhParams, EcdheParams>;
 
     /// @brief Parse a Server Key Exchange message from raw data.
     ///

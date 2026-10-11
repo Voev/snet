@@ -1,8 +1,5 @@
-// tests/tcp_fsm_test.cpp
-
 #include <gtest/gtest.h>
 
-#include <optional>
 #include <vector>
 #include <cstring>
 #include <chrono>

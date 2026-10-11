@@ -52,7 +52,7 @@ bool Connect(const Endpoint& endpoint)
     return true;
 }
 
-void CheckCipher(const Endpoint& endpoint, std::string_view cipherSuite, Queue<std::string_view>& ret)
+void CheckCipher(const Endpoint& endpoint, nonstd::string_view cipherSuite, Queue<nonstd::string_view>& ret)
 {
     try
     {
@@ -118,7 +118,7 @@ public:
 
     ~CipherScanCommand() = default;
 
-    void execute(const std::vector<std::string_view>& args) override
+    void execute(const std::vector<nonstd::string_view>& args) override
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))
@@ -152,7 +152,7 @@ public:
 
         ThreadPool pool(options_.threads);
 
-        Queue<std::string_view> ret;
+        Queue<nonstd::string_view> ret;
         results.reserve(cipherSuites.size());
         for (const auto& cipherSuite : cipherSuites)
         {

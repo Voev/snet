@@ -1,5 +1,7 @@
 #pragma once
 #include <vector>
+#include <casket/nonstd/string_view.hpp>
+#include <casket/nonstd/span.hpp>
 #include <snet/tls/exts/extension.hpp>
 
 namespace snet::tls
@@ -36,7 +38,7 @@ public:
     /// @brief Constructor with a single protocol, used by server.
     ///
     /// @param[in] protocol Protocol name.
-    explicit ALPN(std::string_view protocol);
+    explicit ALPN(nonstd::string_view protocol);
 
     /// @brief Constructor with a list of protocols, used by client.
     ///

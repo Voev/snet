@@ -34,7 +34,7 @@ int AsymmKey::getKeySize(const Key* key)
     return EVP_PKEY_size(key);
 }
 
-bool AsymmKey::isAlgorithm(const Key* key, std::string_view alg)
+bool AsymmKey::isAlgorithm(const Key* key, nonstd::string_view alg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     return EVP_PKEY_is_a(key, alg.data());

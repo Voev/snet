@@ -222,7 +222,7 @@ private:
         }
     }
 
-    [[noreturn]] void throw_decode_error(std::string_view why) const
+    [[noreturn]] void throw_decode_error(nonstd::string_view why) const
     {
         throw casket::RuntimeError(casket::format("Invalid {}: {}", m_typename, why));
     }

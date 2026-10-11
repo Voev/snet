@@ -22,7 +22,7 @@ std::string ProtocolVersion::toString() const
     return "Unknown version " + std::to_string(maj) + "." + std::to_string(min);
 }
 
-std::optional<ProtocolVersion> ProtocolVersion::fromString(std::string_view str)
+nonstd::optional<ProtocolVersion> ProtocolVersion::fromString(nonstd::string_view str)
 {
     if (casket::iequals(str, "sslv3.0"))
     {
@@ -44,13 +44,13 @@ std::optional<ProtocolVersion> ProtocolVersion::fromString(std::string_view str)
     {
         return VersionCode::TLSv1_3;
     }
-    return std::nullopt;
+    return nonstd::nullopt;
 }
 
-std::optional<ProtocolVersionRange> ParseProtocolVersionRange(std::string_view str)
+nonstd::optional<ProtocolVersionRange> ParseProtocolVersionRange(nonstd::string_view str)
 {
     auto delim = str.find("-");
-    if (delim != std::string_view::npos)
+    if (delim != nonstd::string_view::npos)
     {
         auto first = str.substr(0, delim);
         auto second = str.substr(delim + 1);
@@ -60,13 +60,13 @@ std::optional<ProtocolVersionRange> ParseProtocolVersionRange(std::string_view s
 
         if (firstVersion.has_value() && secondVersion.has_value())
             return std::make_pair(firstVersion.value(), secondVersion.value());
-        return std::nullopt;
+        return nonstd::nullopt;
     }
 
     auto version = ProtocolVersion::fromString(str);
     if (version.has_value())
         return std::make_pair(version.value(), version.value());
-    return std::nullopt;
+    return nonstd::nullopt;
 }
 
 } // namespace snet::tls

@@ -49,7 +49,7 @@ size_t ServerNameIndicator::serialize(Side side, nonstd::span<uint8_t> output) c
     return 5 + nameLength;
 }
 
-ServerNameIndicator::ServerNameIndicator(std::string_view hostname)
+ServerNameIndicator::ServerNameIndicator(nonstd::string_view hostname)
     : hostname_(hostname)
 {
 }

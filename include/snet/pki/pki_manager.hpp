@@ -64,7 +64,7 @@ struct PKIManagerCommand
             if (!keyResult)
                 return casket::UnpackResult<PKIManagerCommand>(keyResult.error());
 
-            std::string_view key = *keyResult;
+            auto key = *keyResult;
 
             if (key == "cmd")
             {
@@ -129,7 +129,7 @@ struct PKIManagerResponse
             if (!keyResult)
                 return casket::UnpackResult<PKIManagerResponse>(keyResult.error());
 
-            std::string_view key = *keyResult;
+            auto key = *keyResult;
 
             if (key == "retcode")
             {

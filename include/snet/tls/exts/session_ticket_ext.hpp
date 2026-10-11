@@ -1,7 +1,6 @@
 #pragma once
-#include <casket/nonstd/span.hpp>
 #include <vector>
-#include <string_view>
+#include <casket/nonstd/span.hpp>
 #include <snet/tls/exts/extension.hpp>
 
 namespace snet::tls

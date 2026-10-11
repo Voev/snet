@@ -33,7 +33,7 @@ IPv4Address::IPv4Address(nonstd::span<const std::uint8_t> bytes)
     std::memcpy(&addr_.s_addr, bytes.data(), bytes.size_bytes());
 }
 
-IPv4Address::IPv4Address(std::string_view str)
+IPv4Address::IPv4Address(nonstd::string_view str)
     : addr_{}
 {
     if (inet_pton(AF_INET, str.data(), &addr_.s_addr) <= 0)
@@ -181,7 +181,7 @@ IPv4Address IPv4Address::any() noexcept
     return IPv4Address();
 }
 
-nonstd::optional<IPv4Address> IPv4Address::fromString(std::string_view str)
+nonstd::optional<IPv4Address> IPv4Address::fromString(nonstd::string_view str)
 {
     std::uint8_t addr[kBytesCount];
     if (inet_pton(AF_INET, str.data(), addr) <= 0)

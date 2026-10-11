@@ -74,7 +74,7 @@ ClientKeyExchange ClientKeyExchange::deserialize(nonstd::span<const uint8_t> inp
 
 size_t ClientKeyExchange::serialize(nonstd::span<uint8_t> output, const Session&) const
 {
-    return std::visit([&](const auto& inner) -> size_t { return inner.serialize(output); }, params);
+    return nonstd::visit([&](const auto& inner) -> size_t { return inner.serialize(output); }, params);
 }
 
 } // namespace snet::tls

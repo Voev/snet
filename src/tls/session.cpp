@@ -31,7 +31,7 @@
 
 using namespace snet::crypto;
 
-inline std::string Colorize(std::string_view text)
+inline std::string Colorize(nonstd::string_view text)
 {
     return casket::format("[{}]", text);
 }
@@ -668,9 +668,9 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
     }
 }
 
-std::string_view Session::getHashAlgorithm() const
+nonstd::string_view Session::getHashAlgorithm() const
 {
-    std::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
+    nonstd::string_view digest = HashTraits::getName(CipherSuiteGetHandshakeDigest(metaInfo_.cipherSuite));
     if (metaInfo_.version == ProtocolVersion::TLSv1_2 && digest == "MD5-SHA1")
     {
         return CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite);
@@ -678,7 +678,7 @@ std::string_view Session::getHashAlgorithm() const
     return digest;
 }
 
-void Session::PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+void Session::PRF(nonstd::span<const uint8_t> secret, nonstd::string_view usage, nonstd::span<const uint8_t> rnd1,
                   nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out)
 {
     casket::ThrowIfFalse(metaInfo_.version <= tls::ProtocolVersion::TLSv1_2, "Invalid TLS version");

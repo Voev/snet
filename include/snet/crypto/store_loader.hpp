@@ -1,7 +1,7 @@
 #pragma once
 
-#include <string_view>
 #include <snet/crypto/pointers.hpp>
+#include <casket/nonstd/string_view.hpp>
 #include <casket/utils/noncopyable.hpp>
 
 namespace snet::crypto
@@ -10,7 +10,7 @@ namespace snet::crypto
 class StoreLoader final : public casket::NonCopyable
 {
 public:
-    StoreLoader(std::string_view uri, const UiMethod* meth, void* data);
+    StoreLoader(nonstd::string_view uri, const UiMethod* meth, void* data);
 
     ~StoreLoader() = default;
 

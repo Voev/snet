@@ -1,5 +1,5 @@
 #pragma once
-#include <variant>
+#include <casket/nonstd/variant.hpp>
 
 #include <snet/tls/msgs/client_hello.hpp>
 #include <snet/tls/msgs/server_hello.hpp>
@@ -21,7 +21,7 @@ class Session;
 struct HandshakeMessage final
 {
     using MessageType =
-        std::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, ClientKeyExchange, Certificate,
+        nonstd::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, ClientKeyExchange, Certificate,
                      CertificateRequest, CertificateVerify, Finished, NewSessionTicket, ServerHelloDone>;
 
     /// @todo make 'message' and 'type' more consistent
