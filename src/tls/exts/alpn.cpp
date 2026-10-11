@@ -51,7 +51,7 @@ size_t ALPN::serialize(Side side, nonstd::span<uint8_t> output) const
     return totalLength;
 }
 
-ALPN::ALPN(std::string_view protocol)
+ALPN::ALPN(nonstd::string_view protocol)
     : protocols_(1, std::string(protocol))
 {
 }

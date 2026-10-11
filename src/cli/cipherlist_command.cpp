@@ -27,7 +27,7 @@ public:
 
     ~CipherListCommand() = default;
 
-    void execute(const std::vector<std::string_view>& args) override;
+    void execute(const std::vector<nonstd::string_view>& args) override;
 
     void print(const std::vector<const tls::CipherSuite*>& cipherSuites);
 
@@ -71,7 +71,7 @@ CipherListCommand::CipherListCommand()
     // clang-format on
 }
 
-void CipherListCommand::execute(const std::vector<std::string_view>& args)
+void CipherListCommand::execute(const std::vector<nonstd::string_view>& args)
 {
     parser_.parse(args);
     if (parser_.isUsed("help"))

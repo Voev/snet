@@ -7,12 +7,12 @@
 #include <fstream>
 #include <filesystem>
 #include <typeindex>
-#include <optional>
 #include <stdexcept>
 
 #include <snet/pki/storage_config.hpp>
 
 #include <casket/db/i_database.hpp>
+#include <casket/nonstd/optional.hpp>
 #include <casket/utils/noncopyable.hpp>
 
 namespace snet::pki

@@ -29,7 +29,7 @@ Settings::~Settings() noexcept
 {
 }
 
-void Settings::loadPrivateKey(std::string_view filename)
+void Settings::loadPrivateKey(nonstd::string_view filename)
 {
     crypto::ThrowIfFalse(0 < SSL_CTX_use_PrivateKey_file(ctx_, filename.data(), SSL_FILETYPE_PEM));
 }
@@ -39,7 +39,7 @@ void Settings::usePrivateKey(EVP_PKEY* privateKey)
     crypto::ThrowIfFalse(0 < SSL_CTX_use_PrivateKey(ctx_, privateKey));
 }
 
-void Settings::loadCertificate(std::string_view filename)
+void Settings::loadCertificate(nonstd::string_view filename)
 {
     crypto::ThrowIfFalse(0 < SSL_CTX_use_certificate_file(ctx_, filename.data(), SSL_FILETYPE_PEM));
 }
@@ -79,17 +79,17 @@ void Settings::setOptions(unsigned long options)
     crypto::ThrowIfFalse(0 < SSL_CTX_set_options(ctx_, options));
 }
 
-void Settings::setGroupsList(std::string_view groupsList)
+void Settings::setGroupsList(nonstd::string_view groupsList)
 {
     crypto::ThrowIfFalse(0 < SSL_CTX_set1_groups_list(ctx_, groupsList.data()));
 }
 
-void Settings::setCipherList(std::string_view cipherList)
+void Settings::setCipherList(nonstd::string_view cipherList)
 {
     crypto::ThrowIfFalse(0 < SSL_CTX_set_cipher_list(ctx_, cipherList.data()));
 }
 
-void Settings::setCipherSuites(std::string_view cipherSuites)
+void Settings::setCipherSuites(nonstd::string_view cipherSuites)
 {
     crypto::ThrowIfFalse(0 < SSL_CTX_set_ciphersuites(ctx_, cipherSuites.data()));
 }

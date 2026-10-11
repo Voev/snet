@@ -91,7 +91,7 @@ public:
 
     /// @brief Sets the external host name.
     /// @param hostname The external host name.
-    void setExtHostName(std::string_view hostname);
+    void setExtHostName(nonstd::string_view hostname);
 
     /// @brief Checks if the handshake is done.
     /// @return True if the handshake is done, false otherwise.

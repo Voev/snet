@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <snet/crypto/pointers.hpp>
 #include <casket/utils/noncopyable.hpp>
+#include <casket/nonstd/string_view.hpp>
 
 namespace snet::crypto
 {
@@ -23,7 +24,7 @@ public:
 
     CertManager& loadDirectory(const std::filesystem::path& path);
 
-    CertManager& loadStore(std::string_view uri);
+    CertManager& loadStore(nonstd::string_view uri);
 
     CertManager& setLookupCRLs(X509_STORE_CTX_lookup_crls_fn cb)
     {

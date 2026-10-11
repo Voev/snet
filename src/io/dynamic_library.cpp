@@ -6,7 +6,7 @@
 namespace snet::io
 {
 
-DynamicLibrary::DynamicLibrary(std::string_view path)
+DynamicLibrary::DynamicLibrary(nonstd::string_view path)
     : handle_(::dlopen(path.data(), RTLD_LAZY))
 {
     casket::ThrowIfFalse(handle_, "{}", ::dlerror());
@@ -29,7 +29,7 @@ void DynamicLibrary::unload() noexcept {
     }
 }
 
-void* DynamicLibrary::resolveSymbol(std::string_view symbol) const
+void* DynamicLibrary::resolveSymbol(nonstd::string_view symbol) const
 {
     casket::ThrowIfFalse(isLoaded(), "library is not loaded");
 

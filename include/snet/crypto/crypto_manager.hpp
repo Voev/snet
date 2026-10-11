@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
-#include <string_view>
 #include <snet/crypto/pointers.hpp>
+#include <casket/nonstd/string_view.hpp>
 #include <casket/utils/singleton.hpp>
 
 namespace snet::crypto
@@ -20,17 +20,17 @@ public:
 
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-    crypto::KdfPtr fetchKdf(std::string_view algorithm);
+    crypto::KdfPtr fetchKdf(nonstd::string_view algorithm);
 
-    crypto::MacPtr fetchMac(std::string_view algorithm);
+    crypto::MacPtr fetchMac(nonstd::string_view algorithm);
 
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-    crypto::HashAlg fetchDigest(std::string_view algorithm);
+    crypto::HashAlg fetchDigest(nonstd::string_view algorithm);
 
-    crypto::CipherAlg fetchCipher(std::string_view algorithm);
+    crypto::CipherAlg fetchCipher(nonstd::string_view algorithm);
 
-    KeyCtxPtr createKeyContext(std::string_view algorithm);
+    KeyCtxPtr createKeyContext(nonstd::string_view algorithm);
 
     KeyCtxPtr createKeyContext(Key* key);
 

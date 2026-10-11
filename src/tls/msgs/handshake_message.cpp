@@ -68,7 +68,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
 
 size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session)
 {
-    const size_t payloadSize = std::visit(
+    const size_t payloadSize = nonstd::visit(
         [&output, &session](auto&& msg) -> size_t
         {
             auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);

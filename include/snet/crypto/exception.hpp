@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <string_view>
 #include <system_error>
 #include <stdexcept>
+
+#include <casket/nonstd/string_view.hpp>
 
 #include <snet/crypto/error_code.hpp>
 
@@ -30,7 +31,7 @@ public:
     /// @param[in] ec Error code.
     /// @param[in] what Error message.
     ///
-    CryptoException(std::error_code ec, std::string_view what)
+    CryptoException(std::error_code ec, nonstd::string_view what)
         : std::system_error(ec, what.data())
     {
     }
@@ -53,7 +54,7 @@ inline void ThrowIfTrue(bool expression)
 /// @param[in] expression Result of the expression to check.
 /// @param[in] message Additional message.
 ///
-inline void ThrowIfTrue(bool expression, std::string_view message)
+inline void ThrowIfTrue(bool expression, nonstd::string_view message)
 {
     if (expression)
     {
@@ -78,7 +79,7 @@ inline void ThrowIfFalse(bool expression)
 /// @param[in] expression Result of the expression to check.
 /// @param[in] message Additional message.
 ///
-inline void ThrowIfFalse(bool expression, std::string_view message)
+inline void ThrowIfFalse(bool expression, nonstd::string_view message)
 {
     if (!expression)
     {

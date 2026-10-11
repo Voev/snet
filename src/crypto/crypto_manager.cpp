@@ -46,14 +46,14 @@ CryptoManager::~CryptoManager() noexcept
 
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-MacPtr CryptoManager::fetchMac(std::string_view algorithm)
+MacPtr CryptoManager::fetchMac(nonstd::string_view algorithm)
 {
     auto mac = MacPtr(EVP_MAC_fetch(impl_->libctx, algorithm.data(), nullptr));
     ThrowIfTrue(mac == nullptr);
     return mac;
 }
 
-KdfPtr CryptoManager::fetchKdf(std::string_view algorithm)
+KdfPtr CryptoManager::fetchKdf(nonstd::string_view algorithm)
 {
     auto kdf = KdfPtr(EVP_KDF_fetch(impl_->libctx, algorithm.data(), nullptr));
     ThrowIfTrue(kdf == nullptr);
@@ -62,7 +62,7 @@ KdfPtr CryptoManager::fetchKdf(std::string_view algorithm)
 
 #endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
 
-HashAlg CryptoManager::fetchDigest(std::string_view algorithm)
+HashAlg CryptoManager::fetchDigest(nonstd::string_view algorithm)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto digest = HashPtr(EVP_MD_fetch(impl_->libctx, algorithm.data(), nullptr));
@@ -73,7 +73,7 @@ HashAlg CryptoManager::fetchDigest(std::string_view algorithm)
     return digest;
 }
 
-CipherAlg CryptoManager::fetchCipher(std::string_view algorithm)
+CipherAlg CryptoManager::fetchCipher(nonstd::string_view algorithm)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto cipher = CipherPtr(EVP_CIPHER_fetch(impl_->libctx, algorithm.data(), nullptr));
@@ -84,7 +84,7 @@ CipherAlg CryptoManager::fetchCipher(std::string_view algorithm)
     return cipher;
 }
 
-KeyCtxPtr CryptoManager::createKeyContext(std::string_view algorithm)
+KeyCtxPtr CryptoManager::createKeyContext(nonstd::string_view algorithm)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
     auto ctx = KeyCtxPtr(EVP_PKEY_CTX_new_from_name(impl_->libctx, algorithm.data(), nullptr));

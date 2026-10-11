@@ -34,7 +34,7 @@ public:
      * @param stream the stream to write to
      * @param name identifier
      */
-    DataSinkStream(std::ostream& stream, std::string_view name = "<std::ostream>")
+    DataSinkStream(std::ostream& stream, nonstd::string_view name = "<std::ostream>")
         : m_identifier(name)
         , m_sink(stream)
     {
@@ -51,7 +51,7 @@ public:
      * @param use_binary indicates whether to treat the file
      * as a binary file or not
      */
-    DataSinkStream(std::string_view pathname, bool use_binary = false)
+    DataSinkStream(nonstd::string_view pathname, bool use_binary = false)
         : m_identifier(pathname)
         , m_sink_memory(std::make_unique<std::ofstream>(
               std::string(pathname), use_binary ? std::ios::binary : std::ios::out))

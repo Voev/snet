@@ -165,14 +165,14 @@ CertBuilder& CertBuilder::addExtension(X509Ext* ext)
     return *this;
 }
 
-CertBuilder& CertBuilder::addExtension(int extNid, std::string_view value)
+CertBuilder& CertBuilder::addExtension(int extNid, nonstd::string_view value)
 {
     X509ExtPtr ext(X509V3_EXT_conf_nid(nullptr, &impl_->ctx, extNid, value.data()));
     crypto::ThrowIfTrue(ext == nullptr);
     return addExtension(ext);
 }
 
-CertBuilder& CertBuilder::addExtension(std::string_view name, std::string_view value)
+CertBuilder& CertBuilder::addExtension(nonstd::string_view name, nonstd::string_view value)
 {
     X509ExtPtr ext(X509V3_EXT_conf(nullptr, &impl_->ctx, name.data(), value.data()));
     crypto::ThrowIfTrue(ext == nullptr);

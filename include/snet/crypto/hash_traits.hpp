@@ -12,7 +12,7 @@ namespace snet::crypto
 class HashTraits
 {
 public:
-    static inline bool isAlgorithm(const Hash* hash, std::string_view alg)
+    static inline bool isAlgorithm(const Hash* hash, nonstd::string_view alg)
     {
 #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         return EVP_MD_is_a(hash, alg.data());

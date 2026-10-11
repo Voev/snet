@@ -1,7 +1,7 @@
 #pragma once
-#include <casket/nonstd/span.hpp>
 #include <string>
-#include <string_view>
+#include <casket/nonstd/span.hpp>
+#include <casket/nonstd/string_view.hpp>
 #include <snet/tls/exts/extension.hpp>
 
 namespace snet::tls
@@ -38,7 +38,7 @@ public:
     /// @brief Constructor with hostname.
     ///
     /// @param[in] hostname The server hostname.
-    explicit ServerNameIndicator(std::string_view hostname);
+    explicit ServerNameIndicator(nonstd::string_view hostname);
 
     /// @brief Constructor with input byte buffer.
     ///

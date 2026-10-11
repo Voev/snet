@@ -2,8 +2,8 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-#include <optional>
 #include <snet/crypto/typedefs.hpp>
+#include <casket/nonstd/optional.hpp>
 #include <casket/nonstd/span.hpp>
 #include <snet/crypto/asymm_key.hpp>
 
@@ -91,9 +91,9 @@ public:
 
     bool isSet() const noexcept;
 
-    std::string_view toString() const noexcept;
+    nonstd::string_view toString() const noexcept;
 
-    std::string_view getHashAlgorithm() const noexcept;
+    nonstd::string_view getHashAlgorithm() const noexcept;
 
     int getKeyAlgorithm() const noexcept;
 

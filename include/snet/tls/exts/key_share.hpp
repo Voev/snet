@@ -1,5 +1,7 @@
 #pragma once
 #include <vector>
+#include <casket/nonstd/variant.hpp>
+
 #include <snet/tls/extensions.hpp>
 #include <snet/crypto/group_params.hpp>
 #include <snet/utils/data_reader.hpp>
@@ -171,7 +173,7 @@ public:
     crypto::GroupParams selectedGroup() const;
 
 private:
-    using Type = std::variant<KeyShareClientHello, KeyShareServerHello, KeyShareHelloRetryRequest>;
+    using Type = nonstd::variant<KeyShareClientHello, KeyShareServerHello, KeyShareHelloRetryRequest>;
     Type keyShare_;
 };
 

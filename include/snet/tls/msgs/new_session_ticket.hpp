@@ -1,6 +1,7 @@
 
 #pragma once
-#include <variant>
+
+#include <casket/nonstd/variant.hpp>
 #include <snet/tls/msgs/tls1_new_session_ticket.hpp>
 #include <snet/tls/msgs/tls13_new_session_ticket.hpp>
 #include <snet/tls/version.hpp>
@@ -13,7 +14,7 @@ class Session;
 
 struct NewSessionTicket final
 {
-    std::variant<TLSv1NewSessionTicket, TLSv13NewSessionTicket> message;
+    nonstd::variant<TLSv1NewSessionTicket, TLSv13NewSessionTicket> message;
 
     void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 

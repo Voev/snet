@@ -302,7 +302,7 @@ public:
 
     ~CertVerifyCommand() = default;
 
-    void execute(const std::vector<std::string_view>& args)
+    void execute(const std::vector<nonstd::string_view>& args)
     {
         parser_.parse(args);
         if (parser_.isUsed("help"))

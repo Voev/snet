@@ -77,7 +77,7 @@ SslSessionPtr Connection::getSession()
     return SslSessionPtr{SSL_get1_session(ssl_)};
 }
 
-void Connection::setExtHostName(std::string_view hostname)
+void Connection::setExtHostName(nonstd::string_view hostname)
 {
     crypto::ThrowIfFalse(0 < SSL_set_tlsext_host_name(ssl_, hostname.data()));
 }

@@ -5,10 +5,8 @@
 
 #include <algorithm>
 #include <memory>
-#include <optional>
 #include <set>
 #include <string>
-#include <variant>
 #include <vector>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
@@ -27,6 +25,9 @@
 #include <snet/tls/exts/signature_algorithms.hpp>
 #include <snet/tls/exts/supported_groups.hpp>
 #include <snet/tls/exts/session_ticket_ext.hpp>
+
+#include <casket/nonstd/optional.hpp>
+#include <casket/nonstd/variant.hpp>
 
 namespace snet::tls {
 

@@ -1,10 +1,10 @@
 #pragma once
 #include <chrono>
-#include <optional>
 #include <memory>
 #include <atomic>
 #include <cassert>
 #include <type_traits>
+#include <casket/nonstd/optional.hpp>
 #include <casket/lock_free/lf_hash_table.hpp>
 
 /// @todo: move to casket
@@ -109,22 +109,22 @@ public:
     }
 
     template <typename U = Value>
-    std::enable_if_t<std::is_copy_constructible_v<U>, std::optional<U>> getCopy(const Key& key)
+    std::enable_if_t<std::is_copy_constructible_v<U>, nonstd::optional<U>> getCopy(const Key& key)
     {
         auto* value = get(key);
         if (value)
         {
             return *value;
         }
-        return std::nullopt;
+        return nonstd::nullopt;
     }
 
-    std::optional<Value> take(const Key& key)
+    nonstd::optional<Value> take(const Key& key)
     {
         auto* entry = cache_.get(key);
         if (!entry)
         {
-            return std::nullopt;
+            return nonstd::nullopt;
         }
 
         auto now = Clock::now();
@@ -201,7 +201,7 @@ public:
         return true;
     }
 
-    std::optional<Duration> getRemainingTtl(const Key& key) const
+    nonstd::optional<Duration> getRemainingTtl(const Key& key) const
     {
         auto* entry = cache_.get(key);
         if (!entry)

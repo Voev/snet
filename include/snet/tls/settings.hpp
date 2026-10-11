@@ -31,7 +31,7 @@ public:
 
     /// @brief Loads a private key from a file.
     /// @param filename The filename of the private key.
-    void loadPrivateKey(std::string_view filename);
+    void loadPrivateKey(nonstd::string_view filename);
 
     /// @brief Uses a private key.
     /// @param privateKey The private key.
@@ -39,7 +39,7 @@ public:
 
     /// @brief Loads a certificate from a file.
     /// @param filename The filename of the certificate.
-    void loadCertificate(std::string_view filename);
+    void loadCertificate(nonstd::string_view filename);
 
     /// @brief Uses a certificate.
     /// @param certificate The certificate.
@@ -72,15 +72,15 @@ public:
 
     /// @brief Sets the groups list.
     /// @param groupsList The groups list.
-    void setGroupsList(std::string_view groupsList);
+    void setGroupsList(nonstd::string_view groupsList);
 
     /// @brief Sets the cipher list.
     /// @param cipherList The cipher list.
-    void setCipherList(std::string_view cipherList);
+    void setCipherList(nonstd::string_view cipherList);
 
     /// @brief Sets the cipher suites.
     /// @param cipherSuites The cipher suites.
-    void setCipherSuites(std::string_view cipherSuites);
+    void setCipherSuites(nonstd::string_view cipherSuites);
 
     /// @brief Sets the security level.
     /// @param cipherSuites The security level.

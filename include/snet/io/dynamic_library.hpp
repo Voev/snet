@@ -3,6 +3,7 @@
 #include <memory>
 #include <filesystem>
 #include <type_traits>
+#include <casket/nonstd/string_view.hpp>
 #include <casket/utils/casting.hpp>
 
 namespace snet::io
@@ -11,7 +12,7 @@ namespace snet::io
 class DynamicLibrary final
 {
 public:
-    explicit DynamicLibrary(std::string_view path);
+    explicit DynamicLibrary(nonstd::string_view path);
 
     ~DynamicLibrary() noexcept;
 
@@ -25,13 +26,13 @@ public:
 
     void unload() noexcept;
 
-    void* resolveSymbol(std::string_view symbol) const;
+    void* resolveSymbol(nonstd::string_view symbol) const;
 
     //! \overload T& get(const std::string& symbol_name) const
     template <typename T>
     inline typename std::enable_if<std::is_member_pointer<T>::value || std::is_reference<T>::value,
                                    T>::type
-    get(std::string_view symbol_name) const
+    get(nonstd::string_view symbol_name) const
     {
         return casket::aggressive_ptr_cast<T>(resolveSymbol(symbol_name));
     }
@@ -41,7 +42,7 @@ public:
     inline
         typename std::enable_if<!(std::is_member_pointer<T>::value || std::is_reference<T>::value),
                                 T&>::type
-        get(std::string_view symbol_name) const
+        get(nonstd::string_view symbol_name) const
     {
         return *casket::aggressive_ptr_cast<T*>(resolveSymbol(symbol_name));
     }
@@ -87,7 +88,7 @@ using import_type = typename std::conditional<std::is_object<T>::value, std::sha
 
 
 template <class T>
-inline detail::import_type<T> import_alias(const std::string& path, std::string_view name)
+inline detail::import_type<T> import_alias(const std::string& path, nonstd::string_view name)
 {
     using type = detail::import_type<T>;
 

@@ -4,8 +4,6 @@
 #pragma once
 #include <cstdint>
 #include <vector>
-#include <optional>
-#include <string_view>
 #include <memory>
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/version.hpp>

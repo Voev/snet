@@ -164,7 +164,7 @@ public:
     /// @param[in] rnd1 The first random value.
     /// @param[in] rnd2 The second random value.
     /// @param[out] out The output buffer for the key material.
-    void PRF(nonstd::span<const uint8_t> secret, std::string_view usage, nonstd::span<const uint8_t> rnd1,
+    void PRF(nonstd::span<const uint8_t> secret, nonstd::string_view usage, nonstd::span<const uint8_t> rnd1,
              nonstd::span<const uint8_t> rnd2, nonstd::span<uint8_t> out);
 
     /// @brief Generates the handshake secret using ECDHE key exchange.
@@ -374,7 +374,7 @@ public:
     /// @brief Get the hash algorithm used for handshake.
     ///
     /// @return String view of hash algorithm name.
-    std::string_view getHashAlgorithm() const;
+    nonstd::string_view getHashAlgorithm() const;
 
     /// @brief Get client extensions.
     ///

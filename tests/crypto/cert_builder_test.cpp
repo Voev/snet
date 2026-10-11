@@ -1,4 +1,3 @@
-#include <string_view>
 #include <gtest/gtest.h>
 
 #include <snet/crypto/asymm_key.hpp>

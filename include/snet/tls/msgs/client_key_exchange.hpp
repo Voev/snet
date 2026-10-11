@@ -1,6 +1,8 @@
 #pragma once
-#include <variant>
+
+#include <casket/nonstd/variant.hpp>
 #include <casket/nonstd/span.hpp>
+
 #include <snet/tls/version.hpp>
 #include <snet/tls/meta_info.hpp>
 
@@ -85,7 +87,7 @@ struct ClientEcdhPublic final
 struct ClientKeyExchange final
 {
     /// @brief Variant type representing different key exchange parameters.
-    using Params = std::variant<EncryptedPreMasterSecret, ClientDhPublic, ClientEcdhPublic>;
+    using Params = nonstd::variant<EncryptedPreMasterSecret, ClientDhPublic, ClientEcdhPublic>;
 
     /// @brief Parse a Client Key Exchange message from raw data.
     ///
