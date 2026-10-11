@@ -47,7 +47,7 @@ void ServerHello::parse(nonstd::span<const uint8_t> input)
         auto extensionsLength = reader.peek_uint16_t();
         casket::ThrowIfFalse(extensionsLength == reader.remaining_bytes() - 2,
                              "Invalid extensions length");
-        extensions = reader.get_span_remaining();
+        extensions = reader.get_span_fixed(2 + extensionsLength);
     }
 
     reader.assert_done();
