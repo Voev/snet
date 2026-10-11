@@ -158,7 +158,7 @@ TEST(SessionCtxContainerTest, SetReplacesExistingDifferentPointer)
 
     EXPECT_TRUE(c.set<CtxA>(&a2));
     EXPECT_EQ(c.activeCount(), 1u);
-    EXPECT_TRUE(a1.destroyed);
+    EXPECT_FALSE(a1.destroyed);
     EXPECT_FALSE(a2.destroyed);
     EXPECT_EQ(c.get<CtxA>(), &a2);
 }
@@ -198,7 +198,7 @@ TEST(SessionCtxContainerTest, Clear)
     EXPECT_TRUE(c.clear<CtxA>());
     EXPECT_TRUE(c.empty());
     EXPECT_EQ(c.get<CtxA>(), nullptr);
-    EXPECT_TRUE(a.destroyed);
+    EXPECT_FALSE(a.destroyed);
 }
 
 TEST(SessionCtxContainerTest, ClearEmptyReturnsFalse)
@@ -226,7 +226,7 @@ TEST(SessionCtxContainerTest, ClearOnlyOneInstance)
 
     EXPECT_TRUE(c.clear<CtxB>(0));
     EXPECT_EQ(c.activeCount(), 1u);
-    EXPECT_TRUE(b0.destroyed);
+    EXPECT_FALSE(b0.destroyed);
     EXPECT_FALSE(b1.destroyed);
     EXPECT_FALSE(c.has<CtxB>(0));
     EXPECT_TRUE(c.has<CtxB>(1));

@@ -4,6 +4,8 @@
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
+#include <casket/utils/exception.hpp>
+
 using namespace snet::crypto;
 
 namespace snet::tls
@@ -54,6 +56,7 @@ void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo&
 {
     utils::DataReader reader("ServerKeyExchange", input);
 
+    casket::ThrowIfTrue(metaInfo.cipherSuite == nullptr, "undefined cipher suite");
     auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
 
     if (kex == NID_kx_dhe)
