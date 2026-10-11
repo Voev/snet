@@ -35,22 +35,27 @@ public:
     {
         return fd_;
     }
+
     const std::string& name() const noexcept
     {
         return name_;
     }
+
     uint32_t queueId() const noexcept
     {
         return queueId_;
     }
+
     uint32_t ifindex() const noexcept
     {
         return ifindex_;
     }
+
     bool active() const noexcept
     {
         return active_;
     }
+
     void setActive(bool v) noexcept
     {
         active_ = v;
@@ -60,14 +65,17 @@ public:
     {
         return &rx_;
     }
+
     struct xsk_ring_prod* txRing() noexcept
     {
         return &tx_;
     }
+
     struct xsk_ring_prod* fqRing() noexcept
     {
         return &fq_;
     }
+
     struct xsk_ring_cons* cqRing() noexcept
     {
         return &cq_;
