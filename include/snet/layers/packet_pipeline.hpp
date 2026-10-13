@@ -27,16 +27,22 @@ enum class StageResult
     Pending,
 };
 
+struct PacketContext
+{
+    io::DeviceId ingress{io::kInvalidDevice};
+    io::DeviceId egress{io::kInvalidDevice};
+};
+
 class IPacketStage
 {
 public:
     virtual ~IPacketStage() = default;
 
-    virtual StageResult process(Packet* pkt, io::DeviceId ingress) = 0;
+    virtual StageResult process(Packet* pkt, PacketContext& ctx) = 0;
 
-    virtual StageResult resume(Packet* pkt, io::DeviceId ingress)
+    virtual StageResult resume(Packet* pkt, PacketContext& ctx)
     {
-        return process(pkt, ingress);
+        return process(pkt, ctx);
     }
 };
 
@@ -49,12 +55,14 @@ struct ReadyItem
 class PacketPipeline
 {
 public:
+    using ReadyFn = std::function<void(layers::Packet*, PacketContext&, bool ok)>;
+
     PacketPipeline() = default;
 
     void addStage(std::unique_ptr<IPacketStage> s);
 
     PacketVerdict onPacket(Packet* pkt, io::DeviceId ingress);
-    void onTick(std::vector<ReadyItem>& ready);
+    void onTick(const ReadyFn& onReady);
 
     void clear()
     {
@@ -74,7 +82,7 @@ private:
     struct Pending
     {
         Packet* pkt{nullptr};
-        io::DeviceId ingress{io::kInvalidDevice};
+        PacketContext ctx{};
         size_t stageIndex{0};
         std::chrono::steady_clock::time_point deadline;
     };

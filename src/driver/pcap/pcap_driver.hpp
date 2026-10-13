@@ -59,13 +59,17 @@ public:
     /// @return Status indicating success or failure
     Status interrupt() override;
 
+    virtual size_t deviceCount() const override;
+
+    virtual io::Device* deviceAt(size_t idx) const override;
+
     /// @brief Receives multiple packets in a single operation
     /// @param[out] packet Array of packet pointers to fill
     /// @param[in,out] packetCount On input, maximum number of packets;
     ///                             on output, actual number received
     /// @param[in] maxCount Maximum number of packets to receive
     /// @return RecvStatus indicating result
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) override;
 
     /// @brief Finalizes packet processing and applies verdict
     /// @param[in] packet Packet to finalize
@@ -73,17 +77,7 @@ public:
     /// @return Status indicating success or failure
     Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
 
-    Status transmitPacket(layers::Packet* packet) override;
-
-    /// @brief Injects a raw packet into the network
-    /// @param[in] data Raw packet data buffer
-    /// @param[in] dataLength Length of the data buffer in bytes
-    /// @return Status indicating success or failure
-    Status inject(const uint8_t* data, uint32_t dataLength) override;
-
-    /// @brief Gets the snapshot length (snaplen) for captured packets
-    /// @return Maximum captured packet length in bytes
-    int getSnaplen() const override;
+    Status transmitPacket(layers::Packet* packet, io::DeviceId egress) override;
 
     /// @brief Gets the link layer type of the capture source
     /// @return LinkLayerType enumeration value

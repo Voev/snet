@@ -333,12 +333,6 @@ Status NfQueue::start()
     return Status::Success;
 }
 
-Status NfQueue::interrupt()
-{
-    interrupted_ = true;
-    return Status::Success;
-}
-
 Status NfQueue::stop()
 {
     nlmsghdr* nlh;
@@ -355,12 +349,29 @@ Status NfQueue::stop()
     return Status::Success;
 }
 
+Status NfQueue::interrupt()
+{
+    interrupted_ = true;
+    return Status::Success;
+}
+
+size_t NfQueue::deviceCount() const
+{
+    return 0U;
+}
+
+io::Device* NfQueue::deviceAt(size_t idx) const
+{
+    (void)idx;
+    return nullptr;
+}
+
 layers::LinkLayerType NfQueue::getDataLinkType() const
 {
     return layers::LINKTYPE_RAW;
 }
 
-RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCount, uint16_t maxCount)
+RecvStatus NfQueue::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 {
     RecvStatus rstat{RecvStatus::Ok};
     std::error_code ec;
@@ -368,7 +379,7 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
     uint16_t i{};
     ssize_t ret{};
 
-    for (i = 0; i < maxCount; ++i)
+    for (i = 0; i < max; ++i)
     {
         if (interrupted_)
         {
@@ -422,12 +433,13 @@ RecvStatus NfQueue::receivePackets(layers::Packet** packets, uint16_t* packetCou
             break;
         }
 
-        packets[i] = nfqPacket->asPacket();
+        rx[i].packet = nfqPacket->asPacket();
+        rx[i].ingress = io::kInvalidDevice;
     }
 
-    if (packetCount)
+    if (count)
     {
-        *packetCount = i;
+        *count = i;
     }
 
     return rstat;
@@ -454,16 +466,10 @@ Status NfQueue::finalizePacket(layers::Packet* packet, Verdict verdict)
     return Status::Success;
 }
 
-Status NfQueue::inject(const uint8_t* data, uint32_t dataLength)
-{
-    (void)data;
-    (void)dataLength;
-    return Status::NotSupported;
-}
-
-Status NfQueue::transmitPacket(layers::Packet* packet)
+Status NfQueue::transmitPacket(layers::Packet* packet, io::DeviceId egress)
 {
     (void)packet;
+    (void)egress;
     return Status::NotSupported;
 }
 
@@ -482,11 +488,6 @@ Status NfQueue::getStats(Stats* stats)
 void NfQueue::resetStats()
 {
     memset(&stats_, 0, sizeof(Stats));
-}
-
-int NfQueue::getSnaplen() const
-{
-    return snaplen_;
 }
 
 Status NfQueue::getMsgPoolInfo(io::PacketPoolInfo& info)

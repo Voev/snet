@@ -80,40 +80,25 @@ public:
     /// @return Status indicating success or failure.
     virtual Status interrupt() = 0;
 
-    virtual size_t deviceCount() const
-    {
-        return 0;
-    }
+    virtual size_t deviceCount() const = 0;
 
-    virtual io::Device* deviceAt(size_t idx) const
-    {
-        (void)idx;
-        return nullptr;
-    }
+    virtual io::Device* deviceAt(size_t idx) const = 0;
 
-    /// @brief Receives multiple packets.
-    /// @param[out] rawPacket Array of packet pointers.
-    /// @param[in,out] packetCount On input: max packets; on output: actual received.
-    /// @param[in] maxCount Maximum packets to receive.
-    /// @return RecvStatus indicating result.
-    virtual RecvStatus receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount) = 0;
+    struct RxItem
+    {
+        layers::Packet* packet{nullptr};
+        io::DeviceId ingress{io::kInvalidDevice};
+    };
+
+    virtual RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) = 0;
 
     /// @brief Finalizes packet with verdict.
-    /// @param[in] rawPacket Packet to finalize.
+    /// @param[in] packet Packet to finalize.
     /// @param[in] verdict Processing decision.
     /// @return Status indicating success or failure.
-    virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
+    virtual Status finalizePacket(layers::Packet* packet, Verdict verdict) = 0;
 
-    /// @brief Injects raw packet.
-    /// @param[in] data Packet data buffer.
-    /// @param[in] dataLength Buffer length in bytes.
-    /// @return Status indicating success or failure.
-    virtual Status inject(const uint8_t* data, uint32_t dataLength) = 0;
-
-    /// @brief Transmit a packet.
-    /// @param[in] packet Packet to transmit.
-    /// @return Status indicating success or failure.
-    virtual Status transmitPacket(layers::Packet* packet) = 0;
+    virtual Status transmitPacket(layers::Packet* packet, io::DeviceId egress) = 0;
 
     /// @brief Gets packet pool information.
     /// @param[out] info Structure to fill with pool statistics.
@@ -127,10 +112,6 @@ public:
 
     /// @brief Resets all statistics counters.
     virtual void resetStats() = 0;
-
-    /// @brief Gets snapshot length.
-    /// @return Maximum captured packet length in bytes.
-    virtual int getSnaplen() const = 0;
 
     /// @brief Gets link layer type.
     /// @return LinkLayerType enumeration value.

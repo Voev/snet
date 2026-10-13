@@ -43,22 +43,17 @@ public:
 
     io::Device* deviceAt(size_t idx) const override;
 
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    RecvStatus receivePackets(io::Driver::RxItem* rx, uint16_t* count, uint16_t max) override;
     
     Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
 
-    Status transmitPacket(layers::Packet* packet) override;
-
-    Status inject(const uint8_t* data, uint32_t dataLen) override;
+    Status transmitPacket(layers::Packet* packet, io::DeviceId egress) override;
 
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
     Status getStats(Stats* stats) override;
     
     void resetStats() override;
-
-    /// @todo удалить
-    int getSnaplen() const override;
 
     snet::layers::LinkLayerType getDataLinkType() const override;
 

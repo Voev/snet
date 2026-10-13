@@ -190,15 +190,15 @@ public:
         layers::TcpReassembly tcpReassembly(tcpReassemblyMsgReadyCallback, &manager);
         RecvStatus status{RecvStatus::Ok};
         constexpr uint16_t batchSize = 32;
-        snet::layers::Packet* packets[batchSize] = {};
+        snet::io::Driver::RxItem rx[batchSize] = {};
         uint16_t receivedPackets = 0;
 
         do
         {
-            status = driver->receivePackets(packets, &receivedPackets, batchSize);
+            status = driver->receivePackets(rx, &receivedPackets, batchSize);
             for (uint16_t i = 0; i < receivedPackets; ++i)
             {
-                snet::layers::Packet* packet = packets[i];
+                snet::layers::Packet* packet = rx[i].packet;
                 if (packet)
                 {
                     packet->parse();

@@ -229,26 +229,23 @@ bool AFPacketDriver::findFrame(Instance*& outInst, Instance::RxFrame& outFrame)
     return false;
 }
 
-RecvStatus AFPacketDriver::receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount)
+RecvStatus AFPacketDriver::receivePackets(io::Driver::RxItem* out, uint16_t* count, uint16_t max)
 {
-    if (!rawPacket || !packetCount || maxCount == 0)
+    if (!out || max == 0)
     {
-        if (packetCount)
-            *packetCount = 0;
-        return RecvStatus::Ok;
+        return RecvStatus::Eof;
     }
 
     if (!pool_)
     {
         logError("receivePackets called before configure()");
-        *packetCount = 0;
         return RecvStatus::Error;
     }
 
     uint16_t idx = 0;
     RecvStatus status = RecvStatus::Ok;
 
-    while (idx < maxCount)
+    while (idx < max)
     {
         if (interrupted_.load(std::memory_order_acquire))
         {
@@ -283,10 +280,15 @@ RecvStatus AFPacketDriver::receivePackets(layers::Packet** rawPacket, uint16_t* 
 
         stats_.packetsReceived++;
         wrapper->attach(frame.data, frame.caplen, frame.len, instance, frame.entry);
-        rawPacket[idx++] = wrapper->asPacket();
+        out[idx].packet = wrapper->asPacket();
+        out[idx].ingress = instance->id();
+        idx++;
     }
 
-    *packetCount = idx;
+    if (count)
+    {
+        *count = idx;
+    }
     return status;
 }
 
@@ -312,30 +314,38 @@ Status AFPacketDriver::finalizePacket(layers::Packet* rawPacket, Verdict verdict
     return Status::Success;
 }
 
-/// @todo переписать
-Status AFPacketDriver::transmitPacket(layers::Packet* packet)
-{
-    (void)packet;
-    return Status::NotSupported;
-}
-
-/// @todo добавить DeviceId, чтобы ARP мог слать через нужный интерфейс
-Status AFPacketDriver::inject(const uint8_t* data, uint32_t dataLength)
+Status AFPacketDriver::transmitPacket(layers::Packet* packet, io::DeviceId egress)
 {
     if (instances_.empty())
     {
-        logError("inject: no instances");
+        logError("transmitPacket: no instances");
         return Status::InvalidArgument;
     }
 
-    Instance* egress = instances_.front().get();
-    if (!egress->send(data, dataLength))
+    Instance* instance{nullptr};
+
+    for (size_t i = 0; i < instances_.size(); ++i)
     {
-        logError("inject on %s failed", egress->name().c_str());
+        if (instances_[i]->id() == egress)
+        {
+            instance = instances_[i].get();
+            break;
+        }
+    }
+
+    if (!instance)
+    {
+        logError("transmitPacket: device not found");
+        return Status::NoSuchDevice;
+    }
+
+    if (!instance->send(packet->getData(), packet->getDataLen()))
+    {
+        logError("transmitPacket: failed to transmit");
         return Status::Error;
     }
 
-    stats_.packetsInjected++;
+    stats_.packetsTransmitted++;
     return Status::Success;
 }
 
@@ -369,11 +379,6 @@ void AFPacketDriver::resetStats()
         if (inst->fd() != -1)
             ::getsockopt(inst->fd(), SOL_PACKET, PACKET_STATISTICS, &kstats, &len);
     }
-}
-
-int AFPacketDriver::getSnaplen() const
-{
-    return instances_.empty() ? 0 : static_cast<int>(instances_.front()->snaplen());
 }
 
 snet::layers::LinkLayerType AFPacketDriver::getDataLinkType() const

@@ -7,6 +7,8 @@
 
 #include <snet/io.hpp>
 
+#include <snet/layers/packet_pipeline.hpp>
+
 using namespace casket;
 using namespace casket::opt;
 
@@ -160,10 +162,12 @@ int main(int argc, char* argv[])
         std::cout << "listening... (Ctrl+C to stop)\n";
 
         constexpr uint16_t batchSize = 32;
-        snet::layers::Packet* packets[batchSize];
+        snet::io::Driver::RxItem rx[batchSize];
         uint16_t received = 0;
         RecvStatus recvStatus = RecvStatus::Ok;
         std::uint64_t total = 0;
+
+        snet::layers::PacketPipeline pipeline;
 
         while (!g_stop.load(std::memory_order_relaxed))
         {
@@ -175,26 +179,40 @@ int main(int argc, char* argv[])
             }
 
             received = 0;
-            recvStatus = driver->receivePackets(packets, &received, batchSize);
+            recvStatus = driver->receivePackets(rx, &received, batchSize);
 
             for (uint16_t i = 0; i < received; ++i)
             {
-                snet::layers::Packet* pkt = packets[i];
-                if (!pkt)
-                    continue;
-
-                pkt->parse();
-                std::cout << *pkt << std::endl;
-                ++total;
-
-                (void)driver->finalizePacket(pkt, Verdict::Pass);
+                auto v = pipeline.onPacket(rx[i].packet, rx[i].ingress);
+                switch (v)
+                {
+                case snet::layers::PacketVerdict::Pass:
+                    driver->finalizePacket(rx[i].packet, Verdict::Pass);
+                    break;
+                case snet::layers::PacketVerdict::Drop:
+                case snet::layers::PacketVerdict::Consumed:
+                    driver->finalizePacket(rx[i].packet, Verdict::Block);
+                    break;
+                case snet::layers::PacketVerdict::Pending:
+                    break;
+                }
             }
+
+            pipeline.onTick(
+                [&](snet::layers::Packet* packet, snet::layers::PacketContext& ctx, bool ok)
+                {
+                    if (ok && ctx.egress != snet::io::kInvalidDevice)
+                    {
+                        driver->transmitPacket(packet, ctx.egress);
+                    }
+                    driver->finalizePacket(packet, ok ? Verdict::Pass : Verdict::Block);
+                });
 
             const bool stopReq = g_stop.load(std::memory_order_relaxed);
             switch (handleStatus(recvStatus, stopReq))
             {
             case LoopAction::Continue:
-                if (recvStatus == RecvStatus::NoBuffer ||  recvStatus == RecvStatus::WouldBlock)
+                if (recvStatus == RecvStatus::NoBuffer || recvStatus == RecvStatus::WouldBlock)
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
@@ -210,7 +228,7 @@ int main(int argc, char* argv[])
             }
         }
 
-done:
+    done:
         std::cout << "\nDone. packets=" << total << ", driver status=" << static_cast<int>(recvStatus) << '\n';
     }
     catch (std::exception& e)

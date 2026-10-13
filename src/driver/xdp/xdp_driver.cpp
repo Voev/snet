@@ -450,6 +450,18 @@ Status XdpDriver::interrupt()
     return Status::Success;
 }
 
+size_t XdpDriver::deviceCount() const
+{
+    return 0;
+}
+
+/// @todo implement
+io::Device* XdpDriver::deviceAt(size_t idx) const
+{
+    (void)idx;
+    return nullptr;
+}
+
 bool XdpDriver::setupRlimit()
 {
     struct rlimit r{RLIM_INFINITY, RLIM_INFINITY};
@@ -694,26 +706,22 @@ bool XdpDriver::transmitFrame(XdpInstance* egress, uint64_t frameAddr, uint32_t 
     return false;
 }
 
-RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount)
+RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 {
-    if (!rawPacket || !packetCount || maxCount == 0)
+    if (!rx || max == 0)
     {
-        if (packetCount)
-            *packetCount = 0;
-        return RecvStatus::Ok;
+        return RecvStatus::Eof;
     }
 
     if (!pool_ || instances_.empty())
     {
         logError("XdpDriver: receivePackets called before start()");
-        *packetCount = 0;
         return RecvStatus::Error;
     }
 
     if (interrupted_.load(std::memory_order_acquire))
     {
         interrupted_.store(false, std::memory_order_release);
-        *packetCount = 0;
         return RecvStatus::Interrupted;
     }
 
@@ -726,7 +734,7 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t*
 
     uint16_t idx = 0;
     RecvStatus status = RecvStatus::Ok;
-    const uint16_t budget = std::min<uint16_t>(maxCount, static_cast<uint16_t>(batchSize_));
+    const uint16_t budget = std::min<uint16_t>(max, static_cast<uint16_t>(batchSize_));
 
     const size_t nInst = instances_.size();
     for (size_t tried = 0; tried < nInst && idx < budget; ++tried)
@@ -758,7 +766,9 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t*
             const uint32_t cap = d->len;
 
             wrapper->attach(data, cap, cap, inst, d->addr);
-            rawPacket[idx++] = wrapper->asPacket();
+            rx[idx].packet = wrapper->asPacket();
+            rx[idx].ingress = io::kInvalidDevice;
+            idx++;
             stats_.packetsReceived++;
         }
 
@@ -794,7 +804,10 @@ RecvStatus XdpDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t*
     }
 
 done:
-    *packetCount = idx;
+    if (count)
+    {
+        *count = idx;
+    }
     return status;
 }
 
@@ -839,13 +852,14 @@ Status XdpDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdic
     return Status::Success;
 }
 
-Status XdpDriver::transmitPacket(layers::Packet* packet)
+Status XdpDriver::transmitPacket(layers::Packet* packet, io::DeviceId egress)
 {
     (void)packet;
+    (void)egress;
     return Status::NotSupported;
 }
 
-Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
+/*Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
 {
     if (instances_.empty())
         return Status::InvalidArgument;
@@ -880,7 +894,7 @@ Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
 
     stats_.packetsInjected++;
     return Status::Success;
-}
+}*/
 
 Status XdpDriver::getStats(Stats* stats)
 {
@@ -892,11 +906,6 @@ Status XdpDriver::getStats(Stats* stats)
 void XdpDriver::resetStats()
 {
     stats_ = Stats{};
-}
-
-int XdpDriver::getSnaplen() const
-{
-    return static_cast<int>(snaplen_);
 }
 
 snet::layers::LinkLayerType XdpDriver::getDataLinkType() const

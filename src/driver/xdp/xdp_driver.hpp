@@ -80,6 +80,30 @@ public:
     /// @return Status of the operation.
     Status interrupt() override;
 
+    virtual size_t deviceCount() const override;
+
+    virtual io::Device* deviceAt(size_t idx) const override;
+
+    /// @brief Receives packets.
+    /// @param[out] packet Array of packet pointers to fill.
+    /// @param[out] packetCount Number of packets received.
+    /// @param[in] maxCount Maximum number of packets to receive.
+    /// @return Receive status.
+    RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) override;
+
+    /// @brief Finalizes a packet with a verdict.
+    /// @param[in] packet Packet to finalize.
+    /// @param[in] verdict Verdict for the packet.
+    /// @return Status of the operation.
+    Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
+
+    Status transmitPacket(layers::Packet* packet, io::DeviceId egress) override;
+
+    /// @brief Retrieves packet pool information.
+    /// @param[out] info Packet pool info to fill.
+    /// @return Status of the operation.
+    Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
+
     /// @brief Retrieves driver statistics.
     /// @param[out] stats Pointer to stats structure to fill.
     /// @return Status of the operation.
@@ -88,39 +112,9 @@ public:
     /// @brief Resets driver statistics.
     void resetStats() override;
 
-    /// @brief Returns the snapshot length.
-    /// @return Snapshot length.
-    int getSnaplen() const override;
-
     /// @brief Returns the data link type.
     /// @return Data link type.
     snet::layers::LinkLayerType getDataLinkType() const override;
-
-    /// @brief Receives packets.
-    /// @param[out] packet Array of packet pointers to fill.
-    /// @param[out] packetCount Number of packets received.
-    /// @param[in] maxCount Maximum number of packets to receive.
-    /// @return Receive status.
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
-
-    /// @brief Finalizes a packet with a verdict.
-    /// @param[in] rawPacket Packet to finalize.
-    /// @param[in] verdict Verdict for the packet.
-    /// @return Status of the operation.
-    Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
-
-    Status transmitPacket(layers::Packet* packet) override;
-
-    /// @brief Injects a packet into the driver.
-    /// @param[in] data Pointer to packet data.
-    /// @param[in] dataLen Length of packet data.
-    /// @return Status of the operation.
-    Status inject(const uint8_t* data, uint32_t dataLen) override;
-
-    /// @brief Retrieves packet pool information.
-    /// @param[out] info Packet pool info to fill.
-    /// @return Status of the operation.
-    Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
 private:
     /// @brief One endpoint as parsed from the input string.

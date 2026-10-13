@@ -16,9 +16,12 @@ void PacketPipeline::addStage(std::unique_ptr<IPacketStage> s)
 
 PacketVerdict PacketPipeline::onPacket(Packet* pkt, io::DeviceId ingress)
 {
+    PacketContext ctx;
+    ctx.ingress = ingress;
+
     for (size_t i = 0; i < stages_.size(); ++i)
     {
-        switch (stages_[i]->process(pkt, ingress))
+        switch (stages_[i]->process(pkt, ctx))
         {
         case StageResult::Continue:
             break;
@@ -27,14 +30,14 @@ PacketVerdict PacketPipeline::onPacket(Packet* pkt, io::DeviceId ingress)
         case StageResult::Drop:
             return PacketVerdict::Drop;
         case StageResult::Pending:
-            pending_.push_back({pkt, ingress, i, Clock::now() + kPendingTimeout});
+            pending_.push_back({pkt, ctx, i, Clock::now() + kPendingTimeout});
             return PacketVerdict::Pending;
         }
     }
     return PacketVerdict::Pass;
 }
 
-void PacketPipeline::onTick(std::vector<ReadyItem>& ready)
+void PacketPipeline::onTick(const ReadyFn& onReady)
 {
     const auto now = Clock::now();
     std::vector<Pending> stillPending;
@@ -48,7 +51,7 @@ void PacketPipeline::onTick(std::vector<ReadyItem>& ready)
 
         while (i < stages_.size())
         {
-            auto r = (i == p.stageIndex) ? stages_[i]->resume(p.pkt, p.ingress) : stages_[i]->process(p.pkt, p.ingress);
+            auto r = (i == p.stageIndex) ? stages_[i]->resume(p.pkt, p.ctx) : stages_[i]->process(p.pkt, p.ctx);
 
             if (r == StageResult::Continue)
             {
@@ -58,9 +61,7 @@ void PacketPipeline::onTick(std::vector<ReadyItem>& ready)
             if (r == StageResult::Pending)
             {
                 if (now >= p.deadline)
-                {
                     fail = true;
-                }
                 else
                 {
                     p.stageIndex = i;
@@ -76,9 +77,9 @@ void PacketPipeline::onTick(std::vector<ReadyItem>& ready)
             done = true;
 
         if (done)
-            ready.push_back({p.pkt, true});
+            onReady(p.pkt, p.ctx, true);
         else if (fail)
-            ready.push_back({p.pkt, false});
+            onReady(p.pkt, p.ctx, false);
     }
 
     pending_ = std::move(stillPending);

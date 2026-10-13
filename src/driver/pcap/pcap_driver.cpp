@@ -160,7 +160,18 @@ Status Pcap::interrupt()
     return Status::Success;
 }
 
-RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount, uint16_t maxCount)
+size_t Pcap::deviceCount() const
+{
+    return 0;
+}
+
+io::Device* Pcap::deviceAt(size_t idx) const
+{
+    (void)idx;
+    return nullptr;
+}
+
+RecvStatus Pcap::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 {
     RecvStatus rstat{RecvStatus::Ok};
     struct pcap_pkthdr* pcaphdr{nullptr};
@@ -174,7 +185,7 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
         return RecvStatus::Error;
     }
 
-    for (i = 0; i < maxCount; ++i)
+    for (i = 0; i < max; ++i)
     {
         if (interrupted_)
         {
@@ -251,12 +262,13 @@ RecvStatus Pcap::receivePackets(layers::Packet** packets, uint16_t* packetCount,
         pcapPacket->setFromPcap(*pcaphdr, data);
         stats_.packetsReceived++;
 
-        packets[i] = pcapPacket->asPacket();
+        rx[i].packet = pcapPacket->asPacket();
+        rx[i].ingress = io::kInvalidDevice;
     }
 
-    if (packetCount)
+    if (count)
     {
-        *packetCount = i;
+        *count = i;
     }
     return rstat;
 }
@@ -270,26 +282,11 @@ Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)
     return Status::Success;
 }
 
-Status Pcap::transmitPacket(layers::Packet* packet)
+Status Pcap::transmitPacket(layers::Packet* packet, io::DeviceId egress)
 {
     (void)packet;
+    (void)egress;
     return Status::NotSupported;
-}
-
-Status Pcap::inject(const uint8_t* data, uint32_t dataLength)
-{
-    if (0 > pcap_inject(handle_, data, dataLength))
-    {
-        return Status::Error;
-    }
-
-    stats_.packetsInjected++;
-    return Status::Success;
-}
-
-int Pcap::getSnaplen() const
-{
-    return snaplen_;
 }
 
 layers::LinkLayerType Pcap::getDataLinkType() const
