@@ -1,112 +1,125 @@
 #pragma once
 #include <string>
 #include <cstdint>
-#include "afpacket_types.hpp"
 
-#include <linux/if_packet.h>
+#include <snet/io/device.hpp>
+
+#include "afpacket_types.hpp"
+#include "afpacket_fanout.hpp"
 
 namespace snet::driver
 {
 
-struct RingEntry
-{
-    uint8_t* raw{nullptr};
-    RingEntry* next{nullptr};
-};
-
-struct Ring
-{
-    tpacket_req layout{};
-    uint32_t size{0};
-    void* start{nullptr};
-    RingEntry* entries{nullptr};
-    RingEntry* cursor{nullptr};
-};
-
 class AFPacketDriver;
 
-class Instance final
+class Instance final : public io::Device
 {
 public:
-    explicit Instance(AFPacketDriver& driver);
+    explicit Instance(AFPacketDriver& driver, io::DeviceId id);
+
     ~Instance() noexcept;
 
     Instance(const Instance&) = delete;
+
     Instance& operator=(const Instance&) = delete;
 
-    bool create(const std::string& name);
+    io::DeviceId id() const noexcept override
+    {
+        return id_;
+    }
 
-    void destroy();
+    const std::string& name() const noexcept override
+    {
+        return name_;
+    }
+
+    uint32_t ifindex() const noexcept override
+    {
+        return index_;
+    }
+
+    const layers::MacAddress& mac() const noexcept override
+    {
+        return mac_;
+    }
+
+    uint32_t mtu() const noexcept override
+    {
+        return mtu_;
+    }
+
+    uint32_t snaplen() const noexcept override
+    {
+        return actualSnaplen_;
+    }
+
+    bool up() const noexcept override
+    {
+        return up_;
+    }
 
     int fd() const noexcept
     {
         return fd_;
     }
-    uint32_t index() const noexcept
-    {
-        return index_;
-    }
-    uint32_t snaplen() const noexcept
-    {
-        return actualSnaplen_;
-    }
-    uint32_t frameSize() const noexcept
-    {
-        return tpFrameSize_;
-    }
-    uint32_t hdrLen() const noexcept
-    {
-        return tpHdrlen_;
-    }
-    int mtu() const noexcept
-    {
-        return mtu_;
-    }
-    bool active() const noexcept
-    {
-        return active_;
-    }
-    void setActive(bool v) noexcept
-    {
-        active_ = v;
-    }
-    const std::string& name() const noexcept
-    {
-        return name_;
-    }
 
-    void setFrameSize(uint32_t v) noexcept
+    bool send(const uint8_t* data, size_t length) noexcept override;
+
+    bool create(const std::string& name);
+    void destroy();
+
+    struct RingConfig
     {
-        tpFrameSize_ = v;
-    }
-    void setActualSnaplen(uint32_t v) noexcept
-    {
-        actualSnaplen_ = v;
-    }
-    void setBuffer(void* buf) noexcept
-    {
-        buffer_ = buf;
-    }
-    void setRingSizeHint(uint32_t v) noexcept
-    {
-        ringSizeHint_ = v;
-    }
-    uint32_t ringSizeHint() const noexcept
-    {
-        return ringSizeHint_;
-    }
+        uint32_t ringSizeHint{0};
+        uint32_t snaplen{0};
+        bool useTxRing{false};
+    };
+    bool createRings(const RingConfig& cfg);
 
     bool bindTo(int protocol);
 
-    Instance* peer{nullptr};
-    Ring rxRing;
-    Ring txRing;
+    bool configureFanout(afpacket::Fanout::Type fanoutType, afpacket::Fanout::Flags fanoutFlags);
 
-    uint32_t tpVersion{0};
-    uint32_t tpReserve{0};
+    enum class RxStatus
+    {
+        Ok,
+        NoPacket,
+        Corrupt
+    };
+
+    struct RxFrame
+    {
+        uint8_t* data{nullptr};
+        uint32_t caplen{0};
+        uint32_t len{0};
+        RingEntry* entry{nullptr};
+    };
+
+    RxStatus receive(RxFrame& out) noexcept;
+    void releaseFrame(RingEntry* entry) noexcept;
+    void releaseOutstandingFrames() noexcept;
+
+    uint32_t rxFrameCount() const noexcept
+    {
+        return rxRing_.layout.tp_frame_nr;
+    }
+
+private:
+    bool calculateFrameSize(uint32_t snaplen);
+    bool calculateLayout(tpacket_req& layout, int order) const;
+    bool createRxRing();
+    bool createTxRing();
+    bool mmapRings();
+    bool setupRing(Ring& ring);
+
+    bool sendRing(const uint8_t* data, size_t length) noexcept;
+    bool sendDirect(const uint8_t* data, size_t length) noexcept;
 
 private:
     AFPacketDriver& driver_;
+    io::DeviceId id_{io::kInvalidDevice};
+    layers::MacAddress mac_{};
+    std::string name_;
     int fd_{-1};
     uint32_t index_{0};
     uint32_t tpReserve_{0};
@@ -114,10 +127,14 @@ private:
     uint32_t tpHdrlen_{0};
     uint32_t actualSnaplen_{0};
     uint32_t ringSizeHint_{0};
-    int mtu_{0};
-    bool active_{false};
+    uint32_t snaplenCfg_{0};
+    uint32_t mtu_{0};
+    uint32_t macoff_{0};
+    bool up_{false};
+    bool useTxRing_{false};
     void* buffer_{nullptr};
-    std::string name_;
+    Ring rxRing_{};
+    Ring txRing_{};
 };
 
 } // namespace snet::driver

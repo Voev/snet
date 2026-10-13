@@ -80,12 +80,6 @@ public:
     /// @return Status of the operation.
     Status interrupt() override;
 
-    /// @brief Injects a packet into the driver.
-    /// @param[in] data Pointer to packet data.
-    /// @param[in] dataLen Length of packet data.
-    /// @return Status of the operation.
-    Status inject(const uint8_t* data, uint32_t dataLen) override;
-
     /// @brief Retrieves driver statistics.
     /// @param[out] stats Pointer to stats structure to fill.
     /// @return Status of the operation.
@@ -114,6 +108,14 @@ public:
     /// @param[in] verdict Verdict for the packet.
     /// @return Status of the operation.
     Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
+
+    Status transmitPacket(layers::Packet* packet) override;
+
+    /// @brief Injects a packet into the driver.
+    /// @param[in] data Pointer to packet data.
+    /// @param[in] dataLen Length of packet data.
+    /// @return Status of the operation.
+    Status inject(const uint8_t* data, uint32_t dataLen) override;
 
     /// @brief Retrieves packet pool information.
     /// @param[out] info Packet pool info to fill.

@@ -64,18 +64,20 @@ public:
     /// @return RecvStatus indicating result
     RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
 
-    /// @brief Injects a raw packet through Netfilter
-    /// @param[in] data Raw packet data buffer
-    /// @param[in] data_len Length of the data buffer in bytes
-    /// @return Status indicating success or failure
-    Status inject(const uint8_t* data, uint32_t data_len) override;
-
     /// @brief Finalizes packet processing with verdict
     /// @param[in] packet Packet to finalize
     /// @param[in] verdict Processing decision (ACCEPT, DROP, STOLEN, etc.)
     /// @return Status indicating success or failure
     /// @note Must be called for each packet received via receivePacket/receivePackets
     Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
+
+    Status transmitPacket(layers::Packet* packet) override;
+
+    /// @brief Injects a raw packet through Netfilter
+    /// @param[in] data Raw packet data buffer
+    /// @param[in] data_len Length of the data buffer in bytes
+    /// @return Status indicating success or failure
+    Status inject(const uint8_t* data, uint32_t data_len) override;
 
     /// @brief Gets the snapshot length (snaplen) for captured packets
     /// @return Maximum captured packet length in bytes

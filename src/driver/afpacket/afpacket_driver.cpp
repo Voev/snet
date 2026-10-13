@@ -13,7 +13,6 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -25,7 +24,6 @@
 #endif
 
 #include <pcap.h>
-#include <pthread.h>
 
 using namespace casket::opt;
 using namespace snet::io;
@@ -33,44 +31,12 @@ using namespace snet::io;
 namespace snet::driver
 {
 
-bool AFPacketDriver::applyFilter()
-{
-    if (filter_.empty())
-    {
-        return true;
-    }
-
-    struct bpf_program fcode;
-
-    pcap_t* pcap = pcap_open_dead(DLT_EN10MB, snaplen_);
-    if (pcap == nullptr)
-    {
-        logError("AFPacketDriver: pcap_open_dead failed");
-        return false;
-    }
-
-    if (pcap_compile(pcap, &fcode, filter_.c_str(), 1, PCAP_NETMASK_UNKNOWN) == -1)
-    {
-        logError("AFPacketDriver: pcap_compile failed: %s", pcap_geterr(pcap));
-        pcap_close(pcap);
-        return false;
-    }
-
-    pcap_close(pcap);
-
-    pcap_freecode(&fcode_);
-    fcode_ = fcode;
-    return true;
-}
-
 AFPacketDriver::AFPacketDriver(const io::DriverSpec& config)
     : DriverBase(config)
 {
 }
 
-AFPacketDriver::~AFPacketDriver() noexcept
-{
-}
+AFPacketDriver::~AFPacketDriver() noexcept = default;
 
 std::shared_ptr<io::Driver> AFPacketDriver::create(const io::DriverSpec& config)
 {
@@ -108,14 +74,13 @@ Status AFPacketDriver::declareOptions(io::Config& config)
     config.addDriverOption(OptionBuilder("bpf_filter", Value(&filter_))
         .setDescription("BPF filter string")
         .build());
-
     // clang-format on
     return Status::Success;
 }
 
 Status AFPacketDriver::configure(const snet::io::Config& config)
 {
-    snaplen_ = config.getSnaplen();
+    snaplen_ = static_cast<size_t>(config.getSnaplen());
     timeoutMs_ = config.getTimeout();
     if (timeoutMs_ == 0)
         timeoutMs_ = -1;
@@ -157,106 +122,22 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
         return Status::InvalidArgument;
     }
 
+    io::DeviceId id{0};
     for (const auto& name : devices_)
     {
-        auto inst = std::make_unique<Instance>(*this);
+        auto inst = std::make_unique<Instance>(*this, id++);
         if (!inst->create(name))
             return Status::NoSuchDevice;
         instances_.push_back(std::move(inst));
     }
 
-    if (instances_.size() == 1)
-    {
-        instances_[0]->peer = instances_[0].get();
-    }
-    else
-    {
-        for (size_t i = 0; i + 1 < instances_.size(); i += 2)
-        {
-            instances_[i]->peer = instances_[i + 1].get();
-            instances_[i + 1]->peer = instances_[i].get();
-        }
-    }
-
-    uint32_t numRings = 0;
-    for (auto& i : instances_)
-        numRings += (i->peer && useTxRing_) ? 2 : 1;
-
     const uint32_t totalBytes = bufferSizeMb_ * 1024 * 1024;
-    const uint32_t ringSize = totalBytes / numRings;
+    const uint32_t perDevice = totalBytes / static_cast<uint32_t>(instances_.size());
 
     for (auto& inst : instances_)
     {
-        inst->setRingSizeHint(ringSize);
-        if (!calculateFrameSize(*inst))
-            return Status::Error;
-    }
-
-    for (auto& inst : instances_)
-    {
-        // --- RX ring ---
-        bool rxCreated = false;
-        for (int order = kDefaultOrder; order >= 0; --order)
-        {
-            tpacket_req layout{};
-            if (!calculateLayout(*inst, layout, order))
-                return Status::Error;
-
-            if (::setsockopt(inst->fd(), SOL_PACKET, PACKET_RX_RING, &layout, sizeof(layout)) == 0)
-            {
-                inst->rxRing.layout = layout;
-                inst->rxRing.size = layout.tp_block_size * layout.tp_block_nr;
-                rxCreated = true;
-                break;
-            }
-            if (errno == ENOMEM)
-            {
-                logInfo("RX ring allocation on %s failed with order %d, retrying...", inst->name().c_str(), order);
-                continue;
-            }
-            logError("couldn't create RX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
-            return Status::Error;
-        }
-        if (!rxCreated)
-        {
-            logError("couldn't allocate enough memory for RX ring on %s", inst->name().c_str());
-            return Status::NoMemory;
-        }
-
-        // --- TX ring ---
-        if (inst->peer && useTxRing_)
-        {
-            bool txCreated = false;
-            for (int order = kDefaultOrder; order >= 0; --order)
-            {
-                tpacket_req layout{};
-                if (!calculateLayout(*inst, layout, order))
-                    return Status::Error;
-
-                if (::setsockopt(inst->fd(), SOL_PACKET, PACKET_TX_RING, &layout, sizeof(layout)) == 0)
-                {
-                    inst->txRing.layout = layout;
-                    inst->txRing.size = layout.tp_block_size * layout.tp_block_nr;
-                    txCreated = true;
-                    break;
-                }
-                if (errno == ENOMEM)
-                    continue;
-                logError("couldn't create TX ring on %s: %s", inst->name().c_str(), std::strerror(errno));
-                return Status::Error;
-            }
-            if (!txCreated)
-            {
-                logError("couldn't allocate enough memory for TX ring on %s", inst->name().c_str());
-                return Status::NoMemory;
-            }
-        }
-
-        if (!mmapRings(*inst))
-            return Status::Error;
-        if (!setupRing(inst->rxRing))
-            return Status::Error;
-        if (inst->txRing.size && !setupRing(inst->txRing))
+        Instance::RingConfig cfg{perDevice, static_cast<uint32_t>(snaplen_), useTxRing_};
+        if (!inst->createRings(cfg))
             return Status::Error;
     }
 
@@ -264,7 +145,7 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
     if (poolSize == 0)
     {
         for (auto& i : instances_)
-            poolSize += i->rxRing.layout.tp_frame_nr;
+            poolSize += i->rxFrameCount();
         poolSize /= 10;
         if (poolSize == 0)
             poolSize = 1;
@@ -273,7 +154,8 @@ Status AFPacketDriver::configure(const snet::io::Config& config)
     pool_ = std::make_unique<AFPacketPool>(poolSize);
     currInstanceIdx_ = 0;
 
-    applyFilter();
+    if (!applyFilter())
+        return Status::Error;
 
     return Status::Success;
 }
@@ -287,44 +169,16 @@ Status AFPacketDriver::start()
     }
 
     for (auto& inst : instances_)
-        if (!startInstance(*inst))
+    {
+        if (!inst->bindTo(ETH_P_ALL))
             return Status::Error;
+
+        if (fanoutEnabled_ && !inst->configureFanout(fanoutType_, fanoutFlags_))
+            return Status::Error;
+    }
 
     resetStats();
     return Status::Success;
-}
-
-bool AFPacketDriver::startInstance(Instance& inst)
-{
-    struct sockaddr_ll sll{};
-    sll.sll_family = AF_PACKET;
-    sll.sll_ifindex = static_cast<int>(inst.index());
-    sll.sll_protocol = htons(ETH_P_ALL);
-
-    if (::bind(inst.fd(), reinterpret_cast<sockaddr*>(&sll), sizeof(sll)) == -1)
-    {
-        logError("bind(%s) to ETH_P_ALL failed: %s", inst.name().c_str(), std::strerror(errno));
-        return false;
-    }
-
-    if (fanoutEnabled_ && !configureFanout(inst))
-        return false;
-
-    inst.setActive(true);
-    return true;
-}
-
-bool AFPacketDriver::configureFanout(Instance& inst)
-{
-    afpacket::Fanout fanout(fanoutType_, fanoutFlags_, static_cast<uint16_t>(inst.index()));
-    const uint32_t arg = fanout.value();
-
-    if (::setsockopt(inst.fd(), SOL_PACKET, PACKET_FANOUT, &arg, sizeof(arg)) == -1)
-    {
-        logError("could not configure packet fanout on %s: %s", inst.name().c_str(), std::strerror(errno));
-        return false;
-    }
-    return true;
 }
 
 Status AFPacketDriver::stop()
@@ -332,7 +186,6 @@ Status AFPacketDriver::stop()
     updateHwStats();
     releaseAllOutstandingFrames();
     pool_.reset();
-
     instances_.clear();
     currInstanceIdx_ = 0;
     return Status::Success;
@@ -344,103 +197,39 @@ Status AFPacketDriver::interrupt()
     return Status::Success;
 }
 
-Status AFPacketDriver::inject(const uint8_t* data, uint32_t dataLen)
+size_t AFPacketDriver::deviceCount() const
 {
+    return instances_.size();
+}
+
+io::Device* AFPacketDriver::deviceAt(size_t idx) const
+{
+    return idx < instances_.size() ? instances_[idx].get() : nullptr;
+}
+
+bool AFPacketDriver::findFrame(Instance*& outInst, Instance::RxFrame& outFrame)
+{
+    outInst = nullptr;
     if (instances_.empty())
-    {
-        logError("no instances to inject from");
-        return Status::InvalidArgument;
-    }
-    Instance* egress = instances_.front().get();
-    if (!transmitPacket(egress, data, dataLen))
-    {
-        logError("error sending packet via %s", egress->name().c_str());
-        return Status::Error;
-    }
-    stats_.packetsInjected++;
-    return Status::Success;
-}
+        return false;
 
-bool AFPacketDriver::transmitPacket(Instance* egress, const uint8_t* data, uint32_t len)
-{
-    if (!egress)
-        return true;
-
-    if (egress->txRing.size)
+    const size_t n = instances_.size();
+    for (size_t i = 0; i < n; ++i)
     {
-        auto* entry = egress->txRing.cursor;
-        if (!entry)
-            return false;
+        const size_t idx = (currInstanceIdx_ + 1 + i) % n;
+        auto* inst = instances_[idx].get();
 
-        auto* hdr = reinterpret_cast<tpacket2_hdr*>(entry->raw);
-        if (hdr->tp_status != TP_STATUS_AVAILABLE)
+        if (inst->receive(outFrame) == Instance::RxStatus::Ok)
         {
-            logError("TX ring on %s is full", egress->name().c_str());
-            return false;
-        }
-
-        std::memcpy(entry->raw + SNET_TPACKET_ALIGN(egress->hdrLen()), data, len);
-        hdr->tp_len = len;
-        hdr->tp_status = TP_STATUS_SEND_REQUEST;
-
-        if (::send(egress->fd(), nullptr, 0, 0) < 0)
-        {
-            logError("send() via TX ring on %s: %s", egress->name().c_str(), std::strerror(errno));
-            return false;
-        }
-        egress->txRing.cursor = entry->next;
-    }
-    else
-    {
-        while (::send(egress->fd(), data, len, 0) < 0)
-        {
-            if (errno == ENOBUFS)
-            {
-                struct pollfd pfd{};
-                pfd.fd = egress->fd();
-                pfd.events = POLLOUT;
-                if (::poll(&pfd, 1, 10) > 0 && (pfd.revents & POLLOUT))
-                    continue;
-            }
-            logError("error sending data over socket %s: %s", egress->name().c_str(), std::strerror(errno));
-            return false;
+            currInstanceIdx_ = idx;
+            outInst = inst;
+            return true;
         }
     }
-    return true;
+    return false;
 }
 
-Status AFPacketDriver::getStats(Stats* stats)
-{
-    updateHwStats();
-    if (stats)
-        *stats = stats_;
-    return Status::Success;
-}
-
-void AFPacketDriver::resetStats()
-{
-    stats_ = Stats{};
-
-    struct tpacket_stats kstats{};
-    socklen_t len = sizeof(kstats);
-    for (auto& inst : instances_)
-    {
-        if (inst->fd() != -1)
-            ::getsockopt(inst->fd(), SOL_PACKET, PACKET_STATISTICS, &kstats, &len);
-    }
-}
-
-int AFPacketDriver::getSnaplen() const
-{
-    return instances_.empty() ? 0 : static_cast<int>(instances_.front()->snaplen());
-}
-
-snet::layers::LinkLayerType AFPacketDriver::getDataLinkType() const
-{
-    return snet::layers::LinkLayerType::LINKTYPE_ETHERNET;
-}
-
-RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount)
+RecvStatus AFPacketDriver::receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount)
 {
     if (!rawPacket || !packetCount || maxCount == 0)
     {
@@ -476,8 +265,9 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
             break;
         }
 
-        RingEntry* entry = findPacket();
-        if (!entry)
+        Instance* instance = nullptr;
+        Instance::RxFrame frame{};
+        if (!findFrame(instance, frame))
         {
             pool_->release(wrapper);
             if (idx != 0)
@@ -491,57 +281,8 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
             continue;
         }
 
-        Instance* instance = instances_[currInstanceIdx_].get();
-        auto* hdr = reinterpret_cast<tpacket2_hdr*>(entry->raw);
-
-        const uint32_t tpLen = hdr->tp_len;
-        const uint32_t tpMac = hdr->tp_mac;
-        uint32_t tpSnaplen = hdr->tp_snaplen;
-
-        if (tpMac + tpSnaplen > instance->rxRing.layout.tp_frame_size)
-        {
-            logError("corrupted frame on %s (MAC %u + CapLen %u > FrameSize %u)",
-                     instance->name().c_str(),
-                     tpMac,
-                     tpSnaplen,
-                     instance->rxRing.layout.tp_frame_size);
-            hdr->tp_status = TP_STATUS_KERNEL;
-            pool_->release(wrapper);
-            status = RecvStatus::Error;
-            break;
-        }
-
-        uint8_t* data = entry->raw + tpMac;
-
-        if ((hdr->tp_vlan_tci || (hdr->tp_status & TP_STATUS_VLAN_VALID)) &&
-            tpSnaplen >= static_cast<uint32_t>(kVlanOffset))
-        {
-            data -= kVlanTagLen;
-            std::memmove(data, data + kVlanTagLen, kVlanOffset);
-
-            auto* tag = reinterpret_cast<VlanTag*>(data + kVlanOffset);
-            tag->tpid = (hdr->tp_vlan_tpid && (hdr->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? htons(hdr->tp_vlan_tpid)
-                                                                                            : htons(ETH_P_8021Q);
-            tag->tci = htons(hdr->tp_vlan_tci);
-
-            tpSnaplen += kVlanTagLen;
-        }
-
-        if (fcode_.bf_insns && bpf_filter(fcode_.bf_insns, data, tpLen, tpSnaplen) == 0)
-        {
-            stats_.packetsFiltered++;
-            transmitPacket(instance->peer, data, tpSnaplen);
-
-            auto* hdr = reinterpret_cast<tpacket2_hdr*>(entry->raw);
-            hdr->tp_status = TP_STATUS_KERNEL;
-
-            pool_->release(wrapper);
-            continue;
-        }
-
         stats_.packetsReceived++;
-
-        wrapper->attach(data, tpSnaplen, tpLen, instance, entry);
+        wrapper->attach(frame.data, frame.caplen, frame.len, instance, frame.entry);
         rawPacket[idx++] = wrapper->asPacket();
     }
 
@@ -549,7 +290,7 @@ RecvStatus AFPacketDriver::receivePackets(snet::layers::Packet** rawPacket, uint
     return status;
 }
 
-Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdict)
+Status AFPacketDriver::finalizePacket(layers::Packet* rawPacket, Verdict verdict)
 {
     if (!rawPacket)
     {
@@ -566,20 +307,35 @@ Status AFPacketDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict v
 
     stats_.verdicts[static_cast<size_t>(verdict)]++;
 
-    const bool pass = (verdict == Verdict::Pass || verdict == Verdict::Replace || verdict == Verdict::Ignore);
+    wrapper->instance()->releaseFrame(wrapper->entry());
+    pool_->release(wrapper);
+    return Status::Success;
+}
 
-    if (pass && wrapper->instance()->peer)
+/// @todo переписать
+Status AFPacketDriver::transmitPacket(layers::Packet* packet)
+{
+    (void)packet;
+    return Status::NotSupported;
+}
+
+/// @todo добавить DeviceId, чтобы ARP мог слать через нужный интерфейс
+Status AFPacketDriver::inject(const uint8_t* data, uint32_t dataLength)
+{
+    if (instances_.empty())
     {
-        if (!transmitPacket(wrapper->instance()->peer, wrapper->asPacket()->getData(), wrapper->caplen()))
-        {
-            logError("failed to forward packet out of %s", wrapper->instance()->peer->name().c_str());
-        }
+        logError("inject: no instances");
+        return Status::InvalidArgument;
     }
 
-    auto* hdr = reinterpret_cast<tpacket2_hdr*>(wrapper->entry()->raw);
-    hdr->tp_status = TP_STATUS_KERNEL;
+    Instance* egress = instances_.front().get();
+    if (!egress->send(data, dataLength))
+    {
+        logError("inject on %s failed", egress->name().c_str());
+        return Status::Error;
+    }
 
-    pool_->release(wrapper);
+    stats_.packetsInjected++;
     return Status::Success;
 }
 
@@ -594,89 +350,35 @@ Status AFPacketDriver::getMsgPoolInfo(snet::io::PacketPoolInfo& info)
     return Status::Success;
 }
 
-bool AFPacketDriver::calculateFrameSize(Instance& inst)
+Status AFPacketDriver::getStats(Stats* stats)
 {
-    const unsigned tpHdrlenSll = SNET_TPACKET_ALIGN(inst.hdrLen()) + sizeof(sockaddr_ll);
-    const unsigned netoff = SNET_TPACKET_ALIGN(tpHdrlenSll + (ETH_HLEN < 16 ? 16 : ETH_HLEN)) + inst.tpReserve;
-    const unsigned macoff = netoff - ETH_HLEN;
-
-    const unsigned frameSize = SNET_TPACKET_ALIGN(macoff + static_cast<unsigned>(snaplen_));
-
-    inst.setFrameSize(frameSize);
-    inst.setActualSnaplen(frameSize - macoff);
-    return true;
+    updateHwStats();
+    if (stats)
+        *stats = stats_;
+    return Status::Success;
 }
 
-bool AFPacketDriver::calculateLayout(Instance& inst, tpacket_req& layout, int order)
+void AFPacketDriver::resetStats()
 {
-    layout.tp_frame_size = inst.frameSize();
-    layout.tp_block_size = static_cast<unsigned>(::getpagesize()) << order;
-    while (layout.tp_block_size < layout.tp_frame_size)
-        layout.tp_block_size <<= 1;
+    stats_ = Stats{};
 
-    const unsigned framesPerBlock = layout.tp_block_size / layout.tp_frame_size;
-    if (framesPerBlock == 0)
+    struct tpacket_stats kstats{};
+    socklen_t len = sizeof(kstats);
+    for (auto& inst : instances_)
     {
-        logError(
-            "invalid frames per block (%u/%u) for %s", layout.tp_block_size, layout.tp_frame_size, inst.name().c_str());
-        return false;
+        if (inst->fd() != -1)
+            ::getsockopt(inst->fd(), SOL_PACKET, PACKET_STATISTICS, &kstats, &len);
     }
-
-    layout.tp_frame_nr = inst.ringSizeHint() / layout.tp_frame_size;
-    layout.tp_block_nr = layout.tp_frame_nr / framesPerBlock;
-    layout.tp_frame_nr = layout.tp_block_nr * framesPerBlock;
-
-    logInfo("afpacket[%s] layout: frame=%u frames=%u block=%u blocks=%u",
-            inst.name().c_str(),
-            layout.tp_frame_size,
-            layout.tp_frame_nr,
-            layout.tp_block_size,
-            layout.tp_block_nr);
-    return true;
 }
 
-bool AFPacketDriver::mmapRings(Instance& inst)
+int AFPacketDriver::getSnaplen() const
 {
-    const unsigned ringSize = inst.rxRing.size + inst.txRing.size;
-    void* buf = ::mmap(nullptr, ringSize, PROT_READ | PROT_WRITE, MAP_SHARED, inst.fd(), 0);
-    if (buf == MAP_FAILED)
-    {
-        logError("could not MMAP the ring on %s: %s", inst.name().c_str(), std::strerror(errno));
-        return false;
-    }
-
-    inst.setBuffer(buf);
-    inst.rxRing.start = buf;
-    if (inst.txRing.size)
-        inst.txRing.start = static_cast<uint8_t*>(buf) + inst.rxRing.size;
-    return true;
+    return instances_.empty() ? 0 : static_cast<int>(instances_.front()->snaplen());
 }
 
-bool AFPacketDriver::setupRing(Ring& ring)
+snet::layers::LinkLayerType AFPacketDriver::getDataLinkType() const
 {
-    ring.entries = static_cast<RingEntry*>(::calloc(ring.layout.tp_frame_nr, sizeof(RingEntry)));
-    if (!ring.entries)
-    {
-        logError("could not allocate ring entries");
-        return false;
-    }
-
-    unsigned idx = 0;
-    for (unsigned block = 0; block < ring.layout.tp_block_nr; ++block)
-    {
-        const unsigned blockOffset = block * ring.layout.tp_block_size;
-        const unsigned framesPerBlock = ring.layout.tp_block_size / ring.layout.tp_frame_size;
-        for (unsigned frame = 0; frame < framesPerBlock && idx < ring.layout.tp_frame_nr; ++frame)
-        {
-            const unsigned frameOffset = frame * ring.layout.tp_frame_size;
-            ring.entries[idx].raw = static_cast<uint8_t*>(ring.start) + blockOffset + frameOffset;
-            ring.entries[idx].next = &ring.entries[idx + 1];
-            ++idx;
-        }
-    }
-    ring.entries[ring.layout.tp_frame_nr - 1].next = &ring.entries[0];
-    ring.cursor = &ring.entries[0];
-    return true;
+    return snet::layers::LinkLayerType::LINKTYPE_ETHERNET;
 }
 
 void AFPacketDriver::updateHwStats()
@@ -685,8 +387,9 @@ void AFPacketDriver::updateHwStats()
     socklen_t len = sizeof(kstats);
     for (auto& inst : instances_)
     {
-        if (!inst->active() || inst->fd() == -1)
+        if (inst->fd() == -1)
             continue;
+
         std::memset(&kstats, 0, len);
         if (::getsockopt(inst->fd(), SOL_PACKET, PACKET_STATISTICS, &kstats, &len) > -1)
         {
@@ -700,31 +403,11 @@ void AFPacketDriver::updateHwStats()
     }
 }
 
-RingEntry* AFPacketDriver::findPacket()
-{
-    if (instances_.empty())
-        return nullptr;
-
-    const size_t n = instances_.size();
-    for (size_t i = 0; i < n; ++i)
-    {
-        const size_t idx = (currInstanceIdx_ + 1 + i) % n;
-        auto& inst = instances_[idx];
-
-        auto* hdr = reinterpret_cast<tpacket2_hdr*>(inst->rxRing.cursor->raw);
-        if (hdr->tp_status & TP_STATUS_USER)
-        {
-            currInstanceIdx_ = idx;
-            auto* entry = inst->rxRing.cursor;
-            inst->rxRing.cursor = entry->next;
-            return entry;
-        }
-    }
-    return nullptr;
-}
-
 RecvStatus AFPacketDriver::waitForPacket()
 {
+    if (instances_.empty())
+        return RecvStatus::Error;
+
     std::vector<pollfd> pfds(instances_.size());
     for (size_t i = 0; i < instances_.size(); ++i)
     {
@@ -788,16 +471,33 @@ RecvStatus AFPacketDriver::waitForPacket()
 void AFPacketDriver::releaseAllOutstandingFrames()
 {
     for (auto& inst : instances_)
+        inst->releaseOutstandingFrames();
+}
+
+bool AFPacketDriver::applyFilter()
+{
+    if (filter_.empty())
+        return true;
+
+    struct bpf_program fcode;
+    pcap_t* pcap = pcap_open_dead(DLT_EN10MB, static_cast<int>(snaplen_));
+    if (pcap == nullptr)
     {
-        if (!inst->rxRing.entries)
-            continue;
-        for (uint32_t i = 0; i < inst->rxRing.layout.tp_frame_nr; ++i)
-        {
-            auto* hdr = reinterpret_cast<tpacket2_hdr*>(inst->rxRing.entries[i].raw);
-            if (hdr->tp_status & TP_STATUS_USER)
-                hdr->tp_status = TP_STATUS_KERNEL;
-        }
+        logError("AFPacketDriver: pcap_open_dead failed");
+        return false;
     }
+
+    if (pcap_compile(pcap, &fcode, filter_.c_str(), 1, PCAP_NETMASK_UNKNOWN) == -1)
+    {
+        logError("AFPacketDriver: pcap_compile failed: %s", pcap_geterr(pcap));
+        pcap_close(pcap);
+        return false;
+    }
+    pcap_close(pcap);
+
+    pcap_freecode(&fcode_);
+    fcode_ = fcode;
+    return true;
 }
 
 } // namespace snet::driver

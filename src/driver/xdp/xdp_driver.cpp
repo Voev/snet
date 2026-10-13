@@ -839,6 +839,12 @@ Status XdpDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdic
     return Status::Success;
 }
 
+Status XdpDriver::transmitPacket(layers::Packet* packet)
+{
+    (void)packet;
+    return Status::NotSupported;
+}
+
 Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
 {
     if (instances_.empty())

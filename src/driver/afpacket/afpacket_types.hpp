@@ -23,6 +23,20 @@ struct VlanTag
     uint16_t tci;
 };
 
+struct RingEntry
+{
+    uint8_t* raw{nullptr};
+    RingEntry* next{nullptr};
+};
+
+struct Ring
+{
+    tpacket_req layout{};
+    uint32_t size{0};
+    void* start{nullptr};
+    RingEntry* entries{nullptr};
+    RingEntry* cursor{nullptr};
+};
 
 #if defined(TPACKET_ALIGN)
 #define SNET_TPACKET_ALIGN(x) TPACKET_ALIGN(x)

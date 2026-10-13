@@ -80,10 +80,9 @@ struct Stats
 {
     uint64_t hwPacketsReceived;     /* Packets received by the hardware */
     uint64_t hwPacketsDropped;      /* Packets dropped by the hardware */
-    uint64_t packetsReceived;       /* Packets received by this instance */
-    uint64_t packetsFiltered;       /* Packets filtered by this instance's BPF */
-    uint64_t packetsInjected;       /* Packets injected by this instance */
-    uint64_t packetsOutstanding;    /* Packets outstanding in this instance */
+    uint64_t packetsReceived;       /* Packets received */
+    uint64_t packetsTransmitted;    /* Packets transmited */
+    uint64_t packetsInjected;       /* Packets injected */
     uint64_t verdicts[MaxVerdicts]; /* Counters of packets handled per-verdict. */
 };
 

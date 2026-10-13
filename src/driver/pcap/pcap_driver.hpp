@@ -73,6 +73,8 @@ public:
     /// @return Status indicating success or failure
     Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
 
+    Status transmitPacket(layers::Packet* packet) override;
+
     /// @brief Injects a raw packet into the network
     /// @param[in] data Raw packet data buffer
     /// @param[in] dataLength Length of the data buffer in bytes

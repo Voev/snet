@@ -17,7 +17,7 @@
 #include <pcap.h>
 
 namespace snet::driver
-{
+{ 
 
 class AFPacketDriver final : public snet::io::DriverBase
 {
@@ -39,38 +39,35 @@ public:
     Status stop() override;
     Status interrupt() override;
 
-    Status inject(const uint8_t* data, uint32_t dataLen) override;
+    size_t deviceCount() const override;
 
-    Status getStats(Stats* stats) override;
-
-    void resetStats() override;
-
-    int getSnaplen() const override;
-    snet::layers::LinkLayerType getDataLinkType() const override;
+    io::Device* deviceAt(size_t idx) const override;
 
     RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    
+    Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
 
-    Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
+    Status transmitPacket(layers::Packet* packet) override;
+
+    Status inject(const uint8_t* data, uint32_t dataLen) override;
 
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
+    Status getStats(Stats* stats) override;
+    
+    void resetStats() override;
+
+    /// @todo удалить
+    int getSnaplen() const override;
+
+    snet::layers::LinkLayerType getDataLinkType() const override;
+
 private:
-    bool configureFanout(Instance& inst);
-    bool startInstance(Instance& inst);
-
-    bool calculateFrameSize(Instance& inst);
-    bool calculateLayout(Instance& inst, tpacket_req& layout, int order);
-    bool mmapRings(Instance& inst);
-    bool setupRing(Ring& ring);
-
-    void updateHwStats();
-    bool transmitPacket(Instance* egress, const uint8_t* data, uint32_t len);
-
-    bool applyFilter();
-
-    RingEntry* findPacket();
+    bool findFrame(Instance*& outInst, Instance::RxFrame& outFrame);
     RecvStatus waitForPacket();
+    void updateHwStats();
     void releaseAllOutstandingFrames();
+    bool applyFilter();
 
 private:
     std::vector<AFPacketInstancePtr> instances_;

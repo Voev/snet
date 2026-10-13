@@ -270,6 +270,12 @@ Status Pcap::finalizePacket(layers::Packet* packet, Verdict verdict)
     return Status::Success;
 }
 
+Status Pcap::transmitPacket(layers::Packet* packet)
+{
+    (void)packet;
+    return Status::NotSupported;
+}
+
 Status Pcap::inject(const uint8_t* data, uint32_t dataLength)
 {
     if (0 > pcap_inject(handle_, data, dataLength))
@@ -317,7 +323,7 @@ Status Pcap::getStats(Stats* stats)
 
     if (mode_ == Mode::ReadFile)
     {
-        stats->hwPacketsReceived = stats->packetsReceived + stats->packetsFiltered;
+        stats->hwPacketsReceived = stats->packetsReceived;
     }
 
     return Status::Success;

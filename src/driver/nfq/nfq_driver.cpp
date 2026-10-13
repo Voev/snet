@@ -461,6 +461,12 @@ Status NfQueue::inject(const uint8_t* data, uint32_t dataLength)
     return Status::NotSupported;
 }
 
+Status NfQueue::transmitPacket(layers::Packet* packet)
+{
+    (void)packet;
+    return Status::NotSupported;
+}
+
 const char* NfQueue::getName() const
 {
     return "nf_queue";
