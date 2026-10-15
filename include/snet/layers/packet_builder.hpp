@@ -43,6 +43,11 @@ public:
         return layer<ethernet_header>();
     }
 
+    HeaderBuilder<arp_header> arp() noexcept
+    {
+        return layer<arp_header>();
+    }
+
     HeaderBuilder<ipv4_header> ipv4() noexcept
     {
         return layer<ipv4_header>();

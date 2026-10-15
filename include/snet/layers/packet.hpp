@@ -15,6 +15,7 @@
 #include <snet/layers/timestamp.hpp>
 
 #include <snet/layers/l2/eth_header.hpp>
+#include <snet/layers/l2/arp_header.hpp>
 #include <snet/layers/l3/ip_proto.hpp>
 #include <snet/layers/l3/ipv4_header.hpp>
 #include <snet/layers/l3/ip_address.hpp>
@@ -468,6 +469,13 @@ inline std::ostream& operator<<(std::ostream& os, const snet::layers::Packet& pa
         {
             auto eth = packet.getHeader<EthernetHeader>(layer);
             os << eth;
+            break;
+        }
+
+        case ARP:
+        {
+            auto arp = packet.getHeader<ArpHeader>(layer);
+            os << arp;
             break;
         }
 
