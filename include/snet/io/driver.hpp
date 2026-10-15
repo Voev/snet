@@ -34,6 +34,9 @@ struct PacketPoolInfo
 };
 
 /// @brief Stream operator for convenient logging.
+/// @param[in] os Output stream.
+/// @param[in] info Pool information to print.
+/// @return Reference to the output stream.
 inline std::ostream& operator<<(std::ostream& os, const PacketPoolInfo& info)
 {
     info.print(os);
@@ -44,8 +47,10 @@ inline std::ostream& operator<<(std::ostream& os, const PacketPoolInfo& info)
 class Driver
 {
 public:
+    /// @brief Default constructor.
     Driver() = default;
 
+    /// @brief Virtual destructor.
     virtual ~Driver() noexcept = default;
 
     /// @brief Gets driver name.
@@ -80,16 +85,27 @@ public:
     /// @return Status indicating success or failure.
     virtual Status interrupt() = 0;
 
+    /// @brief Gets number of devices.
+    /// @return Number of available devices.
     virtual size_t deviceCount() const = 0;
 
+    /// @brief Gets device by index.
+    /// @param[in] idx Device index.
+    /// @return Pointer to the device, or nullptr if idx is invalid.
     virtual io::Device* deviceAt(size_t idx) const = 0;
 
+    /// @brief  Received packet descriptor.
     struct RxItem
     {
-        layers::Packet* packet{nullptr};
-        io::DeviceId ingress{io::kInvalidDevice};
+        layers::Packet* packet{nullptr};  ///< Received packet.
+        io::DeviceId ingress{io::kInvalidDevice}; ///< Ingress device identifier.
     };
 
+    /// @brief Receives packets from the driver.
+    /// @param[out] rx Array to fill with received packet items.
+    /// @param[out] count Number of packets actually received.
+    /// @param[in] max Maximum number of packets to receive.
+    /// @return Receive status.
     virtual RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) = 0;
 
     /// @brief Finalizes packet with verdict.
@@ -98,6 +114,10 @@ public:
     /// @return Status indicating success or failure.
     virtual Status finalizePacket(layers::Packet* packet, Verdict verdict) = 0;
 
+    /// @brief Transmits a packet through the specified egress device.
+    /// @param[in] packet Packet to transmit.
+    /// @param[in] egress Egress device identifier.
+    /// @return Status indicating success or failure.
     virtual Status transmitPacket(layers::Packet* packet, io::DeviceId egress) = 0;
 
     /// @brief Gets packet pool information.

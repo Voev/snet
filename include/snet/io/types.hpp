@@ -82,7 +82,6 @@ struct Stats
     uint64_t hwPacketsDropped;      /* Packets dropped by the hardware */
     uint64_t packetsReceived;       /* Packets received */
     uint64_t packetsTransmitted;    /* Packets transmited */
-    uint64_t packetsInjected;       /* Packets injected */
     uint64_t verdicts[MaxVerdicts]; /* Counters of packets handled per-verdict. */
 };
 
