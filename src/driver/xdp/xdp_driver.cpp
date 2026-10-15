@@ -31,15 +31,6 @@ namespace snet::driver
 namespace
 {
 
-/// ETH_ALEN
-constexpr uint32_t kMacLen = 6;
-
-inline void swapMacAddresses(uint8_t* pkt) noexcept
-{
-    for (uint32_t i = 0; i < kMacLen; ++i)
-        std::swap(pkt[i], pkt[i + kMacLen]);
-}
-
 inline std::string trimCopy(nonstd::string_view s)
 {
     size_t b = 0;
@@ -76,13 +67,6 @@ const char* XdpDriver::getName() const
 Status XdpDriver::declareOptions(io::Config& config)
 {
     // clang-format off
-    config.addDriverOption(OptionBuilder("bpf_object", Value(&bpfObject_))
-        .setDescription("Path to compiled XDP BPF object file (required)")
-        .build());
-    config.addDriverOption(OptionBuilder("bpf_section", Value(&bpfSection_))
-        .setDefaultValue(std::string{"xdp"})
-        .setDescription("BPF program section name")
-        .build());
     config.addDriverOption(OptionBuilder("zero_copy", Value(&zeroCopy_))
         .setDefaultValue(true)
         .setDescription("Use XDP_MODE_NATIVE (zero-copy) when supported")
@@ -122,14 +106,6 @@ Status XdpDriver::declareOptions(io::Config& config)
     config.addDriverOption(OptionBuilder("batch_size", Value(&batchSize_))
         .setDefaultValue(xdp::kDefaultBatchSize)
         .setDescription("Max packets per receivePackets() call")
-        .build());
-    config.addDriverOption(OptionBuilder("topology", Value(&topologyStr_))
-        .setDefaultValue(std::string{"pairs"})
-        .setDescription("Forwarding topology: pairs|ring|single")
-        .build());
-    config.addDriverOption(OptionBuilder("swap_mac", Value(&swapMac_))
-        .setDefaultValue(false)
-        .setDescription("Swap src/dst MAC before forwarding")
         .build());
     // clang-format on
     return Status::Success;
@@ -209,25 +185,9 @@ Status XdpDriver::parseEndpoints(const std::string& input)
     return Status::Success;
 }
 
-Status XdpDriver::parseTopology()
-{
-    if (topologyStr_ == "pairs")
-        topology_ = ForwardTopology::Pairs;
-    else if (topologyStr_ == "ring")
-        topology_ = ForwardTopology::Ring;
-    else if (topologyStr_ == "single")
-        topology_ = ForwardTopology::Single;
-    else
-    {
-        logError("XdpDriver: unknown topology '%s' (pairs|ring|single)", topologyStr_.c_str());
-        return Status::InvalidArgument;
-    }
-    return Status::Success;
-}
-
 Status XdpDriver::configure(const snet::io::Config& config)
 {
-    snaplen_ = static_cast<size_t>(config.getSnaplen());
+    auto snaplen = config.getSnaplen();
     timeoutMs_ = config.getTimeout();
     if (timeoutMs_ == 0)
         timeoutMs_ = -1;
@@ -235,35 +195,24 @@ Status XdpDriver::configure(const snet::io::Config& config)
     if (auto st = parseEndpoints(config.getInput()); st != Status::Success)
         return st;
 
-    if (auto st = parseTopology(); st != Status::Success)
-        return st;
-
-    if (bpfObject_.empty())
+    if (frameSize_ < headroom_ + snaplen)
     {
-        logError("XdpDriver: 'bpf_object' is required");
-        return Status::InvalidArgument;
-    }
-
-    if (frameSize_ < headroom_ + snaplen_)
-    {
-        logError("XdpDriver: frame_size (%u) < frame_headroom + snaplen (%zu)", frameSize_, headroom_ + snaplen_);
+        logError("XdpDriver: frame_size (%u) < frame_headroom + snaplen (%zu)",
+                 frameSize_, headroom_ + snaplen);
         return Status::InvalidArgument;
     }
     if (numFrames_ < fillSize_ + rxSize_)
     {
-        logError("XdpDriver: num_frames (%u) must be >= fill_size + rx_size (%u)", numFrames_, fillSize_ + rxSize_);
+        logError("XdpDriver: num_frames (%u) must be >= fill_size + rx_size (%u)",
+                 numFrames_, fillSize_ + rxSize_);
         return Status::InvalidArgument;
     }
 
     // --- group endpoints by iface ---
     for (const auto& ep : endpoints_)
     {
-        const bool known = std::any_of(ifaces_.begin(),
-                                       ifaces_.end(),
-                                       [&](const auto& p)
-                                       {
-                                           return p->iface == ep.iface;
-                                       });
+        const bool known = std::any_of(ifaces_.begin(), ifaces_.end(),
+                                       [&](const auto& p) { return p->iface == ep.iface; });
         if (known)
             continue;
 
@@ -281,16 +230,14 @@ Status XdpDriver::configure(const snet::io::Config& config)
     // --- create one instance per endpoint ---
     for (const auto& ep : endpoints_)
     {
-        auto inst = std::make_unique<XdpInstance>(*this);
+        const io::DeviceId devId = static_cast<io::DeviceId>(instancesOwned_.size());
+
+        auto inst = std::make_unique<XdpInstance>(*this, devId);
         if (!inst->create(ep.iface, ep.queue))
             return Status::NoSuchDevice;
 
-        auto it = std::find_if(ifaces_.begin(),
-                               ifaces_.end(),
-                               [&](const auto& p)
-                               {
-                                   return p->iface == ep.iface;
-                               });
+        auto it = std::find_if(ifaces_.begin(), ifaces_.end(),
+                               [&](const auto& p) { return p->iface == ep.iface; });
         (*it)->instances.push_back(inst.get());
 
         instancesOwned_.push_back(std::move(inst));
@@ -300,54 +247,15 @@ Status XdpDriver::configure(const snet::io::Config& config)
     for (auto& p : instancesOwned_)
         instances_.push_back(p.get());
 
-    // --- peers ---
-    buildPeers();
-
-    // --- wrapper pool ---
     uint32_t poolSize = config.getMsgPoolSize();
     if (poolSize == 0)
         poolSize = std::min<uint32_t>(numFrames_, xdp::kDefaultMsgPoolSize);
 
     pool_ = std::make_unique<XdpPool>(poolSize);
 
-    logInfo(
-        "XdpDriver: configured %zu iface(s), %zu endpoint(s), pool=%u", ifaces_.size(), instances_.size(), poolSize);
+    logInfo("XdpDriver: configured %zu iface(s), %zu endpoint(s), pool=%u",
+            ifaces_.size(), instances_.size(), poolSize);
     return Status::Success;
-}
-
-void XdpDriver::buildPeers()
-{
-    const size_t n = instances_.size();
-    if (n == 0)
-        return;
-
-    if (topology_ == ForwardTopology::Single)
-    {
-        for (auto* inst : instances_)
-            inst->peer = inst;
-        return;
-    }
-
-    if (topology_ == ForwardTopology::Ring)
-    {
-        for (size_t i = 0; i < n; ++i)
-            instances_[i]->peer = instances_[(i + 1) % n];
-        return;
-    }
-
-    // Pairs
-    if (n == 1)
-    {
-        instances_[0]->peer = instances_[0];
-        return;
-    }
-    for (size_t i = 0; i + 1 < n; i += 2)
-    {
-        instances_[i]->peer = instances_[i + 1];
-        instances_[i + 1]->peer = instances_[i];
-    }
-    if (n % 2)
-        instances_.back()->peer = instances_.back();
 }
 
 Status XdpDriver::start()
@@ -364,54 +272,34 @@ Status XdpDriver::start()
     if (!createUmem())
         return Status::Error;
 
-    // Attach one BPF program per iface.
-    for (auto& ctx : ifaces_)
+    // One shared UMEM, one AF_XDP socket per endpoint.
+    // libbpf_flags = 0 → libxdp loads its built-in xsk_def_prog and
+    // registers the socket in the XSKMAP automatically.
+    struct xsk_socket_config cfg{};
+    cfg.rx_size     = rxSize_;
+    cfg.tx_size     = txSize_;
+    cfg.libbpf_flags = 0;
+    cfg.xdp_flags   = zeroCopy_ ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
+    cfg.bind_flags  = needWakeup_ ? XDP_USE_NEED_WAKEUP : 0;
+
+    for (auto* inst : instances_)
     {
-        if (!openBpfForIface(*ctx))
+        if (!inst->bindTo(umem_, cfg))
         {
             stop();
             return Status::Error;
         }
-    }
-
-    // Create AF_XDP sockets and register them in the per-iface XSKMAP.
-    struct xsk_socket_config cfg{};
-    cfg.rx_size = rxSize_;
-    cfg.tx_size = txSize_;
-    cfg.libbpf_flags = 0;
-    cfg.xdp_flags = zeroCopy_ ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
-    cfg.bind_flags = needWakeup_ ? XDP_USE_NEED_WAKEUP : 0;
-
-    for (auto& ctx : ifaces_)
-    {
-        for (XdpInstance* inst : ctx->instances)
-        {
-            if (!inst->bindTo(umem_, cfg))
-            {
-                stop();
-                return Status::Error;
-            }
-
-            int fd = inst->fd();
-            uint32_t key = inst->queueId();
-            if (::bpf_map_update_elem(ctx->xskmapFd, &key, &fd, BPF_ANY))
-            {
-                logError("XdpDriver: XSKMAP update(iface=%s q=%u): %s", ctx->iface.c_str(), key, std::strerror(errno));
-                stop();
-                return Status::Error;
-            }
-
-            inst->setActive(true);
-        }
+        inst->setActive(true);
     }
 
     // Prime FQ for every endpoint.
     for (auto* inst : instances_)
-        refillFq(*inst, fillSize_);
+        inst->refillFq(fillSize_);
 
     resetStats();
 
-    logInfo("XdpDriver: started %zu endpoint(s) on %zu iface(s)", instances_.size(), ifaces_.size());
+    logInfo("XdpDriver: started %zu endpoint(s) on %zu iface(s)",
+            instances_.size(), ifaces_.size());
     return Status::Success;
 }
 
@@ -422,9 +310,6 @@ Status XdpDriver::stop()
         if (inst)
             inst->destroy();
     }
-
-    for (auto& ctx : ifaces_)
-        closeBpfForIface(*ctx);
 
     destroyUmem();
     clearAll();
@@ -452,14 +337,14 @@ Status XdpDriver::interrupt()
 
 size_t XdpDriver::deviceCount() const
 {
-    return 0;
+    return instances_.size();
 }
 
-/// @todo implement
 io::Device* XdpDriver::deviceAt(size_t idx) const
 {
-    (void)idx;
-    return nullptr;
+    if (idx >= instances_.size())
+        return nullptr;
+    return static_cast<io::Device*>(instances_[idx]);
 }
 
 bool XdpDriver::setupRlimit()
@@ -476,7 +361,8 @@ bool XdpDriver::setupRlimit()
 bool XdpDriver::createUmem()
 {
     umemAreaSize_ = static_cast<size_t>(numFrames_) * frameSize_;
-    umemArea_ = ::mmap(nullptr, umemAreaSize_, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    umemArea_ = ::mmap(nullptr, umemAreaSize_, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (umemArea_ == MAP_FAILED)
     {
         umemArea_ = nullptr;
@@ -485,11 +371,11 @@ bool XdpDriver::createUmem()
     }
 
     struct xsk_umem_config umemCfg{};
-    umemCfg.fill_size = fillSize_;
-    umemCfg.comp_size = compSize_;
-    umemCfg.frame_size = frameSize_;
+    umemCfg.fill_size     = fillSize_;
+    umemCfg.comp_size     = compSize_;
+    umemCfg.frame_size    = frameSize_;
     umemCfg.frame_headroom = headroom_;
-    umemCfg.flags = 0;
+    umemCfg.flags         = 0;
 
     if (::xsk_umem__create(&umem_, umemArea_, umemAreaSize_, &umemFq_, &umemCq_, &umemCfg))
     {
@@ -507,7 +393,8 @@ bool XdpDriver::createUmem()
             freeFrames_.push_back(static_cast<uint64_t>(i) * frameSize_);
     }
 
-    logInfo("XdpDriver: UMEM created (%u frames x %u B, headroom=%u)", numFrames_, frameSize_, headroom_);
+    logInfo("XdpDriver: UMEM created (%u frames x %u B, headroom=%u)",
+            numFrames_, frameSize_, headroom_);
     return true;
 }
 
@@ -523,57 +410,6 @@ void XdpDriver::destroyUmem() noexcept
         ::munmap(umemArea_, umemAreaSize_);
         umemArea_ = nullptr;
     }
-}
-
-bool XdpDriver::openBpfForIface(IfaceContext& ctx)
-{
-    ctx.program = ::xdp_program__open_file(bpfObject_.c_str(), bpfSection_.c_str(), nullptr);
-    if (!ctx.program)
-    {
-        logError("XdpDriver: xdp_program__open_file returned NULL for %s", ctx.iface.c_str());
-        return false;
-    }
-
-    long err = ::libbpf_get_error(ctx.program);
-    if (err)
-    {
-        ctx.program = nullptr;
-        logError("XdpDriver: open_file(%s, %s) for %s: %s",
-                 bpfObject_.c_str(),
-                 bpfSection_.c_str(),
-                 ctx.iface.c_str(),
-                 std::strerror(-err));
-        return false;
-    }
-
-    const enum xdp_attach_mode mode = zeroCopy_ ? XDP_MODE_NATIVE : XDP_MODE_SKB;
-
-    if (::xdp_program__attach(ctx.program, static_cast<int>(ctx.ifindex), mode, 0))
-    {
-        logError("XdpDriver: xdp_program__attach on %s: %s", ctx.iface.c_str(), std::strerror(errno));
-        return false;
-    }
-
-    struct bpf_object* obj = ::xdp_program__bpf_obj(ctx.program);
-    ctx.xskmapFd = ::bpf_object__find_map_fd_by_name(obj, "xsks_map");
-    if (ctx.xskmapFd < 0)
-    {
-        logError("XdpDriver: map 'xsks_map' not found for %s", ctx.iface.c_str());
-        return false;
-    }
-    return true;
-}
-
-void XdpDriver::closeBpfForIface(IfaceContext& ctx) noexcept
-{
-    if (ctx.program)
-    {
-        const enum xdp_attach_mode mode = zeroCopy_ ? XDP_MODE_NATIVE : XDP_MODE_SKB;
-        ::xdp_program__detach(ctx.program, static_cast<int>(ctx.ifindex), mode, 0);
-        ::xdp_program__close(ctx.program);
-        ctx.program = nullptr;
-    }
-    ctx.xskmapFd = -1;
 }
 
 uint64_t XdpDriver::acquireFrame()
@@ -592,126 +428,16 @@ void XdpDriver::releaseFrame(uint64_t addr)
     freeFrames_.push_back(addr);
 }
 
-uint32_t XdpDriver::refillFq(XdpInstance& inst, uint32_t max)
+uint32_t XdpDriver::freeFrameCount() const noexcept
 {
-    struct xsk_ring_prod* fq = inst.fqRing();
-    uint32_t produced = 0;
-
-    while (produced < max)
-    {
-        uint32_t availFrames = 0;
-        {
-            std::lock_guard<std::mutex> lk(poolMutex_);
-            availFrames = static_cast<uint32_t>(freeFrames_.size());
-        }
-        if (availFrames == 0)
-            break;
-
-        const uint32_t want = std::min(max - produced, availFrames);
-
-        uint32_t idx = 0;
-        const uint32_t space = ::xsk_ring_prod__reserve(fq, want, &idx);
-        if (space == 0)
-            break;
-
-        uint32_t filled = 0;
-        for (uint32_t i = 0; i < space; ++i)
-        {
-            uint64_t addr = acquireFrame();
-            if (addr == UINT64_MAX)
-                break;
-            *::xsk_ring_prod__fill_addr(fq, idx + i) = addr;
-            ++filled;
-        }
-
-        if (filled == 0)
-            break;
-
-        ::xsk_ring_prod__submit(fq, filled);
-        produced += filled;
-
-        if (filled < space)
-            break;
-    }
-    return produced;
-}
-
-uint32_t XdpDriver::processCq(XdpInstance& inst, uint32_t max)
-{
-    struct xsk_ring_cons* cq = inst.cqRing();
-    uint32_t idx = 0;
-    const uint32_t n = ::xsk_ring_cons__peek(cq, max, &idx);
-    if (!n)
-        return 0;
-
-    for (uint32_t i = 0; i < n; ++i)
-    {
-        const uint64_t addr = *::xsk_ring_cons__comp_addr(cq, idx + i);
-        releaseFrame(addr);
-    }
-    ::xsk_ring_cons__release(cq, n);
-    return n;
-}
-
-bool XdpDriver::kickTx(XdpInstance& inst)
-{
-    if (::xsk_ring_prod__needs_wakeup(inst.txRing()))
-    {
-        if (::sendto(inst.fd(), nullptr, 0, MSG_DONTWAIT, nullptr, 0) < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
-            errno != ENETDOWN)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-void XdpDriver::swapMacInPlace(uint64_t frameAddr, uint32_t len) noexcept
-{
-    if (len < 2 * kMacLen)
-        return;
-    uint8_t* pkt = static_cast<uint8_t*>(umemArea_) + frameAddr + headroom_;
-    swapMacAddresses(pkt);
-}
-
-bool XdpDriver::transmitFrame(XdpInstance* egress, uint64_t frameAddr, uint32_t len)
-{
-    if (!egress || !egress->active())
-        return false;
-
-    for (;;)
-    {
-        uint32_t idx = 0;
-        if (::xsk_ring_prod__reserve(egress->txRing(), 1, &idx) == 1)
-        {
-            struct xdp_desc* d = ::xsk_ring_prod__tx_desc(egress->txRing(), idx);
-            d->addr = frameAddr;
-            d->len = len;
-            ::xsk_ring_prod__submit(egress->txRing(), 1);
-            kickTx(*egress);
-            ++packetsSentCounter_;
-            return true;
-        }
-
-        // TX full — try to reclaim completions.
-        processCq(*egress, compSize_);
-
-        if (::xsk_ring_prod__needs_wakeup(egress->txRing()))
-            ::sendto(egress->fd(), nullptr, 0, MSG_DONTWAIT, nullptr, 0);
-
-        break;
-    }
-
-    logWarning("XdpDriver: TX ring full on %s q=%u", egress->name().c_str(), egress->queueId());
-    return false;
+    std::lock_guard<std::mutex> lk(poolMutex_);
+    return static_cast<uint32_t>(freeFrames_.size());
 }
 
 RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 {
     if (!rx || max == 0)
-    {
         return RecvStatus::Eof;
-    }
 
     if (!pool_ || instances_.empty())
     {
@@ -728,8 +454,8 @@ RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
     // Reclaim completions + refill FQ for every endpoint.
     for (auto* inst : instances_)
     {
-        processCq(*inst, compSize_);
-        refillFq(*inst, fillSize_ / 2);
+        inst->processCq(compSize_);
+        inst->refillFq(fillSize_ / 2);
     }
 
     uint16_t idx = 0;
@@ -767,7 +493,7 @@ RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 
             wrapper->attach(data, cap, cap, inst, d->addr);
             rx[idx].packet = wrapper->asPacket();
-            rx[idx].ingress = io::kInvalidDevice;
+            rx[idx].ingress = inst->id();
             idx++;
             stats_.packetsReceived++;
         }
@@ -805,9 +531,7 @@ RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
 
 done:
     if (count)
-    {
         *count = idx;
-    }
     return status;
 }
 
@@ -829,24 +553,10 @@ Status XdpDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdic
     stats_.verdicts[static_cast<size_t>(verdict)]++;
 
     const uint64_t frameAddr = wrapper->frameAddr();
-    const uint32_t caplen = wrapper->caplen();
-    XdpInstance* inst = wrapper->instance();
 
-    const bool pass = (verdict == Verdict::Pass || verdict == Verdict::Replace || verdict == Verdict::Ignore);
-
-    if (pass && inst->peer)
-    {
-        if (swapMac_)
-            swapMacInPlace(frameAddr, caplen);
-
-        if (!transmitFrame(inst->peer, frameAddr, caplen))
-            releaseFrame(frameAddr); // failed to hand off — recycle
-    }
-    else
-    {
-        releaseFrame(frameAddr);
-    }
-
+    // The verdict policy lives in the userspace caller, not here.
+    // Driver only reclaims the frame and returns the wrapper to the pool.
+    releaseFrame(frameAddr);
     wrapper->reset();
     pool_->release(wrapper);
     return Status::Success;
@@ -854,47 +564,23 @@ Status XdpDriver::finalizePacket(snet::layers::Packet* rawPacket, Verdict verdic
 
 Status XdpDriver::transmitPacket(layers::Packet* packet, io::DeviceId egress)
 {
-    (void)packet;
-    (void)egress;
-    return Status::NotSupported;
-}
-
-/*Status XdpDriver::inject(const uint8_t* data, uint32_t dataLen)
-{
-    if (instances_.empty())
+    if (!packet)
         return Status::InvalidArgument;
-    if (!data || dataLen == 0)
-        return Status::InvalidArgument;
-    if (dataLen > frameSize_ - headroom_)
-    {
-        logError("XdpDriver: inject packet too large (%u > %u)", dataLen, frameSize_ - headroom_);
-        return Status::InvalidArgument;
-    }
 
-    uint64_t frameAddr = acquireFrame();
-    if (frameAddr == UINT64_MAX)
-    {
-        for (auto* inst : instances_)
-            processCq(*inst, compSize_);
+    if (egress >= instances_.size())
+        return Status::NoSuchDevice;
 
-        frameAddr = acquireFrame();
-        if (frameAddr == UINT64_MAX)
-            return Status::NoMemory;
-    }
+    XdpInstance* inst = instances_[egress];
+    if (!inst || !inst->active())
+        return Status::NoSuchDevice;
 
-    uint8_t* dst = static_cast<uint8_t*>(umemArea_) + frameAddr + headroom_;
-    std::memcpy(dst, data, dataLen);
-
-    XdpInstance* egress = instances_.front();
-    if (!transmitFrame(egress, frameAddr, dataLen))
-    {
-        releaseFrame(frameAddr);
+    // io::Device::send handles frame allocation, copy and TX submit.
+    if (!inst->send(packet->getData(), packet->getDataLen()))
         return Status::Error;
-    }
 
-    stats_.packetsInjected++;
+    stats_.packetsTransmitted++;
     return Status::Success;
-}*/
+}
 
 Status XdpDriver::getStats(Stats* stats)
 {
@@ -915,12 +601,12 @@ snet::layers::LinkLayerType XdpDriver::getDataLinkType() const
 
 Status XdpDriver::getMsgPoolInfo(snet::io::PacketPoolInfo& info)
 {
-    const auto capacity = pool_ ? pool_->capacity() : 0U;
+    const auto capacity  = pool_ ? pool_->capacity()  : 0U;
     const auto available = pool_ ? pool_->available() : 0U;
 
-    info.capacity = capacity;
-    info.available = available;
-    info.memorySize = sizeof(XdpWrapper) * capacity + umemAreaSize_;
+    info.capacity    = capacity;
+    info.available   = available;
+    info.memorySize  = sizeof(XdpWrapper) * capacity + umemAreaSize_;
     return Status::Success;
 }
 
