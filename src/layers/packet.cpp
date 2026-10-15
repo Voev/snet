@@ -151,6 +151,24 @@ nonstd::optional<LayerInfo> Packet::parseLayer(ProtocolType protocol, size_t glo
         break;
     }
 
+    case ARP:
+    {
+        if (remaining < sizeof(arp_header))
+        {
+            return nonstd::nullopt;
+        }
+
+        info.headerLength = sizeof(arp_header);
+        info.payloadOffset = 0;
+
+        auto arp = ArpHeader();
+        if (!arp.initialize(info, *this))
+        {
+            return nonstd::nullopt;
+        }
+        break;
+    }
+
     case IPv4:
     {
         constexpr size_t MIN_IP_LEN = 20;
