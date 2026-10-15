@@ -6,8 +6,17 @@
 #include <casket/signal/signal_handler.hpp>
 
 #include <snet/io.hpp>
+#include <snet/arp.hpp>
 
-#include <snet/layers/packet_pipeline.hpp>
+#include <snet/pp/packet_pipeline.hpp>
+#include <snet/pp/l2_filter_stage.hpp>
+#include <snet/pp/arp_stage.hpp>
+#include <snet/pp/routing_stage.hpp>
+#include <snet/pp/ip_forward_stage.hpp>
+#include <snet/pp/session_stage.hpp>
+#include <snet/pp/forward_stage.hpp>
+
+#include <snet/iface_utils.hpp>
 
 using namespace casket;
 using namespace casket::opt;
@@ -161,13 +170,46 @@ int main(int argc, char* argv[])
         driver->start();
         std::cout << "listening... (Ctrl+C to stop)\n";
 
+        auto arpTransport = std::make_unique<snet::arp::ArpTransport>(*driver);
+        snet::arp::ArpResolver arpResolver(*arpTransport);
+
+        for (size_t i = 0; i < driver->deviceCount(); ++i)
+        {
+            auto* dev = driver->deviceAt(i);
+            auto ip = snet::ifaceIpv4(*driver, dev->id());
+            if (ip != 0)
+                arpResolver.addLocal(dev->id(), ip, dev->mac());
+        }
+
+        snet::pp::PacketPipeline pipeline;
+
+        pipeline.addStage(std::make_unique<snet::pp::L2FilterStage>(*driver));
+        pipeline.addStage(std::make_unique<snet::pp::ArpInterceptorStage>(arpResolver));
+
+        auto routing = std::make_unique<snet::pp::RoutingStage>();
+        if (driver->deviceCount() >= 2)
+        {
+            auto* d0 = driver->deviceAt(0);
+            auto* d1 = driver->deviceAt(1);
+            routing->setPeer(d0->id(), d1->id());
+
+            auto ip0 = snet::ifaceIpv4(*driver, d0->id());
+            auto ip1 = snet::ifaceIpv4(*driver, d1->id());
+            if (ip0)
+                routing->setLocal(d0->id(), ip0);
+            if (ip1)
+                routing->setLocal(d1->id(), ip1);
+        }
+        pipeline.addStage(std::move(routing));
+        pipeline.addStage(std::make_unique<snet::pp::IpForwardStage>());
+        // pipeline.addStage(std::make_unique<snet::pp::SessionStage<SessionManager>>(sessionManager));
+        pipeline.addStage(std::make_unique<snet::pp::ForwardingStage>(*driver, arpResolver));
+
         constexpr uint16_t batchSize = 32;
         snet::io::Driver::RxItem rx[batchSize];
         uint16_t received = 0;
         RecvStatus recvStatus = RecvStatus::Ok;
         std::uint64_t total = 0;
-
-        snet::layers::PacketPipeline pipeline;
 
         while (!g_stop.load(std::memory_order_relaxed))
         {
@@ -186,20 +228,20 @@ int main(int argc, char* argv[])
                 auto v = pipeline.onPacket(rx[i].packet, rx[i].ingress);
                 switch (v)
                 {
-                case snet::layers::PacketVerdict::Pass:
+                case snet::pp::PacketVerdict::Pass:
                     driver->finalizePacket(rx[i].packet, Verdict::Pass);
                     break;
-                case snet::layers::PacketVerdict::Drop:
-                case snet::layers::PacketVerdict::Consumed:
+                case snet::pp::PacketVerdict::Drop:
+                case snet::pp::PacketVerdict::Consumed:
                     driver->finalizePacket(rx[i].packet, Verdict::Block);
                     break;
-                case snet::layers::PacketVerdict::Pending:
+                case snet::pp::PacketVerdict::Pending:
                     break;
                 }
             }
 
             pipeline.onTick(
-                [&](snet::layers::Packet* packet, snet::layers::PacketContext& ctx, bool ok)
+                [&](snet::layers::Packet* packet, snet::pp::PacketContext& ctx, bool ok)
                 {
                     if (ok && ctx.egress != snet::io::kInvalidDevice)
                     {
