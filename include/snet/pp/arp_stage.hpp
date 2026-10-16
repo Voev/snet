@@ -14,6 +14,11 @@ public:
     {
     }
 
+    const char* name() const noexcept override
+    {
+        return "ArpStage";
+    }
+
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
         if (arp_.handle(pkt, ctx.ingress))

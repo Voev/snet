@@ -4,7 +4,7 @@
 namespace snet::io
 {
 
-static inline Device* FindDriverByDeviceId(Driver& driver, const DeviceId id)
+static inline Device* FindDeviceById(Driver& driver, const DeviceId id)
 {
     auto deviceCount = driver.deviceCount();
 

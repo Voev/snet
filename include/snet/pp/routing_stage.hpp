@@ -12,6 +12,11 @@ namespace snet::pp
 class RoutingStage final : public IPacketStage
 {
 public:
+    const char* name() const noexcept override
+    {
+        return "RoutingStage";
+    }
+
     void setPeer(io::DeviceId a, io::DeviceId b)
     {
         peer_[a] = b;

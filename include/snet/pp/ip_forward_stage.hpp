@@ -7,6 +7,11 @@ namespace snet::pp {
 
 class IpForwardStage final : public IPacketStage {
 public:
+    const char* name() const noexcept override
+    {
+        return "IpForwardStage";
+    }
+
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
         if (ctx.egress == io::kInvalidDevice)

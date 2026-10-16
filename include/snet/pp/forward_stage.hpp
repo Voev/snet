@@ -1,8 +1,8 @@
 #pragma once
 
+#include <snet/io.hpp>
 #include <snet/pp/packet_pipeline.hpp>
 #include <snet/arp/arp_resolver.hpp>
-#include <snet/io/driver.hpp>
 #include <snet/layers/protocol.hpp>
 #include <snet/layers/l2/eth_header.hpp>
 
@@ -18,23 +18,17 @@ public:
     {
     }
 
+    const char* name() const noexcept override
+    {
+        return "ForwardingStage";
+    }
+
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
         if (ctx.egress == io::kInvalidDevice)
             return StageResult::Continue;
 
-        auto devCount = driver_.deviceCount();
-        io::Device* device{nullptr};
-
-        for (size_t i = 0; i < devCount; ++i)
-        {
-            device = driver_.deviceAt(i);
-            if (device && device->id() == ctx.ingress)
-            {
-                break;
-            }
-        }
-
+        io::Device* device = io::FindDeviceById(driver_, ctx.egress);
         if (!device)
         {
             return StageResult::Drop;

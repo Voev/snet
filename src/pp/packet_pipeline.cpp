@@ -21,7 +21,9 @@ PacketVerdict PacketPipeline::onPacket(Packet* pkt, io::DeviceId ingress)
 
     for (size_t i = 0; i < stages_.size(); ++i)
     {
-        switch (stages_[i]->process(pkt, ctx))
+        auto status = stages_[i]->process(pkt, ctx);
+        std::cout << stages_[i]->name() << ": status=" << (int)status << "\n" << *pkt << std::endl;
+        switch (status)
         {
         case StageResult::Continue:
             break;

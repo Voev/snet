@@ -173,13 +173,13 @@ int main(int argc, char* argv[])
         auto arpTransport = std::make_unique<snet::arp::ArpTransport>(*driver);
         snet::arp::ArpResolver arpResolver(*arpTransport);
 
-        for (size_t i = 0; i < driver->deviceCount(); ++i)
-        {
-            auto* dev = driver->deviceAt(i);
-            auto ip = snet::ifaceIpv4(*driver, dev->id());
-            if (ip != 0)
-                arpResolver.addLocal(dev->id(), ip, dev->mac());
-        }
+        auto* d0 = driver->deviceAt(0);
+        auto ip0 = snet::layers::IPv4Address::fromString("10.0.0.2").value();
+        arpResolver.addLocal(d0->id(), ip0, d0->mac());
+
+        auto* d1 = driver->deviceAt(1);
+        auto ip1 = snet::layers::IPv4Address::fromString("10.0.0.1").value();
+        arpResolver.addLocal(d1->id(), ip1, d1->mac());
 
         snet::pp::PacketPipeline pipeline;
 
@@ -189,16 +189,7 @@ int main(int argc, char* argv[])
         auto routing = std::make_unique<snet::pp::RoutingStage>();
         if (driver->deviceCount() >= 2)
         {
-            auto* d0 = driver->deviceAt(0);
-            auto* d1 = driver->deviceAt(1);
             routing->setPeer(d0->id(), d1->id());
-
-            auto ip0 = snet::ifaceIpv4(*driver, d0->id());
-            auto ip1 = snet::ifaceIpv4(*driver, d1->id());
-            if (ip0)
-                routing->setLocal(d0->id(), ip0);
-            if (ip1)
-                routing->setLocal(d1->id(), ip1);
         }
         pipeline.addStage(std::move(routing));
         pipeline.addStage(std::make_unique<snet::pp::IpForwardStage>());

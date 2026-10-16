@@ -68,9 +68,9 @@ std::ostream& ArpHeader::print(std::ostream& os) const noexcept
        << " htype=" << hardwareType()
        << " ptype=0x" << std::hex << protocolType() << std::dec
        << " sha=" << MacAddress(senderHwAddr())
-       << " spa=" << IPv4Address(senderProtoAddr())
+       << " spa=" << IPv4Address::fromNetwork(senderProtoAddr())
        << " tha=" << MacAddress(targetHwAddr())
-       << " tpa=" << IPv4Address(targetProtoAddr());
+       << " tpa=" << IPv4Address::fromNetwork(targetProtoAddr());
     // clang-format on
 
     return os;

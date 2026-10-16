@@ -46,6 +46,8 @@ public:
     /// @brief Virtual destructor.
     virtual ~IPacketStage() = default;
 
+    virtual const char* name() const noexcept = 0;
+
     /// @brief Processes a packet.
     /// @param[in,out] pkt Packet to process.
     /// @param[in,out] ctx Processing context.

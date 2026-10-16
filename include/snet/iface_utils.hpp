@@ -61,7 +61,7 @@ private:
 
 layers::IPv4Address ifaceIpv4(snet::io::Driver& driver, snet::io::DeviceId id)
 {
-    auto* dev = FindDriverByDeviceId(driver, id);
+    auto* dev = FindDeviceById(driver, id);
     if (!dev)
         return {};
 

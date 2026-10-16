@@ -133,9 +133,10 @@ std::ostream& EthernetHeader::print(std::ostream& os) const noexcept
     PrintMac(os, srcMac());
     os << " -> ";
     PrintMac(os, dstMac());
-    os << "  EtherType: 0x" << std::hex << std::setw(4) << std::setfill('0') << header_->etherType << std::dec;
+    auto type = etherType();
+    os << "  EtherType: 0x" << std::hex << std::setw(4) << std::setfill('0') << static_cast<uint16_t>(type) << std::dec;
     os << " (";
-    PrintEtherType(os, etherType());
+    PrintEtherType(os, type);
     os << ")";
 
     return os;

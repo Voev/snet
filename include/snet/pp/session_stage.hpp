@@ -15,6 +15,11 @@ public:
     explicit SessionStage(SessionManagerType& mgr)
         : mgr_(mgr) {}
 
+    const char* name() const noexcept override
+    {
+        return "SessionStage";
+    }
+
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
         if (ctx.egress != io::kInvalidDevice)

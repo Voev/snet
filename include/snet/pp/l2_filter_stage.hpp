@@ -17,6 +17,11 @@ public:
     {
     }
 
+    const char* name() const noexcept override
+    {
+        return "L2FilterStage";
+    }
+
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
         auto devCount = driver_.deviceCount();
