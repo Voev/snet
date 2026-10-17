@@ -19,9 +19,6 @@
 #include <casket/log/log.hpp>
 #include <casket/opt/opt.hpp>
 
-#include <snet/layers/header_builder.hpp>
-#include <snet/layers/in_memory_packet.hpp>
-
 #ifndef POLLRDHUP
 #define POLLRDHUP 0x2000
 #endif
