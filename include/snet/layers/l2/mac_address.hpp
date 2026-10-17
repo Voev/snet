@@ -21,10 +21,11 @@ struct MacAddress
     {
         std::copy(mac, mac + 6, bytes.begin());
     }
-    MacAddress(std::initializer_list<uint8_t> list)
+
+    explicit MacAddress(nonstd::span<const uint8_t> span)
     {
-        if (list.size() == 6)
-            std::copy(list.begin(), list.end(), bytes.begin());
+        if (span.size() >= 6)
+            std::copy(span.begin(), span.begin() + 6, bytes.begin());
     }
 
     const uint8_t* data() const
@@ -47,7 +48,7 @@ struct MacAddress
 
     static MacAddress broadcast()
     {
-        return MacAddress{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        return MacAddress({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
     }
 
     bool isBroadcast() const noexcept
@@ -58,9 +59,14 @@ struct MacAddress
         return true;
     }
 
+    bool isMulticast() const noexcept
+    {
+        return (bytes[0] & 0x01) != 0;
+    }
+
     static MacAddress zero()
     {
-        return MacAddress{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        return MacAddress({0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
     }
 
     bool isZero() const noexcept
@@ -107,3 +113,9 @@ struct MacAddress
 };
 
 } // namespace snet::layers
+
+inline std::ostream& operator<<(std::ostream& os, const snet::layers::MacAddress& addr)
+{
+    os << addr.toString();
+    return os;
+}

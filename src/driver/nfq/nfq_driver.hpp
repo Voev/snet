@@ -56,30 +56,33 @@ public:
     /// @return Status indicating success or failure
     Status interrupt() override;
 
-    /// @brief Receives multiple packets in a single operation
-    /// @param[out] packet Array of packet pointers to fill
-    /// @param[in,out] packetCount On input, maximum number of packets;
-    ///                             on output, actual number received
-    /// @param[in] maxCount Maximum number of packets to receive
-    /// @return RecvStatus indicating result
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    /// @brief Gets number of devices.
+    /// @return Number of available devices.
+    virtual size_t deviceCount() const override;
 
-    /// @brief Injects a raw packet through Netfilter
-    /// @param[in] data Raw packet data buffer
-    /// @param[in] data_len Length of the data buffer in bytes
-    /// @return Status indicating success or failure
-    Status inject(const uint8_t* data, uint32_t data_len) override;
+    /// @brief Gets device by index.
+    /// @param[in] idx Device index.
+    /// @return Pointer to the device, or nullptr if idx is invalid.
+    virtual io::Device* deviceAt(size_t idx) const override;
 
-    /// @brief Finalizes packet processing with verdict
-    /// @param[in] packet Packet to finalize
-    /// @param[in] verdict Processing decision (ACCEPT, DROP, STOLEN, etc.)
-    /// @return Status indicating success or failure
-    /// @note Must be called for each packet received via receivePacket/receivePackets
-    Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
+    /// @brief Receives packets from the driver.
+    /// @param[out] rx Array to fill with received packet items.
+    /// @param[out] count Number of packets actually received.
+    /// @param[in] max Maximum number of packets to receive.
+    /// @return Receive status.
+    virtual RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) override;
 
-    /// @brief Gets the snapshot length (snaplen) for captured packets
-    /// @return Maximum captured packet length in bytes
-    int getSnaplen() const override;
+    /// @brief Finalizes packet with verdict.
+    /// @param[in] packet Packet to finalize.
+    /// @param[in] verdict Processing decision.
+    /// @return Status indicating success or failure.
+    virtual Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
+
+    /// @brief Transmits a packet through the specified egress device.
+    /// @param[in] packet Packet to transmit.
+    /// @param[in] egress Egress device identifier.
+    /// @return Status indicating success or failure.
+    virtual Status transmitPacket(layers::Packet* packet, io::DeviceId egress) override;
 
     /// @brief Gets the link layer type of the capture source
     /// @return LinkLayerType enumeration value

@@ -209,7 +209,7 @@ int main(int argc, char* argv[])
         std::cout << "listening... (Ctrl+C to stop)\n";
 
         constexpr uint16_t batchSize = 32;
-        snet::layers::Packet* packets[batchSize];
+        snet::io::Driver::RxItem rx[batchSize];
         uint16_t received = 0;
         RecvStatus recvStatus = RecvStatus::Ok;
         std::uint64_t total = 0;
@@ -224,11 +224,11 @@ int main(int argc, char* argv[])
             }
 
             received = 0;
-            recvStatus = driver->receivePackets(packets, &received, batchSize);
+            recvStatus = driver->receivePackets(rx, &received, batchSize);
 
             for (uint16_t i = 0; i < received; ++i)
             {
-                snet::layers::Packet* pkt = packets[i];
+                snet::layers::Packet* pkt = rx[i].packet;
                 if (!pkt)
                     continue;
 

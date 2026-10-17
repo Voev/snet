@@ -25,14 +25,6 @@ struct xdp_program;
 namespace snet::driver
 {
 
-/// @brief Forwarding topology between endpoints.
-enum class ForwardTopology : uint8_t
-{
-    Pairs,  ///< 0<->1, 2<->3, ... (default)
-    Ring,   ///< 0->1->...->N-1->0
-    Single, ///< each endpoint forwards to itself
-};
-
 /// @brief XDP driver implementation using AF_XDP.
 /// @details Manages multiple XdpInstance objects, UMEM, BPF programs, and packet forwarding.
 class XdpDriver final : public snet::io::DriverBase
@@ -54,197 +46,178 @@ public:
     /// @return Shared pointer to the created driver.
     static std::shared_ptr<io::Driver> create(const io::DriverSpec& config);
 
-    /// @brief Returns the driver name.
-    /// @return Driver name string.
+    /// @brief Gets driver name.
+    /// @return Driver identifier string.
     const char* getName() const override;
 
-    /// @brief Declares configuration options.
-    /// @param[in,out] config Configuration to declare options into.
+    /// @brief Registers driver-specific options in the config section.
+    /// @param[out] config Shared driver configuration section.
     /// @return Status of the operation.
     Status declareOptions(io::Config& config) override;
 
-    /// @brief Configures the driver from the given config.
-    /// @param[in] config Configuration to apply.
+    /// @brief Applies configuration settings to the driver.
+    /// @param[in] config Configuration source.
     /// @return Status of the operation.
     Status configure(const snet::io::Config& config) override;
 
-    /// @brief Starts the driver.
+    /// @brief Starts the driver and initializes all instances.
     /// @return Status of the operation.
     Status start() override;
 
-    /// @brief Stops the driver.
+    /// @brief Stops the driver and tears down all instances.
     /// @return Status of the operation.
     Status stop() override;
 
-    /// @brief Interrupts the driver.
+    /// @brief Signals the driver to interrupt pending operations.
     /// @return Status of the operation.
     Status interrupt() override;
 
-    /// @brief Injects a packet into the driver.
-    /// @param[in] data Pointer to packet data.
-    /// @param[in] dataLen Length of packet data.
-    /// @return Status of the operation.
-    Status inject(const uint8_t* data, uint32_t dataLen) override;
+    /// @brief Returns the number of registered devices.
+    /// @return Device count.
+    size_t deviceCount() const override;
 
-    /// @brief Retrieves driver statistics.
-    /// @param[out] stats Pointer to stats structure to fill.
-    /// @return Status of the operation.
-    Status getStats(Stats* stats) override;
+    /// @brief Returns the device at the given index.
+    /// @param[in] idx Device index.
+    /// @return Pointer to the device, or nullptr if out of range.
+    io::Device* deviceAt(size_t idx) const override;
 
-    /// @brief Resets driver statistics.
-    void resetStats() override;
-
-    /// @brief Returns the snapshot length.
-    /// @return Snapshot length.
-    int getSnaplen() const override;
-
-    /// @brief Returns the data link type.
-    /// @return Data link type.
-    snet::layers::LinkLayerType getDataLinkType() const override;
-
-    /// @brief Receives packets.
-    /// @param[out] packet Array of packet pointers to fill.
-    /// @param[out] packetCount Number of packets received.
-    /// @param[in] maxCount Maximum number of packets to receive.
+    /// @brief Receives packets from the RX rings.
+    /// @param[out] rx Array of RX items to fill.
+    /// @param[out] count Number of packets actually received.
+    /// @param[in] max Maximum number of packets to receive.
     /// @return Receive status.
-    RecvStatus receivePackets(layers::Packet** packet, uint16_t* packetCount, uint16_t maxCount) override;
+    RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) override;
 
-    /// @brief Finalizes a packet with a verdict.
-    /// @param[in] rawPacket Packet to finalize.
-    /// @param[in] verdict Verdict for the packet.
+    /// @brief Finalizes a packet after processing.
+    /// @param[in] packet Packet to finalize.
+    /// @param[in] verdict Verdict applied to the packet.
     /// @return Status of the operation.
-    Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) override;
+    Status finalizePacket(layers::Packet* packet, Verdict verdict) override;
+
+    /// @brief Transmits a packet through the given egress device.
+    /// @param[in] packet Packet to transmit.
+    /// @param[in] egress Egress device identifier.
+    /// @return Status of the operation.
+    Status transmitPacket(layers::Packet* packet, io::DeviceId egress) override;
 
     /// @brief Retrieves packet pool information.
-    /// @param[out] info Packet pool info to fill.
+    /// @param[out] info Structure to fill with pool information.
     /// @return Status of the operation.
     Status getMsgPoolInfo(snet::io::PacketPoolInfo& info) override;
 
+    /// @brief Retrieves driver statistics.
+    /// @param[out] stats Structure to fill with statistics.
+    /// @return Status of the operation.
+    Status getStats(Stats* stats) override;
+
+    /// @brief Resets all driver statistics to zero.
+    void resetStats() override;
+
+    /// @brief Returns the data link layer type of the driver.
+    /// @return Link layer type.
+    snet::layers::LinkLayerType getDataLinkType() const override;
+
+    /// @brief Acquires a free frame from the UMEM pool.
+    /// @return Frame address, or invalid address if none available.
+    uint64_t acquireFrame();
+
+    /// @brief Releases a frame back to the UMEM pool.
+    /// @param[in] addr Frame address to release.
+    void releaseFrame(uint64_t addr);
+
+    /// @brief Returns the number of free frames in the pool.
+    /// @return Free frame count.
+    uint32_t freeFrameCount() const noexcept;
+
+    /// @brief Returns the configured frame size.
+    /// @return Frame size in bytes.
+    uint32_t frameSize() const noexcept
+    {
+        return frameSize_;
+    }
+
+    /// @brief Returns the configured headroom size.
+    /// @return Headroom size in bytes.
+    uint32_t headroom() const noexcept
+    {
+        return headroom_;
+    }
+
+    /// @brief Returns the configured completion ring size.
+    /// @return Completion ring size.
+    uint32_t compSize() const noexcept
+    {
+        return compSize_;
+    }
+
+    /// @brief Returns the base address of the UMEM area.
+    /// @return Pointer to the UMEM memory region.
+    void* umemBase() const noexcept
+    {
+        return umemArea_;
+    }
+
 private:
-    /// @brief One endpoint as parsed from the input string.
+    /// @brief Endpoint descriptor (interface and queue).
     struct Endpoint
     {
-        std::string iface; ///< Interface name.
-        uint32_t queue{0}; ///< Queue ID.
+        std::string iface; ///< Network interface name.
+        uint32_t queue{0}; ///< Queue identifier.
     };
 
-    /// @brief Per-iface BPF program + XSKMAP + the instances bound to it.
+    /// @brief Per-interface runtime context.
     struct IfaceContext
     {
-        std::string iface;                          ///< Interface name.
-        uint32_t ifindex{0};                        ///< Interface index.
-        struct xdp_program* program{nullptr};       ///< BPF program handle.
-        int xskmapFd{-1};                           ///< XSKMAP file descriptor.
-        std::vector<XdpInstance*> instances;        ///< Non-owning instances (see instancesOwned_).
+        std::string iface;                   ///< Network interface name.
+        uint32_t ifindex{0};                 ///< Interface index.
+        std::vector<XdpInstance*> instances; ///< Instances bound to this interface.
     };
 
-    /// @brief Parses the endpoints string.
-    /// @param[in] input Endpoints string.
+    /// @brief Parses endpoint specification string into endpoints_.
+    /// @param[in] input Endpoint specification string.
     /// @return Status of the operation.
     Status parseEndpoints(const std::string& input);
 
-    /// @brief Parses the topology string.
-    /// @return Status of the operation.
-    Status parseTopology();
-
-    /// @brief Sets up RLIMIT_MEMLOCK.
-    /// @return true on success, false otherwise.
+    /// @brief Configures RLIMIT_MEMLOCK for UMEM allocation.
+    /// @return True on success, false otherwise.
     bool setupRlimit();
 
-    /// @brief Creates the UMEM area.
-    /// @return true on success, false otherwise.
+    /// @brief Creates the UMEM and associated rings.
+    /// @return True on success, false otherwise.
     bool createUmem();
 
-    /// @brief Destroys the UMEM area.
+    /// @brief Destroys the UMEM and releases associated resources.
     void destroyUmem() noexcept;
 
-    /// @brief Opens BPF for an interface context.
-    /// @param[in,out] ctx Interface context.
-    /// @return true on success, false otherwise.
-    bool openBpfForIface(IfaceContext& ctx);
-
-    /// @brief Closes BPF for an interface context.
-    /// @param[in,out] ctx Interface context.
-    void closeBpfForIface(IfaceContext& ctx) noexcept;
-
-    /// @brief Builds peer relationships between instances.
-    void buildPeers();
-
-    /// @brief Clears all resources.
+    /// @brief Clears all internal state and releases resources.
     void clearAll();
 
-    /// @brief Refills the fill queue.
-    /// @param[in] inst Instance to refill.
-    /// @param[in] max Maximum number of frames to refill.
-    /// @return Number of frames refilled.
-    uint32_t refillFq(XdpInstance& inst, uint32_t max);
-
-    /// @brief Processes the completion queue.
-    /// @param[in] inst Instance to process.
-    /// @param[in] max Maximum number of completions to process.
-    /// @return Number of completions processed.
-    uint32_t processCq(XdpInstance& inst, uint32_t max);
-
-    /// @brief Kicks the TX ring.
-    /// @param[in] inst Instance to kick.
-    /// @return true on success, false otherwise.
-    bool kickTx(XdpInstance& inst);
-
-    /// @brief Acquires a free frame.
-    /// @return Frame address, or 0 if none available.
-    uint64_t acquireFrame();
-
-    /// @brief Releases a frame back to the free list.
-    /// @param[in] addr Frame address.
-    void releaseFrame(uint64_t addr);
-
-    /// @brief Transmits a frame to the egress instance.
-    /// @param[in] egress Egress instance.
-    /// @param[in] frameAddr Frame address.
-    /// @param[in] len Frame length.
-    /// @return true on success, false otherwise.
-    bool transmitFrame(XdpInstance* egress, uint64_t frameAddr, uint32_t len);
-
-    /// @brief Swaps MAC addresses in-place.
-    /// @param[in] frameAddr Frame address.
-    /// @param[in] len Frame length.
-    void swapMacInPlace(uint64_t frameAddr, uint32_t len) noexcept;
-
 private:
-    std::string endpointsStr_;                      ///< Endpoints string.
-    std::vector<Endpoint> endpoints_;               ///< Parsed endpoints.
-    std::string bpfObject_;                         ///< BPF object file path.
-    std::string bpfSection_{"xdp"};                 ///< BPF section name.
-    bool zeroCopy_{true};                           ///< Zero-copy mode flag.
-    bool needWakeup_{true};                         ///< Need wakeup flag.
-    uint32_t numFrames_{xdp::kDefaultNumFrames};    ///< Number of frames.
-    uint32_t frameSize_{xdp::kDefaultFrameSize};    ///< Frame size.
-    uint32_t headroom_{xdp::kDefaultHeadroom};      ///< Headroom size.
-    uint32_t fillSize_{xdp::kDefaultFillSize};      ///< Fill ring size.
-    uint32_t compSize_{xdp::kDefaultCompSize};      ///< Completion ring size.
-    uint32_t rxSize_{xdp::kDefaultRxSize};          ///< RX ring size.
-    uint32_t txSize_{xdp::kDefaultTxSize};          ///< TX ring size.
-    uint32_t batchSize_{xdp::kDefaultBatchSize};    ///< Batch size.
-    size_t snaplen_{xdp::kDefaultFrameSize};        ///< Snapshot length.
-    int32_t timeoutMs_{-1};                         ///< Timeout in milliseconds.
-    std::string topologyStr_{"pairs"};              ///< Topology string.
-    ForwardTopology topology_{ForwardTopology::Pairs}; ///< Forwarding topology.
-    bool swapMac_{false};                           ///< Swap MAC flag.
-    void* umemArea_{nullptr};                       ///< UMEM area pointer.
-    size_t umemAreaSize_{0};                        ///< UMEM area size.
-    struct xsk_umem* umem_{nullptr};                ///< UMEM handle.
-    struct xsk_ring_prod umemFq_{};                 ///< Dummy FQ ring (required by API).
-    struct xsk_ring_cons umemCq_{};                 ///< Dummy CQ ring (required by API).
-    std::vector<uint64_t> freeFrames_;              ///< Free frame addresses.
-    std::mutex poolMutex_;                          ///< Mutex for pool operations.
-    std::vector<std::unique_ptr<IfaceContext>> ifaces_; ///< Interface contexts.
-    std::vector<XdpInstancePtr> instancesOwned_;    ///< Owning instances.
-    std::vector<XdpInstance*> instances_;           ///< Flat, non-owning view of instances.
-    XdpPoolPtr pool_;                               ///< Packet wrapper pool.
-    size_t currInstanceIdx_{0};                     ///< Current instance index for round-robin.
-    std::atomic<bool> interrupted_{false};          ///< Interrupted flag.
-    Stats stats_{};                                 ///< Driver statistics.
-    uint64_t packetsSentCounter_{0};                ///< Packets sent counter.
+    std::vector<Endpoint> endpoints_;                   ///< Configured endpoints.
+    bool zeroCopy_{true};                               ///< Whether zero-copy mode is enabled.
+    bool needWakeup_{true};                             ///< Whether wakeup syscalls are needed.
+    uint32_t numFrames_{xdp::kDefaultNumFrames};        ///< Number of UMEM frames.
+    uint32_t frameSize_{xdp::kDefaultFrameSize};        ///< Size of each frame in bytes.
+    uint32_t headroom_{xdp::kDefaultHeadroom};          ///< Headroom reserved per frame.
+    uint32_t fillSize_{xdp::kDefaultFillSize};          ///< Fill ring size.
+    uint32_t compSize_{xdp::kDefaultCompSize};          ///< Completion ring size.
+    uint32_t rxSize_{xdp::kDefaultRxSize};              ///< RX ring size.
+    uint32_t txSize_{xdp::kDefaultTxSize};              ///< TX ring size.
+    uint32_t batchSize_{xdp::kDefaultBatchSize};        ///< Batch processing size.
+    int32_t timeoutMs_{-1};                             ///< Poll timeout in milliseconds.
+    void* umemArea_{nullptr};                           ///< Base address of UMEM memory region.
+    size_t umemAreaSize_{0};                            ///< Size of UMEM memory region.
+    struct xsk_umem* umem_{nullptr};                    ///< UMEM handle.
+    struct xsk_ring_prod umemFq_{};                     ///< Fill ring producer.
+    struct xsk_ring_cons umemCq_{};                     ///< Completion ring consumer.
+    std::vector<uint64_t> freeFrames_;                  ///< Stack of free frame addresses.
+    std::vector<std::unique_ptr<IfaceContext>> ifaces_; ///< Per-interface contexts.
+    std::vector<XdpInstancePtr> instancesOwned_;        ///< Owned XDP instances.
+    std::vector<XdpInstance*> instances_;               ///< Raw pointers to active instances.
+    XdpPoolPtr pool_;                                   ///< Pool of XdpWrapper objects.
+    size_t currInstanceIdx_{0};                         ///< Current instance index for round-robin.
+    std::atomic<bool> interrupted_{false};              ///< Interrupt flag.
+    Stats stats_{};                                     ///< Accumulated driver statistics.
 };
 
 } // namespace snet::driver

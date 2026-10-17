@@ -52,16 +52,16 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 void DecryptByKeylog::execute()
 {
     RecvStatus status{RecvStatus::Ok};
-    snet::layers::Packet* packets[32] = {};
+    snet::io::Driver::RxItem rx[32] = {};
     uint16_t maxCount = 32;
     uint16_t receivedPackets = 0;
 
     do
     {
-        status = driver_->receivePackets(packets, &receivedPackets, maxCount);
+        status = driver_->receivePackets(rx, &receivedPackets, maxCount);
         for (uint16_t i = 0; i < receivedPackets; ++i)
         {
-            snet::layers::Packet* packet = packets[i];
+            snet::layers::Packet* packet = rx[i].packet;
             if (packet)
             {
                 packet->parse();

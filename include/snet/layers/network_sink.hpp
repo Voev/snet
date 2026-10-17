@@ -91,13 +91,6 @@ public:
         const size_t frameLen = ETH_HEADER_LEN + ipLen;
 
         memPkt->asPacket()->setRawData(nonstd::span<const uint8_t>(eth, frameLen), LINKTYPE_ETHERNET);
-
-        auto status = driver_->inject(eth, static_cast<uint32_t>(frameLen));
-        if (status != Status::Success)
-        {
-            printf("[TX] inject failed: status=%d\n", static_cast<int>(status));
-            return false;
-        }
         return true;
     }
 

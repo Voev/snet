@@ -178,6 +178,15 @@ private:
             return static_cast<size_t>(header_->u.bits.doff) * 4;
         }
 
+        if constexpr (std::is_same_v<HeaderType, arp_header>)
+        {
+            // ARP over Ethernet/IPv4 is fixed-size.
+            // hlen/plen validate the address sizes; if they diverge,
+            // the header is malformed, but the on-wire size is still
+            // sizeof(arp_header) for the standard case.
+            return sizeof(arp_header);
+        }
+
         return sizeof(HeaderType);
     }
 

@@ -6,6 +6,7 @@
 #include <snet/io/types.hpp>
 #include <snet/io/dynamic_library.hpp>
 #include <snet/io/driver_spec.hpp>
+#include <snet/io/device.hpp>
 #include <snet/io/config.hpp>
 
 #include <snet/layers/link_type.hpp>
@@ -33,6 +34,9 @@ struct PacketPoolInfo
 };
 
 /// @brief Stream operator for convenient logging.
+/// @param[in] os Output stream.
+/// @param[in] info Pool information to print.
+/// @return Reference to the output stream.
 inline std::ostream& operator<<(std::ostream& os, const PacketPoolInfo& info)
 {
     info.print(os);
@@ -43,8 +47,10 @@ inline std::ostream& operator<<(std::ostream& os, const PacketPoolInfo& info)
 class Driver
 {
 public:
+    /// @brief Default constructor.
     Driver() = default;
 
+    /// @brief Virtual destructor.
     virtual ~Driver() noexcept = default;
 
     /// @brief Gets driver name.
@@ -75,15 +81,49 @@ public:
     /// @return Status indicating success or failure.
     virtual Status stop() = 0;
 
-    /// @brief Injects raw packet.
-    /// @param[in] data Packet data buffer.
-    /// @param[in] data_len Buffer length in bytes.
-    /// @return Status indicating success or failure.
-    virtual Status inject(const uint8_t* data, uint32_t data_len) = 0;
-
     /// @brief Interrupts ongoing operations.
     /// @return Status indicating success or failure.
     virtual Status interrupt() = 0;
+
+    /// @brief Gets number of devices.
+    /// @return Number of available devices.
+    virtual size_t deviceCount() const = 0;
+
+    /// @brief Gets device by index.
+    /// @param[in] idx Device index.
+    /// @return Pointer to the device, or nullptr if idx is invalid.
+    virtual io::Device* deviceAt(size_t idx) const = 0;
+
+    /// @brief  Received packet descriptor.
+    struct RxItem
+    {
+        layers::Packet* packet{nullptr};  ///< Received packet.
+        io::DeviceId ingress{io::kInvalidDevice}; ///< Ingress device identifier.
+    };
+
+    /// @brief Receives packets from the driver.
+    /// @param[out] rx Array to fill with received packet items.
+    /// @param[out] count Number of packets actually received.
+    /// @param[in] max Maximum number of packets to receive.
+    /// @return Receive status.
+    virtual RecvStatus receivePackets(RxItem* rx, uint16_t* count, uint16_t max) = 0;
+
+    /// @brief Finalizes packet with verdict.
+    /// @param[in] packet Packet to finalize.
+    /// @param[in] verdict Processing decision.
+    /// @return Status indicating success or failure.
+    virtual Status finalizePacket(layers::Packet* packet, Verdict verdict) = 0;
+
+    /// @brief Transmits a packet through the specified egress device.
+    /// @param[in] packet Packet to transmit.
+    /// @param[in] egress Egress device identifier.
+    /// @return Status indicating success or failure.
+    virtual Status transmitPacket(layers::Packet* packet, io::DeviceId egress) = 0;
+
+    /// @brief Gets packet pool information.
+    /// @param[out] info Structure to fill with pool statistics.
+    /// @return Status indicating success or failure.
+    virtual Status getMsgPoolInfo(PacketPoolInfo& info) = 0;
 
     /// @brief Gets driver statistics.
     /// @param[out] stats Structure to fill with statistics.
@@ -93,31 +133,9 @@ public:
     /// @brief Resets all statistics counters.
     virtual void resetStats() = 0;
 
-    /// @brief Gets snapshot length.
-    /// @return Maximum captured packet length in bytes.
-    virtual int getSnaplen() const = 0;
-
     /// @brief Gets link layer type.
     /// @return LinkLayerType enumeration value.
     virtual layers::LinkLayerType getDataLinkType() const = 0;
-
-    /// @brief Receives multiple packets.
-    /// @param[out] rawPacket Array of packet pointers.
-    /// @param[in,out] packetCount On input: max packets; on output: actual received.
-    /// @param[in] maxCount Maximum packets to receive.
-    /// @return RecvStatus indicating result.
-    virtual RecvStatus receivePackets(layers::Packet** rawPacket, uint16_t* packetCount, uint16_t maxCount) = 0;
-
-    /// @brief Finalizes packet with verdict.
-    /// @param[in] rawPacket Packet to finalize.
-    /// @param[in] verdict Processing decision.
-    /// @return Status indicating success or failure.
-    virtual Status finalizePacket(layers::Packet* rawPacket, Verdict verdict) = 0;
-
-    /// @brief Gets packet pool information.
-    /// @param[out] info Structure to fill with pool statistics.
-    /// @return Status indicating success or failure.
-    virtual Status getMsgPoolInfo(PacketPoolInfo& info) = 0;
 };
 
 /// @brief Driver creation function type.
