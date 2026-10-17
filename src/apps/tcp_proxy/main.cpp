@@ -184,19 +184,19 @@ int main(int argc, char* argv[])
 
         snet::proxy::TlsDecisionEngine engine{probe, cache, policy};
 
-        auto tx = std::make_shared<TcpTransmitHandler<SessionManager>>(sink.get(), txCfg);
+        auto txHandler = std::make_shared<TcpTransmitHandler<SessionManager>>(sink.get(), txCfg);
 
-        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, tx.get());
+        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, txHandler.get());
 
         auto consumer = std::make_shared<snet::proxy::TransparentProxyConsumer<SessionManager>>(
-            &mgr, tx.get(), &engine, acceptor.get());
+            &mgr, txHandler.get(), &engine, acceptor.get());
 
-        auto rx = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
+        auto rxHandler = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
 
         auto pipeline = std::make_unique<SessionManager::Pipeline>();
 
-        pipeline->add(rx);
-        pipeline->add(tx);
+        pipeline->add(rxHandler);
+        pipeline->add(txHandler);
 
         mgr.setPipeline(std::move(pipeline));
 
@@ -239,7 +239,7 @@ int main(int argc, char* argv[])
 
         std::cout << "\n=== Transparent TCP Proxy ===\n";
         constexpr uint16_t batchSize = 32;
-        snet::layers::Packet* packets[batchSize];
+        snet::io::Driver::RxItem rx[batchSize];
         uint16_t received = 0;
         RecvStatus recvStatus = RecvStatus::Ok;
         std::uint64_t total = 0;
@@ -254,11 +254,11 @@ int main(int argc, char* argv[])
             }
 
             received = 0;
-            recvStatus = driver->receivePackets(packets, &received, batchSize);
+            recvStatus = driver->receivePackets(rx, &received, batchSize);
 
             for (uint16_t i = 0; i < received; ++i)
             {
-                snet::layers::Packet* pkt = packets[i];
+                snet::layers::Packet* pkt = rx[i].packet;
                 if (!pkt)
                     continue;
 

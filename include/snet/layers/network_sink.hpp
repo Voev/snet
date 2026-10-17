@@ -28,53 +28,7 @@ public:
         if (!driver_ || !packet)
             return false;
 
-        auto* memPkt = InMemoryPacket::fromPacket(packet);
-        if (!memPkt)
-        {
-            CSK_LOG_ERROR("NetworkSink: packet is not InMemoryPacket "
-                          "(cannot use headroom)");
-            return false;
-        }
-
-        if (memPkt->headroom() < ETH_HEADER_LEN)
-        {
-            CSK_LOG_ERROR("NetworkSink: headroom too small (%zu < %zu)", memPkt->headroom(), ETH_HEADER_LEN);
-            return false;
-        }
-
-        auto* ipLayer = packet->findLayer(IPv4);
-        if (!ipLayer)
-        {
-            CSK_LOG_ERROR("NetworkSink: no IPv4 layer");
-            return false;
-        }
-
-        auto ip = packet->getHeader<IPv4Header>(*ipLayer);
-        if (!ip.isValid())
-            return false;
-
-        const IPAddress dstIP(ip.dstAddr());
-
-        MacAddress dstMac = defaultDstMac_;
-        if (dstMac.isZero())
-        {
-            CSK_LOG_WARNING("NetworkSink: no MAC for %s "
-                            "(learner empty, no default)",
-                            dstIP.toString().c_str());
-            return false;
-        }
-
-        uint8_t* eth = memPkt->getBufferStart();
-
-        std::memcpy(eth, dstMac.data(), 6);
-        std::memcpy(eth + 6, srcMac_.data(), 6);
-        eth[12] = static_cast<uint8_t>(ETH_TYPE_IPv4 >> 8);
-        eth[13] = static_cast<uint8_t>(ETH_TYPE_IPv4 & 0xFF);
-
-        const size_t ipLen = packet->getDataLen();
-        const size_t frameLen = ETH_HEADER_LEN + ipLen;
-
-        memPkt->asPacket()->setRawData(nonstd::span<const uint8_t>(eth, frameLen), LINKTYPE_ETHERNET);
+        driver_->transmitPacket(packet, io::kInvalidDevice);
         return true;
     }
 

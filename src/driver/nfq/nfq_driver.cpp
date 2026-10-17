@@ -473,12 +473,6 @@ Status NfQueue::transmitPacket(layers::Packet* packet, io::DeviceId egress)
     return Status::NotSupported;
 }
 
-Status NfQueue::injectPacket(layers::Packet* rawPacket)
-{
-    (void)rawPacket;
-    return Status::NotSupported;
-}
-
 const char* NfQueue::getName() const
 {
     return "nf_queue";

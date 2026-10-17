@@ -25,15 +25,12 @@ public:
         if (ctx.egress != io::kInvalidDevice)
             return StageResult::Continue;
 
-        switch (mgr_.processPacket(pkt))
+        auto res = mgr_.processPacket(pkt);
+        if (res.passes())
         {
-        case layers::PacketStatus::UnknownStatus:
             return StageResult::Continue;
-        case layers::PacketStatus::Error_NoMemory:
-            return StageResult::Drop;
-        default:
-            return StageResult::Consumed;
         }
+        return StageResult::Drop;
     }
 
 private:

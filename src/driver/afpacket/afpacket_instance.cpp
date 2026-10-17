@@ -61,13 +61,11 @@ bool Instance::create(const std::string& name)
 
     struct ifreq ifr{};
     std::strncpy(ifr.ifr_name, name_.c_str(), sizeof(ifr.ifr_name) - 1);
-
     if (::ioctl(fd_, SIOCGIFINDEX, &ifr) == -1)
     {
         driver_.logError("could not find index for device %s: %s", name_.c_str(), std::strerror(errno));
         return false;
     }
-
     index_ = static_cast<uint32_t>(ifr.ifr_ifindex);
 
     // TPACKET_V2

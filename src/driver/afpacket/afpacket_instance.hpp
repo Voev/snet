@@ -1,5 +1,4 @@
 #pragma once
-#include <array>
 #include <string>
 #include <cstdint>
 
@@ -7,8 +6,6 @@
 
 #include "afpacket_types.hpp"
 #include "afpacket_fanout.hpp"
-
-#include <snet/layers/l2/mac_address.hpp>
 
 namespace snet::driver
 {
@@ -164,21 +161,6 @@ public:
     uint32_t rxFrameCount() const noexcept
     {
         return rxRing_.layout.tp_frame_nr;
-    }
-
-    const layers::MacAddress& mac() const noexcept
-    {
-        return mac_;
-    }
-
-    [[nodiscard]] uint32_t ip() const noexcept
-    {
-        return ip_;
-    }
-
-    [[nodiscard]] uint32_t netmask() const noexcept
-    {
-        return netmask_;
     }
 
 private:

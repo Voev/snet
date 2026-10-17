@@ -7,8 +7,6 @@
 #include <snet/io.hpp>
 #include <snet/io/driver_base.hpp>
 
-#include <snet/layers/l2/mac_address.hpp>
-
 #include <casket/types/fixed_object_pool.hpp>
 
 #include "afpacket_types.hpp"
