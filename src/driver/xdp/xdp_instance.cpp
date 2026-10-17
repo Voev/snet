@@ -72,7 +72,7 @@ XdpInstance::~XdpInstance() noexcept
     destroy();
 }
 
-bool XdpInstance::create(const std::string& iface, uint32_t queueId)
+bool XdpInstance::configure(const std::string& iface, uint32_t queueId)
 {
     name_ = iface;
     queueId_ = queueId;
@@ -92,8 +92,7 @@ bool XdpInstance::create(const std::string& iface, uint32_t queueId)
 
     if (!readMtu(iface, mtu_))
     {
-        // Non-fatal: fall back to a sane default.
-        mtu_ = 1500;
+        mtu_ = xdp::kDefaultMtu;
         driver_.logWarning("read MTU(%s) failed, using %u", iface.c_str(), mtu_);
     }
 
@@ -101,12 +100,11 @@ bool XdpInstance::create(const std::string& iface, uint32_t queueId)
     return true;
 }
 
-bool XdpInstance::bindTo(struct xsk_umem* umem, const struct xsk_socket_config& cfg)
+bool XdpInstance::create(struct xsk_umem* umem, const struct xsk_socket_config& cfg)
 {
     if (::xsk_socket__create_shared(&xsk_, name_.c_str(), queueId_, umem, &rx_, &tx_, &fq_, &cq_, &cfg))
     {
-        driver_.logError("xsk_socket__create_shared(%s, q=%u): %s",
-                         name_.c_str(), queueId_, std::strerror(errno));
+        driver_.logError("xsk_socket__create_shared(%s, q=%u): %s", name_.c_str(), queueId_, std::strerror(errno));
         return false;
     }
 
@@ -114,8 +112,11 @@ bool XdpInstance::bindTo(struct xsk_umem* umem, const struct xsk_socket_config& 
     if (fd_ < 0)
     {
         driver_.logError("xsk_socket__fd(%s, q=%u) returned %d", name_.c_str(), queueId_, fd_);
+        destroy();
         return false;
     }
+
+    active_ = true;
     return true;
 }
 
@@ -130,10 +131,6 @@ void XdpInstance::destroy() noexcept
     active_ = false;
 }
 
-// ---------------------------------------------------------------------------
-// io::Device::send
-// ---------------------------------------------------------------------------
-
 bool XdpInstance::send(const uint8_t* data, size_t length) noexcept
 {
     if (!data || length == 0)
@@ -141,34 +138,42 @@ bool XdpInstance::send(const uint8_t* data, size_t length) noexcept
     if (!xsk_ || !active_)
         return false;
 
-    const uint32_t len = static_cast<uint32_t>(length);
-
-    if (len > driver_.frameSize() - driver_.headroom())
+    if (length > std::numeric_limits<uint32_t>::max())
     {
-        driver_.logWarning("send(%s, q=%u): frame too large (%u > %u)",
-                           name_.c_str(), queueId_, len,
-                           driver_.frameSize() - driver_.headroom());
         return false;
     }
 
-    // Allocate a UMEM frame.
+    const uint32_t len = static_cast<uint32_t>(length);
+    const uint32_t frameSize = driver_.frameSize();
+    const uint32_t headroom = driver_.headroom();
+
+    if (headroom >= frameSize)
+    {
+        return false;
+    }
+
+    const uint32_t avail = frameSize - headroom;
+    if (len > avail)
+    {
+        driver_.logWarning("send(%s, q=%u): frame too large (%u > %u)", name_.c_str(), queueId_, len, avail);
+        return false;
+    }
+
     uint64_t frameAddr = driver_.acquireFrame();
     if (frameAddr == UINT64_MAX)
     {
-        // Try to reclaim completions and retry once.
         processCq(driver_.compSize());
         frameAddr = driver_.acquireFrame();
         if (frameAddr == UINT64_MAX)
+        {
+            driver_.logDebug("send(%s, q=%u): pool empty after CQ reclaim", name_.c_str(), queueId_);
             return false;
+        }
     }
 
-    // Copy payload into the frame (past the headroom).
-    uint8_t* dst = static_cast<uint8_t*>(driver_.umemBase())
-                 + frameAddr
-                 + driver_.headroom();
+    uint8_t* dst = static_cast<uint8_t*>(driver_.umemBase()) + frameAddr;
     std::memcpy(dst, data, len);
 
-    // Hand off to the ring; if TX refuses, recycle the frame.
     if (!transmit(frameAddr, len))
     {
         driver_.releaseFrame(frameAddr);
@@ -177,48 +182,60 @@ bool XdpInstance::send(const uint8_t* data, size_t length) noexcept
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Ring I/O
-// ---------------------------------------------------------------------------
-
 uint32_t XdpInstance::refillFq(uint32_t max)
 {
     if (!xsk_ || max == 0)
         return 0;
 
+    uint64_t addrs[xdp::kCollectBatchSize];
     uint32_t produced = 0;
 
     while (produced < max)
     {
-        const uint32_t availFrames = driver_.freeFrameCount();
-        if (availFrames == 0)
-            break;
-
-        const uint32_t want = std::min(max - produced, availFrames);
-
-        uint32_t idx = 0;
-        const uint32_t space = ::xsk_ring_prod__reserve(&fq_, want, &idx);
-        if (space == 0)
-            break;
-
-        uint32_t filled = 0;
-        for (uint32_t i = 0; i < space; ++i)
+        const uint32_t avail = driver_.freeFrameCount();
+        if (avail <= xdp::kTxReserveSize)
         {
-            uint64_t addr = driver_.acquireFrame();
-            if (addr == UINT64_MAX)
-                break;
-            *::xsk_ring_prod__fill_addr(&fq_, idx + i) = addr;
-            ++filled;
+            break;
         }
 
-        if (filled == 0)
-            break;
+        const uint32_t want = std::min({max - produced, avail - xdp::kTxReserveSize, xdp::kCollectBatchSize});
 
-        ::xsk_ring_prod__submit(&fq_, filled);
-        produced += filled;
+        uint32_t got = 0;
+        while (got < want)
+        {
+            const uint64_t a = driver_.acquireFrame();
+            if (a == UINT64_MAX)
+                break;
+            addrs[got++] = a;
+        }
 
-        if (filled < space)
+        if (got == 0)
+        {
             break;
+        }
+
+        uint32_t idx = 0;
+        if (::xsk_ring_prod__reserve(&fq_, got, &idx) != got)
+        {
+            for (uint32_t i = 0; i < got; ++i)
+            {
+                driver_.releaseFrame(addrs[i]);
+            }
+            break;
+        }
+
+        for (uint32_t i = 0; i < got; ++i)
+        {
+            *::xsk_ring_prod__fill_addr(&fq_, idx + i) = addrs[i];
+        }
+
+        ::xsk_ring_prod__submit(&fq_, got);
+        produced += got;
+
+        if (got < want)
+        {
+            break;
+        }
     }
 
     return produced;
@@ -227,12 +244,22 @@ uint32_t XdpInstance::refillFq(uint32_t max)
 uint32_t XdpInstance::processCq(uint32_t max)
 {
     if (!xsk_ || max == 0)
+    {
         return 0;
+    }
+
+    const uint32_t cap = std::min(max, driver_.compSize());
+    if (cap == 0)
+    {
+        return 0;
+    }
 
     uint32_t idx = 0;
-    const uint32_t n = ::xsk_ring_cons__peek(&cq_, max, &idx);
+    const uint32_t n = ::xsk_ring_cons__peek(&cq_, cap, &idx);
     if (n == 0)
+    {
         return 0;
+    }
 
     for (uint32_t i = 0; i < n; ++i)
     {
@@ -253,11 +280,9 @@ bool XdpInstance::kickTx()
     {
         if (::sendto(fd_, nullptr, 0, MSG_DONTWAIT, nullptr, 0) < 0)
         {
-            if (errno != EAGAIN && errno != EWOULDBLOCK &&
-                errno != ENETDOWN && errno != ENOBUFS)
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != ENETDOWN && errno != ENOBUFS)
             {
-                driver_.logWarning("sendto(%s, q=%u) kick failed: %s",
-                                   name_.c_str(), queueId_, std::strerror(errno));
+                driver_.logWarning("sendto(%s, q=%u) kick failed: %s", name_.c_str(), queueId_, std::strerror(errno));
                 return false;
             }
         }
@@ -268,7 +293,9 @@ bool XdpInstance::kickTx()
 bool XdpInstance::transmit(uint64_t frameAddr, uint32_t len)
 {
     if (!xsk_ || !active_)
+    {
         return false;
+    }
 
     uint32_t idx = 0;
     if (::xsk_ring_prod__reserve(&tx_, 1, &idx) != 1)
@@ -277,8 +304,7 @@ bool XdpInstance::transmit(uint64_t frameAddr, uint32_t len)
 
         if (::xsk_ring_prod__reserve(&tx_, 1, &idx) != 1)
         {
-            driver_.logWarning("XdpInstance: TX ring full on %s q=%u",
-                               name_.c_str(), queueId_);
+            driver_.logDebug("XdpInstance: TX ring full on %s q=%u", name_.c_str(), queueId_);
             return false;
         }
     }
@@ -288,7 +314,13 @@ bool XdpInstance::transmit(uint64_t frameAddr, uint32_t len)
     d->len = len;
     ::xsk_ring_prod__submit(&tx_, 1);
 
-    return kickTx();
+    if (!kickTx())
+    {
+        driver_.logWarning("kickTx failed on %s q=%u (frame queued)",
+                           name_.c_str(), queueId_);
+    }
+
+    return true;
 }
 
 } // namespace snet::driver

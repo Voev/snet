@@ -190,29 +190,32 @@ Status XdpDriver::configure(const snet::io::Config& config)
     auto snaplen = config.getSnaplen();
     timeoutMs_ = config.getTimeout();
     if (timeoutMs_ == 0)
+    {
         timeoutMs_ = -1;
+    }
 
     if (auto st = parseEndpoints(config.getInput()); st != Status::Success)
         return st;
 
     if (frameSize_ < headroom_ + snaplen)
     {
-        logError("XdpDriver: frame_size (%u) < frame_headroom + snaplen (%zu)",
-                 frameSize_, headroom_ + snaplen);
+        logError("XdpDriver: frame_size (%u) < frame_headroom + snaplen (%zu)", frameSize_, headroom_ + snaplen);
         return Status::InvalidArgument;
     }
     if (numFrames_ < fillSize_ + rxSize_)
     {
-        logError("XdpDriver: num_frames (%u) must be >= fill_size + rx_size (%u)",
-                 numFrames_, fillSize_ + rxSize_);
+        logError("XdpDriver: num_frames (%u) must be >= fill_size + rx_size (%u)", numFrames_, fillSize_ + rxSize_);
         return Status::InvalidArgument;
     }
 
-    // --- group endpoints by iface ---
     for (const auto& ep : endpoints_)
     {
-        const bool known = std::any_of(ifaces_.begin(), ifaces_.end(),
-                                       [&](const auto& p) { return p->iface == ep.iface; });
+        const bool known = std::any_of(ifaces_.begin(),
+                                       ifaces_.end(),
+                                       [&](const auto& p)
+                                       {
+                                           return p->iface == ep.iface;
+                                       });
         if (known)
             continue;
 
@@ -227,17 +230,22 @@ Status XdpDriver::configure(const snet::io::Config& config)
         ifaces_.push_back(std::move(ctx));
     }
 
-    // --- create one instance per endpoint ---
     for (const auto& ep : endpoints_)
     {
         const io::DeviceId devId = static_cast<io::DeviceId>(instancesOwned_.size());
 
         auto inst = std::make_unique<XdpInstance>(*this, devId);
-        if (!inst->create(ep.iface, ep.queue))
+        if (!inst->configure(ep.iface, ep.queue))
+        {
             return Status::NoSuchDevice;
+        }
 
-        auto it = std::find_if(ifaces_.begin(), ifaces_.end(),
-                               [&](const auto& p) { return p->iface == ep.iface; });
+        auto it = std::find_if(ifaces_.begin(),
+                               ifaces_.end(),
+                               [&](const auto& p)
+                               {
+                                   return p->iface == ep.iface;
+                               });
         (*it)->instances.push_back(inst.get());
 
         instancesOwned_.push_back(std::move(inst));
@@ -253,8 +261,8 @@ Status XdpDriver::configure(const snet::io::Config& config)
 
     pool_ = std::make_unique<XdpPool>(poolSize);
 
-    logInfo("XdpDriver: configured %zu iface(s), %zu endpoint(s), pool=%u",
-            ifaces_.size(), instances_.size(), poolSize);
+    logInfo(
+        "XdpDriver: configured %zu iface(s), %zu endpoint(s), pool=%u", ifaces_.size(), instances_.size(), poolSize);
     return Status::Success;
 }
 
@@ -276,20 +284,19 @@ Status XdpDriver::start()
     // libbpf_flags = 0 → libxdp loads its built-in xsk_def_prog and
     // registers the socket in the XSKMAP automatically.
     struct xsk_socket_config cfg{};
-    cfg.rx_size     = rxSize_;
-    cfg.tx_size     = txSize_;
+    cfg.rx_size = rxSize_;
+    cfg.tx_size = txSize_;
     cfg.libbpf_flags = 0;
-    cfg.xdp_flags   = zeroCopy_ ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
-    cfg.bind_flags  = needWakeup_ ? XDP_USE_NEED_WAKEUP : 0;
+    cfg.xdp_flags = zeroCopy_ ? XDP_FLAGS_DRV_MODE : XDP_FLAGS_SKB_MODE;
+    cfg.bind_flags = needWakeup_ ? XDP_USE_NEED_WAKEUP : 0;
 
     for (auto* inst : instances_)
     {
-        if (!inst->bindTo(umem_, cfg))
+        if (!inst->create(umem_, cfg))
         {
             stop();
             return Status::Error;
         }
-        inst->setActive(true);
     }
 
     // Prime FQ for every endpoint.
@@ -298,8 +305,7 @@ Status XdpDriver::start()
 
     resetStats();
 
-    logInfo("XdpDriver: started %zu endpoint(s) on %zu iface(s)",
-            instances_.size(), ifaces_.size());
+    logInfo("XdpDriver: started %zu endpoint(s) on %zu iface(s)", instances_.size(), ifaces_.size());
     return Status::Success;
 }
 
@@ -313,6 +319,13 @@ Status XdpDriver::stop()
 
     destroyUmem();
     clearAll();
+
+    const uint32_t leaked = numFrames_ - freeFrameCount();
+    if (leaked > 0)
+    {
+        logWarning("XdpDriver: stopping with %u frame(s) still in flight", leaked);
+    }
+
     return Status::Success;
 }
 
@@ -322,10 +335,7 @@ void XdpDriver::clearAll()
     instancesOwned_.clear();
     ifaces_.clear();
     pool_.reset();
-    {
-        std::lock_guard<std::mutex> lk(poolMutex_);
-        freeFrames_.clear();
-    }
+    freeFrames_.clear();
     currInstanceIdx_ = 0;
 }
 
@@ -361,8 +371,7 @@ bool XdpDriver::setupRlimit()
 bool XdpDriver::createUmem()
 {
     umemAreaSize_ = static_cast<size_t>(numFrames_) * frameSize_;
-    umemArea_ = ::mmap(nullptr, umemAreaSize_, PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    umemArea_ = ::mmap(nullptr, umemAreaSize_, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (umemArea_ == MAP_FAILED)
     {
         umemArea_ = nullptr;
@@ -371,11 +380,11 @@ bool XdpDriver::createUmem()
     }
 
     struct xsk_umem_config umemCfg{};
-    umemCfg.fill_size     = fillSize_;
-    umemCfg.comp_size     = compSize_;
-    umemCfg.frame_size    = frameSize_;
+    umemCfg.fill_size = fillSize_;
+    umemCfg.comp_size = compSize_;
+    umemCfg.frame_size = frameSize_;
     umemCfg.frame_headroom = headroom_;
-    umemCfg.flags         = 0;
+    umemCfg.flags = 0;
 
     if (::xsk_umem__create(&umem_, umemArea_, umemAreaSize_, &umemFq_, &umemCq_, &umemCfg))
     {
@@ -385,16 +394,14 @@ bool XdpDriver::createUmem()
         return false;
     }
 
+    freeFrames_.clear();
+    freeFrames_.reserve(numFrames_);
+    for (uint32_t i = 0; i < numFrames_; ++i)
     {
-        std::lock_guard<std::mutex> lk(poolMutex_);
-        freeFrames_.clear();
-        freeFrames_.reserve(numFrames_);
-        for (uint32_t i = 0; i < numFrames_; ++i)
-            freeFrames_.push_back(static_cast<uint64_t>(i) * frameSize_);
+        freeFrames_.push_back(static_cast<uint64_t>(i) * frameSize_);
     }
 
-    logInfo("XdpDriver: UMEM created (%u frames x %u B, headroom=%u)",
-            numFrames_, frameSize_, headroom_);
+    logInfo("XdpDriver: UMEM created (%u frames x %u B, headroom=%u)", numFrames_, frameSize_, headroom_);
     return true;
 }
 
@@ -414,9 +421,10 @@ void XdpDriver::destroyUmem() noexcept
 
 uint64_t XdpDriver::acquireFrame()
 {
-    std::lock_guard<std::mutex> lk(poolMutex_);
     if (freeFrames_.empty())
+    {
         return UINT64_MAX;
+    }
     uint64_t a = freeFrames_.back();
     freeFrames_.pop_back();
     return a;
@@ -424,13 +432,11 @@ uint64_t XdpDriver::acquireFrame()
 
 void XdpDriver::releaseFrame(uint64_t addr)
 {
-    std::lock_guard<std::mutex> lk(poolMutex_);
     freeFrames_.push_back(addr);
 }
 
 uint32_t XdpDriver::freeFrameCount() const noexcept
 {
-    std::lock_guard<std::mutex> lk(poolMutex_);
     return static_cast<uint32_t>(freeFrames_.size());
 }
 
@@ -482,9 +488,16 @@ RecvStatus XdpDriver::receivePackets(RxItem* rx, uint16_t* count, uint16_t max)
             XdpWrapper* wrapper = pool_->acquire();
             if (!wrapper)
             {
+                for (uint32_t j = k; j < n; ++j)
+                {
+                    const struct xdp_desc* dj = ::xsk_ring_cons__rx_desc(inst->rxRing(), pos + j);
+                    releaseFrame(dj->addr);
+                }
                 ::xsk_ring_cons__release(inst->rxRing(), n);
                 if (idx == 0)
+                {
                     status = RecvStatus::NoBuffer;
+                }
                 goto done;
             }
 
@@ -601,12 +614,12 @@ snet::layers::LinkLayerType XdpDriver::getDataLinkType() const
 
 Status XdpDriver::getMsgPoolInfo(snet::io::PacketPoolInfo& info)
 {
-    const auto capacity  = pool_ ? pool_->capacity()  : 0U;
+    const auto capacity = pool_ ? pool_->capacity() : 0U;
     const auto available = pool_ ? pool_->available() : 0U;
 
-    info.capacity    = capacity;
-    info.available   = available;
-    info.memorySize  = sizeof(XdpWrapper) * capacity + umemAreaSize_;
+    info.capacity = capacity;
+    info.available = available;
+    info.memorySize = sizeof(XdpWrapper) * capacity + umemAreaSize_;
     return Status::Success;
 }
 
