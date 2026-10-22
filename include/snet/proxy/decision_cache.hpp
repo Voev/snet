@@ -13,18 +13,13 @@
 namespace snet::proxy
 {
 
-/// Кэш решений по SNI.
-///
-/// Без кэша каждый cache-miss запускал бы probe. С кэшем — probe
-/// делается один раз на SNI (per TTL), дальше решение берётся из
-/// памяти. Это критично для high-load: 99% решений должны быть hit.
 class DecisionCache
 {
 public:
     struct Config
     {
         std::chrono::seconds ttl{300};
-        size_t               maxEntries{100000};
+        size_t maxEntries{100000};
     };
 
     DecisionCache()
@@ -54,16 +49,12 @@ public:
     {
         std::unique_lock lock(mtx_);
 
-        // Простая эвикция: при переполнении чистим всё.
-        // TODO: заменить на LRU, если maxEntries реально нагружен.
-        if (map_.size() >= cfg_.maxEntries
-            && map_.find(sni) == map_.end())
+        if (map_.size() >= cfg_.maxEntries && map_.find(sni) == map_.end())
         {
             map_.clear();
         }
 
-        map_[std::string(sni)] = Entry{
-            d, std::chrono::steady_clock::now() + cfg_.ttl};
+        map_[std::string(sni)] = Entry{d, std::chrono::steady_clock::now() + cfg_.ttl};
     }
 
     void clear()
@@ -81,13 +72,13 @@ public:
 private:
     struct Entry
     {
-        InspectionDecision                    decision;
+        InspectionDecision decision;
         std::chrono::steady_clock::time_point expires;
     };
 
-    Config                                  cfg_;
-    mutable std::shared_mutex               mtx_;
-    std::unordered_map<std::string, Entry>  map_;
+    Config cfg_;
+    mutable std::shared_mutex mtx_;
+    std::unordered_map<std::string, Entry> map_;
 };
 
 } // namespace snet::proxy

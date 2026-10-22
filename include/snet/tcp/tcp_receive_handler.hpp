@@ -271,10 +271,9 @@ private:
         const int8_t idx = determineContextIndex(session, srcIP, hdr.srcPort());
         if (idx < 0)
         {
-            // Не наша сессия (endpoints не совпали). Это не ошибка.
             return PacketStatus::pass(PacketReason::NonProxyPacket);
         }
-        
+
         if (idx < 0)
         {
             CSK_LOG_DEBUG("Replay: cannot determine ctx for %s:%u", srcIP.toString().c_str(), hdr.srcPort());
@@ -324,6 +323,12 @@ private:
     // Live mode (real network)
     // ============================================================
 
+    bool isSuspended(Session* session) const
+    {
+        auto* pctx = this->template getContext<snet::proxy::ProxyContext>(session);
+        return pctx && pctx->pair && pctx->pair->phase == snet::proxy::PairPhase::Probing;
+    }
+
     layers::PacketStatus processLive(Session* session, layers::Packet* packet, const layers::IPAddress& srcIP,
                                      const layers::TCPHeader& hdr, const layers::LayerInfo* tcpLayer)
     {
@@ -350,6 +355,11 @@ private:
         if (conn->closed || conn->state == TcpState::Closed)
         {
             return PacketStatus::drop(PacketReason::Closed);
+        }
+
+        if (isSuspended(session))
+        {
+            return PacketStatus::drop(PacketReason::Probing);
         }
 
         if (!conn->rxRing)

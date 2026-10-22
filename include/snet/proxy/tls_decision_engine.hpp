@@ -17,23 +17,26 @@
 namespace snet::proxy
 {
 
-/// Решатель: по SNI и цепочке сертификатов возвращает вердикт.
-/// Реализуется в main как лямбда, регистрируется один раз.
+/// Decision policy: maps SNI and certificate chain to a verdict.
+/// Implemented in main as a lambda, registered once.
 using InspectionPolicy = std::function<InspectionDecision(std::string_view sni, const CertificateChain& chain)>;
 
-/// Движок решений: кэш + probe + дедупликация.
+/// Decision engine: cache + probe + deduplication.
 ///
-/// Задача:
-///   * На запрос решения — сначала проверить кэш.
-///   * При cache-miss — запустить probe (если ещё не запущен для этого SNI).
-///   * Пока probe в полёте — новые запросы для того же SNI ждут тот же probe.
-///   * По завершении — применить policy, записать в кэш, разбудить всех.
+/// Responsibilities:
+///   * On a decision request — check the cache first.
+///   * On cache-miss — start a probe (if not already running for this SNI).
+///   * While a probe is in flight — new requests for the same SNI wait on it.
+///   * On completion — apply policy, store in cache, wake all waiters.
 ///
-/// Экономит круглые RTT: 99% запросов решаются hit'ом кэша, остальные
-/// — дедуплицируются на уровне SNI.
+/// Saves full RTTs: 99% of requests are resolved by cache hit, the rest
+/// are deduplicated per SNI.
 class TlsDecisionEngine
 {
 public:
+    /// @param[in] probe  Probe connection used to fetch the certificate chain.
+    /// @param[in] cache  Decision cache keyed by SNI.
+    /// @param[in] policy Verdict policy applied on probe success.
     TlsDecisionEngine(TlsProbeConnection& probe, DecisionCache& cache, InspectionPolicy policy)
         : probe_(probe)
         , cache_(cache)
@@ -41,18 +44,26 @@ public:
     {
     }
 
-    /// Асинхронный запрос решения. Callback вызовется один раз.
+    /// Asynchronous decision request. The callback is invoked exactly once.
+    ///
+    /// Resolves from cache if possible; otherwise starts or joins an
+    /// in-flight probe for the given SNI.
+    ///
+    /// @param[in] sni        Server Name Indication to resolve.
+    /// @param[in] serverIP   Upstream server address for the probe.
+    /// @param[in] serverPort Upstream server port for the probe.
+    /// @param[in] cb         Completion callback receiving the decision.
     void request(std::string sni, snet::layers::IPAddress serverIP, uint16_t serverPort,
                  std::function<void(InspectionDecision)> cb)
     {
-        // 1. Кэш.
+        // 1. Cache.
         if (auto cached = cache_.lookup(sni))
         {
             cb(*cached);
             return;
         }
 
-        // 2. Дедупликация.
+        // 2. Deduplication.
         std::shared_ptr<InFlight> inflight;
         {
             std::lock_guard lock(mtx_);
@@ -70,7 +81,7 @@ public:
             inFlight_[sni] = inflight;
         }
 
-        // 3. Запуск probe.
+        // 3. Start probe.
         std::cout << "Probe server: " << serverIP << ":" << serverPort << "[" << sni << "]" << std::endl;
         TlsProbeConnection::Config cfg{};
         probe_.asyncProbe(sni,
@@ -83,6 +94,7 @@ public:
                           });
     }
 
+    /// @return Number of SNIs with a probe currently in flight.
     size_t pendingCount() const
     {
         std::lock_guard lock(mtx_);
@@ -90,12 +102,18 @@ public:
     }
 
 private:
+    /// State for a single in-flight probe keyed by SNI.
     struct InFlight
     {
-        std::string sni;
-        std::vector<std::function<void(InspectionDecision)>> waiters;
+        std::string sni; ///< SNI this probe was started for.
+        std::vector<std::function<void(InspectionDecision)>> waiters; ///< Callbacks awaiting the verdict.
     };
 
+    /// Finalize a probe: apply policy, store the decision in cache,
+    /// remove the in-flight entry, and notify all waiters.
+    ///
+    /// @param[in] inflight In-flight entry the probe belongs to.
+    /// @param[in] result   Probe result (chain on success, error otherwise).
     void onProbeComplete(const std::shared_ptr<InFlight>& inflight, TlsProbeResult result)
     {
         InspectionDecision decision = InspectionDecision::Bypass;
@@ -112,7 +130,7 @@ private:
 
         cache_.store(inflight->sni, decision);
 
-        // Извлекаем waiters под блокировкой и удаляем in-flight.
+        // Extract waiters under the lock and remove the in-flight entry.
         std::vector<std::function<void(InspectionDecision)>> waiters;
         {
             std::lock_guard lock(mtx_);
@@ -128,12 +146,12 @@ private:
             cb(decision);
     }
 
-    TlsProbeConnection& probe_;
-    DecisionCache& cache_;
-    InspectionPolicy policy_;
+    TlsProbeConnection& probe_; ///< Probe connection (not owned).
+    DecisionCache& cache_;      ///< Decision cache (not owned).
+    InspectionPolicy policy_;   ///< Verdict policy.
 
-    mutable std::mutex mtx_;
-    std::unordered_map<std::string, std::shared_ptr<InFlight>> inFlight_;
+    mutable std::mutex mtx_; ///< Guards inFlight_.
+    std::unordered_map<std::string, std::shared_ptr<InFlight>> inFlight_; ///< Active probes keyed by SNI.
 };
 
 } // namespace snet::proxy

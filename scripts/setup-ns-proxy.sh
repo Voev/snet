@@ -7,7 +7,7 @@
 #   │10.0.0.1│                      │ (no IP)  │                    │        │
 #   └────────┘                      │          │                    │        │
 #                                   │ veth-p1  │◄─── veth pair ────►│ veth-s │
-#                                   │ (no IP)  │                    │10.0.0.2│
+#                                   │ (no IP)  │                    │10.0.1.2│
 #                                   └──────────┘                    └────────┘
 
 set -euo pipefail
@@ -22,7 +22,7 @@ PROXY_SERVER_IF=veth-p1
 SERVER_IF=veth-s
 
 CLIENT_IP=10.0.0.1
-SERVER_IP=10.0.0.2
+SERVER_IP=10.0.1.2
 PREFIX=24
 
 die() { echo "error: $*" >&2; exit 1; }

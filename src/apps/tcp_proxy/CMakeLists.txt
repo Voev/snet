@@ -12,6 +12,8 @@ target_link_libraries(${TARGET_NAME}
     PUBLIC
         snet_io
         snet_layers
+        snet_pp
+        snet_arp
         snet_tls
         snet_proxy
         casket

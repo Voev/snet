@@ -15,20 +15,22 @@
 namespace snet::proxy
 {
 
-/// Акцептор split-proxy.
+/// Split-proxy acceptor.
 ///
-/// Вызывается TcpReceiveHandler'ом, когда TCP с клиентом установлен.
-/// НЕ открывает upstream сразу — только фиксирует downstream и
-/// готовит pair. Открытие upstream инициируется позже, из consumer'а,
-/// после того как решение (bypass/mitm) принято.
+/// Invoked by TcpReceiveHandler when a TCP connection with a client is
+/// established. Does NOT open upstream immediately — it only records
+/// downstream and prepares the pair. Upstream opening is initiated later,
+/// from the consumer, after the decision (bypass/mitm) is made.
 template <typename SessionManagerType>
 class TransparentProxyAcceptor final : public snet::tcp::IConnectionAcceptor<SessionManagerType>
 {
 public:
-    using Session = typename SessionManagerType::Session;
-    using TcpConnection = snet::tcp::TcpConnection;
-    using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>;
+    using Session = typename SessionManagerType::Session; ///< Session type of the manager.
+    using TcpConnection = snet::tcp::TcpConnection; ///< TCP connection type.
+    using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>; ///< Transmit handler type.
 
+    /// @param[in] mgr Session manager owning contexts and sessions.
+    /// @param[in] tx  Transmit handler used to pump outgoing packets.
     TransparentProxyAcceptor(SessionManagerType* mgr, TransmitHandler* tx)
         : mgr_(mgr)
         , tx_(tx)
@@ -36,6 +38,15 @@ public:
     {
     }
 
+    /// Handle a newly accepted TCP connection.
+    ///
+    /// For downstream connections (local port 8443) builds and stores
+    /// the ProxyPair in the session context, computing both direction
+    /// keys. For other (upstream) connections it is a no-op that only
+    /// logs and waits for the pair to be created.
+    ///
+    /// @param[in] downstream Accepted session.
+    /// @param[in] downConn   Accepted TCP connection.
     void onAccept(Session* downstream, TcpConnection& downConn) override
     {
         auto* ctx = mgr_->template getContext<ProxyContext>(downstream);
@@ -98,8 +109,14 @@ public:
                       pair.upstreamKey);
     }
 
-    /// Открыть upstream. Вызывается consumer'ом после решения.
-    /// Идемпотентно: повторный вызов для уже открытой пары — no-op.
+    /// Open the upstream connection. Called by the consumer after a decision.
+    /// Idempotent: a repeated call for an already opened pair is a no-op.
+    ///
+    /// Creates the upstream session (if missing), mirrors pair metadata
+    /// into its context, assigns server/client addresses from the upstream
+    /// perspective, and sends the initial SYN with a random ISS.
+    ///
+    /// @param[in] downstream Downstream session whose pair should be opened.
     void openUpstream(Session* downstream)
     {
         auto* downCtx = mgr_->template getContext<ProxyContext>(downstream);
@@ -109,9 +126,9 @@ public:
 
         auto& pair = *downCtx->pair;
         if (pair.phase != PairPhase::Waiting && pair.phase != PairPhase::Probing)
-            return; // уже открыт
+            return; // already open
 
-        // Создаём upstream-сессию.
+        // Create upstream session.
         auto* upSession = mgr_->findOrCreate(pair.upstreamKey);
         if (!upSession)
         {
@@ -144,14 +161,14 @@ public:
             return;
         }
 
-        // С точки зрения upstream-сессии, локальный = сервер,
-        // удалённый = клиент.
+        // From the upstream session's perspective, local = server,
+        // remote = client.
         upConn->localIP = pair.serverIP;
         upConn->localPort = pair.serverPort;
         upConn->remoteIP = pair.clientIP;
         upConn->remotePort = pair.clientPort;
 
-        // Активное открытие.
+        // Active open.
         const uint32_t iss = nextIss();
         auto out = snet::tcp::TcpStateMachine::onActiveOpen(*upConn, iss);
         if (out.type == snet::tcp::TcpOutput::Type::Send)
@@ -168,20 +185,25 @@ public:
         CSK_LOG_DEBUG("Acceptor: upstream SYN sent, uk=%x, iss=%u", pair.upstreamKey, iss);
     }
 
+    /// Handle a rejected connection. No-op.
+    ///
+    /// @param[in] session Rejected session (unused).
+    /// @param[in] conn    Rejected TCP connection (unused).
     void onReject(Session*, TcpConnection&) override
     {
     }
 
 private:
+    /// @return A random initial send sequence number (ISS).
     uint32_t nextIss()
     {
         std::uniform_int_distribution<uint32_t> dist;
         return dist(rng_);
     }
 
-    SessionManagerType* mgr_;
-    TransmitHandler* tx_;
-    std::mt19937 rng_;
+    SessionManagerType* mgr_; ///< Session manager (not owned).
+    TransmitHandler* tx_;     ///< Transmit handler (not owned).
+    std::mt19937 rng_;        ///< RNG for initial sequence numbers.
 };
 
 } // namespace snet::proxy

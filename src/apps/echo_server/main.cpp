@@ -11,6 +11,7 @@
 #include <snet/io.hpp>
 #include <snet/layers.hpp>
 #include <snet/session.hpp>
+#include <snet/arp.hpp>
 
 #include <snet/tcp/tcp_listener_handler.hpp>
 #include <snet/tcp/tcp_receive_handler.hpp>
@@ -146,7 +147,11 @@ int main(int argc, char* argv[])
 
         auto driver = controller.load(driverSpec);
 
-        auto sink = std::make_unique<NetworkSink>(driver.get());
+
+        snet::arp::ArpTransport arpTransport(*driver);
+        snet::arp::ArpResolver arpResolver(arpTransport);
+        auto networkSink = std::make_unique<NetworkSink>(*driver, arpResolver);
+
         TcpListenerRegistry listeners;
         listeners.add(IPAddress::any(), 8080);
 
@@ -163,7 +168,7 @@ int main(int argc, char* argv[])
 
         pipeline->addHandler<TcpListenerHandler<SessionManager>>(&listeners);
         pipeline->addHandler<TcpReceiveHandler<SessionManager>>(nullptr, echoConsumer.get());
-        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(sink.get());
+        pipeline->addHandler<TcpTransmitHandler<SessionManager>>(networkSink.get());
 
         mgr.setPipeline(std::move(pipeline));
 

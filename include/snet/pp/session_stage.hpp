@@ -22,7 +22,9 @@ public:
 
     StageResult process(layers::Packet* pkt, PacketContext& ctx) override
     {
-        if (ctx.egress != io::kInvalidDevice)
+        (void)ctx;
+
+        if (!pkt->findLayer(layers::TCP))
             return StageResult::Continue;
 
         auto res = mgr_.processPacket(pkt);

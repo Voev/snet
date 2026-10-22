@@ -1,6 +1,3 @@
-#include <cstdio>
-#include <memory>
-
 #include <iostream>
 
 #include <casket/thread/pool.hpp>
@@ -8,6 +5,17 @@
 #include <casket/log/log.hpp>
 
 #include <casket/signal/signal_handler.hpp>
+
+#include <snet/io.hpp>
+#include <snet/arp.hpp>
+
+#include <snet/pp/packet_pipeline.hpp>
+#include <snet/pp/l2_filter_stage.hpp>
+#include <snet/pp/arp_stage.hpp>
+#include <snet/pp/routing_stage.hpp>
+#include <snet/pp/ip_forward_stage.hpp>
+#include <snet/pp/session_stage.hpp>
+#include <snet/pp/forward_stage.hpp>
 
 #include <snet/io.hpp>
 #include <snet/layers.hpp>
@@ -73,6 +81,7 @@ public:
     {
         return parser_;
     }
+
     const Parameters& getParameters() const noexcept
     {
         return args_;
@@ -101,6 +110,8 @@ LoopAction handleStatus(RecvStatus st, bool stopRequested)
         return stopRequested ? LoopAction::StopOk : LoopAction::Continue;
 
     case RecvStatus::Interrupted:
+        return LoopAction::StopOk;
+
     case RecvStatus::Eof:
         return LoopAction::StopOk;
 
@@ -136,69 +147,13 @@ int main(int argc, char* argv[])
 
         casket::opt::ConfigOptions options;
         snet::io::Controller controller(options);
-
-        SessionManager::Config sessCfg;
-        sessCfg.max_sessions = 100000;
-        SessionManager mgr(sessCfg);
+        SessionManager mgr;
 
         snet::io::DriverSpec driverSpec;
         driverSpec.setPath(params.driverPath);
         driverSpec.setLogger(&AsyncLogger::getInstance());
 
         auto driver = controller.load(driverSpec);
-
-        auto sink = std::make_unique<NetworkSink>(driver.get());
-
-        auto rxPool = std::make_unique<RxRingPool>(1024);
-        auto txPool = std::make_unique<TxRingPool>(1024);
-
-        auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
-        fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
-        fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
-        mgr.setFactoryRegistry(std::move(fRegistry));
-
-        TcpTransmitHandlerConfig txCfg;
-        txCfg.packetHeadroom = 14;
-        txCfg.maxPacketSize = 65536;
-        txCfg.ttl = 64;
-
-        auto threadPool = std::make_shared<casket::thread::ThreadPool>(2);
-        auto submitFn = [threadPool](std::function<void()> task)
-        {
-            threadPool->addTask(std::move(task));
-        };
-
-        snet::proxy::TlsProbeConnection probe{submitFn};
-        snet::proxy::DecisionCache cache{snet::proxy::DecisionCache::Config{}};
-
-        auto policy = [](std::string_view sni,
-                         const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
-        {
-            if (sni == "test")
-                return snet::proxy::InspectionDecision::Block;
-            if (sni == "inspect.example.com")
-                return snet::proxy::InspectionDecision::Mitm;
-            (void)chain;
-            return snet::proxy::InspectionDecision::Bypass;
-        };
-
-        snet::proxy::TlsDecisionEngine engine{probe, cache, policy};
-
-        auto txHandler = std::make_shared<TcpTransmitHandler<SessionManager>>(sink.get(), txCfg);
-
-        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, txHandler.get());
-
-        auto consumer = std::make_shared<snet::proxy::TransparentProxyConsumer<SessionManager>>(
-            &mgr, txHandler.get(), &engine, acceptor.get());
-
-        auto rxHandler = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
-
-        auto pipeline = std::make_unique<SessionManager::Pipeline>();
-
-        pipeline->add(rxHandler);
-        pipeline->add(txHandler);
-
-        mgr.setPipeline(std::move(pipeline));
 
         casket::opt::ConfigOptionsReader reader;
         std::ifstream ifs(params.configPath);
@@ -236,8 +191,97 @@ int main(int argc, char* argv[])
             throw std::system_error(ec);
 
         driver->start();
+        std::cout << "listening... (Ctrl+C to stop)\n";
+        auto rxPool = std::make_unique<RxRingPool>(1024);
+        auto txPool = std::make_unique<TxRingPool>(1024);
 
-        std::cout << "\n=== Transparent TCP Proxy ===\n";
+        snet::arp::ArpTransport arpTransport(*driver);
+        snet::arp::ArpResolver arpResolver(arpTransport);
+        auto networkSink = std::make_unique<NetworkSink>(*driver, arpResolver);
+
+        auto* d0 = driver->deviceAt(0);
+        auto ip0 = snet::layers::IPv4Address::fromString("10.0.0.254").value();
+        arpResolver.addLocal(d0->id(), ip0, d0->mac());
+
+        auto* d1 = driver->deviceAt(1);
+        auto ip1 = snet::layers::IPv4Address::fromString("10.0.1.254").value();
+        arpResolver.addLocal(d1->id(), ip1, d1->mac());
+
+        networkSink->addSubnet(d0->id(),
+                        IPv4Address::fromString("10.0.0.0").value(),
+                        IPv4Address::fromString("255.255.255.0").value());
+
+        networkSink->addSubnet(d1->id(),
+                        IPv4Address::fromString("10.0.1.0").value(),
+                        IPv4Address::fromString("255.255.255.0").value());
+
+        auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
+        fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
+        fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
+        mgr.setFactoryRegistry(std::move(fRegistry));
+
+        TcpTransmitHandlerConfig txCfg;
+        txCfg.packetHeadroom = 14;
+        txCfg.maxPacketSize = 65536;
+        txCfg.ttl = 64;
+
+        auto threadPool = std::make_shared<casket::thread::ThreadPool>(2);
+        auto submitFn = [threadPool](std::function<void()> task)
+        {
+            threadPool->addTask(std::move(task));
+        };
+
+        snet::proxy::TlsProbeConnection probe{submitFn};
+        snet::proxy::DecisionCache cache{snet::proxy::DecisionCache::Config{}};
+
+        auto policy = [](std::string_view sni,
+                         const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
+        {
+            if (sni == "test")
+                return snet::proxy::InspectionDecision::Block;
+            if (sni == "inspect.example.com")
+                return snet::proxy::InspectionDecision::Mitm;
+            (void)chain;
+            return snet::proxy::InspectionDecision::Bypass;
+        };
+
+        snet::proxy::TlsDecisionEngine engine{probe, cache, policy};
+
+        auto sessionTx = std::make_shared<TcpTransmitHandler<SessionManager>>(networkSink.get(), txCfg);
+
+        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, sessionTx.get());
+
+        auto consumer = std::make_shared<snet::proxy::TransparentProxyConsumer<SessionManager>>(
+            &mgr, sessionTx.get(), &engine, acceptor.get());
+
+        auto sessionRx = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
+
+        auto sessionPipeline = std::make_unique<SessionManager::Pipeline>();
+
+        sessionPipeline->add(sessionRx);
+        sessionPipeline->add(sessionTx);
+
+        mgr.setPipeline(std::move(sessionPipeline));
+
+        /// End of session manager initialization
+
+        snet::pp::PacketPipeline packetPipeline;
+
+        packetPipeline.addStage(std::make_unique<snet::pp::L2FilterStage>(*driver));
+        packetPipeline.addStage(std::make_unique<snet::pp::ArpInterceptorStage>(arpResolver));
+
+        auto routing = std::make_unique<snet::pp::RoutingStage>();
+        if (driver->deviceCount() >= 2)
+        {
+            routing->setPeer(d0->id(), d1->id());
+            routing->setLocal(d0->id(), ip0);
+            routing->setLocal(d1->id(), ip1);
+        }
+        packetPipeline.addStage(std::move(routing));
+        packetPipeline.addStage(std::make_unique<snet::pp::IpForwardStage>());
+        packetPipeline.addStage(std::make_unique<snet::pp::SessionStage<SessionManager>>(mgr));
+        packetPipeline.addStage(std::make_unique<snet::pp::ForwardingStage>(*driver, arpResolver));
+
         constexpr uint16_t batchSize = 32;
         snet::io::Driver::RxItem rx[batchSize];
         uint16_t received = 0;
@@ -258,20 +302,30 @@ int main(int argc, char* argv[])
 
             for (uint16_t i = 0; i < received; ++i)
             {
-                snet::layers::Packet* pkt = rx[i].packet;
-                if (!pkt)
-                    continue;
-
-                pkt->parse();
-
-                CSK_LOG_INFO("RX packet: pkt=%p, %s", pkt, pkt->toString().c_str());
-
-                auto status = mgr.processPacket(pkt);
-
-                ++total;
-
-                (void)driver->finalizePacket(pkt, status.passes() ? Verdict::Pass : Verdict::Block);
+                auto v = packetPipeline.onPacket(rx[i].packet, rx[i].ingress);
+                switch (v)
+                {
+                case snet::pp::PacketVerdict::Pass:
+                    driver->finalizePacket(rx[i].packet, Verdict::Pass);
+                    break;
+                case snet::pp::PacketVerdict::Drop:
+                case snet::pp::PacketVerdict::Consumed:
+                    driver->finalizePacket(rx[i].packet, Verdict::Block);
+                    break;
+                case snet::pp::PacketVerdict::Pending:
+                    break;
+                }
             }
+
+            packetPipeline.onTick(
+                [&](snet::layers::Packet* packet, snet::pp::PacketContext& ctx, bool ok)
+                {
+                    if (ok && ctx.egress != snet::io::kInvalidDevice)
+                    {
+                        driver->transmitPacket(packet, ctx.egress);
+                    }
+                    driver->finalizePacket(packet, ok ? Verdict::Pass : Verdict::Block);
+                });
 
             const bool stopReq = g_stop.load(std::memory_order_relaxed);
             switch (handleStatus(recvStatus, stopReq))

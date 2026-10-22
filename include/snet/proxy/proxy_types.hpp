@@ -9,41 +9,43 @@
 namespace snet::proxy
 {
 
-/// Что делать с потоком после получения вердикта.
+/// Action to take for a connection pair after inspection.
 enum class InspectionDecision
 {
-    Bypass, ///< Пропустить как есть (raw splice), TLS end-to-end.
-    Mitm,   ///< Терминировать TLS с обеих сторон, анализировать.
-    Block,  ///< Разорвать соединение.
+    Bypass, ///< Pass traffic through without interception.
+    Mitm,   ///< Intercept via TLS termination (man-in-the-middle).
+    Block,  ///< Drop the connection.
 };
 
-/// Фаза жизненного цикла пары сессий.
+/// Lifecycle phase of a connection pair.
 enum class PairPhase
 {
-    Waiting, ///< Клиент установил TCP, ждём ClientHello.
-    Probing, ///< ClientHello получен, probe в полёте.
-    Splice,  ///< Решение Bypass, байты перекладываются как есть.
-    Mitm,    ///< Решение Mitm, TLS-терминация активна.
-    Closed,  ///< Пара закрыта.
+    Waiting, ///< Client TCP established; awaiting ClientHello.
+    Probing, ///< ClientHello received; probe in flight.
+    Splice,  ///< Bypass decided; bytes are relayed as-is.
+    Mitm,    ///< Mitm decided; TLS termination active.
+    Closed,  ///< Pair is closed.
 };
 
-/// Цепочка сертификатов, leaf первым.
+/// Ordered chain of X.509 certificates.
 using CertificateChain = std::vector<snet::crypto::X509CertPtr>;
 
-/// Соответствие фазы пары и вердикта драйверу.
+/// Map a pair phase to the packet verdict the driver must apply.
 ///
-///   Waiting  — TCP установлен, ClientHello ещё не разобран.
-///              Оригинал должен дойти до сервера: Pass/Observed.
+///   Waiting  — TCP established, ClientHello not yet parsed.
+///              Original must reach the server: Pass/Observed.
 ///
-///   Probing  — Идёт probe. Оригинал всё ещё уходит наружу: Pass/Probing.
+///   Probing  — Probe in flight. Original still leaves: Pass/Probing.
 ///
-///   Splice   — Решение bypass. Consumer перекладывает байты в txRing.
-///              Оригинал НЕ должен уходить, иначе двойная отправка:
-///              Drop/Bypass.
+///   Splice   — Bypass decided. Consumer relays bytes into txRing.
+///              Original must NOT leave (double-send): Drop/Bypass.
 ///
-///   Mitm     — TLS-терминация. Оригинал не нужен: Drop/Hijacked.
+///   Mitm     — TLS termination. Original not needed: Drop/Hijacked.
 ///
-///   Closed   — Соединение закрыто: Drop/Closed.
+///   Closed   — Connection closed: Drop/Closed.
+///
+/// @param[in] phase Current pair phase.
+/// @return Packet status (pass/drop with reason) for the driver.
 [[nodiscard]] constexpr snet::layers::PacketStatus verdictFromPhase(PairPhase phase) noexcept
 {
     using snet::layers::PacketStatus;

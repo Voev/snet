@@ -13,38 +13,44 @@
 #include <snet/proxy/tls_decision_engine.hpp>
 #include <snet/proxy/transparent_proxy_acceptor.hpp>
 
+#include <snet/utils/print_hex.hpp>
+
 #include <casket/log/log.hpp>
 
 namespace snet::proxy
 {
 
-/// Consumer split-proxy.
+/// Split-proxy consumer.
 ///
-/// Жизненный цикл пары:
-///   1. Waiting — TCP с клиентом установлен, ClientHello ещё не пришёл.
-///   2. ClientHello приходит → копим в pair.bufferedClientHello,
-///      извлекаем SNI, запускаем decision engine.
-///   3. Пока Probe — downstream не перекладывает байты никуда.
-///   4. Решение Bypass:
-///        - открываем upstream;
-///        - перекладываем ОРИГИНАЛЬНЫЙ ClientHello в upstream как есть;
-///        - дальше raw splice.
-///   5. Решение Mitm:
-///        - открываем upstream;
-///        - строим свой ClientHello к серверу через serverTls;
-///        - строим свой ServerHello клиенту через clientTls;
-///        - дальше TLS-терминация.
-///   6. Решение Block — RST, закрытие.
+/// Pair lifecycle:
+///   1. Waiting — client TCP established, ClientHello not yet received.
+///   2. ClientHello arrives → buffered in pair.bufferedClientHello,
+///      SNI extracted, decision engine started.
+///   3. While Probing — downstream does not relay any bytes.
+///   4. Decision Bypass:
+///        - open upstream;
+///        - relay the ORIGINAL ClientHello to upstream as-is;
+///        - then raw splice.
+///   5. Decision Mitm:
+///        - open upstream;
+///        - build our own ClientHello to the server via serverTls;
+///        - build our own ServerHello to the client via clientTls;
+///        - then TLS termination.
+///   6. Decision Block — RST, close.
 template <typename SessionManagerType>
 class TransparentProxyConsumer final : public snet::tcp::IStreamConsumer<SessionManagerType>
 {
 public:
-    using Session = typename SessionManagerType::Session;
-    using TcpConnection = snet::tcp::TcpConnection;
-    using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>;
-    using Acceptor = TransparentProxyAcceptor<SessionManagerType>;
-    using TlsSession = snet::tls::Session;
+    using Session = typename SessionManagerType::Session; ///< Session type of the manager.
+    using TcpConnection = snet::tcp::TcpConnection; ///< TCP connection type.
+    using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>; ///< Transmit handler type.
+    using Acceptor = TransparentProxyAcceptor<SessionManagerType>; ///< Upstream opener.
+    using TlsSession = snet::tls::Session; ///< TLS session type used for MITM.
 
+    /// @param[in] mgr      Session manager owning contexts and sessions.
+    /// @param[in] tx       Transmit handler used to pump outgoing packets.
+    /// @param[in] engine   Decision engine resolving SNI to a verdict.
+    /// @param[in] acceptor Acceptor used to open the upstream connection.
     TransparentProxyConsumer(SessionManagerType* mgr, TransmitHandler* tx, TlsDecisionEngine* engine,
                              Acceptor* acceptor)
         : mgr_(mgr)
@@ -54,11 +60,22 @@ public:
     {
     }
 
+    /// Handle stream data arriving on a pair session.
+    ///
+    /// Dispatches on the pair phase: buffers ClientHello in Waiting,
+    /// keeps buffering in Probing, raw-splices in Splice, terminates
+    /// TLS in Mitm, and drains in Closed.
+    ///
+    /// @param[in] session Session the data arrived on.
+    /// @param[in] side    Stream side (unused).
+    /// @param[in] reader  Reader over the available stream bytes.
     void onStreamData(Session* session, int8_t /*side*/, snet::tcp::IStreamReader& reader) override
     {
+
         auto* ctx = mgr_->template getContext<ProxyContext>(session);
         if (!ctx || !ctx->pair)
             return;
+        CSK_LOG_WARNING("onStreamData: pair=%p", static_cast<void*>(ctx ? ctx->pair.get() : nullptr));
 
         auto& pair = *ctx->pair;
 
@@ -98,6 +115,13 @@ public:
         }
     }
 
+    /// Handle stream close on a pair session.
+    ///
+    /// Marks the pair Closed, closes the peer session, and prints a summary.
+    ///
+    /// @param[in] session Session that closed.
+    /// @param[in] side    Stream side (unused).
+    /// @param[in] reason  Close reason (unused).
     void onStreamClose(Session* session, int8_t /*side*/, int /*reason*/) override
     {
         auto* ctx = mgr_->template getContext<ProxyContext>(session);
@@ -107,13 +131,16 @@ public:
         auto& pair = *ctx->pair;
         pair.phase = PairPhase::Closed;
 
-        // Закрываем peer-сессию.
+        // Close the peer session.
         const uint32_t otherKey = ctx->isDownstream ? pair.upstreamKey : pair.downstreamKey;
         closeOther(otherKey);
 
         printSummary(pair);
     }
 
+    /// Handle a stream gap (missing bytes).
+    ///
+    /// @param[in] missingBytes Number of missing bytes.
     void onStreamGap(Session*, int8_t, uint32_t missingBytes) override
     {
         CSK_LOG_WARNING("TransparentProxy: gap %u bytes", missingBytes);
@@ -121,14 +148,21 @@ public:
 
 private:
     // ─────────────────────────────────────────────────────────────────
-    // Фаза Waiting: копим ClientHello, определяем SNI, запускаем probe.
+    // Waiting phase: buffer ClientHello, determine SNI, start probe.
     // ─────────────────────────────────────────────────────────────────
+    /// Buffer incoming bytes, extract the SNI once available, and start
+    /// the decision request, transitioning the pair to Probing.
+    ///
+    /// @param[in] session Pair session.
+    /// @param[in] ctx     Session context.
+    /// @param[in] pair    Pair state.
+    /// @param[in] reader  Reader over available bytes.
     void handleWaiting(Session* session, ProxyContext& ctx, ProxyPair& pair, snet::tcp::IStreamReader& reader)
     {
         if (!ctx.isDownstream)
             return;
 
-        // Копим всё, что пришло.
+        // Buffer everything that arrived.
         while (reader.available() > 0)
         {
             auto [data, len] = reader.peek();
@@ -138,17 +172,17 @@ private:
             reader.consume(len);
         }
 
-        // Пробуем извлечь SNI из накопленного.
+        // Try to extract SNI from the buffered bytes.
         if (pair.clientSni.empty())
         {
             auto sni = std::string("test"); // extractSniFromClientHello(pair.bufferedClientHello);
             if (sni.empty())
-                return; // ждём ещё байт
+                return; // wait for more bytes
             pair.clientSni = std::move(sni);
             CSK_LOG_DEBUG("Proxy: SNI=%s", pair.clientSni.c_str());
         }
 
-        // Запускаем решение.
+        // Start the decision request.
         pair.phase = PairPhase::Probing;
         engine_->request(pair.clientSni,
                          pair.serverIP,
@@ -160,8 +194,13 @@ private:
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Решение получено. Применяем.
+    // Decision received. Apply it.
     // ─────────────────────────────────────────────────────────────────
+    /// Apply a decision: Bypass → splice + flush buffered ClientHello;
+    /// Mitm → open upstream + start MITM; Block → RST and close.
+    ///
+    /// @param[in] session Pair session.
+    /// @param[in] d       Decision to apply.
     void onDecision(Session* session, InspectionDecision d)
     {
         auto* ctx = mgr_->template getContext<ProxyContext>(session);
@@ -198,39 +237,53 @@ private:
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Открытие MITM-сессии. Заготовка — полноценная логика TLS-
-    // терминации делается отдельно, здесь только инфраструктура.
+    // MITM session setup. Skeleton — full TLS termination logic is
+    // implemented separately; only infrastructure is set up here.
     // ─────────────────────────────────────────────────────────────────
+    /// Create the two TLS sessions used for MITM (client-facing and
+    /// server-facing). Actual handshake construction is not done here.
+    ///
+    /// @param[in] session Pair session.
+    /// @param[in] ctx     Session context.
+    /// @param[in] pair    Pair state.
     void startMitm(Session* session, ProxyContext& ctx, ProxyPair& pair)
     {
         (void)session;
         (void)ctx;
 
-        // Создаём два tls::Session, работающих в active-режиме.
+        // Create two tls::Session instances working in active mode.
         pair.clientTls = std::make_unique<TlsSession>(pair.pool);
         pair.clientTls->setMonitor(false);
 
         pair.serverTls = std::make_unique<TlsSession>(pair.pool);
         pair.serverTls->setMonitor(false);
 
-        // TODO: построить ServerHello/Certificate/Finished для клиента
-        //       и ClientHello для сервера. Это отдельная большая тема.
+        // TODO: build ServerHello/Certificate/Finished for the client
+        //       and ClientHello for the server. This is a separate,
+        //       substantial topic.
         //
-        // См. Session::constructClientHello / constructServerHello
-        // (второго в публичном API нет — придётся генерировать
-        //  ServerHello вручную или добавить в Session).
+        // See Session::constructClientHello / constructServerHello
+        // (the latter is not in the public API — ServerHello must be
+        //  generated manually or added to Session).
 
         CSK_LOG_INFO("Proxy: MITM enabled for SNI=%s", pair.clientSni.c_str());
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Bypass: перекладывание байтов как есть.
+    // Bypass: relay bytes as-is.
     // ─────────────────────────────────────────────────────────────────
+    /// Move bytes from the reader into the peer connection's txRing
+    /// without any modification.
+    ///
+    /// @param[in] session Pair session (unused).
+    /// @param[in] ctx     Session context.
+    /// @param[in] pair    Pair state (byte counters updated).
+    /// @param[in] reader  Reader over available bytes.
     void forwardRaw(Session* session, ProxyContext& ctx, ProxyPair& pair, snet::tcp::IStreamReader& reader)
     {
         (void)session;
 
-        // Определяем целевую сессию.
+        // Determine the destination session.
         const uint32_t dstKey = ctx.isDownstream ? pair.upstreamKey : pair.downstreamKey;
         auto* dstSession = mgr_->find(dstKey);
         if (!dstSession)
@@ -270,29 +323,44 @@ private:
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // MITM: расшифровка, обработка, перешифрование.
-    // Заготовка — полная логика сложнее, здесь только структура.
+    // MITM: decrypt, process, re-encrypt.
+    // Skeleton — the full logic is more involved; only structure here.
     // ─────────────────────────────────────────────────────────────────
+    /// Feed the reader into the appropriate TLS session, process records,
+    /// and emit outgoing bytes to the peer. Currently a placeholder that
+    /// drains the reader.
+    ///
+    /// @param[in] session Pair session (unused).
+    /// @param[in] ctx     Session context (unused).
+    /// @param[in] pair    Pair state (unused).
+    /// @param[in] reader  Reader over available bytes.
     void forwardMitm(Session* session, ProxyContext& ctx, ProxyPair& pair, snet::tcp::IStreamReader& reader)
     {
         (void)session;
         (void)ctx;
         (void)pair;
         // TODO:
-        //   1. Скормить reader в pair.clientTls (или serverTls в зав. от ctx).
-        //   2. processPendingRecords с обработчиком:
-        //        - ApplicationData → расшифровать → передать в другую сессию.
-        //        - Handshake → обработать (KeyUpdate и т.д.).
-        //   3. Забрать outgoing из другой сессии, записать в её txRing.
+        //   1. Feed the reader into pair.clientTls (or serverTls depending on ctx).
+        //   2. processPendingRecords with a handler:
+        //        - ApplicationData → decrypt → pass to the other session.
+        //        - Handshake → handle (KeyUpdate, etc.).
+        //   3. Take outgoing from the other session, write into its txRing.
         //
-        // Сейчас — ничего, MITM реализуется отдельным шагом.
+        // For now — nothing; MITM is implemented as a separate step.
         reader.consume(reader.available());
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Перекладываем произвольный буфер в upstream txRing.
-    // Используется при bypass для отправки оригинального ClientHello.
+    // Relay an arbitrary buffer into the upstream txRing.
+    // Used on bypass to send the original ClientHello.
     // ─────────────────────────────────────────────────────────────────
+    /// Write the given buffer into the upstream txRing (used to flush
+    /// the original ClientHello after a Bypass decision).
+    ///
+    /// @param[in] session Pair session (unused).
+    /// @param[in] ctx     Session context (unused).
+    /// @param[in] pair    Pair state (byte counters updated).
+    /// @param[in] bytes   Bytes to relay.
     void pushToUpstream(Session* session, ProxyContext& ctx, ProxyPair& pair, const std::vector<uint8_t>& bytes)
     {
         (void)session;
@@ -310,8 +378,8 @@ private:
         if (!dstConn || !dstConn->txRing)
             return;
 
-        // Пишем всё, что влезает. Остаток отправится позже —
-        // но т.к. ClientHello обычно < MSS, переполнения не будет.
+        // Write whatever fits. The remainder will be sent later — but
+        // since ClientHello is usually < MSS, no overflow is expected.
         size_t off = 0;
         while (off < bytes.size())
         {
@@ -331,6 +399,11 @@ private:
             tx_->pump(dstSession);
     }
 
+    /// Abort the flow with a RST and close the session.
+    ///
+    /// @param[in] session Session to abort.
+    /// @param[in] ctx     Session context (unused).
+    /// @param[in] pair    Pair state (unused).
     void blockFlow(Session* session, ProxyContext& ctx, ProxyPair& pair)
     {
         auto* conn = mgr_->template getContext<TcpConnection>(session);
@@ -349,6 +422,9 @@ private:
         (void)pair;
     }
 
+    /// Close the session identified by the given key (gracefully or RST).
+    ///
+    /// @param[in] key Session key of the peer to close.
     void closeOther(uint32_t key)
     {
         auto* other = mgr_->find(key);
@@ -370,12 +446,19 @@ private:
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Извлечение SNI из накопленного буфера ClientHello.
-    // Обёртка: находит TLS record с handshake ClientHello,
-    // затем вызывает extractSni по расширениям.
+    // Extract SNI from the buffered ClientHello.
+    // Wrapper: locates the TLS record carrying a handshake ClientHello,
+    // then calls extractSni over the extensions.
     // ─────────────────────────────────────────────────────────────────
+    /// Extract the SNI from a buffered ClientHello.
+    ///
+    /// @param[in] buf Buffered ClientHello bytes.
+    /// @return SNI string, or empty if not present / not yet complete.
     static std::string extractSniFromClientHello(const std::vector<uint8_t>& buf);
 
+    /// Print a short summary of the pair (endpoints, SNI, decision, bytes).
+    ///
+    /// @param[in] pair Pair state to summarize.
     void printSummary(const ProxyPair& pair) const
     {
         printf("\n═══ TLS proxy session summary ═══\n");
@@ -393,10 +476,10 @@ private:
         printf("═════════════════════════════════\n\n");
     }
 
-    SessionManagerType* mgr_;
-    TransmitHandler* tx_;
-    TlsDecisionEngine* engine_;
-    Acceptor* acceptor_;
+    SessionManagerType* mgr_;    ///< Session manager (not owned).
+    TransmitHandler* tx_;        ///< Transmit handler (not owned).
+    TlsDecisionEngine* engine_;  ///< Decision engine (not owned).
+    Acceptor* acceptor_;         ///< Acceptor used to open upstream (not owned).
 };
 
 } // namespace snet::proxy

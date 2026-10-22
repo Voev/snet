@@ -12,6 +12,7 @@ target_link_libraries(${TARGET_NAME}
     PUBLIC
         snet_io
         snet_layers
+        snet_arp
         casket
         Threads::Threads
 )

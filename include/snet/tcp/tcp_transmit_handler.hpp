@@ -275,7 +275,6 @@ public:
     }
 
 private:
-
     /// @brief Emit conn->pendingOutput if present.
     void emitPendingOutput(TcpConnection* conn)
     {
@@ -298,11 +297,17 @@ private:
 
         if (out.type == TcpOutput::Type::Send || out.type == TcpOutput::Type::SendReset)
         {
-            if (emit(conn, out) && out.type == TcpOutput::Type::Send)
+            if (!emit(conn, out))
             {
-                // Only advance seq numbers after successful transmit
-                TcpStateMachine::onSegmentSent(*conn, out);
+                // keep pendingOutput as it — let's try next time.
+                return;
             }
+
+            conn->pendingOutput = {};
+            conn->hasPendingOutput = false;
+
+            if (out.type == TcpOutput::Type::Send)
+                TcpStateMachine::onSegmentSent(*conn, out);
         }
     }
 
