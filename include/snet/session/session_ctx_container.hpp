@@ -56,112 +56,143 @@ public:
     template <typename ContextType>
     ContextType* get(size_t index = 0)
     {
-        static_assert(CONTEXT_COUNT > 0, "No context types defined");
-
-        if (index >= ContextType::MAX_INSTANCES)
+        if constexpr (!contains<ContextType>())
         {
             return nullptr;
         }
+        else
+        {
+            if (index >= ContextType::MAX_INSTANCES)
+                return nullptr;
 
-        constexpr size_t typeIndex = getTypeIndex<ContextType>();
-        size_t slotIndex = typeIndex * MAX_INSTANCES + index;
+            constexpr size_t typeIndex = getTypeIndex<ContextType>();
+            const size_t slotIndex = typeIndex * MAX_INSTANCES + index;
 
-        if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+            if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+                return nullptr;
+
+            auto& slot = slots[slotIndex];
+            if (slot.data)
+                return static_cast<ContextType*>(slot.data);
+            return nullptr;
+        }
+    }
+
+    template <typename ContextType>
+    const ContextType* get(size_t index = 0) const
+    {
+        if constexpr (!contains<ContextType>())
         {
             return nullptr;
         }
-
-        auto& slot = slots[slotIndex];
-        if (slot.data)
+        else
         {
-            return static_cast<ContextType*>(slot.data);
+            if (index >= ContextType::MAX_INSTANCES)
+                return nullptr;
+
+            constexpr size_t typeIndex = getTypeIndex<ContextType>();
+            const size_t slotIndex = typeIndex * MAX_INSTANCES + index;
+
+            if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+                return nullptr;
+
+            const auto& slot = slots[slotIndex];
+            if (slot.data)
+                return static_cast<const ContextType*>(slot.data);
+            return nullptr;
         }
-        return nullptr;
     }
 
     template <typename ContextType>
     bool set(ContextType* data, size_t index = 0)
     {
-        if (!data || index >= ContextType::MAX_INSTANCES)
+        if constexpr (!contains<ContextType>())
         {
             return false;
         }
-
-        constexpr size_t typeIndex = getTypeIndex<ContextType>();
-        size_t slotIndex = typeIndex * MAX_INSTANCES + index;
-
-        if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+        else
         {
-            return false;
+            if (!data || index >= ContextType::MAX_INSTANCES)
+                return false;
+
+            constexpr size_t typeIndex = getTypeIndex<ContextType>();
+            const size_t slotIndex = typeIndex * MAX_INSTANCES + index;
+
+            if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+                return false;
+
+            auto& slot = slots[slotIndex];
+
+            if (slot.data && slot.data != data)
+            {
+                activeCount_--;
+                slotMask_ &= ~(1u << slotIndex);
+            }
+
+            slot.typeId = detail::getTypeId<ContextType>();
+            slot.instanceId = static_cast<uint32_t>(index);
+            slot.data = data;
+
+            if (!(slotMask_ & (1u << slotIndex)))
+                activeCount_++;
+
+            slotMask_ |= (1u << slotIndex);
+            return true;
         }
-
-        auto& slot = slots[slotIndex];
-
-        if (slot.data && slot.data != data)
-        {
-            activeCount_--;
-            slotMask_ &= ~(1u << slotIndex);
-        }
-
-        slot.typeId = detail::getTypeId<ContextType>();
-        slot.instanceId = static_cast<uint32_t>(index);
-        slot.data = data;
-
-        if (!(slotMask_ & (1u << slotIndex)))
-        {
-            activeCount_++;
-        }
-        slotMask_ |= (1u << slotIndex);
-
-        return true;
     }
 
     template <typename ContextType>
     bool clear(size_t index = 0)
     {
-        if (index >= ContextType::MAX_INSTANCES)
+        if constexpr (!contains<ContextType>())
         {
             return false;
         }
-
-        constexpr size_t typeIndex = getTypeIndex<ContextType>();
-        size_t slotIndex = typeIndex * MAX_INSTANCES + index;
-
-        if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+        else
         {
+            if (index >= ContextType::MAX_INSTANCES)
+                return false;
+
+            constexpr size_t typeIndex = getTypeIndex<ContextType>();
+            const size_t slotIndex = typeIndex * MAX_INSTANCES + index;
+
+            if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+                return false;
+
+            auto& slot = slots[slotIndex];
+            if (slot.data)
+            {
+                slot.data = nullptr;
+                slot.typeId = 0;
+                slotMask_ &= ~(1u << slotIndex);
+                activeCount_--;
+                return true;
+            }
             return false;
         }
-
-        auto& slot = slots[slotIndex];
-        if (slot.data)
-        {
-            slot.data = nullptr;
-            slot.typeId = 0;
-            slotMask_ &= ~(1u << slotIndex);
-            activeCount_--;
-            return true;
-        }
-        return false;
     }
 
     template <typename ContextType>
     bool has(size_t index = 0) const
     {
-        if (index >= ContextType::MAX_INSTANCES)
+        if constexpr (!contains<ContextType>())
         {
             return false;
         }
-
-        constexpr size_t typeIndex = getTypeIndex<ContextType>();
-        size_t slotIndex = typeIndex * MAX_INSTANCES + index;
-
-        if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+        else
         {
-            return false;
-        }
+            if (index >= ContextType::MAX_INSTANCES)
+                return false;
 
-        const auto& slot = slots[slotIndex];
-        return (slotMask_ & (1u << slotIndex)) != 0 && slot.data != nullptr;
+            constexpr size_t typeIndex = getTypeIndex<ContextType>();
+            const size_t slotIndex = typeIndex * MAX_INSTANCES + index;
+
+            if (slotIndex >= CONTEXT_COUNT * MAX_INSTANCES)
+                return false;
+
+            const auto& slot = slots[slotIndex];
+            return (slotMask_ & (1u << slotIndex)) != 0 && slot.data != nullptr;
+        }
     }
 
     void clearAll()
@@ -184,9 +215,7 @@ public:
         for (size_t i = 0; i < CONTEXT_COUNT * MAX_INSTANCES; ++i)
         {
             if (slots[i].data)
-            {
                 func(slots[i].typeId, slots[i].data);
-            }
         }
     }
 
@@ -194,12 +223,10 @@ public:
     {
         return activeCount_;
     }
-
     bool empty() const
     {
         return activeCount_ == 0;
     }
-
     uint32_t slotMask() const
     {
         return slotMask_;
@@ -237,6 +264,23 @@ private:
         constexpr size_t idx = TypeIndexImpl<T, 0, ContextTypes...>::value;
         static_assert(idx < sizeof...(ContextTypes), "Context type not found in the list");
         return idx;
+    }
+
+    template <typename T, typename... Args>
+    struct ContainsType : std::false_type
+    {
+    };
+
+    template <typename T, typename First, typename... Rest>
+    struct ContainsType<T, First, Rest...>
+        : std::conditional_t<std::is_same_v<T, First>, std::true_type, ContainsType<T, Rest...>>
+    {
+    };
+
+    template <typename T>
+    static constexpr bool contains()
+    {
+        return ContainsType<T, ContextTypes...>::value;
     }
 };
 

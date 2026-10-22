@@ -2,8 +2,12 @@
 
 #include <cstdio>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
+
+#include <casket/log/log.hpp>
 
 #include <snet/session/session_handler.hpp>
 
@@ -16,7 +20,7 @@ class SessionPipeline
 public:
     using Session = typename SessionManagerType::Session;
     using Handler = ISessionHandler<SessionManagerType>;
-    using Strategy = std::shared_ptr<Handler>;
+    using HandlerPtr = std::shared_ptr<Handler>;
 
     SessionPipeline() = default;
 
@@ -25,165 +29,156 @@ public:
     {
     }
 
+    SessionPipeline(const SessionPipeline&) = delete;
+    SessionPipeline& operator=(const SessionPipeline&) = delete;
+
     void setSessionManager(SessionManagerType* manager)
     {
         sessionManager_ = manager;
-        for (auto& handler : pipeline_)
-        {
+        for (auto& handler : handlers_)
             handler->setSessionManager(manager);
-        }
     }
 
-    SessionPipeline& add(Strategy strategy)
+    [[nodiscard]] SessionManagerType* getSessionManager() const noexcept
     {
-        if (!strategy)
-        {
+        return sessionManager_;
+    }
+
+    SessionPipeline& add(HandlerPtr handler)
+    {
+        if (!handler)
             return *this;
-        }
 
         if (sessionManager_)
-        {
-            strategy->setSessionManager(sessionManager_);
-        }
+            handler->setSessionManager(sessionManager_);
 
-        pipeline_.push_back(std::move(strategy));
-        rebuildChain();
+        handlers_.push_back(std::move(handler));
         return *this;
     }
 
     template <typename HandlerType, typename... Args>
     SessionPipeline& addHandler(Args&&... args)
     {
-        static_assert(std::is_base_of_v<Handler, HandlerType>,
-                      "HandlerType must derive from ISessionHandler");
+        static_assert(std::is_base_of_v<Handler, HandlerType>, "HandlerType must derive from ISessionHandler");
 
         auto handler = std::make_shared<HandlerType>(std::forward<Args>(args)...);
         return add(std::move(handler));
     }
 
-    layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
+    bool insertHandler(size_t position, HandlerPtr handler)
     {
-        if (pipeline_.empty() || !session || !packet)
-        {
-            return layers::PacketStatus::Error_NoMemory;
-        }
-
-        return pipeline_.front()->processPacket(session, packet, layers::PacketStatus::UnknownStatus);
-    }
-
-    void clear()
-    {
-        pipeline_.clear();
-    }
-
-    size_t size() const
-    {
-        return pipeline_.size();
-    }
-
-    bool empty() const
-    {
-        return pipeline_.empty();
-    }
-
-    Strategy getFirst() const
-    {
-        return pipeline_.empty() ? nullptr : pipeline_.front();
-    }
-
-    Strategy getLast() const
-    {
-        return pipeline_.empty() ? nullptr : pipeline_.back();
-    }
-
-    template <typename T>
-    T* findHandler()
-    {
-        static_assert(std::is_base_of_v<Handler, T>,
-                      "T must derive from ISessionHandler");
-
-        for (auto& handler : pipeline_)
-        {
-            if (auto* casted = dynamic_cast<T*>(handler.get()))
-            {
-                return casted;
-            }
-        }
-        return nullptr;
-    }
-
-    Handler* findHandler(const std::string& name)
-    {
-        for (auto& handler : pipeline_)
-        {
-            if (handler->name() == name)
-            {
-                return handler.get();
-            }
-        }
-        return nullptr;
-    }
-
-    bool insertHandler(size_t position, Strategy strategy)
-    {
-        if (position > pipeline_.size() || !strategy)
-        {
+        if (position > handlers_.size() || !handler)
             return false;
-        }
 
         if (sessionManager_)
-        {
-            strategy->setSessionManager(sessionManager_);
-        }
+            handler->setSessionManager(sessionManager_);
 
-        pipeline_.insert(pipeline_.begin() + position, std::move(strategy));
-        rebuildChain();
+        handlers_.insert(handlers_.begin() + position, std::move(handler));
         return true;
     }
 
     bool removeHandler(const std::string& name)
     {
-        for (size_t i = 0; i < pipeline_.size(); ++i)
+        for (size_t i = 0; i < handlers_.size(); ++i)
         {
-            if (pipeline_[i]->name() == name)
+            if (handlers_[i]->name() == name)
             {
-                pipeline_.erase(pipeline_.begin() + i);
-                rebuildChain();
+                handlers_.erase(handlers_.begin() + i);
                 return true;
             }
         }
         return false;
     }
 
+    void clear() noexcept
+    {
+        handlers_.clear();
+    }
+
+    [[nodiscard]] size_t size() const noexcept
+    {
+        return handlers_.size();
+    }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return handlers_.empty();
+    }
+
+    [[nodiscard]] HandlerPtr getFirst() const noexcept
+    {
+        return handlers_.empty() ? nullptr : handlers_.front();
+    }
+
+    [[nodiscard]] HandlerPtr getLast() const noexcept
+    {
+        return handlers_.empty() ? nullptr : handlers_.back();
+    }
+
+    template <typename T>
+    T* findHandler() const
+    {
+        static_assert(std::is_base_of_v<Handler, T>, "T must derive from ISessionHandler");
+
+        for (auto& handler : handlers_)
+        {
+            if (auto* casted = dynamic_cast<T*>(handler.get()))
+                return casted;
+        }
+        return nullptr;
+    }
+
+    Handler* findHandler(const std::string& name) const
+    {
+        for (auto& handler : handlers_)
+        {
+            if (handler->name() == name)
+                return handler.get();
+        }
+        return nullptr;
+    }
+
+    layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
+    {
+        using namespace snet::layers;
+        
+        PacketStatus status = PacketStatus::drop(PacketReason::InvalidParameters);
+
+        if (handlers_.empty() || !session || !packet)
+        {
+            return status;
+        }
+
+        for (auto& h : handlers_)
+        {
+            auto next = h->processPacket(session, packet, status);
+
+            CSK_LOG_DEBUG("pipeline: %s -> {%s, %s}", h->name(), toString(next.verdict), toString(next.reason));
+
+            status = next;
+        }
+
+        return status;
+    }
+
     void printChain(std::ostream& os) const
     {
         os << "Session pipeline: ";
-        for (size_t i = 0; i < pipeline_.size(); ++i)
+        if (handlers_.empty())
         {
-            os << pipeline_[i]->name();
-
-            if (i < pipeline_.size() - 1)
-            {
-                os << " -> ";
-            }
+            os << "(empty)\n";
+            return;
         }
-        os << std::endl;
+        for (size_t i = 0; i < handlers_.size(); ++i)
+        {
+            if (i > 0)
+                os << " -> ";
+            os << handlers_[i]->name();
+        }
+        os << '\n';
     }
 
 private:
-    void rebuildChain()
-    {
-        for (size_t i = 0; i + 1 < pipeline_.size(); ++i)
-        {
-            pipeline_[i]->setNext(pipeline_[i + 1]);
-        }
-        if (!pipeline_.empty())
-        {
-            pipeline_.back()->setNext(nullptr);
-        }
-    }
-
-    std::vector<Strategy> pipeline_;
+    std::vector<HandlerPtr> handlers_;
     SessionManagerType* sessionManager_{nullptr};
 };
 

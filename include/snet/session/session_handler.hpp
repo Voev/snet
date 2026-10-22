@@ -46,6 +46,16 @@ protected:
     }
 
     template <typename ContextType>
+    ContextType* hasContext(Session* session, size_t index = 0) const
+    {
+        if (!sessionManager_ || !session)
+        {
+            return nullptr;
+        }
+        return sessionManager_->template hasContext<ContextType>(session, index);
+    }
+
+    template <typename ContextType>
     ContextType* getContext(Session* session, size_t index = 0) const
     {
         if (!sessionManager_ || !session)
