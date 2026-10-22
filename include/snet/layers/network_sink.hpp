@@ -100,7 +100,7 @@ public:
 
         const IPv4Address dstIp(ip.dstAddr());
 
-        // ── 1. Resolve egress by destination subnet ──
+        // 1. Resolve egress by destination subnet 
         const auto egress = findEgress(dstIp);
         if (egress == io::kInvalidDevice)
         {
@@ -109,7 +109,7 @@ public:
             return false;
         }
 
-        // ── 2. Resolve destination MAC via ARP ──
+        //  2. Resolve destination MAC via ARP 
         const auto dstMac = arp_.lookup(egress, dstIp);
         if (!dstMac)
         {
@@ -117,7 +117,7 @@ public:
             return false;   // caller will retry on next pump
         }
 
-        // ── 3. Source MAC from the egress device ──
+        //  3. Source MAC from the egress device 
         auto* device = io::FindDeviceById(driver_, egress);
         if (!device)
         {
@@ -128,7 +128,7 @@ public:
 
         const auto& srcMac = device->mac();
 
-        // ── 4. Write Ethernet header into the packet headroom ──
+        //  4. Write Ethernet header into the packet headroom 
         uint8_t* eth = memPkt->getBufferStart();
 
         std::memcpy(eth,     dstMac->data(),  6);
@@ -143,7 +143,7 @@ public:
             nonstd::span<const uint8_t>(eth, frameLen),
             LINKTYPE_ETHERNET);
 
-        // ── 5. Hand the frame to the driver ──
+        //  5. Hand the frame to the driver 
         const auto status = driver_.transmitPacket(packet, egress);
         if (status != Status::Success)
         {

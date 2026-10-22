@@ -244,7 +244,7 @@ std::vector<uint8_t> buildExtensionsBlob(std::string_view sni)
         blob.insert(blob.end(), data.begin(), data.end());
     };
 
-    // ── SNI (0x0000) ──
+    //  SNI (0x0000) 
     {
         std::vector<uint8_t> data;
         const uint16_t listLen = static_cast<uint16_t>(1 + 2 + sni.size());
@@ -257,7 +257,7 @@ std::vector<uint8_t> buildExtensionsBlob(std::string_view sni)
         putExt(0x0000, data);
     }
 
-    // ── supported_groups (0x000a) ──
+    //  supported_groups (0x000a) 
     {
         std::vector<uint8_t> data;
         data.push_back(0x00);
@@ -269,7 +269,7 @@ std::vector<uint8_t> buildExtensionsBlob(std::string_view sni)
         putExt(0x000a, data);
     }
 
-    // ── signature_algorithms (0x000d) ──
+    //  signature_algorithms (0x000d) 
     {
         std::vector<uint8_t> data;
         data.push_back(0x00);
@@ -283,7 +283,7 @@ std::vector<uint8_t> buildExtensionsBlob(std::string_view sni)
         putExt(0x000d, data);
     }
 
-    // ── supported_versions (0x002b) ──
+    //  supported_versions (0x002b) 
     {
         std::vector<uint8_t> data;
         data.push_back(4); // list_len

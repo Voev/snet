@@ -147,9 +147,7 @@ public:
     }
 
 private:
-    // ─────────────────────────────────────────────────────────────────
-    // Waiting phase: buffer ClientHello, determine SNI, start probe.
-    // ─────────────────────────────────────────────────────────────────
+    /// Waiting phase: buffer ClientHello, determine SNI, start probe.
     /// Buffer incoming bytes, extract the SNI once available, and start
     /// the decision request, transitioning the pair to Probing.
     ///
@@ -193,9 +191,7 @@ private:
                          });
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Decision received. Apply it.
-    // ─────────────────────────────────────────────────────────────────
+    /// Decision received. Apply it.
     /// Apply a decision: Bypass → splice + flush buffered ClientHello;
     /// Mitm → open upstream + start MITM; Block → RST and close.
     ///
@@ -236,10 +232,8 @@ private:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // MITM session setup. Skeleton — full TLS termination logic is
-    // implemented separately; only infrastructure is set up here.
-    // ─────────────────────────────────────────────────────────────────
+    /// MITM session setup. Skeleton — full TLS termination logic is
+    /// implemented separately; only infrastructure is set up here.
     /// Create the two TLS sessions used for MITM (client-facing and
     /// server-facing). Actual handshake construction is not done here.
     ///
@@ -269,9 +263,7 @@ private:
         CSK_LOG_INFO("Proxy: MITM enabled for SNI=%s", pair.clientSni.c_str());
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Bypass: relay bytes as-is.
-    // ─────────────────────────────────────────────────────────────────
+    /// Bypass: relay bytes as-is.
     /// Move bytes from the reader into the peer connection's txRing
     /// without any modification.
     ///
@@ -322,10 +314,8 @@ private:
             tx_->pump(dstSession);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // MITM: decrypt, process, re-encrypt.
-    // Skeleton — the full logic is more involved; only structure here.
-    // ─────────────────────────────────────────────────────────────────
+    /// MITM: decrypt, process, re-encrypt.
+    /// Skeleton — the full logic is more involved; only structure here.
     /// Feed the reader into the appropriate TLS session, process records,
     /// and emit outgoing bytes to the peer. Currently a placeholder that
     /// drains the reader.
@@ -350,10 +340,8 @@ private:
         reader.consume(reader.available());
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Relay an arbitrary buffer into the upstream txRing.
-    // Used on bypass to send the original ClientHello.
-    // ─────────────────────────────────────────────────────────────────
+    /// Relay an arbitrary buffer into the upstream txRing.
+    /// Used on bypass to send the original ClientHello.
     /// Write the given buffer into the upstream txRing (used to flush
     /// the original ClientHello after a Bypass decision).
     ///
@@ -445,11 +433,9 @@ private:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
     // Extract SNI from the buffered ClientHello.
     // Wrapper: locates the TLS record carrying a handshake ClientHello,
     // then calls extractSni over the extensions.
-    // ─────────────────────────────────────────────────────────────────
     /// Extract the SNI from a buffered ClientHello.
     ///
     /// @param[in] buf Buffered ClientHello bytes.
