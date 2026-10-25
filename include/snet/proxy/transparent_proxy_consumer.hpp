@@ -82,7 +82,6 @@ public:
         switch (pair.phase)
         {
         case PairPhase::Waiting:
-            std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
             handleWaiting(session, *ctx, pair, reader);
             break;
 
@@ -177,8 +176,9 @@ private:
             if (sni.empty())
                 return; // wait for more bytes
             pair.clientSni = std::move(sni);
-            CSK_LOG_DEBUG("Proxy: SNI=%s", pair.clientSni.c_str());
         }
+
+        CSK_LOG_DEBUG("Proxy: SNI=%s", pair.clientSni.c_str());
 
         // Start the decision request.
         pair.phase = PairPhase::Probing;
@@ -210,8 +210,8 @@ private:
         {
         case InspectionDecision::Bypass:
         {
-            pair.phase = PairPhase::Splice;
             acceptor_->openUpstream(session);
+            pair.phase = PairPhase::Splice;
             if (!pair.bufferedClientHello.empty())
             {
                 pushToUpstream(session, *ctx, pair, pair.bufferedClientHello);
@@ -220,8 +220,8 @@ private:
             break;
         }
         case InspectionDecision::Mitm:
-            pair.phase = PairPhase::Mitm;
             acceptor_->openUpstream(session);
+            pair.phase = PairPhase::Mitm;
             startMitm(session, *ctx, pair);
             break;
 

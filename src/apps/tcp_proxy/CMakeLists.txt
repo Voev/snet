@@ -15,7 +15,7 @@ target_link_libraries(${TARGET_NAME}
         snet_pp
         snet_arp
         snet_tls
-        snet_proxy
+        snet_probe
         casket
         Threads::Threads
 )

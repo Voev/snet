@@ -1,5 +1,5 @@
 # Target name
-set(TARGET_NAME snet_proxy)
+set(TARGET_NAME snet_probe)
 
 # Sources
 file(GLOB_RECURSE SOURCES *.cpp)
@@ -14,6 +14,7 @@ add_library(${TARGET_NAME} STATIC ${SOURCES})
 target_link_libraries(${TARGET_NAME}
     PUBLIC
         snet_tls
+        casket
 )
 
 # Code coverage target

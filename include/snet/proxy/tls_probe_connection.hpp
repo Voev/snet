@@ -1,99 +1,86 @@
 #pragma once
 
-#include <chrono>
-#include <functional>
+#include <algorithm>
+#include <memory>
+#include <mutex>
 #include <string>
-#include <string_view>
 #include <vector>
 
-#include <snet/layers/l3/ip_address.hpp>
-#include <snet/tls/types.hpp>
-#include <snet/tls/cipher_suite.hpp>
-#include <snet/crypto/cert.hpp>
-
-#include "proxy_types.hpp"
+#include <snet/proxy/i_probe_connection.hpp>
+#include <snet/proxy/tls_probe_connection.hpp>   // TlsProbeResult
+#include <snet/probe/probe_connector.hpp>
+#include <snet/probe/probe_handle.hpp>
+#include <snet/probe/probe_result.hpp>
 
 namespace snet::proxy
 {
 
-/// Result of a single TLS probe.
-struct TlsProbeResult
-{
-    /// Outcome of the probe.
-    enum class Status
-    {
-        Ok,               ///< Handshake completed; chain captured.
-        ConnectFailed,    ///< TCP connection could not be established.
-        ConnectTimeout,   ///< TCP connect timed out.
-        HandshakeTimeout, ///< TLS handshake timed out.
-        TlsError,         ///< TLS protocol/handshake error.
-        NoCertificate,    ///< Server presented no certificate.
-        Cancelled,        ///< Probe was cancelled.
-    };
-
-    Status status{Status::ConnectFailed}; ///< Probe outcome.
-    std::string error;                    ///< Human-readable error detail (on failure).
-
-    tls::ProtocolVersion version;                 ///< Negotiated TLS protocol version.
-    const tls::CipherSuite* cipherSuite{nullptr}; ///< Negotiated cipher suite (nullptr if none).
-    CertificateChain chain;                       ///< Server certificate chain captured during handshake.
-};
-
-/// Asynchronous TLS probe.
-///
-/// Opens a separate TCP connection to the server, performs a full TLS
-/// handshake with the given SNI, captures the certificate chain, and
-/// closes the connection. Does NOT touch the original client↔proxy stream.
-///
-/// Runs on a background thread. The callback is invoked exactly once,
-/// on probe completion, from the pool thread.
-///
-/// The probe is fully self-contained: its own socket, RecordPool, and
-/// tls::Session. All of it dies together with the probe.
-class TlsProbeConnection
+template <typename SessionManagerType>
+class ProbeConnectorAdapter : public IProbeConnection
 {
 public:
-    /// Probe tuning parameters.
-    struct Config
-    {
-        std::chrono::milliseconds connectTimeout{2000};                       ///< TCP connect timeout.
-        std::chrono::milliseconds handshakeTimeout{3000};                     ///< TLS handshake timeout.
-        tls::ProtocolVersion preferredVersion{tls::ProtocolVersion::TLSv1_2}; ///< Preferred TLS version.
-        size_t recordPoolSize{32}; ///< Number of records in the probe's RecordPool.
-    };
-
-    /// Completion callback invoked once with the probe result.
-    using Callback = std::function<void(TlsProbeResult)>;
-    /// Submits a task to the background executor.
-    using SubmitFn = std::function<void(std::function<void()>)>;
-
-    /// @param[in] submit Executor used to run probe work off the caller's thread.
-    explicit TlsProbeConnection(SubmitFn submit)
-        : submit_(std::move(submit))
+    ProbeConnectorAdapter(snet::probe::ProbeConnector<SessionManagerType>& connector,
+                          layers::IPAddress sourceIP)
+        : connector_(connector)
+        , sourceIP_(sourceIP)
     {
     }
 
-    /// Start an asynchronous probe.
-    ///
-    /// @param[in] sni        SNI to present during the handshake.
-    /// @param[in] serverIP   Upstream server address.
-    /// @param[in] serverPort Upstream server port.
-    /// @param[in] cfg        Probe tuning parameters.
-    /// @param[in] cb         Callback invoked once on completion.
-    void asyncProbe(std::string sni, layers::IPAddress serverIP, uint16_t serverPort, Config cfg, Callback cb);
+    ~ProbeConnectorAdapter() override
+    {
+        std::vector<std::shared_ptr<snet::probe::ProbeHandle>> pending;
+        {
+            std::lock_guard lk(mtx_);
+            pending.swap(handles_);
+        }
+        for (auto& h : pending)
+            if (h) h->abort("adapter destroyed");
+    }
+
+    void asyncProbe(std::string sni, layers::IPAddress serverIP,
+                    uint16_t serverPort, Callback cb) override
+    {
+        auto handle = connector_.start(
+            std::move(sni),
+            serverIP,
+            serverPort,
+            sourceIP_,
+            [cb = std::move(cb)](snet::probe::ProbeResult r) mutable
+            {
+                probe::ProbeResult tls;
+                tls.status  = mapStatus(r.status);
+                tls.error   = std::move(r.error);
+                tls.version = r.version;
+                tls.chain   = std::move(r.chain);
+                cb(std::move(tls));
+            });
+
+        std::lock_guard lk(mtx_);
+        if (handle)
+            handles_.push_back(std::move(handle));
+    }
 
 private:
-    /// Run the probe synchronously on the current thread.
-    ///
-    /// @param[in] sni        SNI to present during the handshake.
-    /// @param[in] serverIP   Upstream server address.
-    /// @param[in] serverPort Upstream server port.
-    /// @param[in] cfg        Probe tuning parameters.
-    /// @return Probe result (chain on success, error status otherwise).
-    TlsProbeResult probeBlocking(std::string_view sni, const layers::IPAddress& serverIP, uint16_t serverPort,
-                                 const Config& cfg);
+    static probe::ProbeResult::Status mapStatus(snet::probe::ProbeResult::Status s)
+    {
+        using PS = snet::probe::ProbeResult::Status;
+        switch (s)
+        {
+        case PS::Ok:               return probe::ProbeResult::Status::Ok;
+        case PS::ConnectFailed:    return probe::ProbeResult::Status::ConnectFailed;
+        case PS::ConnectTimeout:   return probe::ProbeResult::Status::ConnectTimeout;
+        case PS::HandshakeTimeout: return probe::ProbeResult::Status::HandshakeTimeout;
+        case PS::TlsError:         return probe::ProbeResult::Status::TlsError;
+        case PS::NoCertificate:    return probe::ProbeResult::Status::NoCertificate;
+        case PS::Cancelled:        return probe::ProbeResult::Status::Cancelled;
+        }
+        return probe::ProbeResult::Status::ConnectFailed;
+    }
 
-    SubmitFn submit_; ///< Executor for background probe work.
+    snet::probe::ProbeConnector<SessionManagerType>& connector_;
+    layers::IPAddress                                 sourceIP_;
+    std::mutex                                        mtx_;
+    std::vector<std::shared_ptr<snet::probe::ProbeHandle>> handles_;
 };
 
 } // namespace snet::proxy

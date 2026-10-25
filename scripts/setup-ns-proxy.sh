@@ -84,6 +84,8 @@ configure_client() {
     sudo ip netns exec "$CLIENT_NS" ip link set "$CLIENT_IF" up
     sudo ip netns exec "$CLIENT_NS" ip addr add "${CLIENT_IP}/${PREFIX}" dev "$CLIENT_IF"
 
+    sudo ip netns exec "$CLIENT_NS" ip route add default via 10.0.0.254
+    
     sudo ip netns exec "$CLIENT_NS" \
         sysctl -qw net.ipv6.conf."$CLIENT_IF".disable_ipv6=1
 }
@@ -98,6 +100,8 @@ configure_server() {
     sudo ip netns exec "$SERVER_NS" ip link set lo up
     sudo ip netns exec "$SERVER_NS" ip link set "$SERVER_IF" up
     sudo ip netns exec "$SERVER_NS" ip addr add "${SERVER_IP}/${PREFIX}" dev "$SERVER_IF"
+    
+    sudo ip netns exec "$SERVER_NS" ip route add default via 10.0.1.254
 
     sudo ip netns exec "$SERVER_NS" \
         sysctl -qw net.ipv6.conf."$SERVER_IF".disable_ipv6=1

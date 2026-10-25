@@ -15,6 +15,8 @@
 
 #include <snet/proxy/proxy_context.hpp>
 
+#include <snet/probe/probe_context.hpp>
+
 #include <casket/log/log.hpp>
 
 namespace snet::tcp
@@ -123,9 +125,12 @@ public:
         }
 
         auto* pctx = this->template getContext<snet::proxy::ProxyContext>(session);
-        bool replay = pctx && pctx->isObserving();
+        auto* probe = this->template getContext<snet::probe::ProbeContext>(session);
 
-        return (config_.replayMode || replay) ? processReplay(session, packet, srcIP, dstIP, hdr, tcpLayer)
+        bool isProbe = probe && probe->cb != nullptr;
+        bool replay  = !isProbe && (config_.replayMode || (pctx && pctx->isObserving()));
+
+        return replay ? processReplay(session, packet, srcIP, dstIP, hdr, tcpLayer)
                                               : processLive(session, packet, srcIP, hdr, tcpLayer);
     }
 

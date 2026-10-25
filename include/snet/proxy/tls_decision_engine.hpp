@@ -10,7 +10,7 @@
 
 #include "decision_cache.hpp"
 #include "proxy_types.hpp"
-#include "tls_probe_connection.hpp"
+#include "i_probe_connection.hpp"
 
 #include <casket/log/log.hpp>
 
@@ -37,7 +37,7 @@ public:
     /// @param[in] probe  Probe connection used to fetch the certificate chain.
     /// @param[in] cache  Decision cache keyed by SNI.
     /// @param[in] policy Verdict policy applied on probe success.
-    TlsDecisionEngine(TlsProbeConnection& probe, DecisionCache& cache, InspectionPolicy policy)
+    TlsDecisionEngine(IProbeConnection& probe, DecisionCache& cache, InspectionPolicy policy)
         : probe_(probe)
         , cache_(cache)
         , policy_(std::move(policy))
@@ -83,12 +83,10 @@ public:
 
         // 3. Start probe.
         std::cout << "Probe server: " << serverIP << ":" << serverPort << "[" << sni << "]" << std::endl;
-        TlsProbeConnection::Config cfg{};
         probe_.asyncProbe(sni,
                           serverIP,
                           serverPort,
-                          cfg,
-                          [this, inflight](TlsProbeResult r)
+                          [this, inflight](probe::ProbeResult r)
                           {
                               onProbeComplete(inflight, std::move(r));
                           });
@@ -114,11 +112,11 @@ private:
     ///
     /// @param[in] inflight In-flight entry the probe belongs to.
     /// @param[in] result   Probe result (chain on success, error otherwise).
-    void onProbeComplete(const std::shared_ptr<InFlight>& inflight, TlsProbeResult result)
+    void onProbeComplete(const std::shared_ptr<InFlight>& inflight, probe::ProbeResult result)
     {
         InspectionDecision decision = InspectionDecision::Bypass;
 
-        if (result.status == TlsProbeResult::Status::Ok)
+        if (result.status == probe::ProbeResult::Status::Ok)
         {
             decision = policy_ ? policy_(inflight->sni, result.chain) : InspectionDecision::Bypass;
         }
@@ -146,7 +144,7 @@ private:
             cb(decision);
     }
 
-    TlsProbeConnection& probe_; ///< Probe connection (not owned).
+    IProbeConnection& probe_; ///< Probe connection (not owned).
     DecisionCache& cache_;      ///< Decision cache (not owned).
     InspectionPolicy policy_;   ///< Verdict policy.
 
