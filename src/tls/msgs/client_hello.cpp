@@ -76,7 +76,7 @@ ClientHello ClientHello::deserialize(nonstd::span<const uint8_t> input)
     const auto err = msg.parse(input);
     if (err != utils::DecodeError::None)
     {
-        throw casket::RuntimeError(std::string("ClientHello: ") + err.toString().data());
+        throw casket::RuntimeError(std::string("ClientHello: ") + utils::make_error_code(err).message());
     }
     return msg;
 }

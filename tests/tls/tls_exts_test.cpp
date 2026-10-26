@@ -132,16 +132,19 @@ TEST_F(ExtensionsTest, ContainsImplementedExtensionsOtherThan)
 TEST_F(ExtensionsTest, DeserializeCreatesCorrectExtensions)
 {
     const std::vector<uint8_t> data = {
-        0x00, 0x07,
-        0x00, 0x2B,
-        0x00, 0x03,
+        0x00,
+        0x07,
+        0x00,
+        0x2B,
+        0x00,
+        0x03,
         0x02,
-        0x03, 0x04,
+        0x03,
+        0x04,
     };
 
     Extensions e;
-    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode),
-              utils::DecodeError::None);
+    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode), utils::DecodeError::None);
     ASSERT_EQ(e.size(), 1u);
     ASSERT_TRUE(e.has<SupportedVersions>());
 
@@ -154,49 +157,66 @@ TEST_F(ExtensionsTest, DeserializeCreatesCorrectExtensions)
 TEST_F(ExtensionsTest, DeserializeFailsOnBadTotalLength)
 {
     const std::vector<uint8_t> data = {
-        0x00, 0xFF,
-        0x00, 0x2B, 0x00, 0x03, 0x02, 0x03, 0x04,
+        0x00,
+        0xFF,
+        0x00,
+        0x2B,
+        0x00,
+        0x03,
+        0x02,
+        0x03,
+        0x04,
     };
 
     Extensions e;
-    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode),
-              utils::DecodeError::LengthOutOfRange);
+    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode), utils::DecodeError::LengthOutOfRange);
     ASSERT_TRUE(e.empty());
 }
 
 TEST_F(ExtensionsTest, DeserializeFailsOnTruncatedInput)
 {
     const std::vector<uint8_t> data = {
-        0x00, 0x07,
-        0x00, 0x2B, 0x00, 0x03, 0x02,
+        0x00,
+        0x07,
+        0x00,
+        0x2B,
+        0x00,
+        0x03,
+        0x02,
     };
 
     Extensions e;
-    ASSERT_NE(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode),
-              utils::DecodeError::None);
+    ASSERT_NE(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode), utils::DecodeError::None);
     ASSERT_TRUE(e.empty());
 }
 
 TEST_F(ExtensionsTest, UnknownExtensionIsPreserved)
 {
     const std::vector<uint8_t> data = {
-        0x00, 0x06,
-        0x12, 0x34,
-        0x00, 0x02,
-        0xAA, 0xBB,
+        0x00,
+        0x06,
+        0x12,
+        0x34,
+        0x00,
+        0x02,
+        0xAA,
+        0xBB,
     };
 
     Extensions e;
-    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode),
-              utils::DecodeError::None);
+    ASSERT_EQ(e.deserialize(Side::Client, data, HandshakeType::ClientHelloCode), utils::DecodeError::None);
     ASSERT_EQ(e.size(), 1u);
-    ASSERT_TRUE(e.unknown().size() == 1u);
 
-    const auto& u = e.unknown()[0];
-    ASSERT_EQ(u.type(), static_cast<ExtensionCode>(0x1234));
-    ASSERT_EQ(u.value().size(), 2u);
-    ASSERT_EQ(u.value()[0], 0xAA);
-    ASSERT_EQ(u.value()[1], 0xBB);
+    const auto& all = e.all();
+    ASSERT_EQ(all.size(), 1u);
+    ASSERT_TRUE(std::holds_alternative<UnknownExtension>(all[0]));
+
+    const auto* u = std::get_if<UnknownExtension>(&all[0]);
+    ASSERT_NE(u, nullptr);
+    ASSERT_EQ(u->type(), static_cast<ExtensionCode>(0x1234));
+    ASSERT_EQ(u->value().size(), 2u);
+    ASSERT_EQ(u->value()[0], 0xAA);
+    ASSERT_EQ(u->value()[1], 0xBB);
 }
 
 TEST_F(ExtensionsTest, MoveOperationsWork)
@@ -233,8 +253,7 @@ TEST_F(ExtensionsTest, SerializeRoundtrip)
     buffer.resize(written);
 
     Extensions parsed;
-    ASSERT_EQ(parsed.deserialize(Side::Client, buffer, HandshakeType::ClientHelloCode),
-              utils::DecodeError::None);
+    ASSERT_EQ(parsed.deserialize(Side::Client, buffer, HandshakeType::ClientHelloCode), utils::DecodeError::None);
     ASSERT_EQ(parsed.size(), exts_.size());
     ASSERT_TRUE(parsed.has<SupportedVersions>());
     ASSERT_TRUE(parsed.has<ServerNameIndicator>());

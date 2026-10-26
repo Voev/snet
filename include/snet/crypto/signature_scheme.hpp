@@ -74,9 +74,9 @@ public:
     {
     }
 
-    Code wireCode() const noexcept
+    uint16_t wireCode() const noexcept
     {
-        return code_;
+        return static_cast<uint16_t>(code_);
     }
 
     inline bool operator==(const SignatureScheme& rhs) const noexcept

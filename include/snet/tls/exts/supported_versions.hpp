@@ -24,7 +24,6 @@ namespace snet::tls
 class SupportedVersions final
 {
 public:
-    // ---- ExtensionLike contract ----
     static constexpr ExtensionCode staticType() noexcept
     {
         return ExtensionCode::SupportedVersions;
@@ -74,7 +73,6 @@ public:
         return i;
     }
 
-    // ---- ctors ----
     SupportedVersions() noexcept = default;
 
     /// @brief Constructs from a single protocol version (server side).
@@ -102,7 +100,6 @@ public:
     {
     }
 
-    // ---- parse ----
     /// @brief Parses the extension body from @p input.
     /// @param[in] side  Side (Client or Server); selects the wire format.
     /// @param[in] input Wire bytes of the extension_data field.
@@ -174,7 +171,6 @@ public:
         return reader.take_error();
     }
 
-    // ---- accessors ----
     /// @brief Checks whether @p version is in the list.
     /// @param[in] version Protocol version to look up.
     /// @retval true  Present in the list.

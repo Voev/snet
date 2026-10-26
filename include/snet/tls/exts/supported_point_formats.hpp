@@ -41,7 +41,6 @@ constexpr bool isValidECPointFormat(ECPointFormat f) noexcept
 class SupportedPointFormats final
 {
 public:
-    // ---- ExtensionLike contract ----
     static constexpr ExtensionCode staticType() noexcept
     {
         return ExtensionCode::ECPointFormats;
@@ -60,8 +59,10 @@ public:
     /// @param[in] output Destination buffer; must hold 1 + formats_.size() bytes.
     /// @return Bytes written on success, kSerializationFailed if @p output
     ///         is too small or the list does not fit a 1-byte length.
-    std::size_t serialize(Side /*side*/, nonstd::span<uint8_t> output) const noexcept
+    std::size_t serialize(Side side, nonstd::span<uint8_t> output) const noexcept
     {
+        (void)side;
+
         const std::size_t n = formats_.size();
         if (n > 255)
             return kSerializationFailed;
@@ -76,7 +77,6 @@ public:
         return 1 + n;
     }
 
-    // ---- ctors ----
     SupportedPointFormats() noexcept = default;
 
     /// @brief Constructs from an existing list of formats.
@@ -86,15 +86,16 @@ public:
     {
     }
 
-    // ---- parse ----
     /// @brief Parses the extension body from @p input.
     /// @param[in] side  Side (Client or Server); unused.
     /// @param[in] input Wire bytes of the extension_data field.
     /// @return DecodeError::None on success;
     ///         NotEnoughBytes / LengthOutOfRange / TrailingBytes on
     ///         malformed input. Unknown format bytes are rejected.
-    utils::DecodeError deserialize(Side /*side*/, nonstd::span<const uint8_t> input) noexcept
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
     {
+        (void)side;
+
         formats_.clear();
 
         utils::DataReader reader("ECPointFormats", input);
@@ -135,7 +136,6 @@ public:
         return reader.take_error();
     }
 
-    // ---- accessors ----
     /// @brief Gets the list of EC point formats in wire order.
     /// @return View over the owned vector; empty means "not encoded".
     nonstd::span<const ECPointFormat> getFormats() const noexcept

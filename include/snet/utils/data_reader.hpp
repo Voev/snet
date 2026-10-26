@@ -9,82 +9,10 @@
 #include <casket/utils/format.hpp>
 #include <casket/utils/load_store.hpp>
 
+#include <snet/utils/decode_error.hpp>
+
 namespace snet::utils
 {
-
-/// Error codes for wire-format decoding.
-///
-/// Modelled as a thin class (not `enum class`) so the code is a first-class
-/// type with member functions, while still being 1 byte and trivially
-/// copyable — safe for `Result<void, DecodeError>` and hot-path code.
-class DecodeError final
-{
-public:
-    /// Named values. `static constexpr` members give you
-    /// `DecodeError::None`, `DecodeError::NotEnoughBytes`, etc.
-    enum Code : uint8_t
-    {
-        None = 0,
-        NotEnoughBytes,
-        TrailingBytes,
-        BadLengthSize,
-        SizeNotMultiple,
-        LengthOutOfRange,
-        AllocationFailed,
-    };
-
-    constexpr DecodeError() noexcept
-        : code_(None)
-    {
-    }
-    constexpr DecodeError(Code c) noexcept
-        : code_(c)
-    {
-    }
-
-    /// Implicit conversion to the underlying enum so that `switch (err)`
-    /// and `Result<void, DecodeError>` interop remain natural.
-    constexpr operator Code() const noexcept
-    {
-        return static_cast<Code>(code_);
-    }
-
-    constexpr bool isOk() const noexcept
-    {
-        return code_ == None;
-    }
-    constexpr bool isError() const noexcept
-    {
-        return code_ != None;
-    }
-
-    /// Human-readable name. `constexpr` — can be used in static_assert and
-    /// formatted logs without a call.
-    constexpr nonstd::string_view toString() const noexcept
-    {
-        switch (code_)
-        {
-        case None:
-            return "ok";
-        case NotEnoughBytes:
-            return "not enough bytes";
-        case TrailingBytes:
-            return "trailing bytes";
-        case BadLengthSize:
-            return "bad length size";
-        case SizeNotMultiple:
-            return "size not multiple of element";
-        case LengthOutOfRange:
-            return "length field outside parameters";
-        case AllocationFailed:
-            return "allocation failed";
-        }
-        return "unknown";
-    }
-
-private:
-    uint8_t code_;
-};
 
 class DataReader final
 {
@@ -93,6 +21,7 @@ public:
         : m_typename(type)
         , m_buf(buf_in)
         , m_offset(0)
+        , error_(DecodeError::None)
     {
     }
 
@@ -102,7 +31,7 @@ public:
 
     bool ok() const noexcept
     {
-        return error_.isOk();
+        return error_ == DecodeError::None;
     }
 
     explicit operator bool() const noexcept
@@ -128,6 +57,11 @@ public:
         const auto e = error_;
         error_ = DecodeError::None;
         return e;
+    }
+
+    std::error_code take_ec() noexcept
+    {
+        return make_error_code(take_error());
     }
 
     void assert_done() noexcept

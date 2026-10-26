@@ -24,6 +24,8 @@ public:
     /// @brief Maximum allowed limit, inclusive: 2^14 + 1 (encrypted content type byte).
     static constexpr std::uint16_t kMaxLimit = 16385;
 
+    /// @brief Gets the wire code for this extension.
+    /// @return ExtensionCode::RecordSizeLimit.
     static constexpr ExtensionCode staticType() noexcept
     {
         return ExtensionCode::RecordSizeLimit;
@@ -41,12 +43,17 @@ public:
     /// @param[in] side   Side (Client or Server); unused.
     /// @param[in] output Destination buffer; must hold at least 2 bytes.
     /// @return 2 on success, 0 if @p output is too small.
-    std::size_t serialize(Side /*side*/, nonstd::span<uint8_t> output) const noexcept
+    std::size_t serialize(Side side, nonstd::span<uint8_t> output) const noexcept
     {
+        (void)side;
+
         if (output.size_bytes() < 2)
+        {
             return kSerializationFailed;
-        output[0] = static_cast<std::uint8_t>(limit_ >> 8);
-        output[1] = static_cast<std::uint8_t>(limit_);
+        }
+
+        output[0] = casket::get_byte<0>(limit_);
+        output[1] = casket::get_byte<1>(limit_);
         return 2;
     }
 

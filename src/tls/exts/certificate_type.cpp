@@ -85,8 +85,6 @@ std::size_t serializeCertificateTypes(Side side, nonstd::span<const CertificateT
 
 } // namespace detail
 
-// ---- ClientCertificateType -----------------------------------------------
-
 ClientCertificateType::ClientCertificateType(const ClientCertificateType& fromClient,
                                              nonstd::span<const CertificateType> serverPreference)
 {
@@ -107,15 +105,20 @@ ClientCertificateType::ClientCertificateType(const ClientCertificateType& fromCl
 utils::DecodeError ClientCertificateType::validateSelection(const ClientCertificateType& fromServer) const noexcept
 {
     if (fromServer.certTypes_.size() != 1)
+    {
         return utils::DecodeError::LengthOutOfRange;
+    }
+
     const auto sel = fromServer.certTypes_.front();
     for (auto t : certTypes_)
+    {
         if (t == sel)
+        {
             return utils::DecodeError::None;
+        }
+    }
     return utils::DecodeError::LengthOutOfRange;
 }
-
-// ---- ServerCertificateType ----------------------------------------------
 
 ServerCertificateType::ServerCertificateType(const ServerCertificateType& fromClient,
                                              nonstd::span<const CertificateType> serverPreference)
@@ -136,11 +139,18 @@ ServerCertificateType::ServerCertificateType(const ServerCertificateType& fromCl
 utils::DecodeError ServerCertificateType::validateSelection(const ServerCertificateType& fromServer) const noexcept
 {
     if (fromServer.certTypes_.size() != 1)
+    {
         return utils::DecodeError::LengthOutOfRange;
+    }
+
     const auto sel = fromServer.certTypes_.front();
     for (auto t : certTypes_)
+    {
         if (t == sel)
+        {
             return utils::DecodeError::None;
+        }
+    }
     return utils::DecodeError::LengthOutOfRange;
 }
 

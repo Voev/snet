@@ -20,7 +20,7 @@ class ExtendedMasterSecret final
 {
 public:
     /// @brief Gets the wire code for this extension.
-    /// @return ExtensionCode::ExtendedMasterSecret.
+    /// @return Corresponding ExtensionCode.
     static constexpr ExtensionCode staticType() noexcept
     {
         return ExtensionCode::ExtendedMasterSecret;
@@ -37,8 +37,10 @@ public:
     /// @param[in] side   Side (Client or Server); unused, body is empty.
     /// @param[in] output Destination buffer; unused, body is empty.
     /// @return 0 -- RFC 7627 defines an empty extension_data.
-    std::size_t serialize(Side /*side*/, nonstd::span<uint8_t> /*output*/) const noexcept
+    std::size_t serialize(Side side, nonstd::span<uint8_t> output) const noexcept
     {
+        (void)side;
+        (void)output;
         return 0;
     }
 
@@ -50,8 +52,9 @@ public:
     /// @param[in] input Wire bytes of the extension_data field.
     /// @return DecodeError::None if @p input is empty,
     ///         DecodeError::LengthOutOfRange otherwise.
-    utils::DecodeError deserialize(Side /*side*/, nonstd::span<const uint8_t> input) noexcept
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
     {
+        (void)side;
         return input.empty() ? utils::DecodeError::None : utils::DecodeError::LengthOutOfRange;
     }
 };
