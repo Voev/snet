@@ -6,6 +6,7 @@
 
 using namespace testing;
 using namespace snet::tls;
+using namespace snet::utils;
 
 using SerializeTestParam = std::vector<uint8_t>;
 
@@ -35,8 +36,7 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     ASSERT_NO_THROW(serializedLength = serverHello.serialize(serialized, session));
     serialized.resize(serializedLength);
 
-    snet::utils::compare_vectors(serialized, param);
-    ASSERT_EQ(serialized, param);
+    ASSERT_EQ(serialized, param) << CompareVectors(serialized, param);
 }
 
 // clang-format off

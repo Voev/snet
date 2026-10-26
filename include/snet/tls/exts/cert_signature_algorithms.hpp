@@ -8,7 +8,9 @@
 #include <snet/crypto/signature_scheme.hpp>
 #include <snet/tls/exts/extension_code.hpp>
 #include <snet/tls/types.hpp>
+
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/data_writer.hpp>
 
 namespace snet::tls
 {
@@ -50,9 +52,9 @@ public:
 
         const std::size_t bytes = schemes_.size() * 2;
         if (bytes > 0xFFFF)
-            return 0;
+            return kSerializationFailed;
         if (output.size_bytes() < 2 + bytes)
-            return 0;
+            return kSerializationFailed;
 
         const auto bytes16 = static_cast<std::uint16_t>(bytes);
         output[0] = casket::get_byte<0>(bytes16);

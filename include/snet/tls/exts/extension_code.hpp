@@ -26,13 +26,6 @@ enum class ExtensionCode : uint16_t
     SafeRenegotiation = 65281,
 };
 
-/// @brief Serialization error sentinel returned by `serialize` methods.
-///
-/// Every extension's `serialize` returns either the number of bytes written
-/// (including `0` for empty bodies) or this value on failure (buffer too
-/// small, body exceeds the 16-bit length field, server invariant violated).
-inline constexpr std::size_t kSerializationFailed = static_cast<std::size_t>(-1);
-
 /// Human-readable name. `constexpr noexcept`, no allocation.
 constexpr const char* toString(ExtensionCode code) noexcept
 {

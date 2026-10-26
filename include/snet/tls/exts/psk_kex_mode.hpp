@@ -7,7 +7,9 @@
 
 #include <snet/tls/exts/extension_code.hpp>
 #include <snet/tls/types.hpp>
+
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/data_writer.hpp>
 
 namespace snet::tls
 {

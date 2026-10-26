@@ -9,6 +9,7 @@
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/data_writer.hpp>
 
 namespace snet::tls
 {

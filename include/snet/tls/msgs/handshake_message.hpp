@@ -20,9 +20,22 @@ class Session;
 
 struct HandshakeMessage final
 {
-    using MessageType =
-        nonstd::variant<ClientHello, ServerHello, EncryptedExtensions, ServerKeyExchange, ClientKeyExchange, Certificate,
-                     CertificateRequest, CertificateVerify, Finished, NewSessionTicket, ServerHelloDone>;
+    // clang-format off
+    using MessageType = nonstd::variant<
+        nonstd::monostate,
+        ClientHello,
+        ServerHello,
+        EncryptedExtensions,
+        ServerKeyExchange,
+        ClientKeyExchange,
+        Certificate,
+        CertificateRequest,
+        CertificateVerify,
+        Finished,
+        NewSessionTicket,
+        ServerHelloDone
+    >;
+    // clan-format on
 
     /// @todo make 'message' and 'type' more consistent
     HandshakeMessage()

@@ -21,11 +21,15 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     auto payload = input.subspan(TLS_HANDSHAKE_HEADER_SIZE, messageLength);
     
     MessageType message;
+    std::error_code err{};
+
     switch (messageType)
     {
     case HandshakeType::ClientHelloCode:
-        message = ClientHello::deserialize(payload);
+    {
+        err = message.emplace<ClientHello>().deserialize(payload);
         break;
+    }
     case HandshakeType::ServerHelloCode:
         message = ServerHello::deserialize(payload);
         break;
@@ -63,6 +67,11 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         throw casket::RuntimeError("Unknown handshake message type");
     }
 
+    if (err)
+    {
+        throw casket::SystemError(err);
+    }
+
     return HandshakeMessage(std::move(message), messageType);
 }
 
@@ -71,8 +80,16 @@ size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& 
     const size_t payloadSize = nonstd::visit(
         [&output, &session](auto&& msg) -> size_t
         {
-            auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
-            return msg.serialize(payload, session);
+            using T = std::decay_t<decltype(msg)>;
+            if constexpr (std::is_same_v<T, nonstd::monostate>)
+            {
+                return 0;
+            }
+            else
+            {
+                auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
+                return msg.serialize(payload, session);
+            }
         },
         message);
 

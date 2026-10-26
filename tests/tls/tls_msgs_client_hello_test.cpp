@@ -7,6 +7,7 @@
 
 using namespace testing;
 using namespace snet::tls;
+using namespace snet::utils;
 
 using SerializeTestParam = std::vector<uint8_t>;
 class ClientHelloSerializeTest : public TestWithParam<SerializeTestParam>
@@ -26,16 +27,16 @@ TEST_P(ClientHelloSerializeTest, DeserializeSerialize)
     size_t serializedLength = 0;
 
     ClientHello clientHello;
-    ASSERT_NO_THROW(clientHello = ClientHello::deserialize(param));
+    ASSERT_EQ(clientHello.deserialize(param), make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     ASSERT_NO_THROW(session.processClientHello(clientHello));
 
-    ASSERT_NO_THROW(serializedLength = clientHello.serialize(serialized, session));
+    serializedLength = clientHello.serialize(serialized, session);
+    ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 
-    snet::utils::compare_vectors(serialized, param);
-    ASSERT_EQ(serialized, param);
+    ASSERT_EQ(serialized, param) << CompareVectors(serialized, param);
 }
 
 // clang-format off
