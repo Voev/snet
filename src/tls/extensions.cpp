@@ -1,191 +1,281 @@
+#include <algorithm>
 #include <iterator>
+
 #include <snet/tls/extensions.hpp>
-#include <snet/tls/types.hpp>
 
-using namespace casket;
+namespace snet::tls {
 
-namespace snet::tls
-{
+namespace {
 
-std::unique_ptr<Extension> makeExtension(nonstd::span<const uint8_t> input, ExtensionCode code, const Side side,
-                                         const HandshakeType handshakeType)
-{
-    switch (code)
-    {
+/// @brief Checks whether @p code is handled by `ExtensionVariant`
+///        (i.e. has a dedicated alternative in `makeDefaultExtension`).
+bool isKnownCode(ExtensionCode code) noexcept {
+    switch (code) {
     case ExtensionCode::ServerNameIndication:
-        return std::make_unique<ServerNameIndicator>(side, input);
-
     case ExtensionCode::SupportedGroups:
-        return std::make_unique<SupportedGroups>(side, input);
-
-    /// @todo: support this.
-    /// case ExtensionCode::ECPointFormats:
-    ///    return std::make_unique<ECPointFormats>(side, input);
-
+    case ExtensionCode::ECPointFormats:
     case ExtensionCode::SignatureAlgorithms:
-        return std::make_unique<SignatureAlgorithms>(side, input);
-
     case ExtensionCode::AppLayerProtocolNegotiation:
-        return std::make_unique<ALPN>(side, input);
-
     case ExtensionCode::ClientCertificateType:
-        return std::make_unique<ClientCertificateType>(side, input);
-
     case ExtensionCode::ServerCertificateType:
-        return std::make_unique<ServerCertificateType>(side, input);
-
     case ExtensionCode::EncryptThenMac:
-        return std::make_unique<EncryptThenMAC>(input);
-
     case ExtensionCode::ExtendedMasterSecret:
-        return std::make_unique<ExtendedMasterSecret>(input);
-
     case ExtensionCode::RecordSizeLimit:
-        return std::make_unique<RecordSizeLimit>(side, input);
-
     case ExtensionCode::SessionTicket:
-        return std::make_unique<SessionTicketExtension>(side, input);
-
     case ExtensionCode::SupportedVersions:
-        return std::make_unique<SupportedVersions>(side, input);
-
-    /// @todo: support this.
-    // case ExtensionCode::CertSignatureAlgorithms:
-    //     return std::make_unique<CertSignatureAlgorithms>(side, input);
-
+    case ExtensionCode::CertSignatureAlgorithms:
+    case ExtensionCode::PskKeyExchangeModes:
     case ExtensionCode::KeyShare:
-        return std::make_unique<KeyShare>(input, handshakeType);
-
-    /// @todo: support this.
-    // case ExtensionCode::SafeRenegotiation:
-    //     return std::make_unique<RenegotiationExtension>(side, input);
-
+        return true;
     default:
-        break;
+        return false;
     }
-
-    return std::make_unique<UnknownExtension>(code, input);
 }
 
-void Extensions::add(std::unique_ptr<Extension> extn)
-{
-    if (has(extn->type()))
-    {
-        throw std::runtime_error("cannot add the same extension twice: " +
-                                 std::to_string(static_cast<uint16_t>(extn->type())));
+/// @brief Builds a default-constructed variant alternative for @p code.
+///        Precondition: `isKnownCode(code) == true`.
+/// @throws std::bad_alloc if the alternative's ctor allocates.
+ExtensionVariant makeDefaultExtension(ExtensionCode code) {
+    switch (code) {
+    case ExtensionCode::ServerNameIndication:        return ServerNameIndicator{};
+    case ExtensionCode::SupportedGroups:             return SupportedGroups{};
+    case ExtensionCode::ECPointFormats:              return SupportedPointFormats{};
+    case ExtensionCode::SignatureAlgorithms:         return SignatureAlgorithms{};
+    case ExtensionCode::AppLayerProtocolNegotiation: return ALPN{};
+    case ExtensionCode::ClientCertificateType:       return ClientCertificateType{};
+    case ExtensionCode::ServerCertificateType:       return ServerCertificateType{};
+    case ExtensionCode::EncryptThenMac:              return EncryptThenMAC{};
+    case ExtensionCode::ExtendedMasterSecret:        return ExtendedMasterSecret{};
+    case ExtensionCode::RecordSizeLimit:             return RecordSizeLimit{};
+    case ExtensionCode::SessionTicket:               return SessionTicketExtension{};
+    case ExtensionCode::SupportedVersions:           return SupportedVersions{};
+    case ExtensionCode::CertSignatureAlgorithms:     return CertSignatureAlgorithms{};
+    case ExtensionCode::PskKeyExchangeModes:         return PskKeyExchangeModes{};
+    case ExtensionCode::KeyShare:                    return KeyShare{};
+    default:                                         return ServerNameIndicator{}; // unreachable
     }
-
-    extensions_.emplace_back(extn.release());
 }
 
-void Extensions::deserialize(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType)
-{
+} // namespace
+
+// ---------------------------------------------------------------------------
+// deserialize
+// ---------------------------------------------------------------------------
+
+utils::DecodeError Extensions::deserialize(Side side,
+                                           nonstd::span<const uint8_t> input,
+                                           HandshakeType handshakeType) noexcept {
+    // Reset on every call: object may be reused across handshakes.
+    extensions_.clear();
+    unknown_.clear();
+    mask_.clear();
+
     utils::DataReader reader("Extensions", input);
 
     const uint16_t allExtSize = reader.get_uint16_t();
-    ThrowIfTrue(reader.remaining_bytes() != allExtSize, "bad extension size");
+    if (!reader.ok()) return reader.take_error();
+    if (allExtSize != reader.remaining_bytes()) {
+        return utils::DecodeError::LengthOutOfRange;
+    }
 
-    while (reader.has_remaining())
-    {
-        const uint16_t extensionCode = reader.get_uint16_t();
-        const uint16_t extensionSize = reader.get_uint16_t();
-        nonstd::span<const uint8_t> extensionData{};
+    // Upper bound on entry count: every extension has >= 4 bytes header.
+    try {
+        extensions_.reserve(allExtSize / 4);
+    } catch (...) {
+        return utils::DecodeError::AllocationFailed;
+    }
 
-        if (extensionSize > 0)
-        {
-            extensionData = reader.get_span_fixed(extensionSize);
+    while (reader.has_remaining()) {
+        const auto code = static_cast<ExtensionCode>(reader.get_uint16_t());
+        const uint16_t sz = reader.get_uint16_t();
+        if (!reader.ok()) { clearAll(); return reader.take_error(); }
+
+        auto data = sz ? reader.get_span_fixed(sz) : nonstd::span<const uint8_t>{};
+        if (!reader.ok()) { clearAll(); return reader.take_error(); }
+
+        if (isKnownCode(code)) {
+            // Known code: parse into a variant alternative.
+            ExtensionVariant ext;
+            try {
+                ext = makeDefaultExtension(code);
+            } catch (...) {
+                clearAll();
+                return utils::DecodeError::AllocationFailed;
+            }
+
+            const auto err = extensionDeserialize(ext, side, data, handshakeType);
+            if (err != utils::DecodeError::None) { clearAll(); return err; }
+
+            if (!add(std::move(ext))) {
+                clearAll();
+                return utils::DecodeError::LengthOutOfRange;   // duplicate code
+            }
+        } else {
+            // Unknown code: keep the raw bytes verbatim.
+            UnknownExtension u(code, {});
+            const auto err = u.deserialize(side, data);
+            if (err != utils::DecodeError::None) { clearAll(); return err; }
+
+            if (!addUnknown(std::move(u))) {
+                clearAll();
+                return utils::DecodeError::LengthOutOfRange;
+            }
         }
-
-        add(makeExtension(extensionData, static_cast<ExtensionCode>(extensionCode), side, handshakeType));
     }
+
     reader.assert_done();
+    return reader.take_error();
 }
 
-bool Extensions::containsOtherThan(const std::set<ExtensionCode>& allowedExtensions,
-                                   const bool allowUnknownExtensions) const
-{
-    const auto found = extensionTypes();
+// ---------------------------------------------------------------------------
+// add / addUnknown
+// ---------------------------------------------------------------------------
 
-    std::vector<ExtensionCode> diff;
-    std::set_difference(found.cbegin(), found.end(), allowedExtensions.cbegin(), allowedExtensions.cend(),
-                        std::back_inserter(diff));
+bool Extensions::add(ExtensionVariant ext) noexcept {
+    const auto code = extensionType(ext);
+    if (mask_.contains(code) || findUnknown(code) != npos) return false;
 
-    if (allowUnknownExtensions)
-    {
-        // Go through the found unexpected extensions whether any of those
-        // is known to this TLS implementation.
-        const auto itr = std::find_if(diff.cbegin(), diff.cend(),
-                                      [this](const auto ext_type)
-                                      {
-                                          const auto ext = get(ext_type);
-                                          return ext;
-                                      });
+    try {
+        extensions_.push_back(std::move(ext));
+    } catch (...) {
+        return false;
+    }
+    mask_.insert(code);
+    return true;
+}
 
-        // ... if yes, `contains_other_than` is true
-        return itr != diff.cend();
+bool Extensions::addUnknown(UnknownExtension ext) noexcept {
+    const auto code = ext.type();
+    if (mask_.contains(code) || findUnknown(code) != npos) return false;
+
+    try {
+        unknown_.push_back(std::move(ext));
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// take
+// ---------------------------------------------------------------------------
+
+std::optional<ExtensionVariant> Extensions::take(ExtensionCode type) {
+    if (auto idx = find(type); idx != npos) {
+        ExtensionVariant out = std::move(extensions_[idx]);
+        extensions_.erase(extensions_.begin() + static_cast<std::ptrdiff_t>(idx));
+        rebuildMask();
+        return out;
     }
 
-    return !diff.empty();
+    if (auto idx = findUnknown(type); idx != npos) {
+        // Materialize an UnknownExtension back into a variant? No: variant has
+        // no UnknownExtension alternative. Return nullopt; caller should use
+        // takeUnknown for unknown codes.
+        (void)idx;
+    }
+    return std::nullopt;
 }
 
-std::unique_ptr<Extension> Extensions::take(ExtensionCode type)
-{
-    const auto i =
-        std::find_if(extensions_.begin(), extensions_.end(), [type](const auto& ext) { return ext->type() == type; });
+std::optional<UnknownExtension> Extensions::takeUnknown(ExtensionCode type) {
+    const auto idx = findUnknown(type);
+    if (idx == npos) return std::nullopt;
 
-    std::unique_ptr<Extension> result;
-    if (i != extensions_.end())
-    {
-        std::swap(result, *i);
-        extensions_.erase(i);
+    UnknownExtension out = std::move(unknown_[idx]);
+    unknown_.erase(unknown_.begin() + static_cast<std::ptrdiff_t>(idx));
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// extensionTypes / containsOtherThan
+// ---------------------------------------------------------------------------
+
+std::set<ExtensionCode> Extensions::extensionTypes() const {
+    std::set<ExtensionCode> out;
+    for (const auto& e : extensions_) out.insert(extensionType(e));
+    for (const auto& u : unknown_)    out.insert(u.type());
+    return out;
+}
+
+bool Extensions::containsOtherThan(const std::set<ExtensionCode>& allowed,
+                                   bool allowUnknownExtensions) const {
+    for (const auto& e : extensions_) {
+        const auto code = extensionType(e);
+        if (!allowed.contains(code)) return true;
     }
 
-    return result;
+    if (!allowUnknownExtensions) {
+        for (const auto& u : unknown_) {
+            if (!allowed.contains(u.type())) return true;
+        }
+    } else {
+        // Unknown codes are tolerated; known codes not in `allowed` already
+        // caught by the loop above.
+    }
+    return false;
 }
 
-std::set<ExtensionCode> Extensions::extensionTypes() const
-{
-    std::set<ExtensionCode> offers;
-    std::transform(extensions_.cbegin(), extensions_.cend(), std::inserter(offers, offers.begin()),
-                   [](const auto& ext) { return ext->type(); });
-    return offers;
-}
+// ---------------------------------------------------------------------------
+// serialize
+// ---------------------------------------------------------------------------
 
-size_t Extensions::serialize(Side whoami, nonstd::span<uint8_t> buffer) const
-{
-    ThrowIfTrue(buffer.size_bytes() < 2, "buffer too small for extension list");
+std::size_t Extensions::serialize(Side whoami,
+                                  nonstd::span<uint8_t> buffer) const noexcept {
+    if (buffer.size_bytes() < 2) return 0;
 
-    uint16_t totalWritten = 0;
+    std::size_t total = 0;
     auto data = buffer.subspan(2);
 
-    for (const auto& extension : extensions_)
-    {
-        if (extension->empty())
-        {
-            continue;
-        }
+    auto writeOne = [&](ExtensionCode code, std::size_t length,
+                        nonstd::span<uint8_t> body) -> bool {
+        if (length == kSerializationFailed) return false;
+        if (data.size_bytes() < 4 + length) return false;
 
-        ThrowIfTrue(data.size_bytes() < 4, "buffer too small for extension header and body");
-        auto extensionBody = data.subspan(4);
+        const auto type16 = static_cast<uint16_t>(code);
+        const auto len16  = static_cast<uint16_t>(length);
+        data[0] = static_cast<std::uint8_t>(type16 >> 8);
+        data[1] = static_cast<std::uint8_t>(type16);
+        data[2] = static_cast<std::uint8_t>(len16 >> 8);
+        data[3] = static_cast<std::uint8_t>(len16);
 
-        uint16_t extensionType = static_cast<uint16_t>(extension->type());
-        uint16_t extensionLength = extension->serialize(whoami, extensionBody);
+        (void)body;
+        data = data.subspan(4 + length);
+        total += 4 + length;
+        return true;
+    };
 
-        data[0] = casket::get_byte<0>(extensionType);
-        data[1] = casket::get_byte<1>(extensionType);
-
-        data[2] = casket::get_byte<0>(extensionLength);
-        data[3] = casket::get_byte<1>(extensionLength);
-
-        data = data.subspan(extensionLength + 4);
-        totalWritten += extensionLength + 4;
+    for (const auto& ext : extensions_) {
+        if (extensionEmpty(ext)) continue;
+        auto body = data.subspan(data.size_bytes() >= 4 ? 4 : 0);
+        const auto length = extensionSerialize(ext, whoami, body);
+        if (!writeOne(extensionType(ext), length, body)) return 0;
     }
 
-    buffer[0] = casket::get_byte<0>(totalWritten);
-    buffer[1] = casket::get_byte<1>(totalWritten);
-    totalWritten += 2;
+    for (const auto& u : unknown_) {
+        auto body = data.subspan(data.size_bytes() >= 4 ? 4 : 0);
+        const auto length = u.serialize(whoami, body);
+        if (!writeOne(u.type(), length, body)) return 0;
+    }
 
-    return totalWritten;
+    if (total > 0xFFFF) return 0;
+    buffer[0] = static_cast<std::uint8_t>(total >> 8);
+    buffer[1] = static_cast<std::uint8_t>(total);
+    return total + 2;
+}
+
+// ---------------------------------------------------------------------------
+// private helpers
+// ---------------------------------------------------------------------------
+
+void Extensions::clearAll() noexcept {
+    extensions_.clear();
+    unknown_.clear();
+    mask_.clear();
+}
+
+void Extensions::rebuildMask() noexcept {
+    mask_.clear();
+    for (const auto& e : extensions_) mask_.insert(extensionType(e));
 }
 
 } // namespace snet::tls

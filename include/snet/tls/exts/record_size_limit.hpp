@@ -1,57 +1,101 @@
 #pragma once
-#include <snet/tls/exts/extension.hpp>
+
+#include <cstdint>
+
+#include <casket/nonstd/span.hpp>
+
+#include <snet/tls/exts/extension_code.hpp>
+#include <snet/tls/types.hpp>
+#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
 
-/// @brief Record Size Limit (RFC 8449).
-class RecordSizeLimit final : public Extension
+/// Record Size Limit (RFC 8449).
+///
+/// Carries a single `uint16_t` value: the maximum plaintext record size the
+/// peer is willing to receive. Valid range is 64 .. 2^14 + 1.
+class RecordSizeLimit final
 {
 public:
-    /// @brief Gets the static type of the extension.
-    ///
-    /// @return The extension code for Record Size Limit.
-    static ExtensionCode staticType();
+    /// @brief Minimum allowed limit, inclusive (RFC 8449 §4).
+    static constexpr std::uint16_t kMinLimit = 64;
 
-    /// @brief Gets the type of the extension.
-    ///
-    /// @return The extension code for Record Size Limit.
-    ExtensionCode type() const override;
+    /// @brief Maximum allowed limit, inclusive: 2^14 + 1 (encrypted content type byte).
+    static constexpr std::uint16_t kMaxLimit = 16385;
 
-    /// @brief Checks if the extension should be encoded.
-    ///
-    /// @retval true Should be encoded.
+    static constexpr ExtensionCode staticType() noexcept
+    {
+        return ExtensionCode::RecordSizeLimit;
+    }
+
+    /// @brief Checks whether the extension has an empty body.
+    /// @retval true  `limit_ == 0` (uninitialized / disabled).
     /// @retval false Otherwise.
-    bool empty() const override;
+    bool empty() const noexcept
+    {
+        return limit_ == 0;
+    }
 
-    /// @brief Serialize extension to bytes.
-    ///
-    /// @param[in] side Side (Client or Server).
-    /// @param[in] output Buffer for encoding.
-    ///
-    /// @return Serialized bytes count.
-    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
+    /// @brief Serializes the extension into @p output.
+    /// @param[in] side   Side (Client or Server); unused.
+    /// @param[in] output Destination buffer; must hold at least 2 bytes.
+    /// @return 2 on success, 0 if @p output is too small.
+    std::size_t serialize(Side /*side*/, nonstd::span<uint8_t> output) const noexcept
+    {
+        if (output.size_bytes() < 2)
+            return kSerializationFailed;
+        output[0] = static_cast<std::uint8_t>(limit_ >> 8);
+        output[1] = static_cast<std::uint8_t>(limit_);
+        return 2;
+    }
 
-    /// @brief Constructor with record size limit.
-    ///
-    /// @param[in] limit The record size limit.
-    ///
-    explicit RecordSizeLimit(uint16_t limit);
+    RecordSizeLimit() noexcept = default;
 
-    /// @brief Constructor with input byte buffer.
-    ///
-    /// @param[in] side Side (client or server).
-    /// @param[in] input Input byte buffer.
-    ///
-    RecordSizeLimit(Side side, nonstd::span<const uint8_t> input);
+    /// @brief Constructs from a limit value.
+    /// @param[in] limit Record size limit; must be in [64, 16385].
+    /// @note No validation is performed here (the ctor is `noexcept`).
+    ///       Validation is the caller's responsibility.
+    explicit RecordSizeLimit(std::uint16_t limit) noexcept
+        : limit_(limit)
+    {
+    }
+
+    /// @brief Parses the extension body from @p input.
+    /// @param[in] side  Side (Client or Server); server-side range check applies.
+    /// @param[in] input Wire bytes of the extension_data field.
+    /// @return DecodeError::None on success;
+    ///         DecodeError::LengthOutOfRange on bad length or out-of-range limit.
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
+    {
+        limit_ = 0;
+
+        utils::DataReader reader("record_size_limit", input);
+        const std::uint16_t value = reader.get_uint16_t();
+        if (!reader.ok())
+            return reader.take_error();
+        reader.assert_done();
+        if (!reader.ok())
+            return reader.take_error();
+
+        if (value < kMinLimit)
+            return utils::DecodeError::LengthOutOfRange;
+        if (side == Side::Server && value > kMaxLimit)
+            return utils::DecodeError::LengthOutOfRange;
+
+        limit_ = value;
+        return utils::DecodeError::None;
+    }
 
     /// @brief Gets the record size limit.
-    ///
-    /// @return The record size limit.
-    uint16_t limit() const;
+    /// @return The limit in bytes; 0 means the extension is disabled.
+    std::uint16_t limit() const noexcept
+    {
+        return limit_;
+    }
 
 private:
-    uint16_t limit_;
+    std::uint16_t limit_{0}; ///< Record size limit in bytes; 0 == uninitialized.
 };
 
 } // namespace snet::tls

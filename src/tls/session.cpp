@@ -735,7 +735,8 @@ void Session::constructClientHello(ClientHello& clientHello)
         if (clientExtensions_.has(ExtensionCode::KeyShare))
         {
             auto keyShare = clientExtensions_.take<KeyShare>();
-            auto offeredGroups = keyShare->offeredGroups();
+            std::vector<crypto::GroupParams> offeredGroups;
+            keyShare->offeredGroups(offeredGroups);
             auto firstGroup = offeredGroups.front();
 
             /// @todo: check offered group by policy
@@ -743,7 +744,7 @@ void Session::constructClientHello(ClientHello& clientHello)
             ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
             keyShare->setPublicKey(0, ephemeralPrivateKey_);
 
-            clientExtensions_.add(std::move(keyShare));
+            clientExtensions_.add(ExtensionVariant{std::move(*keyShare)});
         }
     }
 }
@@ -886,7 +887,10 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        sharedGroupParams_ = ChooseKeyExchangeGroup(supportedGroupsByPeer->getEcGroups(), {});
+        std::vector<crypto::GroupParams> ecGroups;
+
+        supportedGroupsByPeer->getEcGroups(ecGroups);
+        sharedGroupParams_ = ChooseKeyExchangeGroup(ecGroups, {});
         casket::ThrowIfTrue(sharedGroupParams_ == GroupParams::NONE, "No shared ECC group with client");
 
         ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);

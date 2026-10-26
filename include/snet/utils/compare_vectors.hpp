@@ -6,7 +6,7 @@
 namespace snet::utils
 {
 
-void compare_vectors(const std::vector<uint8_t>& vec1, const std::vector<uint8_t>& vec2)
+inline void compare_vectors(const std::vector<uint8_t>& vec1, const std::vector<uint8_t>& vec2)
 {
     if (vec1.size() != vec2.size())
     {

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <snet/tls.hpp>
 
+#include <vector>
+
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/rand.hpp>
 #include <snet/crypto/cert.hpp>
@@ -144,7 +146,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                           if (extensions.has(ExtensionCode::KeyShare))
                                                           {
                                                               auto keyShare = extensions.take<KeyShare>();
-                                                              auto offeredGroups = keyShare->offeredGroups();
+                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
+                                                              keyShare->offeredGroups(offeredGroups);
                                                               auto firstGroup = offeredGroups.front();
 
                                                               /// @todo: check offered group by policy
@@ -152,7 +155,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               auto key = GroupParams::generateKeyByParams(firstGroup);
                                                               keyShare->setPublicKey(0, key);
                                                               session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(std::move(keyShare));
+                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
 
@@ -219,7 +222,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                           if (extensions.has(ExtensionCode::KeyShare))
                                                           {
                                                               auto keyShare = extensions.take<KeyShare>();
-                                                              auto offeredGroups = keyShare->offeredGroups();
+                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
+                                                              keyShare->offeredGroups(offeredGroups);
                                                               auto firstGroup = offeredGroups.front();
 
                                                               auto clientKeyShare =
@@ -231,7 +235,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               keyShare->setPublicKey(key);
 
                                                               session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(std::move(keyShare));
+                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
 

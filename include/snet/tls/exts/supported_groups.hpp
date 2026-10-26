@@ -1,153 +1,131 @@
 #pragma once
+
+#include <cstdint>
 #include <vector>
-#include <casket/utils/exception.hpp>
+
+#include <casket/nonstd/span.hpp>
+#include <casket/utils/load_store.hpp>
+
 #include <snet/crypto/group_params.hpp>
+#include <snet/tls/exts/extension_code.hpp>
 #include <snet/tls/types.hpp>
-#include <snet/tls/exts/extension.hpp>
 #include <snet/utils/data_reader.hpp>
 
-namespace snet::tls
-{
+namespace snet::tls {
 
-/// @brief Parse a list of items from a byte buffer.
+/// Supported Groups Extension (RFC 7919, formerly "Supported Elliptic Curves").
 ///
-/// @tparam T Type of items to parse (must be constructible from uint16_t).
-/// @param[in] input Byte span containing the encoded list.
-/// @param[in] name Name of the list for error reporting.
-///
-/// @return Vector of parsed items.
-template <class T>
-inline std::vector<T> ParseListItems(nonstd::span<const uint8_t> input, const char* name)
-{
-    utils::DataReader reader(name, input);
-    uint16_t length = reader.get_uint16_t();
-
-    casket::ThrowIfTrue(length % 2 == 1 || length == 0, "Bad encoding {} extension");
-
-    std::vector<T> schemes;
-    schemes.reserve(length / 2);
-    while (length)
-    {
-        schemes.emplace_back(reader.get_uint16_t());
-        length -= 2;
-    }
-
-    return schemes;
-}
-
-/// @brief Supported Groups Extension (RFC 7919).
-class SupportedGroups final : public Extension
-{
+/// Wire format: `<2-byte length> <uint16 BE group code>*`.
+/// The length MUST be even and non-zero; groups are stored in wire order,
+/// duplicates are preserved (RFC 7919 does not require de-duplication).
+class SupportedGroups final {
 public:
-    /// @brief Get the static extension code for Supported Groups.
-    ///
-    /// @return The extension code value for Supported Groups.
-    static ExtensionCode staticType()
-    {
+    // ---- ExtensionLike contract ----
+    static constexpr ExtensionCode staticType() noexcept {
         return ExtensionCode::SupportedGroups;
     }
 
-    /// @brief Get the extension type code.
-    ///
-    /// @return The extension type code for this instance.
-    ExtensionCode type() const override
-    {
-        return staticType();
-    }
+    /// @brief Checks whether the extension has an empty body.
+    /// @retval true  No groups (extension is skipped).
+    /// @retval false Otherwise.
+    bool empty() const noexcept { return groups_.empty(); }
 
-    /// @brief Get all supported groups.
-    ///
-    /// @return Reference to the list of all groups.
-    const std::vector<crypto::GroupParams>& groups() const
-    {
-        return groups_;
-    }
+    /// @brief Serializes the extension into @p output.
+    /// @param[in] side   Side (Client or Server); unused.
+    /// @param[in] output Destination buffer; must hold 2 + 2 * groups_.size() bytes.
+    /// @return Bytes written on success, kSerializationFailed if @p output
+    ///         is too small or the list does not fit a 16-bit length.
+    std::size_t serialize(Side /*side*/, nonstd::span<uint8_t> output) const noexcept {
+        const std::size_t bytesSize = groups_.size() * 2;
+        if (bytesSize > 0xFFFF) return kSerializationFailed;
+        if (output.size_bytes() < 2 + bytesSize) return kSerializationFailed;
 
-    /// @brief Get the list of groups that are ECDH curves
-    /// @return Vector containing only ECDH groups
-    std::vector<crypto::GroupParams> getEcGroups() const
-    {
-        std::vector<crypto::GroupParams> ec;
-        for (auto g : groups_)
-        {
-            if (g.isPureEccGroup())
-            {
-                ec.emplace_back(std::move(g));
-            }
+        output[0] = casket::get_byte<0>(static_cast<std::uint16_t>(bytesSize));
+        output[1] = casket::get_byte<1>(static_cast<std::uint16_t>(bytesSize));
+
+        std::size_t i = 2;
+        for (const auto& group : groups_) {
+            const auto wire = group.wireCode();
+            output[i++] = casket::get_byte<0>(wire);
+            output[i++] = casket::get_byte<1>(wire);
         }
-        return ec;
-    }
-
-    /// @brief Get the list of groups in the FFDHE range (finite field groups).
-    ///
-    /// @return Vector containing only FFDHE groups.
-    std::vector<crypto::GroupParams> getDhGroups() const
-    {
-        std::vector<crypto::GroupParams> dh;
-        for (auto g : groups_)
-        {
-            if (g.isInFfdheRange())
-            {
-                dh.emplace_back(std::move(g));
-            }
-        }
-        return dh;
-    }
-
-    /// @brief Serialize the extension to a byte buffer.
-    ///
-    /// @param[in] side The side of the connection (client/server).
-    /// @param[in] output Buffer to write the serialized data to.
-    ///
-    /// @return size_t Number of bytes written to output buffer.
-    size_t serialize(Side side, nonstd::span<uint8_t> output) const override
-    {
-        (void)side;
-
-        const uint16_t bytesSize = static_cast<uint16_t>(groups_.size() * 2);
-        size_t i = 0;
-
-        output[i++] = casket::get_byte<0>(bytesSize);
-        output[i++] = casket::get_byte<1>(bytesSize);
-
-        for (const auto& group : groups_)
-        {
-            auto wireCode = group.wireCode();
-            output[i++] = casket::get_byte<0>(wireCode);
-            output[i++] = casket::get_byte<1>(wireCode);
-        }
-
         return i;
     }
 
-    /// @brief Construct a Supported Groups extension from a list of groups.
-    ///
-    /// @param[in] groups Vector of group parameters to include in the extension.
-    ///
-    explicit SupportedGroups(std::vector<crypto::GroupParams> groups)
-        : groups_(std::move(groups))
-    {
+    // ---- ctors ----
+    SupportedGroups() noexcept = default;
+
+    /// @brief Constructs from an existing list of groups.
+    /// @param[in] groups Supported groups; wire order is preserved.
+    explicit SupportedGroups(std::vector<crypto::GroupParams> groups) noexcept
+        : groups_(std::move(groups)) {}
+
+    // ---- parse ----
+    /// @brief Parses the extension body from @p input.
+    /// @param[in] side  Side (Client or Server); unused.
+    /// @param[in] input Wire bytes of the extension_data field.
+    /// @return DecodeError::None on success;
+    ///         NotEnoughBytes / LengthOutOfRange / SizeNotMultiple /
+    ///         TrailingBytes on malformed input.
+    utils::DecodeError deserialize(Side /*side*/,
+                                   nonstd::span<const uint8_t> input) noexcept {
+        groups_.clear();
+
+        utils::DataReader reader("SupportedGroups", input);
+
+        const std::uint16_t length = reader.get_uint16_t();
+        if (!reader.ok()) return reader.take_error();
+        if (length == 0 || (length & 1u) != 0) return utils::DecodeError::LengthOutOfRange;
+        if (length != reader.remaining_bytes()) return utils::DecodeError::LengthOutOfRange;
+
+        const std::size_t count = length / 2;
+        try {
+            groups_.reserve(count);
+        } catch (...) {
+            return utils::DecodeError::AllocationFailed;
+        }
+
+        for (std::size_t i = 0; i < count; ++i) {
+            const std::uint16_t code = reader.get_uint16_t();
+            if (!reader.ok()) return reader.take_error();
+            try {
+                groups_.emplace_back(code);
+            } catch (...) {
+                groups_.clear();
+                return utils::DecodeError::AllocationFailed;
+            }
+        }
+        reader.assert_done();
+        return reader.take_error();
     }
 
-    /// @brief Construct a Supported Groups extension from raw data.
-    ///
-    /// @param[in] side The side of the connection (client/server).
-    /// @param[in] input Raw bytes containing the supported groups data.
-    ///
-    SupportedGroups(Side, nonstd::span<const uint8_t> input)
-        : groups_(ParseListItems<crypto::GroupParams>(input, "SupportedGroups"))
-    {
+    // ---- accessors ----
+    /// @brief Gets all supported groups in wire order.
+    /// @return View over the owned vector.
+    nonstd::span<const crypto::GroupParams> groups() const noexcept {
+        return {groups_.data(), groups_.size()};
     }
 
-    /// @brief Check if the extension is empty
-    /// @return bool True if no groups are supported, false otherwise
-    bool empty() const override
-    {
-        return groups_.empty();
+    /// @brief Collects the ECDH-curve groups into @p out.
+    /// @param[out] out Output vector; cleared and filled with ECDH groups.
+    void getEcGroups(std::vector<crypto::GroupParams>& out) const {
+        out.clear();
+        for (const auto& g : groups_) {
+            if (g.isPureEccGroup()) out.push_back(g);
+        }
+    }
+
+    /// @brief Collects the FFDHE-range groups into @p out.
+    /// @param[out] out Output vector; cleared and filled with FFDHE groups.
+    void getDhGroups(std::vector<crypto::GroupParams>& out) const {
+        out.clear();
+        for (const auto& g : groups_) {
+            if (g.isInFfdheRange()) out.push_back(g);
+        }
     }
 
 private:
-    std::vector<crypto::GroupParams> groups_; ///< List of supported cryptographic groups
+    std::vector<crypto::GroupParams> groups_;   ///< Supported groups, wire order preserved.
 };
 
 } // namespace snet::tls

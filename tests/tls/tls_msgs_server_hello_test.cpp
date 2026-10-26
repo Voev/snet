@@ -2,6 +2,8 @@
 #include <snet/tls/msgs/server_hello.hpp>
 #include <snet/tls/session.hpp>
 
+#include <snet/utils/compare_vectors.hpp>
+
 using namespace testing;
 using namespace snet::tls;
 
@@ -33,6 +35,7 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     ASSERT_NO_THROW(serializedLength = serverHello.serialize(serialized, session));
     serialized.resize(serializedLength);
 
+    snet::utils::compare_vectors(serialized, param);
     ASSERT_EQ(serialized, param);
 }
 

@@ -1,6 +1,6 @@
 #pragma once
-#include <casket/nonstd/span.hpp>
 #include <snet/tls/version.hpp>
+#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
@@ -16,7 +16,7 @@ struct ClientHello final
     nonstd::span<const uint8_t> compMethods;
     nonstd::span<const uint8_t> extensions;
 
-    void parse(nonstd::span<const uint8_t> input);
+    utils::DecodeError parse(nonstd::span<const uint8_t> input) noexcept;
 
     static ClientHello deserialize(nonstd::span<const uint8_t> input);
 

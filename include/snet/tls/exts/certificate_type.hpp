@@ -1,138 +1,181 @@
 #pragma once
+
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#include <casket/nonstd/span.hpp>
+
+#include <snet/tls/exts/extension_code.hpp>
 #include <snet/tls/types.hpp>
-#include <snet/tls/exts/extension.hpp>
+#include <snet/utils/data_reader.hpp>
 
 namespace snet::tls
 {
 
-/// @brief Certificate types as defined in RFC 8446 4.4.2.
+/// Certificate types as defined in RFC 7250 / RFC 8446 4.4.2.
+///
+/// Note: the wire field is a single byte; values 0 and 2 are currently
+/// registered (X.509 and RawPublicKey). Other values are syntactically valid
+/// but unsupported — the caller decides whether to reject them.
 enum class CertificateType : uint8_t
 {
-    X509 = 0,        ///< X.509 certificate.
-    RawPublicKey = 2 ///< Raw public key.
+    X509 = 0,         ///< X.509 certificate.
+    RawPublicKey = 2, ///< Raw public key.
 };
 
-/// @brief Converts a CertificateType to a string representation.
-///
-/// @param[in] type The CertificateType to convert.
-///
-/// @return The string representation of the CertificateType.
-std::string CertificateTypeToString(CertificateType type);
+/// Human-readable name. `constexpr noexcept`, no allocation.
+constexpr const char* toString(CertificateType t) noexcept
+{
+    switch (t)
+    {
+    case CertificateType::X509:
+        return "X509";
+    case CertificateType::RawPublicKey:
+        return "RawPublicKey";
+    }
+    return "Unknown";
+}
 
-/// @brief Converts a string representation to a CertificateType.
-///
-/// @param[in] typeStr The string representation to convert.
-///
-/// @return The corresponding CertificateType.
-CertificateType CertificateTypeFromString(const std::string& typeStr);
+/// Parses a name produced by `toString`. Throws on unknown input
+/// (this is a config-level API, not hot path).
+CertificateType certificateTypeFromString(const std::string& s);
 
-/// @brief Base class for 'ClientCertificateType' and 'ServerCertificateType' extensions (RFC 7250).
-class CertificateTypeBase : public Extension
+// ---------------------------------------------------------------------------
+// Shared parsing / serialization helpers (no virtual, no throw)
+// ---------------------------------------------------------------------------
+
+namespace detail
+{
+
+/// Parses the wire form of client/server certificate_type extension into `out`.
+///   * Client side: <1-byte length> <type byte>*  (RFC 7250 4.1)
+///   * Server side: <1-byte type>                 (RFC 7250 4.2)
+/// Returns DecodeError::None on success. Never throws.
+utils::DecodeError parseCertificateTypes(Side side, nonstd::span<const uint8_t> input,
+                                         std::vector<CertificateType>& out) noexcept;
+
+/// Serializes `types` according to `side`.
+/// Returns bytes written, or 0 on buffer-too-small / bad size.
+std::size_t serializeCertificateTypes(Side side, nonstd::span<const CertificateType> types,
+                                      nonstd::span<uint8_t> output) noexcept;
+
+} // namespace detail
+
+// ---------------------------------------------------------------------------
+// ClientCertificateType (RFC 7250 4.1)
+// ---------------------------------------------------------------------------
+
+class ClientCertificateType final
 {
 public:
-    /// @brief Constructor called by the client to advertise support for a number of certificate
-    /// types.
-    ///
-    /// @param[in] supportedCertTypes The supported certificate types.
-    CertificateTypeBase(std::vector<CertificateType> supportedCertTypes);
-
-protected:
-    /// @brief Constructor called by the server to select a certificate type to be used in the
-    /// handshake.
-    ///
-    /// @param[in] certificateTypeFromClient The certificate type from the client.
-    /// @param[in] serverPreference The server's preferred certificate types.
-    CertificateTypeBase(const CertificateTypeBase& certificateTypeFromClient,
-                        const std::vector<CertificateType>& serverPreference);
-
-public:
-    /// @brief Checks if the extension should be encoded.
-    ///
-    /// @retval true Should be encoded.
-    /// @retval false Otherwise.
-    bool empty() const override
+    static constexpr ExtensionCode staticType() noexcept
     {
-        // RFC 7250 4.1
-        //    If the client has no remaining certificate types to send in the
-        //    client hello, other than the default X.509 type, it MUST omit the
-        //    entire client[/server]_CertificateType extension [...].
-        return from_ == Side::Client && certTypes_.size() == 1 && certTypes_.front() == CertificateType::X509;
+        return ExtensionCode::ClientCertificateType;
     }
 
-    /// @brief Serialize extension to bytes.
-    ///
-    /// @param[in] side Side (Client or Server).
-    /// @param[in] output Buffer for encoding.
-    ///
-    /// @return Serialized bytes count.
-    size_t serialize(Side side, nonstd::span<uint8_t> output) const override;
+    ClientCertificateType() noexcept = default;
 
-    /// @brief Constructor with input byte buffer.
-    ///
-    /// @param[in] side Side (client or server).
-    /// @param[in] input Input byte buffer.
-    ///
-    CertificateTypeBase(Side side, nonstd::span<const uint8_t> input);
+    /// Advertise support for the given certificate types (client side).
+    explicit ClientCertificateType(std::vector<CertificateType> types)
+        : certTypes_(std::move(types))
+    {
+    }
 
-    /// @brief Validates the selected certificate type from the server.
-    ///
-    /// @param[in] fromServer The certificate type from the server.
-    void validateSelection(const CertificateTypeBase& fromServer) const;
+    /// Server-side selection from client's preferences.
+    /// Picks the first of `serverPreference` that the client offered.
+    /// If none match, the result is empty and `empty()` returns true.
+    ClientCertificateType(const ClientCertificateType& fromClient,
+                          nonstd::span<const CertificateType> serverPreference);
 
-    /// @brief Gets the selected certificate type.
-    ///
-    /// @return The selected certificate type.
-    CertificateType selectedCertificateType() const;
+    bool empty() const noexcept
+    {
+        // RFC 7250 4.1: omit the extension if only X.509 is offered.
+        return certTypes_.size() == 1 && certTypes_.front() == CertificateType::X509;
+    }
+
+    std::size_t serialize(Side side, nonstd::span<uint8_t> output) const noexcept
+    {
+        return detail::serializeCertificateTypes(side, certTypes_, output);
+    }
+
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
+    {
+        certTypes_.clear();
+        return detail::parseCertificateTypes(side, input, certTypes_);
+    }
+
+    nonstd::span<const CertificateType> types() const noexcept
+    {
+        return {certTypes_.data(), certTypes_.size()};
+    }
+
+    /// The single negotiated type (server side). Precondition: `!empty()`.
+    CertificateType selectedCertificateType() const noexcept
+    {
+        return certTypes_.empty() ? CertificateType::X509 : certTypes_.front();
+    }
+
+    /// Checks that the server's selection is among the client's offers.
+    /// Returns DecodeError::LengthOutOfRange if not.
+    utils::DecodeError validateSelection(const ClientCertificateType& fromServer) const noexcept;
 
 private:
     std::vector<CertificateType> certTypes_;
-    Side from_;
 };
 
-/// @brief Client Certificate Type extension (RFC 7250).
-class ClientCertificateType final : public CertificateTypeBase
+// ---------------------------------------------------------------------------
+// ServerCertificateType (RFC 7250 4.2)
+// ---------------------------------------------------------------------------
+
+class ServerCertificateType final
 {
 public:
-    using CertificateTypeBase::CertificateTypeBase;
+    static constexpr ExtensionCode staticType() noexcept
+    {
+        return ExtensionCode::ServerCertificateType;
+    }
 
-    /// @brief Creates the Server Hello extension from the received client preferences.
-    ///
-    /// @param[in] cct The client certificate type.
-    ClientCertificateType(const ClientCertificateType& cct);
+    ServerCertificateType() noexcept = default;
 
-    /// @brief Gets the static type of the extension.
-    ///
-    /// @return The extension code for client certificate type.
-    static ExtensionCode staticType();
+    explicit ServerCertificateType(std::vector<CertificateType> types)
+        : certTypes_(std::move(types))
+    {
+    }
 
-    /// @brief Gets the type of the extension.
-    ///
-    /// @return The extension code for client certificate type.
-    ExtensionCode type() const override;
-};
+    ServerCertificateType(const ServerCertificateType& fromClient,
+                          nonstd::span<const CertificateType> serverPreference);
 
-/// @brief Server Certificate Type extension (RFC 7250).
-class ServerCertificateType final : public CertificateTypeBase
-{
-public:
-    using CertificateTypeBase::CertificateTypeBase;
+    bool empty() const noexcept
+    {
+        return certTypes_.size() == 1 && certTypes_.front() == CertificateType::X509;
+    }
 
-    /// @brief Creates the Server Hello extension from the received client preferences.
-    ///
-    /// @param[in] sct The server certificate type.
-    ServerCertificateType(const ServerCertificateType& sct);
+    std::size_t serialize(Side side, nonstd::span<uint8_t> output) const noexcept
+    {
+        return detail::serializeCertificateTypes(side, certTypes_, output);
+    }
 
-    /// @brief Gets the static type of the extension.
-    ///
-    /// @return The extension code for server certificate type.
-    static ExtensionCode staticType();
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
+    {
+        certTypes_.clear();
+        return detail::parseCertificateTypes(side, input, certTypes_);
+    }
 
-    /// @brief Gets the type of the extension.
-    ///
-    /// @return The extension code for server certificate type.
-    ExtensionCode type() const override;
+    nonstd::span<const CertificateType> types() const noexcept
+    {
+        return {certTypes_.data(), certTypes_.size()};
+    }
+
+    CertificateType selectedCertificateType() const noexcept
+    {
+        return certTypes_.empty() ? CertificateType::X509 : certTypes_.front();
+    }
+
+    utils::DecodeError validateSelection(const ServerCertificateType& fromServer) const noexcept;
+
+private:
+    std::vector<CertificateType> certTypes_;
 };
 
 } // namespace snet::tls

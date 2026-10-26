@@ -8,33 +8,76 @@
 namespace snet::tls
 {
 
-
-
-void ClientHello::parse(nonstd::span<const uint8_t> input)
+utils::DecodeError ClientHello::parse(nonstd::span<const uint8_t> input) noexcept
 {
     utils::DataReader reader("Client Hello", input);
 
-    /// @todo: fuzzing: check bytes for correctness
+    // version: 2 bytes, mandatory
     version = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_span_fixed(32);
-    sessionID = reader.get_span(1, 0, 32);
-    suites = reader.get_span(2, 1, 32767);
-    compMethods = reader.get_span(1, 1, 255);
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
 
+    // random: exactly 32 bytes
+    random = reader.get_span_fixed(32);
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
+
+    // session_id: <1 byte length> <0..32 bytes>
+    sessionID = reader.get_span(1, 0, 32);
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
+
+    // cipher_suites: <2 byte length> <2..65534 bytes, even>  (RFC: 2..2^16-2)
+    suites = reader.get_span(2, 2, 65534);
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
+
+    if (suites.size() % 2 != 0)
+    {
+        // must be multiple of 2
+        reader.set_error(utils::DecodeError::SizeNotMultiple);
+        return reader.take_error();
+    }
+
+    // compression_methods: <1 byte length> <1..255 bytes>
+    compMethods = reader.get_span(1, 1, 255);
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
+
+    // Pre-TLS-1.3 / SSLv3.0: no extensions, must be exactly consumed
     if (version == ProtocolVersion::SSLv3_0)
     {
         reader.assert_done();
+        extensions = {};
+        return reader.take_error();
     }
-    else
-    {
-        extensions = reader.get_span_remaining();
-    }
+
+    // Everything else goes to extensions. It is *not* parsed here —
+    // Extensions::deserialize() consumes it later, on its own reader.
+    extensions = reader.get_span_remaining();
+    reader.assert_done();
+
+    return reader.take_error();
 }
 
 ClientHello ClientHello::deserialize(nonstd::span<const uint8_t> input)
 {
     ClientHello msg;
-    msg.parse(input);
+    const auto err = msg.parse(input);
+    if (err != utils::DecodeError::None)
+    {
+        throw casket::RuntimeError(std::string("ClientHello: ") + err.toString().data());
+    }
     return msg;
 }
 

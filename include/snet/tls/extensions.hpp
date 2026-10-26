@@ -1,175 +1,192 @@
-/// @file
-/// @brief Declaration of the TLS extensions.
-
 #pragma once
 
-#include <algorithm>
-#include <memory>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <set>
-#include <string>
 #include <vector>
+
+#include <casket/nonstd/span.hpp>
+
 #include <snet/tls/types.hpp>
-#include <snet/tls/version.hpp>
-#include <snet/utils/data_reader.hpp>
-
-#include <snet/tls/exts/alpn.hpp>
-#include <snet/tls/exts/certificate_type.hpp>
-#include <snet/tls/exts/encrypt_then_mac.hpp>
-#include <snet/tls/exts/extended_master_secret.hpp>
-#include <snet/tls/exts/record_size_limit.hpp>
-#include <snet/tls/exts/reneg_extension.hpp>
-#include <snet/tls/exts/server_name_indication.hpp>
-#include <snet/tls/exts/supported_versions.hpp>
-#include <snet/tls/exts/key_share.hpp>
+#include <snet/tls/exts/extension_code.hpp>
+#include <snet/tls/exts/extension_mask.hpp>
+#include <snet/tls/exts/extension_variant.hpp>
 #include <snet/tls/exts/unknown_extension.hpp>
-#include <snet/tls/exts/signature_algorithms.hpp>
-#include <snet/tls/exts/supported_groups.hpp>
-#include <snet/tls/exts/session_ticket_ext.hpp>
-
-#include <casket/nonstd/optional.hpp>
-#include <casket/nonstd/variant.hpp>
 
 namespace snet::tls {
 
-/// @brief Represents a block of extensions in a hello message.
+/// A block of TLS extensions in a hello message.
+///
+/// Storage is a flat `std::vector<ExtensionVariant>` plus a parallel
+/// `std::vector<UnknownExtension>` for codes that are not represented in the
+/// variant. Dispatch is via `std::visit` → static `switch`: no virtual calls,
+/// no RTTI, no `dynamic_cast`, no `unique_ptr`.
+///
+/// All parsing and serialization is `noexcept`; errors are reported through
+/// `utils::DecodeError`.
 class Extensions final {
 public:
-    /// @brief Gets the types of extensions.
-    /// @return A set of extension codes.
-    std::set<ExtensionCode> extensionTypes() const;
+    // ---- lifetime ---------------------------------------------------------
 
-    /// @brief Gets all extensions.
-    /// @return A vector of unique pointers to extensions.
-    const std::vector<std::unique_ptr<Extension>>& all() const {
-        return extensions_;
-    }
-
-    /// @brief Gets an extension of a specific type.
-    /// @tparam T The type of the extension.
-    /// @return A pointer to the extension if found, otherwise nullptr.
-    template <typename T>
-    T* get() const {
-        return dynamic_cast<T*>(get(T::staticType()));
-    }
-
-    /// @brief Checks if an extension of a specific type exists.
-    /// @tparam T The type of the extension.
-    /// @return True if the extension exists, false otherwise.
-    template <typename T>
-    bool has() const {
-        return get<T>() != nullptr;
-    }
-
-    /// @brief Checks if an extension of a specific type exists.
-    /// @param type The extension code.
-    /// @return True if the extension exists, false otherwise.
-    bool has(ExtensionCode type) const {
-        return get(type) != nullptr;
-    }
-
-    /// @brief Gets the number of extensions.
-    /// @return The number of extensions.
-    size_t size() const {
-        return extensions_.size();
-    }
-
-    /// @brief Checks if there are no extensions.
-    /// @return True if there are no extensions, false otherwise.
-    bool empty() const {
-        return extensions_.empty();
-    }
-
-    /// @brief Adds an extension.
-    /// @param extn The unique pointer to the extension.
-    void add(std::unique_ptr<Extension> extn);
-
-    /// @brief Adds an extension.
-    /// @param extn The pointer to the extension.
-    void add(Extension* extn) {
-        add(std::unique_ptr<Extension>(extn));
-    }
-
-    /// @brief Gets an extension of a specific type.
-    /// @param type The extension code.
-    /// @return A pointer to the extension if found, otherwise nullptr.
-    Extension* get(ExtensionCode type) const {
-        const auto i = std::find_if(
-            extensions_.cbegin(), extensions_.cend(), [type](const auto& ext) { return ext->type() == type; });
-
-        return (i != extensions_.end()) ? i->get() : nullptr;
-    }
-
-    /// @brief Deserializes extensions from a data reader.
-    /// @param reader The data reader.
-    /// @param from The side (client or server).
-    /// @param messageType The handshake type.
-    void deserialize(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType);
-
-    /// @brief Checks if the extensions contain any types other than the allowed ones.
-    /// @param allowedExtensions The allowed extension types.
-    /// @param allowUnknownExtensions If true, ignores unrecognized extensions.
-    /// @return True if there are any extensions not in the allowed set, false otherwise.
-    bool containsOtherThan(
-        const std::set<ExtensionCode>& allowedExtensions, bool allowUnknownExtensions = false) const;
-
-    /// @brief Checks if the extensions contain any implemented types other than the allowed ones.
-    /// @param allowedExtensions The allowed extension types.
-    /// @return True if there are any implemented extensions not in the allowed set, false otherwise.
-    bool containsImplementedExtensionsOtherThan(const std::set<ExtensionCode>& allowedExtensions) const {
-        return containsOtherThan(allowedExtensions, true);
-    }
-
-    /// @brief Takes an extension of a specific type out of the extensions list.
-    /// @tparam T The type of the extension.
-    /// @return A unique pointer to the extension if found, otherwise nullptr.
-    template <typename T>
-    decltype(auto) take() {
-        std::unique_ptr<T> out_ptr;
-
-        auto ext = take(T::staticType());
-        if (ext != nullptr) {
-            out_ptr.reset(dynamic_cast<T*>(ext.get()));
-            ext.release();
-        }
-
-        return out_ptr;
-    }
-
-    /// @brief Takes an extension of a specific type out of the extensions list.
-    /// @param type The extension code.
-    /// @return A unique pointer to the extension if found, otherwise nullptr.
-    std::unique_ptr<Extension> take(ExtensionCode type);
-
-    /// @brief Removes an extension from the extensions list if it exists.
-    /// @param type The extension code.
-    /// @return True if the extension existed and was removed, false otherwise.
-    bool removeExtension(ExtensionCode type) {
-        return take(type) != nullptr;
-    }
-
-    /// @brief Default constructor.
     Extensions() = default;
+    ~Extensions() = default;
+
+    Extensions(Extensions&&) noexcept = default;
+    Extensions& operator=(Extensions&&) noexcept = default;
 
     Extensions(const Extensions&) = delete;
     Extensions& operator=(const Extensions&) = delete;
 
-    /// @brief Move constructor.
-    Extensions(Extensions&&) = default;
+    // ---- parse / serialize ------------------------------------------------
 
-    /// @brief Move assignment operator.
-    Extensions& operator=(Extensions&&) = default;
+    /// @brief Parses extensions from a hello body.
+    /// @param[in] side          Side (Client or Server).
+    /// @param[in] input         Wire bytes of the `extensions` field.
+    /// @param[in] handshakeType Carrying message type; used by `KeyShare`.
+    /// @return DecodeError::None on success. On error the container is reset
+    ///         to empty (strong guarantee).
+    utils::DecodeError deserialize(Side side,
+                                   nonstd::span<const uint8_t> input,
+                                   HandshakeType handshakeType) noexcept;
 
-    /// @brief Constructor with data reader, side, and handshake type.
-    /// @param side The side (client or server).
-    /// @param reader The data reader.
-    Extensions(Side side, nonstd::span<const uint8_t> input, const HandshakeType handshakeType) {
-        deserialize(side, input, handshakeType);
+    /// @brief Serializes extensions into @p buffer (with 2-byte total length).
+    /// @param[in] whoami Side (Client or Server).
+    /// @param[in] buffer Destination buffer.
+    /// @return Bytes written on success, 0 if @p buffer is too small or any
+    ///         extension's serialization failed.
+    std::size_t serialize(Side whoami, nonstd::span<uint8_t> buffer) const noexcept;
+
+    // ---- typed accessors --------------------------------------------------
+
+    /// @brief Gets an extension by type.
+    /// @tparam T Concrete extension type (must be an alternative of `ExtensionVariant`).
+    /// @return Pointer into the stored variant, or nullptr if absent.
+    template <typename T>
+    T* get() noexcept {
+        const auto idx = find(T::staticType());
+        return idx == npos ? nullptr : std::get_if<T>(&extensions_[idx]);
     }
 
-    size_t serialize(Side whoami, nonstd::span<uint8_t> buffer) const;
+    /// @brief Gets an extension by type (const overload).
+    template <typename T>
+    const T* get() const noexcept {
+        const auto idx = find(T::staticType());
+        return idx == npos ? nullptr : std::get_if<T>(&extensions_[idx]);
+    }
+
+    /// @brief Checks whether an extension of type @p T is present.
+    template <typename T>
+    bool has() const noexcept {
+        return has(T::staticType());
+    }
+
+    /// @brief Checks whether an extension with @p type is present.
+    bool has(ExtensionCode type) const noexcept {
+        return mask_.contains(type) || findUnknown(type) != npos;
+    }
+
+    /// @brief Raw variant pointer by code (nullptr if absent).
+    ExtensionVariant* get(ExtensionCode type) noexcept {
+        const auto idx = find(type);
+        return idx == npos ? nullptr : &extensions_[idx];
+    }
+
+    /// @brief Raw variant pointer by code (const overload).
+    const ExtensionVariant* get(ExtensionCode type) const noexcept {
+        const auto idx = find(type);
+        return idx == npos ? nullptr : &extensions_[idx];
+    }
+
+    // ---- container views --------------------------------------------------
+
+    std::size_t size() const noexcept { return extensions_.size() + unknown_.size(); }
+    bool empty() const noexcept { return extensions_.empty() && unknown_.empty(); }
+
+    /// @brief All known extensions, in insertion order.
+    const std::vector<ExtensionVariant>& all() const noexcept { return extensions_; }
+
+    /// @brief All unknown extensions, in insertion order.
+    const std::vector<UnknownExtension>& unknown() const noexcept { return unknown_; }
+
+    // ---- mutation ---------------------------------------------------------
+
+    /// @brief Adds a known extension.
+    /// @return false if a duplicate code is already present or on allocation failure.
+    bool add(ExtensionVariant ext) noexcept;
+
+    /// @brief Adds an unknown extension.
+    /// @return false if a duplicate code is already present or on allocation failure.
+    bool addUnknown(UnknownExtension ext) noexcept;
+
+    /// @brief Removes and returns a known extension by code.
+    std::optional<ExtensionVariant> take(ExtensionCode type);
+
+    /// @brief Removes and returns a known extension by type.
+    template <typename T>
+    std::optional<T> take() {
+        auto v = take(T::staticType());
+        if (!v) return std::nullopt;
+        if (auto* p = std::get_if<T>(&*v)) {
+            T out = std::move(*p);
+            return out;
+        }
+        // Type mismatch -- put it back, report failure.
+        (void)add(std::move(*v));
+        return std::nullopt;
+    }
+
+    /// @brief Removes and returns an unknown extension by code.
+    std::optional<UnknownExtension> takeUnknown(ExtensionCode type);
+
+    /// @brief Removes an extension (known or unknown) by code.
+    bool removeExtension(ExtensionCode type) {
+        if (take(type).has_value()) return true;
+        return takeUnknown(type).has_value();
+    }
+
+    // ---- policy checks ----------------------------------------------------
+
+    /// @brief Sorted set of all present extension codes (public API).
+    std::set<ExtensionCode> extensionTypes() const;
+
+    /// @brief Checks whether any extension other than @p allowed is present.
+    /// @param[in] allowed              Allowed extension codes.
+    /// @param[in] allowUnknownExtensions If true, unknown codes are tolerated.
+    bool containsOtherThan(const std::set<ExtensionCode>& allowed,
+                           bool allowUnknownExtensions = false) const;
+
+    /// @brief Like `containsOtherThan(allowed, true)`.
+    bool containsImplementedExtensionsOtherThan(const std::set<ExtensionCode>& allowed) const {
+        return containsOtherThan(allowed, true);
+    }
 
 private:
-    std::vector<std::unique_ptr<Extension>> extensions_;
+    static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
+    /// @brief Finds a known extension by code; returns `npos` if absent.
+    std::size_t find(ExtensionCode type) const noexcept {
+        if (!mask_.contains(type)) return npos;
+        for (std::size_t i = 0; i < extensions_.size(); ++i) {
+            if (extensionType(extensions_[i]) == type) return i;
+        }
+        return npos;
+    }
+
+    /// @brief Finds an unknown extension by code; returns `npos` if absent.
+    std::size_t findUnknown(ExtensionCode type) const noexcept {
+        for (std::size_t i = 0; i < unknown_.size(); ++i) {
+            if (unknown_[i].type() == type) return i;
+        }
+        return npos;
+    }
+
+    void clearAll() noexcept;
+    void rebuildMask() noexcept;
+
+    std::vector<ExtensionVariant> extensions_;   ///< Known extensions, insertion order.
+    std::vector<UnknownExtension> unknown_;      ///< Unknown codes, raw bytes.
+    ExtensionMask                 mask_;         ///< Fast `has(known code)`.
 };
 
 } // namespace snet::tls
