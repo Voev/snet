@@ -191,7 +191,7 @@ std::vector<uint8_t> buildClientHelloRecord(std::string_view sni, tls::ProtocolV
     if (!rec)
         return {};
 
-    if (!rec->serializeHandshake(tls::HandshakeMessage(std::move(ch), tls::HandshakeType::ClientHelloCode), 0, session))
+    if (!rec->serializeHandshake(tls::HandshakeMessage(std::move(ch)), 0, session))
     {
         pool.release(rec);
         return {};

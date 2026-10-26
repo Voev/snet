@@ -142,13 +142,13 @@ public:
 
     inline HandshakeType getHandshakeType() const
     {
-        return handshake_.type;
+        return handshake_.getType();
     }
 
     template <typename T>
     const T& getHandshake() const
     {
-        return std::get<T>(handshake_.message);
+        return handshake_.get<T>();
     }
 
 private:

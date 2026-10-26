@@ -12,6 +12,7 @@
 #include <snet/tls/msgs/finished.hpp>
 #include <snet/tls/msgs/new_session_ticket.hpp>
 #include <snet/tls/msgs/server_hello_done.hpp>
+#include <snet/tls/msgs/key_update.hpp>
 
 namespace snet::tls
 {
@@ -20,9 +21,11 @@ class Session;
 
 struct HandshakeMessage final
 {
+    using NoMessage = nonstd::monostate;
+
     // clang-format off
     using MessageType = nonstd::variant<
-        nonstd::monostate,
+        NoMessage,
         ClientHello,
         ServerHello,
         EncryptedExtensions,
@@ -33,34 +36,41 @@ struct HandshakeMessage final
         CertificateVerify,
         Finished,
         NewSessionTicket,
-        ServerHelloDone
+        ServerHelloDone,
+        KeyUpdate
     >;
-    // clan-format on
+    // clang-format on
 
-    /// @todo make 'message' and 'type' more consistent
     HandshakeMessage()
-        : message(ClientHello())
-        , type(HandshakeType::NoneCode)
+        : message(NoMessage())
     {
     }
 
+    explicit HandshakeMessage(MessageType&& msg)
+        : message(std::move(msg))
+    {
+    }
+
+    HandshakeMessage(HandshakeMessage&&) noexcept = default;
+    HandshakeMessage& operator=(HandshakeMessage&&) noexcept = default;
+    HandshakeMessage(const HandshakeMessage&) = delete;
+    HandshakeMessage& operator=(const HandshakeMessage&) = delete;
+
+    /// @todo: make it noexcept.
     static HandshakeMessage deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
+    /// @todo: make it noexcept.
     size_t serialize(nonstd::span<uint8_t> output, const Session& session);
 
-    HandshakeType getType() const
+    template <typename T>
+    const T& get() const
     {
-        return type;
+        return std::get<T>(message);
     }
+
+    HandshakeType getType() const noexcept;
 
     MessageType message;
-    HandshakeType type;
-
-    explicit HandshakeMessage(MessageType&& msg, HandshakeType htype)
-        : message(std::move(msg))
-        , type(htype)
-    {
-    }
 };
 
 } // namespace snet::tls

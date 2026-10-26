@@ -21,6 +21,7 @@ enum class DecodeError : std::uint8_t
     SizeNotMultiple,  ///< `get_num_elems`: `byte_length % sizeof(T) != 0`.
     LengthOutOfRange, ///< `num_elems < min || num_elems > max`.
     AllocationFailed, ///< `resize_guarded`: `bad_alloc` was caught.
+    MalformedMessage, ///< Malformed data in message.
 };
 
 /// @brief `std::error_category` for `DecodeError`.
@@ -58,6 +59,8 @@ public:
             return "length field outside parameters";
         case DecodeError::AllocationFailed:
             return "allocation failed";
+        case DecodeError::MalformedMessage:
+            return "malformed message";
         }
         return "unknown decode error";
     }

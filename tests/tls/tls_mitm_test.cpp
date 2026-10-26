@@ -57,14 +57,14 @@ public:
         {
             builder.addCommand(param.name, param.value);
         }
-        builder.apply(clientSettings_, SSL_CONF_FLAG_CLIENT|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+        builder.apply(clientSettings_, SSL_CONF_FLAG_CLIENT | SSL_CONF_FLAG_SHOW_ERRORS | SSL_CONF_FLAG_FILE);
 
         builder.clear();
         for (auto& param : GetParam().serverCmds)
         {
             builder.addCommand(param.name, param.value);
         }
-        builder.apply(serverSettings_, SSL_CONF_FLAG_SERVER|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+        builder.apply(serverSettings_, SSL_CONF_FLAG_SERVER | SSL_CONF_FLAG_SHOW_ERRORS | SSL_CONF_FLAG_FILE);
 
         certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
 
@@ -160,8 +160,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), sideIndex,
-                            mitmClient);
+                            HandshakeMessage(std::move(clientHello)), sideIndex, mitmClient);
                         break;
                     }
                     case HandshakeType::ClientKeyExchangeCode:
@@ -240,8 +239,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex,
-                            mitmServer);
+                            HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
@@ -251,8 +249,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.processEncryptedExtensions(encryptedExtensions);
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode),
-                            sideIndex, mitmServer);
+                            HandshakeMessage(std::move(encryptedExtensions)), sideIndex, mitmServer);
                         break;
                     }
                     case HandshakeType::CertificateCode:
