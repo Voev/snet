@@ -5,6 +5,7 @@
 #include <system_error>
 
 #include <casket/nonstd/span.hpp>
+#include <snet/utils/data_writer.hpp>
 
 namespace snet::tls
 {

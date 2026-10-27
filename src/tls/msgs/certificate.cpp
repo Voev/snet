@@ -1,42 +1,48 @@
 #include <snet/tls/msgs/certificate.hpp>
-#include <snet/tls/session.hpp>
+
+#include <snet/utils/decode_error.hpp>
 
 namespace snet::tls
 {
 
-void Certificate::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::error_code Certificate::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
     if (metaInfo.version == ProtocolVersion::TLSv1_3)
     {
-        auto& cert = message.emplace<TLSv13Certificate>();
-        cert.deserialize(input);
+        TLSv13Certificate msg;
+        if (const auto err = msg.deserialize(input); err)
+            return err;
+        message = std::move(msg);
+        return {};
     }
     else
     {
-        auto& cert = message.emplace<TLSv1Certificate>();
-        cert.deserialize(input);
+
+        TLSv1Certificate msg;
+        if (const auto err = msg.deserialize(input); err)
+            return err;
+        message = std::move(msg);
+        return {};
     }
 }
 
-Certificate Certificate::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::size_t Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
-    Certificate certificate;
-    certificate.parse(input, metaInfo);
-    return certificate;
-}
-
-size_t Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const
-{
-    (void)session;
-
-    if (std::holds_alternative<TLSv13Certificate>(message))
-    {
-        return std::get<TLSv13Certificate>(message).serialize(output);
-    }
-    else
-    {
-        return std::get<TLSv1Certificate>(message).serialize(output);
-    }
+    return nonstd::visit(
+        [&](const auto& msg) noexcept -> std::size_t
+        {
+            using T = std::decay_t<decltype(msg)>;
+            if constexpr (std::is_same_v<T, TLSv1Certificate>)
+            {
+                (void)session;
+                return msg.serialize(output);
+            }
+            else
+            {
+                return msg.serialize(output, session);
+            }
+        },
+        message);
 }
 
 } // namespace snet::tls
