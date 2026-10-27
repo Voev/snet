@@ -56,8 +56,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         break;
     }
     case HandshakeType::ServerKeyExchangeCode:
-        message = ServerKeyExchange::deserialize(payload, metaInfo);
+    {
+        err = message.emplace<ServerKeyExchange>().deserialize(payload, metaInfo);
         break;
+    }
     case HandshakeType::FinishedCode:
     {
         err = message.emplace<Finished>().deserialize(payload);
@@ -112,6 +114,11 @@ size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& 
             }
         },
         message_);
+
+    if (payloadSize == kSerializationFailed)
+    {
+        return kSerializationFailed;
+    }
 
     output[0] = static_cast<uint8_t>(getType());
     auto length = static_cast<uint32_t>(payloadSize);

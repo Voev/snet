@@ -1,128 +1,177 @@
 #include <snet/tls/msgs/server_key_exchange.hpp>
+
+#include <cstring>
+
 #include <snet/tls/session.hpp>
 
-#include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
+#include <snet/utils/decode_error.hpp>
 
-#include <casket/utils/exception.hpp>
-
-using namespace snet::crypto;
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
-void DhParams::deserialize(utils::DataReader& reader)
+using snet::AppendLengthAndValue;
+using snet::kSerializationFailed;
+
+std::error_code DhParams::deserialize(utils::DataReader& reader) noexcept
 {
+    prime = {};
+    generator = {};
+    publicValue = {};
+
     prime = reader.get_span(2, 1, 65535);
+    if (!reader.ok())
+        return reader.take_ec();
+
     generator = reader.get_span(2, 1, 65535);
+    if (!reader.ok())
+        return reader.take_ec();
+
     publicValue = reader.get_span(2, 1, 65535);
+    return reader.take_ec();
 }
 
-size_t DhParams::serialize(nonstd::span<uint8_t> output)
+std::size_t DhParams::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    size_t offset = 0;
-    offset += append_length_and_value(output.subspan(offset), prime.data(), prime.size(), 2);
-    offset += append_length_and_value(output.subspan(offset), generator.data(), generator.size(), 2);
-    offset += append_length_and_value(output.subspan(offset), publicValue.data(), publicValue.size(), 2);
-    return offset;
+    std::size_t pos = 0;
+
+    {
+        const auto n = AppendLengthAndValue(output.subspan(pos), prime.data(), prime.size(), 2);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
+        pos += n;
+    }
+    {
+        const auto n = AppendLengthAndValue(output.subspan(pos), generator.data(), generator.size(), 2);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
+        pos += n;
+    }
+    {
+        const auto n = AppendLengthAndValue(output.subspan(pos), publicValue.data(), publicValue.size(), 2);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
+        pos += n;
+    }
+
+    return pos;
 }
 
-void EcdheParams::deserialize(utils::DataReader& reader)
+std::error_code EcdheParams::deserialize(utils::DataReader& reader) noexcept
 {
+    curveType = 0;
+    curveID = {};
+    publicPoint = {};
+
     curveType = reader.get_byte();
+    if (!reader.ok())
+        return reader.take_ec();
 
-    curveID = GroupParams(reader.get_uint16_t());
-    casket::ThrowIfFalse(curveID.isPureEccGroup(), "Invalid curve ID");
+    curveID = crypto::GroupParams(reader.get_uint16_t());
+    if (!reader.ok())
+        return reader.take_ec();
+    if (!curveID.isPureEccGroup())
+        return make_error_code(DecodeError::LengthOutOfRange);
 
     publicPoint = reader.get_span(1, 1, 255);
+    return reader.take_ec();
 }
 
-size_t EcdheParams::serialize(nonstd::span<uint8_t> output)
+std::size_t EcdheParams::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    size_t offset = 0;
+    if (output.size_bytes() < 3)
+        return kSerializationFailed;
 
-    output[offset++] = curveType;
+    std::size_t pos = 0;
+    output[pos++] = curveType;
 
-    const uint16_t namedCurveID = curveID.wireCode();
-    output[offset++] = casket::get_byte<0>(namedCurveID);
-    output[offset++] = casket::get_byte<1>(namedCurveID);
+    const auto namedCurveID = static_cast<std::uint16_t>(curveID.wireCode());
+    output[pos++] = casket::get_byte<0>(namedCurveID);
+    output[pos++] = casket::get_byte<1>(namedCurveID);
 
-    offset += append_length_and_value(output.subspan(offset), publicPoint.data(), publicPoint.size(), 1);
-
-    return offset;
+    const auto n = AppendLengthAndValue(output.subspan(pos), publicPoint.data(), publicPoint.size(), 1);
+    if (n == kSerializationFailed)
+        return kSerializationFailed;
+    return pos + n;
 }
 
-void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::error_code ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
-    utils::DataReader reader(input);
+    if (metaInfo.cipherSuite == 0)
+        return make_error_code(DecodeError::LengthOutOfRange);
 
-    casket::ThrowIfTrue(metaInfo.cipherSuite == nullptr, "undefined cipher suite");
-    auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
+    const auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
+
+    DataReader reader(input);
 
     if (kex == NID_kx_dhe)
     {
-        auto& dhParams = params.emplace<DhParams>();
-        dhParams.deserialize(reader);
+        DhParams msg;
+        if (const auto err = msg.deserialize(reader); err)
+            return err;
+        params = std::move(msg);
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        auto& ecdheParams = params.emplace<EcdheParams>();
-        ecdheParams.deserialize(reader);
+        EcdheParams msg;
+        if (const auto err = msg.deserialize(reader); err)
+            return err;
+        params = std::move(msg);
     }
     else if (kex != NID_kx_psk)
     {
-        throw std::runtime_error("ServerKeyExchange: Unsupported kex type");
+        return make_error_code(DecodeError::LengthOutOfRange); // unsupported kex
     }
 
     data = {input.data(), input.data() + reader.read_so_far()};
 
-    auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
+    const auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
         if (metaInfo.version == ProtocolVersion::TLSv1_2)
         {
-            scheme = SignatureScheme(reader.get_uint16_t()); // algorithm
-            signature = reader.get_span(2, 0, 65535);        // signature
+            scheme = crypto::SignatureScheme(reader.get_uint16_t());
+            if (!reader.ok())
+                return reader.take_ec();
         }
-        else /// < TLSv1.2
-        {
-            signature = reader.get_span(2, 0, 65535); // signature
-        }
+        signature = reader.get_span(2, 0, 65535);
+        if (!reader.ok())
+            return reader.take_ec();
     }
 
     reader.assert_done();
+    return reader.take_ec();
 }
 
-ServerKeyExchange ServerKeyExchange::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
-{
-    ServerKeyExchange keyExchange;
-    keyExchange.parse(input, metaInfo);
-    return keyExchange;
-}
-
-size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session)
+std::size_t ServerKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
     const auto& metaInfo = session.getInfo();
-    size_t offset = 0;
+    std::size_t pos = 0;
 
-    assert(output.size() > data.size());
+    if (output.size_bytes() < data.size())
+        return kSerializationFailed;
+    if (!data.empty())
+        std::memcpy(output.data(), data.data(), data.size());
+    pos += data.size();
 
-    std::copy(data.begin(), data.end(), output.begin());
-    offset += data.size();
-
-    auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
+    const auto auth = CipherSuiteGetAuth(metaInfo.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
         if (metaInfo.version == ProtocolVersion::TLSv1_2)
         {
-            uint16_t schemeCode = scheme.wireCode();
-            output[offset++] = casket::get_byte<0>(schemeCode);
-            output[offset++] = casket::get_byte<1>(schemeCode);
+            const auto schemeCode = static_cast<std::uint16_t>(scheme.wireCode());
+            output[pos++] = casket::get_byte<0>(schemeCode);
+            output[pos++] = casket::get_byte<1>(schemeCode);
         }
-        offset += append_length_and_value(output.subspan(offset), signature.data(), signature.size(), 2);
+        const auto n = AppendLengthAndValue(output.subspan(pos), signature.data(), signature.size(), 2);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
+        pos += n;
     }
 
-    return offset;
+    return pos;
 }
 
 } // namespace snet::tls

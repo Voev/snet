@@ -86,7 +86,7 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
 std::size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
     (void)session;
-    /// @todo: from session.getSide();
+    /// @todo use session.
     const Side side = Side::Server;
     std::size_t pos = 0;
 
@@ -122,7 +122,7 @@ std::size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output, const Ses
         auto certBuf = output.subspan(pos + 3);
 
         const auto certSize = crypto::Cert::toBuffer(entry.cert, certBuf);
-        if (certSize < 0)
+        if (certSize <= 0)
             return kSerializationFailed;
         if (static_cast<std::size_t>(certSize) > 0xFFFFFF)
             return kSerializationFailed;
@@ -134,29 +134,34 @@ std::size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output, const Ses
         pos += 3 + static_cast<std::size_t>(certSize);
         entriesLength += 3 + certSize32;
 
-        // extensions
+        // extensions: ALWAYS write 2-byte length, even if empty
         if (entry.extensions)
         {
             const auto n = entry.extensions->serialize(side, output.subspan(pos));
-            if (n == 0)
+            if (n == kSerializationFailed)
+            {
                 return kSerializationFailed;
+            }
             pos += n;
             entriesLength += static_cast<std::uint32_t>(n);
         }
         else
         {
-            if (entry.extsData.size() < 2)
+            if (output.size_bytes() - pos < 2)
+            {
                 return kSerializationFailed;
-            if (output.size_bytes() - pos < entry.extsData.size())
-                return kSerializationFailed;
-            std::memcpy(output.data() + pos, entry.extsData.data(), entry.extsData.size());
-            pos += entry.extsData.size();
-            entriesLength += static_cast<std::uint32_t>(entry.extsData.size());
+            }
+            output[pos++] = 0x00;
+            output[pos++] = 0x00;
+            entriesLength += 2;
         }
     }
 
     if (entriesLength > 0xFFFFFF)
+    {
         return kSerializationFailed;
+    }
+
     output[listStart] = casket::get_byte<1>(entriesLength);
     output[listStart + 1] = casket::get_byte<2>(entriesLength);
     output[listStart + 2] = casket::get_byte<3>(entriesLength);
