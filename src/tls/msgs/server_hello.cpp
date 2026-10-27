@@ -1,94 +1,146 @@
 #include <snet/tls/msgs/server_hello.hpp>
 #include <snet/tls/session.hpp>
 
+#include <algorithm>
+#include <cstring>
+
+#include <snet/tls/exts/extension_code.hpp>
 #include <snet/utils/data_reader.hpp>
-#include <snet/utils/data_writer.hpp>
+#include <snet/utils/decode_error.hpp>
 
 namespace snet::tls
 {
 
-// SHA-256("HelloRetryRequest")
-const std::array<uint8_t, TLS_RANDOM_SIZE> HELLO_RETRY_REQUEST_MARKER = {
-    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
-    0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C};
-
-static inline bool checkForHRR(nonstd::span<const uint8_t> random)
+namespace
 {
-    assert(random.size() == TLS_RANDOM_SIZE);
-    return std::equal(HELLO_RETRY_REQUEST_MARKER.begin(), HELLO_RETRY_REQUEST_MARKER.end(), random.begin());
+
+/// @brief SHA-256("HelloRetryRequest"), used as the special `random` value
+///        in a TLS 1.3 HelloRetryRequest (RFC 8446 §4.1.3).
+constexpr std::array<std::uint8_t, TLS_RANDOM_SIZE> kHelloRetryRequestMarker = {
+    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+    0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C,
+};
+
+inline bool isHelloRetryRequestRandom(nonstd::span<const std::uint8_t> r) noexcept
+{
+    return r.size() == TLS_RANDOM_SIZE &&
+           std::equal(kHelloRetryRequestMarker.begin(), kHelloRetryRequestMarker.end(), r.begin());
 }
 
-void ServerHello::parse(nonstd::span<const uint8_t> input)
+inline std::error_code ec(utils::DecodeError e) noexcept
 {
+    return utils::make_error_code(e);
+}
+
+} // namespace
+
+std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noexcept
+{
+    version = {};
+    random = {};
+    sessionID = {};
+    cipherSuite = 0;
+    compMethod = 0;
+    extensions = {};
+    isHelloRetryRequest = false;
+
     utils::DataReader reader("Server Hello", input);
 
     version = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_span_fixed(TLS_RANDOM_SIZE);
-
-    /// TLSv1.3 HelloRetryRequest checking
-    if (version == ProtocolVersion::TLSv1_2)
+    if (!reader.ok())
     {
-        isHelloRetryRequest = checkForHRR(random);
+        return reader.take_ec();
     }
 
-    sessionID = reader.get_span(1, 0, 32);
-    cipherSuite = reader.get_uint16_t();
-    compMethod = reader.get_byte();
+    random = reader.get_span_fixed(TLS_RANDOM_SIZE);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
 
-    // Extensions in ServerHello:
-    //   - TLS 1.3 / HRR  — mandatory;
-    //   - TLS 1.0–1.2    — optional (may be absent);
-    //   - SSLv3          — never present.
-    //
-    // Safe approach: read the extensions block only if bytes remain
-    // in the buffer. On the wire the format is: [len:2][ext...].
+    isHelloRetryRequest = isHelloRetryRequestRandom(random);
+
+    sessionID = reader.get_span(1, 0, 32);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    cipherSuite = reader.get_uint16_t();
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    compMethod = reader.get_byte();
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
     if (reader.remaining_bytes() > 0)
     {
-        auto extensionsLength = reader.peek_uint16_t();
-        casket::ThrowIfFalse(extensionsLength == reader.remaining_bytes() - 2,
-                             "Invalid extensions length");
+        const auto extensionsLength = reader.peek_uint16_t();
+        if (!reader.ok())
+        {
+            return reader.take_ec();
+        }
+        if (extensionsLength != reader.remaining_bytes() - 2)
+        {
+            return ec(utils::DecodeError::LengthOutOfRange);
+        }
         extensions = reader.get_span_fixed(2 + extensionsLength);
+        if (!reader.ok())
+        {
+            return reader.take_ec();
+        }
     }
 
     reader.assert_done();
+    return reader.take_ec();
 }
 
-ServerHello ServerHello::deserialize(nonstd::span<const uint8_t> input)
+std::size_t ServerHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
-    ServerHello serverHello;
-    serverHello.parse(input);
-    return serverHello;
-}
+    const std::size_t fixed = 2 + TLS_RANDOM_SIZE + 1 + sessionID.size() + 2 + 1; // cipherSuite + compMethod
 
-size_t ServerHello::serialize(nonstd::span<uint8_t> output, const Session& session) const
-{
-    size_t offset{};
-    size_t length{};
+    if (output.size_bytes() < fixed)
+    {
+        return kSerializationFailed;
+    }
 
-    output[0] = version.majorVersion();
-    output[1] = version.minorVersion();
-    output = output.subspan(2);
-    length += 2;
+    std::size_t pos = 0;
 
-    std::copy(random.begin(), random.end(), output.begin());
-    output = output.subspan(random.size());
-    length += random.size();
+    output[pos++] = version.majorVersion();
+    output[pos++] = version.minorVersion();
 
-    offset = append_length_and_value(output, sessionID.data(), sessionID.size(), 1);
-    output = output.subspan(offset);
-    length += offset;
+    std::memcpy(output.data() + pos, random.data(), TLS_RANDOM_SIZE);
+    pos += TLS_RANDOM_SIZE;
 
-    output[0] = casket::get_byte<0>(cipherSuite);
-    output[1] = casket::get_byte<1>(cipherSuite);
-    output[2] = compMethod;
-    output = output.subspan(3);
-    length += 3;
+    if (sessionID.size() > 255)
+    {
+        return kSerializationFailed;
+    }
 
-    const auto& extensions = session.getServerExtensions();
-    offset = extensions.serialize(Side::Server, output);
-    length += offset;
+    output[pos++] = static_cast<std::uint8_t>(sessionID.size());
 
-    return length;
+    if (!sessionID.empty())
+    {
+        std::memcpy(output.data() + pos, sessionID.data(), sessionID.size());
+    }
+    pos += sessionID.size();
+
+    output[pos++] = casket::get_byte<0>(cipherSuite);
+    output[pos++] = casket::get_byte<1>(cipherSuite);
+    output[pos++] = compMethod;
+
+    const auto extWritten = session.getServerExtensions().serialize(Side::Server, output.subspan(pos));
+    if (extWritten == 0)
+    {
+        return kSerializationFailed;
+    }
+
+    return pos + extWritten;
 }
 
 } // namespace snet::tls

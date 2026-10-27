@@ -27,7 +27,7 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     size_t serializedLength = 0;
 
     ServerHello serverHello;
-    ASSERT_NO_THROW(serverHello.parse(param));
+    ASSERT_EQ(serverHello.deserialize(param), make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     session.setMonitor(true);
