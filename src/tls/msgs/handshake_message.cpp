@@ -53,11 +53,15 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         message = ServerKeyExchange::deserialize(payload, metaInfo);
         break;
     case HandshakeType::FinishedCode:
-        message = Finished::deserialize(payload);
+    {
+        err = message.emplace<Finished>().deserialize(payload);
         break;
+    }
     case HandshakeType::ServerHelloDoneCode:
-        message = ServerHelloDone::deserialize(payload);
+    {
+        err = message.emplace<ServerHelloDone>().deserialize(payload);
         break;
+    }
     case HandshakeType::KeyUpdateCode:
     {
         err = message.emplace<KeyUpdate>().deserialize(payload);
@@ -81,7 +85,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
     return HandshakeMessage(std::move(message));
 }
 
-size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session)
+size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session) noexcept
 {
     const size_t payloadSize = nonstd::visit(
         [&output, &session](auto&& msg) -> size_t
@@ -97,7 +101,7 @@ size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& 
                 return msg.serialize(payload, session);
             }
         },
-        message);
+        message_);
 
     output[0] = static_cast<uint8_t>(getType());
     auto length = static_cast<uint32_t>(payloadSize);
@@ -127,7 +131,7 @@ static_assert(std::size(kIndexToType) == 13);
 
 HandshakeType HandshakeMessage::getType() const noexcept
 {
-    const auto idx = message.index();
+    const auto idx = message_.index();
     assert(idx < std::size(kIndexToType));
     return kIndexToType[idx];
 }

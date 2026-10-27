@@ -42,12 +42,12 @@ struct HandshakeMessage final
     // clang-format on
 
     HandshakeMessage()
-        : message(NoMessage())
+        : message_(NoMessage())
     {
     }
 
     explicit HandshakeMessage(MessageType&& msg)
-        : message(std::move(msg))
+        : message_(std::move(msg))
     {
     }
 
@@ -60,17 +60,18 @@ struct HandshakeMessage final
     static HandshakeMessage deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
 
     /// @todo: make it noexcept.
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session);
+    size_t serialize(nonstd::span<uint8_t> output, const Session& session) noexcept;
 
     template <typename T>
     const T& get() const
     {
-        return std::get<T>(message);
+        return std::get<T>(message_);
     }
 
     HandshakeType getType() const noexcept;
 
-    MessageType message;
+private:
+    MessageType message_;
 };
 
 } // namespace snet::tls
