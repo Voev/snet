@@ -1,80 +1,100 @@
 #include <snet/tls/msgs/client_key_exchange.hpp>
+
 #include <snet/tls/session.hpp>
 
-#include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
+#include <snet/utils/decode_error.hpp>
 
-using namespace snet::crypto;
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
-void EncryptedPreMasterSecret::deserialize(utils::DataReader& reader)
+using snet::AppendLengthAndValue;
+using snet::kSerializationFailed;
+
+std::error_code EncryptedPreMasterSecret::deserialize(utils::DataReader& reader) noexcept
 {
-    preMasterSecret = reader.get_span(2, 1, 65535);
+    preMasterSecret = reader.get_span_length_and_value(2);
+    return reader.take_ec();
 }
 
-size_t EncryptedPreMasterSecret::serialize(nonstd::span<uint8_t> output) const
+std::size_t EncryptedPreMasterSecret::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    return append_length_and_value(output, preMasterSecret.data(), preMasterSecret.size(), 2);
+    return AppendLengthAndValue(output, preMasterSecret.data(), preMasterSecret.size(), 2);
 }
 
-void ClientDhPublic::deserialize(utils::DataReader& reader)
+std::error_code ClientDhPublic::deserialize(utils::DataReader& reader) noexcept
 {
-    dhPublic = reader.get_span(2, 1, 65535);
+    dhPublic = reader.get_span_length_and_value(2);
+    return reader.take_ec();
 }
 
-size_t ClientDhPublic::serialize(nonstd::span<uint8_t> output) const
+std::size_t ClientDhPublic::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    return append_length_and_value(output, dhPublic.data(), dhPublic.size(), 2);
+    return AppendLengthAndValue(output, dhPublic.data(), dhPublic.size(), 2);
 }
 
-void ClientEcdhPublic::deserialize(utils::DataReader& reader)
+std::error_code ClientEcdhPublic::deserialize(utils::DataReader& reader) noexcept
 {
-    ecdhPublic = reader.get_span(1, 1, 255);
+    ecdhPublic = reader.get_span_length_and_value(1);
+    return reader.take_ec();
 }
 
-size_t ClientEcdhPublic::serialize(nonstd::span<uint8_t> output) const
+std::size_t ClientEcdhPublic::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    return append_length_and_value(output, ecdhPublic.data(), ecdhPublic.size(), 1);
+    return AppendLengthAndValue(output, ecdhPublic.data(), ecdhPublic.size(), 1);
 }
 
-void ClientKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::error_code ClientKeyExchange::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
-    utils::DataReader reader(input);
-
-    casket::ThrowIfFalse(metaInfo.cipherSuite, "Cipher suite not setted");
+    if (metaInfo.cipherSuite == 0)
+        return make_error_code(DecodeError::LengthOutOfRange);
 
     auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);
+
+    DataReader reader(input);
+
     if (kex == NID_kx_rsa)
     {
-        params.emplace<EncryptedPreMasterSecret>().deserialize(reader);
+        EncryptedPreMasterSecret msg;
+        if (const auto err = msg.deserialize(reader); err)
+            return err;
+        params = std::move(msg);
     }
     else if (kex == NID_kx_dhe || kex == NID_kx_dhe_psk)
     {
-        params.emplace<ClientDhPublic>().deserialize(reader);
+        ClientDhPublic msg;
+        if (const auto err = msg.deserialize(reader); err)
+            return err;
+        params = std::move(msg);
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        params.emplace<ClientEcdhPublic>().deserialize(reader);
+        ClientEcdhPublic msg;
+        if (const auto err = msg.deserialize(reader); err)
+            return err;
+        params = std::move(msg);
     }
     else
     {
-        throw std::runtime_error("ClientKeyExchange: Unsupported kex type");
+        return make_error_code(DecodeError::LengthOutOfRange); // unsupported kex
     }
+
     reader.assert_done();
+    return reader.take_ec();
 }
 
-ClientKeyExchange ClientKeyExchange::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::size_t ClientKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
-    ClientKeyExchange keyExchange;
-    keyExchange.parse(input, metaInfo);
-    return keyExchange;
-}
+    (void)session;
 
-size_t ClientKeyExchange::serialize(nonstd::span<uint8_t> output, const Session&) const
-{
-    return nonstd::visit([&](const auto& inner) -> size_t { return inner.serialize(output); }, params);
+    return nonstd::visit(
+        [&](const auto& inner) noexcept -> std::size_t
+        {
+            return inner.serialize(output);
+        },
+        params);
 }
 
 } // namespace snet::tls

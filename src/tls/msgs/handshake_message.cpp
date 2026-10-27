@@ -74,8 +74,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         break;
     }
     case HandshakeType::ClientKeyExchangeCode:
-        message = ClientKeyExchange::deserialize(payload, metaInfo);
+    {
+        err = message.emplace<ClientKeyExchange>().deserialize(payload, metaInfo);
         break;
+    }
     case HandshakeType::NewSessionTicketCode:
     {
         err = message.emplace<NewSessionTicket>().deserialize(payload, metaInfo);
