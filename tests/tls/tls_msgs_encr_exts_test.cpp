@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <snet/tls/msgs/encrypted_extensions.hpp>
 #include <snet/tls/session.hpp>
+#include <snet/utils/compare_vectors.hpp>
 
 using namespace testing;
 using namespace snet::tls;
+using namespace snet::utils;
 
 using SerializeTestParam = std::vector<uint8_t>;
 
@@ -24,15 +26,16 @@ TEST_P(EncryptedExtensionsTest, DeserializeSerialize)
     size_t serializedLength = 0;
 
     EncryptedExtensions encryptedExtensions;
-    ASSERT_NO_THROW(encryptedExtensions.parse(param));
+    ASSERT_EQ(encryptedExtensions.deserialize(param), make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     ASSERT_NO_THROW(session.processEncryptedExtensions(encryptedExtensions));
 
-    ASSERT_NO_THROW(serializedLength = encryptedExtensions.serialize(serialized, session));
+    serializedLength = encryptedExtensions.serialize(serialized, session);
+    ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 
-    ASSERT_EQ(serialized, param);
+    ASSERT_EQ(serialized, param) << CompareVectors(serialized, param);
 }
 
 std::vector<std::vector<uint8_t>> gEncryptedExtensionsParams = {

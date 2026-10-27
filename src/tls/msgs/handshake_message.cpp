@@ -36,8 +36,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         break;
     }
     case HandshakeType::EncryptedExtensionsCode:
-        message = EncryptedExtensions::deserialize(payload);
+    {
+        err = message.emplace<EncryptedExtensions>().deserialize(payload);
         break;
+    }
     case HandshakeType::CertificateCode:
         message = Certificate::deserialize(payload, metaInfo);
         break;

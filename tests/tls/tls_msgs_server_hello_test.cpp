@@ -33,7 +33,8 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     session.setMonitor(true);
     ASSERT_NO_THROW(session.processServerHello(serverHello));
 
-    ASSERT_NO_THROW(serializedLength = serverHello.serialize(serialized, session));
+    serializedLength = serverHello.serialize(serialized, session);
+    ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 
     ASSERT_EQ(serialized, param) << CompareVectors(serialized, param);
