@@ -1,51 +1,57 @@
 #include <snet/tls/msgs/certificate_request.hpp>
-#include <snet/tls/session.hpp>
+#include <snet/utils/decode_error.hpp>
 
 namespace snet::tls
 {
 
-void CertificateRequest::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+namespace
+{
+
+inline std::error_code ec(utils::DecodeError e) noexcept
+{
+    return utils::make_error_code(e);
+}
+
+} // namespace
+
+std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
     if (metaInfo.version == ProtocolVersion::TLSv1_3)
     {
-        auto& inner = message.emplace<TLSv13CertificateRequest>();
-        inner.deserialize(input);
+        TLSv13CertificateRequest msg;
+        if (const auto err = msg.deserialize(input); err)
+            return err;
+        message = std::move(msg);
+        return {};
     }
     else if (metaInfo.version == ProtocolVersion::TLSv1_2)
     {
-        auto& inner = message.emplace<TLSv12CertificateRequest>();
-        inner.deserialize(input);
+        TLSv12CertificateRequest msg;
+        if (const auto err = msg.deserialize(input); err)
+            return err;
+        message = std::move(msg);
+        return {};
     }
     else
     {
-        auto& inner = message.emplace<TLSv1CertificateRequest>();
-        inner.deserialize(input);
+        TLSv1CertificateRequest msg;
+        if (const auto err = msg.deserialize(input); err)
+            return err;
+        message = std::move(msg);
+        return {};
     }
 }
 
-CertificateRequest CertificateRequest::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
-{
-    CertificateRequest certRequest;
-    certRequest.parse(input, metaInfo);
-    return certRequest;
-}
-
-size_t CertificateRequest::serialize(nonstd::span<uint8_t> output, const Session& session) const
+std::size_t CertificateRequest::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
     (void)session;
 
-    if (std::holds_alternative<TLSv13CertificateRequest>(message))
-    {
-        return std::get<TLSv13CertificateRequest>(message).serialize(output);
-    }
-    else if (std::holds_alternative<TLSv12CertificateRequest>(message))
-    {
-        return std::get<TLSv12CertificateRequest>(message).serialize(output);
-    }
-    else
-    {
-        return std::get<TLSv1CertificateRequest>(message).serialize(output);
-    }
+    return nonstd::visit(
+        [&output](const auto& msg) noexcept -> std::size_t
+        {
+            return msg.serialize(output);
+        },
+        message);
 }
 
 } // namespace snet::tls

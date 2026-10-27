@@ -44,8 +44,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         message = Certificate::deserialize(payload, metaInfo);
         break;
     case HandshakeType::CertificateRequestCode:
-        message = CertificateRequest::deserialize(payload, metaInfo);
+    {
+        err = message.emplace<CertificateRequest>().deserialize(payload, metaInfo);
         break;
+    }
     case HandshakeType::CertificateVerifyCode:
         message = CertificateVerify::deserialize(payload, metaInfo);
         break;
