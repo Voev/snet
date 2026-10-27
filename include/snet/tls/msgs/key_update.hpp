@@ -78,21 +78,6 @@ struct KeyUpdate final
         output[0] = static_cast<uint8_t>(requestUpdate);
         return 1;
     }
-
-    /// @brief Serialized size of the KeyUpdate payload (always 1).
-    static constexpr size_t serializedSize() noexcept
-    {
-        return 1;
-    }
-
-    bool operator==(const KeyUpdate& other) const noexcept
-    {
-        return requestUpdate == other.requestUpdate;
-    }
-    bool operator!=(const KeyUpdate& other) const noexcept
-    {
-        return !(*this == other);
-    }
 };
 
 } // namespace snet::tls

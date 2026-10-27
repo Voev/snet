@@ -75,8 +75,10 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         message = ClientKeyExchange::deserialize(payload, metaInfo);
         break;
     case HandshakeType::NewSessionTicketCode:
-        message = NewSessionTicket::deserialize(payload, metaInfo);
+    {
+        err = message.emplace<NewSessionTicket>().deserialize(payload, metaInfo);
         break;
+    }
     default:
         throw casket::RuntimeError("Unknown handshake message type");
     }
