@@ -1,79 +1,86 @@
 #pragma once
+
 #include <cstdint>
+#include <system_error>
+
 #include <casket/nonstd/span.hpp>
 
-#include <snet/utils/algorithm.hpp>
 #include <snet/crypto/signature_scheme.hpp>
 #include <snet/tls/meta_info.hpp>
+#include <snet/utils/algorithm.hpp>
 
 namespace snet::tls
 {
 
 class Session;
 
-/// @brief Represents a Certificate Verify message in TLS protocol.
+/// @brief TLS CertificateVerify handshake message
+///        (TLS 1.2: RFC 5246 §7.4.8; TLS 1.3: RFC 8446 §4.4.3).
 ///
-/// This structure handles the verification of certificates during the TLS handshake,
-/// including parsing, serialization, and signature verification for both TLS 1.2 and 1.3.
+/// Wire format (identical for TLS 1.2 and TLS 1.3):
+///   `<2-byte SignatureScheme>` + `<2-byte signature length>` + `<signature bytes>`.
+///
+/// `signature` is a view into the input buffer passed to `deserialize`; the
+/// caller must keep that buffer alive for the lifetime of the object.
 struct CertificateVerify final
 {
-    /// @brief Parse a Certificate Verify message from raw data.
-    ///
-    /// @param[in] input Raw bytes containing the Certificate Verify message.
+    crypto::SignatureScheme scheme{0};       ///< Signature scheme used for the certificate verification.
+    nonstd::span<const uint8_t> signature{}; ///< Raw signature data (`<2-byte length>` + bytes).
+
+    /// @brief Default constructor; `scheme == 0`, `signature` empty.
+    CertificateVerify() noexcept = default;
+
+    /// @brief Parses the CertificateVerify body into `*this`.
+    /// @param[in] input Wire bytes of the CertificateVerify body (without
+    ///                  the 4-byte handshake header).
     /// @param[in] metaInfo Metadata information for parsing context.
-    void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+    ///
+    /// @return `std::error_code` (`0` on success).
+    ///         On failure `*this` is left with empty fields (strong guarantee).
+    /// @note `noexcept`. `signature` points into @p input.
+    std::error_code deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept;
 
-    /// @brief Static factory method to deserialize a Certificate Verify message.
-    ///
-    /// @param[in] input Raw bytes containing the Certificate Verify message.
-    /// @param[in] metaInfo Metadata information for parsing context.
-    ///
-    /// @return Parsed CertificateVerify object.
-    static CertificateVerify deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+    /// @brief Serializes the message into @p output.
+    /// @param[in] output Destination buffer; must hold
+    ///                   `2 + 2 + signature.size()` bytes.
+    /// @param[in] session Session context (unused).
+    /// @return Bytes written on success, `kSerializationFailed` on error.
+    /// @note `noexcept`.
+    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
 
-    /// @brief Serialize the Certificate Verify message to a byte buffer.
-    ///
-    /// @param[in] output Buffer to write the serialized data to.
-    /// @param[in] session Session context for serialization.
-    ///
-    /// @return Number of bytes written to output buffer.
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
-
-    /// @brief Perform TLS 1.3 signature generation.
-    ///
-    /// @param[in] scheme Signature scheme to use.
-    /// @param[in] sideIndex Side index (client/server) for context.
-    /// @param[in] ctx Hash context for signature computation.
-    /// @param[in] privateKey Private key for signing.
-    /// @param[in] transcriptHash Handshake transcript hash.
-    /// @param[in] signatureBuffer Buffer to store the generated signature.
-    ///
-    /// @return Span containing the generated signature.
-    static nonstd::span<uint8_t> doTLSv13Sign(const crypto::SignatureScheme& scheme, const int8_t sideIndex,
+    /// @brief Performs TLS 1.3 signature generation.
+    /// @param[in] scheme          Signature scheme.
+    /// @param[in] sideIndex       Side index (client/server) for context.
+    /// @param[in] ctx             Hash context.
+    /// @param[in] privateKey      Private key.
+    /// @param[in] transcriptHash  Handshake transcript hash.
+    /// @param[out] signatureBuffer Buffer for the generated signature.
+    /// @return View over the generated signature bytes (into @p signatureBuffer).
+    /// @throws casket::RuntimeError on crypto failure.
+    static nonstd::span<uint8_t> doTLSv13Sign(const crypto::SignatureScheme& scheme, std::int8_t sideIndex,
                                               HashCtx* ctx, Key* privateKey, nonstd::span<const uint8_t> transcriptHash,
                                               nonstd::span<uint8_t> signatureBuffer);
 
-    /// @brief Perform TLS 1.3 signature verification.
-    ///
-    /// @param[in] certVerify CertificateVerify object containing the signature to verify.
-    /// @param[in] sideIndex Side index (client/server) for context.
-    /// @param[in] ctx Hash context for signature verification.
-    /// @param[in] publicKey Public key for verification.
+    /// @brief Performs TLS 1.3 signature verification.
+    /// @param[in] certVerify     CertificateVerify containing the signature.
+    /// @param[in] sideIndex      Side index (client/server) for context.
+    /// @param[in] ctx            Hash context.
+    /// @param[in] publicKey      Public key.
     /// @param[in] transcriptHash Handshake transcript hash.
-    static void doTLSv13Verify(const CertificateVerify& certVerify, const int8_t sideIndex, HashCtx* ctx,
-                               Key* publicKey, nonstd::span<const uint8_t> transcriptHash);
-
-    crypto::SignatureScheme scheme{0};     ///< Signature scheme used for the certificate verification.
-    nonstd::span<const uint8_t> signature; ///< Raw signature data.
+    /// @throws casket::RuntimeError on verification failure.
+    static void doTLSv13Verify(const CertificateVerify& certVerify, std::int8_t sideIndex, HashCtx* ctx, Key* publicKey,
+                               nonstd::span<const uint8_t> transcriptHash);
 };
 
-/// @brief Choose an appropriate signature scheme based on available options.
+/// @brief Chooses a signature scheme acceptable to both sides.
 ///
-/// @param[in] key The key to check suitability against.
-/// @param[in] allowedSchemes List of signature schemes supported locally.
-/// @param[in] peerAllowedSchemes List of signature schemes supported by peer.
+/// Iterates @p allowedSchemes in order and returns the first that is
+/// suitable for @p key and present in @p peerAllowedSchemes.
 ///
-/// @return Selected SignatureScheme, or SignatureScheme::NONE if no suitable scheme found.
+/// @param[in] key                Key to check suitability against.
+/// @param[in] allowedSchemes     Locally supported schemes (preference order).
+/// @param[in] peerAllowedSchemes Peer-supported schemes.
+/// @return Selected scheme, or `crypto::SignatureScheme::NONE` if none match.
 inline crypto::SignatureScheme ChooseSignatureScheme(const Key* key,
                                                      nonstd::span<const crypto::SignatureScheme> allowedSchemes,
                                                      nonstd::span<const crypto::SignatureScheme> peerAllowedSchemes)
@@ -85,7 +92,6 @@ inline crypto::SignatureScheme ChooseSignatureScheme(const Key* key,
             return scheme;
         }
     }
-
     return crypto::SignatureScheme::NONE;
 }
 
