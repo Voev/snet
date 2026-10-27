@@ -65,7 +65,7 @@ utils::DecodeError Extensions::deserialize(Side side, nonstd::span<const uint8_t
 {
     clearAll();
 
-    utils::DataReader reader("Extensions", input);
+    utils::DataReader reader(input);
 
     const uint16_t allExtSize = reader.get_uint16_t();
     if (!reader.ok())

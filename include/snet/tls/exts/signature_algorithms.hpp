@@ -92,7 +92,7 @@ public:
 
         schemes_.clear();
 
-        utils::DataReader reader("SignatureAlgorithms", input);
+        utils::DataReader reader(input);
 
         // <2-byte length> <uint16>*; length must be even and non-zero.
         const std::uint16_t len = reader.get_uint16_t();

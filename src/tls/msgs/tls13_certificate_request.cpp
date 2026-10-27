@@ -6,6 +6,8 @@
 #include <snet/utils/data_writer.hpp>
 #include <snet/utils/decode_error.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
 
@@ -17,7 +19,7 @@ std::error_code TLSv13CertificateRequest::deserialize(nonstd::span<const uint8_t
     certRequestContext = {};
     extensionsData = {};
 
-    utils::DataReader reader("TLSv1.3 CertificateRequest", input);
+    utils::DataReader reader(input);
 
     certRequestContext = reader.get_span(1, 0, 255);
     if (!reader.ok())
@@ -33,7 +35,7 @@ std::error_code TLSv13CertificateRequest::deserialize(nonstd::span<const uint8_t
 
     if (extTotal != reader.remaining_bytes() - 2)
     {
-        return utils::make_error_code(utils::DecodeError::LengthOutOfRange);
+        return make_error_code(DecodeError::LengthOutOfRange);
     }
 
     extensionsData = reader.get_span_remaining();

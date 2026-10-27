@@ -550,7 +550,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         PRF(keyInfo_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::DataReader reader("Key block (for AEAD)", keyBlock);
+        utils::DataReader reader(keyBlock);
 
         keyInfo_.clientEncKey.assign(reader.get_span_fixed(keySize));
         keyInfo_.serverEncKey.assign(reader.get_span_fixed(keySize));
@@ -591,7 +591,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         PRF(keyInfo_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::DataReader reader("Key block (with MAC key)", keyBlock);
+        utils::DataReader reader(keyBlock);
 
         keyInfo_.clientMacKey.assign(reader.get_span_fixed(macSize));
         keyInfo_.serverMacKey.assign(reader.get_span_fixed(macSize));

@@ -49,13 +49,18 @@ utils::DecodeError ALPN::deserialize(Side side, nonstd::span<const uint8_t> inpu
 {
     clear();
 
-    utils::DataReader reader("ALPN", input);
+    utils::DataReader reader(input);
 
     const std::uint16_t nameBytes = reader.get_uint16_t();
     if (!reader.ok())
+    {
         return reader.take_error();
+    }
+
     if (nameBytes != reader.remaining_bytes())
+    {
         return utils::DecodeError::LengthOutOfRange;
+    }
 
     try
     {

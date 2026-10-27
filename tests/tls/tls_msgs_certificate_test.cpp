@@ -34,7 +34,7 @@ TEST_P(CertificateSerializeTest, DeserializeSerialize)
 
     Certificate certificate;
     ASSERT_EQ(certificate.deserialize(nonstd::span<const uint8_t>(param.cert), metaInfo),
-              std::error_code{});
+              make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     ASSERT_NO_THROW(session.processCertificate(1, certificate));

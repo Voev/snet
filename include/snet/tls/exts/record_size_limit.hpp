@@ -79,18 +79,28 @@ public:
     {
         limit_ = 0;
 
-        utils::DataReader reader("record_size_limit", input);
+        utils::DataReader reader(input);
         const std::uint16_t value = reader.get_uint16_t();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
+
         reader.assert_done();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
 
         if (value < kMinLimit)
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
+
         if (side == Side::Server && value > kMaxLimit)
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
 
         limit_ = value;
         return utils::DecodeError::None;

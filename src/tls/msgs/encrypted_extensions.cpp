@@ -12,7 +12,7 @@ std::error_code EncryptedExtensions::deserialize(nonstd::span<const uint8_t> inp
 {
     extensions = {};
 
-    utils::DataReader reader("EncryptedExtensions", input);
+    utils::DataReader reader(input);
 
     // Wire form: <2-byte length> <ext>*
     // An empty body (0 bytes) is not valid: there MUST be a 2-byte length.
@@ -21,13 +21,14 @@ std::error_code EncryptedExtensions::deserialize(nonstd::span<const uint8_t> inp
     {
         return reader.take_ec();
     }
+
     if (extLen != reader.remaining_bytes())
     {
         return utils::make_error_code(utils::DecodeError::LengthOutOfRange);
     }
 
-    extensions = input; // keep the whole block, including the 2-byte length
-    reader.assert_done();
+    // keep the whole block, including the 2-byte length
+    extensions = input; 
     return reader.take_ec();
 }
 

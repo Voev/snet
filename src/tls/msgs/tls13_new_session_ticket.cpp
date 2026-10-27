@@ -21,29 +21,42 @@ std::error_code TLSv13NewSessionTicket::deserialize(nonstd::span<const uint8_t> 
     ticket = {};
     extsData = {};
 
-    utils::DataReader reader("TLSv1.3 NewSessionTicket", input);
+    utils::DataReader reader(input);
 
     ticketLifetime = reader.get_uint32_t();
     if (!reader.ok())
+    {
         return reader.take_ec();
+    }
 
     ticketAgeAdd = reader.get_uint32_t();
     if (!reader.ok())
+    {
         return reader.take_ec();
+    }
 
     ticketNonce = reader.get_span_length_and_value(1);
     if (!reader.ok())
+    {
         return reader.take_ec();
+    }
 
     ticket = reader.get_span_length_and_value(2);
     if (!reader.ok())
+    {
         return reader.take_ec();
+    }
     if (ticket.empty())
+    {
         return utils::make_error_code(utils::DecodeError::LengthOutOfRange);
+    }
 
     const std::uint16_t extTotal = reader.peek_uint16_t();
     if (!reader.ok())
+    {
         return reader.take_ec();
+    }
+
     if (extTotal != reader.remaining_bytes() - 2)
     {
         return utils::make_error_code(utils::DecodeError::LengthOutOfRange);
@@ -57,14 +70,12 @@ std::error_code TLSv13NewSessionTicket::deserialize(nonstd::span<const uint8_t> 
 std::size_t TLSv13NewSessionTicket::serialize(nonstd::span<uint8_t> output) const noexcept
 {
     // Precompute required size for strong guarantee.
-    const std::size_t need =
-        4 + 4 +
-        1 + ticketNonce.size() +
-        2 + ticket.size() +
-        extsData.size();
+    const std::size_t need = 4 + 4 + 1 + ticketNonce.size() + 2 + ticket.size() + extsData.size();
 
-    if (extsData.size() < 2) return kSerializationFailed;
-    if (output.size_bytes() < need) return kSerializationFailed;
+    if (extsData.size() < 2)
+        return kSerializationFailed;
+    if (output.size_bytes() < need)
+        return kSerializationFailed;
 
     std::size_t pos = 0;
 
@@ -79,21 +90,23 @@ std::size_t TLSv13NewSessionTicket::serialize(nonstd::span<uint8_t> output) cons
     output[pos++] = casket::get_byte<3>(ticketAgeAdd);
 
     {
-        const std::size_t n = AppendLengthAndValue(
-            output.subspan(pos), ticketNonce.data(), ticketNonce.size(), 1);
-        if (n == kSerializationFailed) return kSerializationFailed;
+        const std::size_t n = AppendLengthAndValue(output.subspan(pos), ticketNonce.data(), ticketNonce.size(), 1);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
         pos += n;
     }
 
     {
-        const std::size_t n = AppendLengthAndValue(
-            output.subspan(pos), ticket.data(), ticket.size(), 2);
-        if (n == kSerializationFailed) return kSerializationFailed;
+        const std::size_t n = AppendLengthAndValue(output.subspan(pos), ticket.data(), ticket.size(), 2);
+        if (n == kSerializationFailed)
+            return kSerializationFailed;
         pos += n;
     }
 
     if (!extsData.empty())
+    {
         std::memcpy(output.data() + pos, extsData.data(), extsData.size());
+    }
     pos += extsData.size();
 
     return pos;

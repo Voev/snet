@@ -86,7 +86,7 @@ public:
 
         groups_.clear();
 
-        utils::DataReader reader("SupportedGroups", input);
+        utils::DataReader reader(input);
 
         const std::uint16_t length = reader.get_uint16_t();
         if (!reader.ok())

@@ -99,7 +99,7 @@ public:
 
         formats_.clear();
 
-        utils::DataReader reader("ECPointFormats", input);
+        utils::DataReader reader(input);
 
         const std::uint8_t len = reader.get_byte();
         if (!reader.ok())

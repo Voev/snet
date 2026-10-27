@@ -17,7 +17,7 @@ std::error_code TLSv12CertificateRequest::deserialize(nonstd::span<const uint8_t
     supportedSigAlgs = {};
     certAuthorities = {};
 
-    utils::DataReader reader("TLSv1.2 CertificateRequest", input);
+    utils::DataReader reader(input);
 
     certTypes = reader.get_span(1, 1, 255);
     if (!reader.ok())

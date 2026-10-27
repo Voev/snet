@@ -113,12 +113,17 @@ public:
 
         modes_.clear();
 
-        utils::DataReader reader("PskKeyExchangeModes", input);
+        utils::DataReader reader(input);
         const std::uint8_t len = reader.get_byte();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
+
         if (len == 0 || len != reader.remaining_bytes())
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
 
         try
         {

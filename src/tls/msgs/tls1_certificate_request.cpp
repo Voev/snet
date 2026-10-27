@@ -17,7 +17,7 @@ std::error_code TLSv1CertificateRequest::deserialize(nonstd::span<const uint8_t>
     certTypes = {};
     certAuthorities = {};
 
-    utils::DataReader reader("CertificateRequest", input);
+    utils::DataReader reader(input);
 
     // certificate_types: <1-byte length> <certType>*  (1..255 entries)
     certTypes = reader.get_span(1, 1, 255);

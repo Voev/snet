@@ -109,7 +109,7 @@ public:
             return utils::DecodeError::None;
         }
 
-        utils::DataReader reader("SNI", input);
+        utils::DataReader reader(input);
 
         const std::uint16_t listLen = reader.get_uint16_t();
         if (!reader.ok())

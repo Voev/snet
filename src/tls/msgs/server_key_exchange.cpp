@@ -54,7 +54,7 @@ size_t EcdheParams::serialize(nonstd::span<uint8_t> output)
 
 void ServerKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
-    utils::DataReader reader("ServerKeyExchange", input);
+    utils::DataReader reader(input);
 
     casket::ThrowIfTrue(metaInfo.cipherSuite == nullptr, "undefined cipher suite");
     auto kex = CipherSuiteGetKeyExchange(metaInfo.cipherSuite);

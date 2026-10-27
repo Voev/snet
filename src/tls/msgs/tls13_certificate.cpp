@@ -11,18 +11,10 @@
 
 #include <snet/tls/session.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
-
-namespace
-{
-
-inline std::error_code ec(utils::DecodeError e) noexcept
-{
-    return utils::make_error_code(e);
-}
-
-} // namespace
 
 std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
@@ -35,7 +27,7 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
         e.cert = nullptr;
     }
 
-    utils::DataReader reader("TLSv1.3 Certificate", input);
+    utils::DataReader reader(input);
 
     requestContext = reader.get_span(1, 0, 255);
     if (!reader.ok())
@@ -45,12 +37,12 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
     if (!reader.ok())
         return reader.take_ec();
     if (total != reader.remaining_bytes())
-        return ec(utils::DecodeError::LengthOutOfRange);
+        return make_error_code(DecodeError::LengthOutOfRange);
 
     while (reader.has_remaining())
     {
         if (entryCount == kMaxCertChain)
-            return ec(utils::DecodeError::LengthOutOfRange);
+            return make_error_code(DecodeError::LengthOutOfRange);
 
         Entry& entry = entryList[entryCount];
 
@@ -63,7 +55,7 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
         if (entry.certData.empty())
         {
             entryCount = 0;
-            return ec(utils::DecodeError::LengthOutOfRange);
+            return make_error_code(DecodeError::LengthOutOfRange);
         }
 
         const std::uint16_t extTotal = reader.peek_uint16_t();
@@ -75,7 +67,7 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
         if (static_cast<std::size_t>(extTotal) + 2 > reader.remaining_bytes())
         {
             entryCount = 0;
-            return ec(utils::DecodeError::LengthOutOfRange);
+            return make_error_code(DecodeError::LengthOutOfRange);
         }
         entry.extsData = reader.get_span_fixed(2 + static_cast<std::size_t>(extTotal));
         if (!reader.ok())

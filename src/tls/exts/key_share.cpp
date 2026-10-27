@@ -70,12 +70,17 @@ utils::DecodeError KeyShareClientHello::deserialize(nonstd::span<const uint8_t> 
 {
     clientKeyShares_.clear();
 
-    utils::DataReader reader("ClientHello KeyShare", input);
+    utils::DataReader reader(input);
     const std::uint16_t total = reader.get_uint16_t();
     if (!reader.ok())
+    {
         return reader.take_error();
+    }
+
     if (total != reader.remaining_bytes())
+    {
         return utils::DecodeError::LengthOutOfRange;
+    }
 
     // Upper bound on entry count: each entry needs >= 4 bytes (group + len).
     try
@@ -172,10 +177,12 @@ void KeyShareServerHello::offeredGroups(std::vector<crypto::GroupParams>& out) c
 
 utils::DecodeError KeyShareServerHello::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    utils::DataReader reader("ServerHello KeyShare", input);
+    utils::DataReader reader(input);
     const auto err = serverKeyShare_.deserialize(reader);
     if (err != utils::DecodeError::None)
+    {
         return err;
+    }
     reader.assert_done();
     return reader.take_error();
 }
@@ -188,8 +195,11 @@ void KeyShareHelloRetryRequest::offeredGroups(std::vector<crypto::GroupParams>&)
 utils::DecodeError KeyShareHelloRetryRequest::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
     if (input.size() != 2)
+    {
         return utils::DecodeError::LengthOutOfRange;
-    utils::DataReader reader("HRR KeyShare", input);
+    }
+
+    utils::DataReader reader(input);
     selectedGroup_ = static_cast<crypto::GroupParams>(reader.get_uint16_t());
     return reader.take_error();
 }

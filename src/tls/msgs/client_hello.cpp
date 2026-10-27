@@ -10,7 +10,7 @@ namespace snet::tls
 
 std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    utils::DataReader reader("Client Hello", input);
+    utils::DataReader reader(input);
 
     // version: 2 bytes, mandatory
     version = ProtocolVersion(reader.get_uint16_t());

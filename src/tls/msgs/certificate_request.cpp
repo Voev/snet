@@ -1,18 +1,10 @@
 #include <snet/tls/msgs/certificate_request.hpp>
 #include <snet/utils/decode_error.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
-
-namespace
-{
-
-inline std::error_code ec(utils::DecodeError e) noexcept
-{
-    return utils::make_error_code(e);
-}
-
-} // namespace
 
 std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
@@ -22,7 +14,7 @@ std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> inpu
         if (const auto err = msg.deserialize(input); err)
             return err;
         message = std::move(msg);
-        return {};
+        return make_error_code(DecodeError::None);
     }
     else if (metaInfo.version == ProtocolVersion::TLSv1_2)
     {
@@ -30,7 +22,7 @@ std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> inpu
         if (const auto err = msg.deserialize(input); err)
             return err;
         message = std::move(msg);
-        return {};
+        return make_error_code(DecodeError::None);
     }
     else
     {
@@ -38,7 +30,7 @@ std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> inpu
         if (const auto err = msg.deserialize(input); err)
             return err;
         message = std::move(msg);
-        return {};
+        return make_error_code(DecodeError::None);
     }
 }
 

@@ -92,15 +92,23 @@ public:
 
         schemes_.clear();
 
-        utils::DataReader reader("CertSignatureAlgorithms", input);
+        utils::DataReader reader(input);
 
         const std::uint16_t len = reader.get_uint16_t();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
+
         if (len == 0 || (len & 1u) != 0)
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
+
         if (len != reader.remaining_bytes())
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
 
         const std::size_t count = len / 2;
         try

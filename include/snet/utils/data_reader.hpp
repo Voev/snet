@@ -17,10 +17,9 @@ namespace snet::utils
 class DataReader final
 {
 public:
-    DataReader(const char* type, nonstd::span<const uint8_t> buf_in)
-        : m_typename(type)
-        , m_buf(buf_in)
-        , m_offset(0)
+    DataReader(nonstd::span<const uint8_t> buffer)
+        : buffer_(buffer)
+        , offset_(0)
         , error_(DecodeError::None)
     {
     }
@@ -74,17 +73,17 @@ public:
 
     size_t read_so_far() const noexcept
     {
-        return m_offset;
+        return offset_;
     }
 
     size_t remaining_bytes() const noexcept
     {
-        return m_buf.size() - m_offset;
+        return buffer_.size() - offset_;
     }
 
     bool has_remaining() const noexcept
     {
-        return m_offset < m_buf.size();
+        return offset_ < buffer_.size();
     }
 
     void discard_next(size_t n) noexcept
@@ -93,7 +92,7 @@ public:
         {
             return;
         }
-        m_offset += n;
+        offset_ += n;
     }
 
     uint8_t get_byte() noexcept
@@ -102,7 +101,7 @@ public:
         {
             return 0;
         }
-        return m_buf[m_offset++];
+        return buffer_[offset_++];
     }
 
     uint16_t get_uint16_t()
@@ -111,8 +110,8 @@ public:
         {
             return 0;
         }
-        uint16_t result = casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
-        m_offset += 2;
+        uint16_t result = casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
+        offset_ += 2;
         return result;
     }
 
@@ -122,7 +121,7 @@ public:
         {
             return 0;
         }
-        return casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
+        return casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
     }
 
     uint32_t get_uint24_t() noexcept
@@ -131,8 +130,8 @@ public:
         {
             return 0;
         }
-        uint32_t result = casket::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
-        m_offset += 3;
+        uint32_t result = casket::make_uint32(0, buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2]);
+        offset_ += 3;
         return result;
     }
 
@@ -143,8 +142,8 @@ public:
             return 0;
         }
         uint32_t result =
-            casket::make_uint32(m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2], m_buf[m_offset + 3]);
-        m_offset += 4;
+            casket::make_uint32(buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2], buffer_[offset_ + 3]);
+        offset_ += 4;
         return result;
     }
 
@@ -152,15 +151,15 @@ public:
     {
         if (!at_least(n))
             return {};
-        auto s = nonstd::span<const uint8_t>(m_buf.data() + m_offset, n);
-        m_offset += n;
+        auto s = nonstd::span<const uint8_t>(buffer_.data() + offset_, n);
+        offset_ += n;
         return s;
     }
 
     nonstd::span<const uint8_t> get_span_remaining() noexcept
     {
-        auto s = nonstd::span<const uint8_t>(m_buf.data() + m_offset, m_buf.size() - m_offset);
-        m_offset = m_buf.size();
+        auto s = nonstd::span<const uint8_t>(buffer_.data() + offset_, buffer_.size() - offset_);
+        offset_ = buffer_.size();
         return s;
     }
 
@@ -181,8 +180,8 @@ public:
         const size_t n = get_length_field(len_bytes, min_b, max_b);
         if (error_ != DecodeError::None)
             return {};
-        auto s = nonstd::string_view(reinterpret_cast<const char*>(m_buf.data() + m_offset), n);
-        m_offset += n;
+        auto s = nonstd::string_view(reinterpret_cast<const char*>(buffer_.data() + offset_), n);
+        offset_ += n;
         return s;
     }
 
@@ -192,8 +191,8 @@ public:
             return false;
         if (!resize_guarded(out, n))
             return false;
-        std::memcpy(out.data(), m_buf.data() + m_offset, n);
-        m_offset += n;
+        std::memcpy(out.data(), buffer_.data() + offset_, n);
+        offset_ += n;
         return true;
     }
 
@@ -213,12 +212,12 @@ public:
         if (!resize_guarded(out, num_elems))
             return false;
 
-        const uint8_t* p = m_buf.data() + m_offset;
+        const uint8_t* p = buffer_.data() + offset_;
         for (size_t i = 0; i < num_elems; ++i, p += sizeof(T))
         {
             out[i] = casket::load_be<T>(p);
         }
-        m_offset += num_elems * sizeof(T);
+        offset_ += num_elems * sizeof(T);
         return true;
     }
 
@@ -254,19 +253,19 @@ private:
         switch (len_bytes)
         {
         case 1:
-            n = m_buf[m_offset];
+            n = buffer_[offset_];
             break;
         case 2:
-            n = casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
+            n = casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
             break;
         case 3:
-            n = casket::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
+            n = casket::make_uint32(0, buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2]);
             break;
         default:
             set_error(DecodeError::BadLengthSize);
             return 0;
         }
-        m_offset += len_bytes;
+        offset_ += len_bytes;
         if (n < min_b || n > max_b)
         {
             set_error(DecodeError::LengthOutOfRange);
@@ -315,9 +314,8 @@ private:
         return remaining_bytes() >= n;
     }
 
-    const char* m_typename;
-    nonstd::span<const uint8_t> m_buf;
-    size_t m_offset;
+    nonstd::span<const uint8_t> buffer_;
+    size_t offset_;
     DecodeError error_;
 };
 

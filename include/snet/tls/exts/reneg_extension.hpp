@@ -89,14 +89,18 @@ public:
 
         renegData_.clear();
 
-        utils::DataReader reader("renegotiation_extension", input);
+        utils::DataReader reader(input);
         const auto data = reader.get_span_length_and_value(1);
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
 
         reader.assert_done();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
 
         try
         {

@@ -8,6 +8,8 @@
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/decode_error.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
 
@@ -27,11 +29,6 @@ inline bool isHelloRetryRequestRandom(nonstd::span<const std::uint8_t> r) noexce
            std::equal(kHelloRetryRequestMarker.begin(), kHelloRetryRequestMarker.end(), r.begin());
 }
 
-inline std::error_code ec(utils::DecodeError e) noexcept
-{
-    return utils::make_error_code(e);
-}
-
 } // namespace
 
 std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noexcept
@@ -44,7 +41,7 @@ std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noex
     extensions = {};
     isHelloRetryRequest = false;
 
-    utils::DataReader reader("Server Hello", input);
+    utils::DataReader reader(input);
 
     version = ProtocolVersion(reader.get_uint16_t());
     if (!reader.ok())
@@ -87,7 +84,7 @@ std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noex
         }
         if (extensionsLength != reader.remaining_bytes() - 2)
         {
-            return ec(utils::DecodeError::LengthOutOfRange);
+            return make_error_code(DecodeError::LengthOutOfRange);
         }
         extensions = reader.get_span_fixed(2 + extensionsLength);
         if (!reader.ok())

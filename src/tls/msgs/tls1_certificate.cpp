@@ -9,18 +9,10 @@
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
-
-namespace
-{
-
-inline std::error_code ec(utils::DecodeError e) noexcept
-{
-    return utils::make_error_code(e);
-}
-
-} // namespace
 
 std::error_code TLSv1Certificate::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
@@ -31,19 +23,19 @@ std::error_code TLSv1Certificate::deserialize(nonstd::span<const uint8_t> input)
         e.cert = nullptr;
     }
 
-    utils::DataReader reader("Certificate", input);
+    utils::DataReader reader(input);
 
     const std::uint32_t total = reader.get_uint24_t();
     if (!reader.ok())
         return reader.take_ec();
     if (total != reader.remaining_bytes())
-        return ec(utils::DecodeError::LengthOutOfRange);
+        return make_error_code(DecodeError::LengthOutOfRange);
 
     while (reader.has_remaining())
     {
         if (entryCount == kMaxCertChain)
         {
-            return ec(utils::DecodeError::LengthOutOfRange); // too many certificates
+            return make_error_code(DecodeError::LengthOutOfRange); // too many certificates
         }
 
         const auto certData = reader.get_span_length_and_value(3);
@@ -55,7 +47,7 @@ std::error_code TLSv1Certificate::deserialize(nonstd::span<const uint8_t> input)
         if (certData.empty())
         {
             entryCount = 0;
-            return ec(utils::DecodeError::LengthOutOfRange);
+            return make_error_code(DecodeError::LengthOutOfRange);
         }
 
         entryList[entryCount].certData = certData;

@@ -12,7 +12,7 @@ HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input
         throw std::runtime_error("Input buffer too small for handshake header");
     }
 
-    utils::DataReader reader("Handshake Message", input);
+    utils::DataReader reader(input);
 
     const auto messageType = static_cast<HandshakeType>(reader.get_byte());
     const auto messageLength = reader.get_uint24_t();

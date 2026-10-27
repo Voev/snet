@@ -26,7 +26,7 @@ TEST_P(EncryptedExtensionsTest, DeserializeSerialize)
     size_t serializedLength = 0;
 
     EncryptedExtensions encryptedExtensions;
-    ASSERT_EQ(encryptedExtensions.deserialize(param), make_error_code(DecodeError::None));
+    ASSERT_EQ(encryptedExtensions.deserialize(param), snet::utils::make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     ASSERT_NO_THROW(session.processEncryptedExtensions(encryptedExtensions));

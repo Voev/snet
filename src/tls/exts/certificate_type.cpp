@@ -19,21 +19,28 @@ namespace detail
 utils::DecodeError parseCertificateTypes(Side side, nonstd::span<const uint8_t> input,
                                          std::vector<CertificateType>& out) noexcept
 {
-    utils::DataReader reader("certificate_type extension", input);
+    utils::DataReader reader(input);
 
     if (side == Side::Client)
     {
         const auto typeBytes = reader.get_span_length_and_value(1);
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
+
         if (reader.remaining_bytes() != typeBytes.size())
+        {
             return utils::DecodeError::LengthOutOfRange;
+        }
 
         try
         {
             out.reserve(typeBytes.size());
             for (auto b : typeBytes)
+            {
                 out.push_back(static_cast<CertificateType>(b));
+            }
         }
         catch (...)
         {
@@ -45,7 +52,9 @@ utils::DecodeError parseCertificateTypes(Side side, nonstd::span<const uint8_t> 
     {
         const auto b = reader.get_byte();
         if (!reader.ok())
+        {
             return reader.take_error();
+        }
 
         try
         {

@@ -18,7 +18,7 @@ std::error_code TLSv1NewSessionTicket::deserialize(nonstd::span<const uint8_t> i
     ticketLifetime = 0;
     ticket = {};
 
-    utils::DataReader reader("TLSv1.2 NewSessionTicket", input);
+    utils::DataReader reader(input);
 
     ticketLifetime = reader.get_uint32_t();
     if (!reader.ok())

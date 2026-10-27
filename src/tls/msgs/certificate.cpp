@@ -2,6 +2,8 @@
 
 #include <snet/utils/decode_error.hpp>
 
+using namespace snet::utils;
+
 namespace snet::tls
 {
 
@@ -13,7 +15,7 @@ std::error_code Certificate::deserialize(nonstd::span<const uint8_t> input, cons
         if (const auto err = msg.deserialize(input); err)
             return err;
         message = std::move(msg);
-        return {};
+        return make_error_code(DecodeError::None);
     }
     else
     {
@@ -22,7 +24,7 @@ std::error_code Certificate::deserialize(nonstd::span<const uint8_t> input, cons
         if (const auto err = msg.deserialize(input); err)
             return err;
         message = std::move(msg);
-        return {};
+        return make_error_code(DecodeError::None);
     }
 }
 

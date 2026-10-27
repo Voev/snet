@@ -111,7 +111,7 @@ public:
     {
         versions_.clear();
 
-        utils::DataReader reader("supported_versions", input);
+        utils::DataReader reader(input);
 
         if (side == Side::Server)
         {

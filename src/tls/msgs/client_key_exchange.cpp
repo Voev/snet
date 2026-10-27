@@ -41,7 +41,7 @@ size_t ClientEcdhPublic::serialize(nonstd::span<uint8_t> output) const
 
 void ClientKeyExchange::parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
 {
-    utils::DataReader reader("ClientKeyExchange", input);
+    utils::DataReader reader(input);
 
     casket::ThrowIfFalse(metaInfo.cipherSuite, "Cipher suite not setted");
 

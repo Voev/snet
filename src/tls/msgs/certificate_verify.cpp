@@ -14,17 +14,13 @@
 #include <snet/utils/decode_error.hpp>
 
 using namespace snet::crypto;
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
 namespace
 {
-
-inline std::error_code ec(utils::DecodeError e) noexcept
-{
-    return utils::make_error_code(e);
-}
 
 constexpr std::size_t kTls13TbsStartSize = 64;
 constexpr std::size_t kTls13TbsLabelSize = 34;
@@ -69,27 +65,28 @@ inline nonstd::span<std::uint8_t> constructSigningData(std::int8_t sideIndex,
 inline std::error_code readScheme(utils::DataReader& reader, crypto::SignatureScheme& scheme) noexcept
 {
     scheme = crypto::SignatureScheme(reader.get_uint16_t());
-    return reader.ok() ? std::error_code{} : reader.take_ec();
+    return reader.take_ec();
 }
 
 } // namespace
 
-std::error_code CertificateVerify::deserialize(nonstd::span<const uint8_t> input,
-                                               const MetaInfo& metaInfo) noexcept
+std::error_code CertificateVerify::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
     scheme = crypto::SignatureScheme(0);
     signature = {};
 
-    utils::DataReader reader("CertificateVerify", input);
+    utils::DataReader reader(input);
 
     if (metaInfo.version >= ProtocolVersion::TLSv1_2)
     {
         scheme = crypto::SignatureScheme(reader.get_uint16_t());
-        if (!reader.ok()) return reader.take_ec();
+        if (!reader.ok())
+            return reader.take_ec();
     }
 
     signature = reader.get_span_length_and_value(2);
-    if (!reader.ok()) return reader.take_ec();
+    if (!reader.ok())
+        return reader.take_ec();
 
     reader.assert_done();
     return reader.take_ec();
