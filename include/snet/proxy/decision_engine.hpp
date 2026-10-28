@@ -4,13 +4,13 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <string_view>
+#include <casket/nonstd/string_view.hpp>
 #include <unordered_map>
 #include <vector>
 
-#include "decision_cache.hpp"
-#include "proxy_types.hpp"
-#include "tls_probe_connection.hpp"
+#include <snet/probe/i_probe_client.hpp>
+#include <snet/proxy/decision_cache.hpp>
+#include <snet/proxy/proxy_types.hpp>
 
 #include <casket/log/log.hpp>
 
@@ -19,7 +19,7 @@ namespace snet::proxy
 
 /// Decision policy: maps SNI and certificate chain to a verdict.
 /// Implemented in main as a lambda, registered once.
-using InspectionPolicy = std::function<InspectionDecision(std::string_view sni, const CertificateChain& chain)>;
+using InspectionPolicy = std::function<InspectionDecision(nonstd::string_view sni, const CertificateChain& chain)>;
 
 /// Decision engine: cache + probe + deduplication.
 ///
@@ -34,10 +34,10 @@ using InspectionPolicy = std::function<InspectionDecision(std::string_view sni, 
 class TlsDecisionEngine
 {
 public:
-    /// @param[in] probe  Probe connection used to fetch the certificate chain.
+    /// @param[in] probe  Probe client connection used to fetch the certificate chain.
     /// @param[in] cache  Decision cache keyed by SNI.
     /// @param[in] policy Verdict policy applied on probe success.
-    TlsDecisionEngine(TlsProbeConnection& probe, DecisionCache& cache, InspectionPolicy policy)
+    TlsDecisionEngine(probe::IProbeClient& probe, DecisionCache& cache, InspectionPolicy policy)
         : probe_(probe)
         , cache_(cache)
         , policy_(std::move(policy))
@@ -53,7 +53,7 @@ public:
     /// @param[in] serverIP   Upstream server address for the probe.
     /// @param[in] serverPort Upstream server port for the probe.
     /// @param[in] cb         Completion callback receiving the decision.
-    void request(std::string sni, snet::layers::IPAddress serverIP, uint16_t serverPort,
+    void request(std::string sni, const snet::layers::IPAddress& serverIP, uint16_t serverPort,
                  std::function<void(InspectionDecision)> cb)
     {
         // 1. Cache.
@@ -83,12 +83,10 @@ public:
 
         // 3. Start probe.
         std::cout << "Probe server: " << serverIP << ":" << serverPort << "[" << sni << "]" << std::endl;
-        TlsProbeConnection::Config cfg{};
         probe_.asyncProbe(sni,
                           serverIP,
                           serverPort,
-                          cfg,
-                          [this, inflight](TlsProbeResult r)
+                          [this, inflight](probe::ProbeResult r)
                           {
                               onProbeComplete(inflight, std::move(r));
                           });
@@ -105,7 +103,7 @@ private:
     /// State for a single in-flight probe keyed by SNI.
     struct InFlight
     {
-        std::string sni; ///< SNI this probe was started for.
+        std::string sni;                                              ///< SNI this probe was started for.
         std::vector<std::function<void(InspectionDecision)>> waiters; ///< Callbacks awaiting the verdict.
     };
 
@@ -114,18 +112,17 @@ private:
     ///
     /// @param[in] inflight In-flight entry the probe belongs to.
     /// @param[in] result   Probe result (chain on success, error otherwise).
-    void onProbeComplete(const std::shared_ptr<InFlight>& inflight, TlsProbeResult result)
+    void onProbeComplete(const std::shared_ptr<InFlight>& inflight, probe::ProbeResult result)
     {
         InspectionDecision decision = InspectionDecision::Bypass;
 
-        if (result.status == TlsProbeResult::Status::Ok)
+        if (result.status == probe::ProbeResult::Status::Ok)
         {
             decision = policy_ ? policy_(inflight->sni, result.chain) : InspectionDecision::Bypass;
         }
         else
         {
-            CSK_LOG_WARNING(
-                "TlsProbe for %s failed: %s, defaulting to Bypass", inflight->sni.c_str(), result.error.c_str());
+            CSK_LOG_WARNING("probe for %s failed: %s, defaulting to Bypass", inflight->sni.c_str());
         }
 
         cache_.store(inflight->sni, decision);
@@ -146,11 +143,11 @@ private:
             cb(decision);
     }
 
-    TlsProbeConnection& probe_; ///< Probe connection (not owned).
-    DecisionCache& cache_;      ///< Decision cache (not owned).
-    InspectionPolicy policy_;   ///< Verdict policy.
+    probe::IProbeClient& probe_; ///< Probe connection (not owned).
+    DecisionCache& cache_;    ///< Decision cache (not owned).
+    InspectionPolicy policy_; ///< Verdict policy.
 
-    mutable std::mutex mtx_; ///< Guards inFlight_.
+    mutable std::mutex mtx_;                                              ///< Guards inFlight_.
     std::unordered_map<std::string, std::shared_ptr<InFlight>> inFlight_; ///< Active probes keyed by SNI.
 };
 

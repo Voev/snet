@@ -51,7 +51,7 @@ public:
 
     enum SessionFlags : uint32_t
     {
-        FlagNone      = 0,
+        FlagNone = 0,
         FlagProtected = 1u << 0,
     };
 
@@ -105,6 +105,16 @@ public:
         {
             pipeline_->setSessionManager(this);
         }
+    }
+
+    Pipeline* getPipeline() noexcept
+    {
+        return pipeline_.get();
+    }
+
+    const Pipeline* getPipeline() const noexcept
+    {
+        return pipeline_.get();
     }
 
     void setFactoryRegistry(std::unique_ptr<FactoryRegistry> fRegistry)
@@ -203,12 +213,14 @@ public:
 
     void setSessionFlag(Session* session, uint32_t flag) noexcept
     {
-        if (session) session->flags |= flag;
+        if (session)
+            session->flags |= flag;
     }
 
     void clearSessionFlag(Session* session, uint32_t flag) noexcept
     {
-        if (session) session->flags &= ~flag;
+        if (session)
+            session->flags &= ~flag;
     }
 
     bool hasSessionFlag(const Session* session, uint32_t flag) const noexcept

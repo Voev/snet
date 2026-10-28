@@ -22,18 +22,19 @@ namespace snet::proxy
 /// downstream and prepares the pair. Upstream opening is initiated later,
 /// from the consumer, after the decision (bypass/mitm) is made.
 template <typename SessionManagerType>
-class TransparentProxyAcceptor final : public snet::tcp::IConnectionAcceptor<SessionManagerType>
+class ProxyAcceptor final : public snet::tcp::IConnectionAcceptor<SessionManagerType>
 {
 public:
-    using Session = typename SessionManagerType::Session; ///< Session type of the manager.
-    using TcpConnection = snet::tcp::TcpConnection; ///< TCP connection type.
+    using Session = typename SessionManagerType::Session;                      ///< Session type of the manager.
+    using TcpConnection = snet::tcp::TcpConnection;                            ///< TCP connection type.
     using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>; ///< Transmit handler type.
 
     /// @param[in] mgr Session manager owning contexts and sessions.
     /// @param[in] tx  Transmit handler used to pump outgoing packets.
-    TransparentProxyAcceptor(SessionManagerType* mgr, TransmitHandler* tx)
+    ProxyAcceptor(SessionManagerType* mgr, TransmitHandler* tx, layers::IPAddress localIP)
         : mgr_(mgr)
         , tx_(tx)
+        , localIP_(localIP)
         , rng_(std::random_device{}())
     {
     }
@@ -90,7 +91,7 @@ public:
         ctx->serverPort = pair.serverPort;
 
         pair.upstreamKey = snet::layers::hash5Tuple(pair.serverIP,
-                                                    pair.clientIP,
+                                                    localIP_,
                                                     pair.serverPort,
                                                     pair.clientPort,
                                                     snet::layers::IPProto::Code::TCP,
@@ -100,13 +101,13 @@ public:
         ctx->upstreamKey = pair.upstreamKey;
 
         CSK_LOG_WARNING("Acceptor: downstream accepted %s:%u -> %s:%u "
-                      "dk=%x uk=%x",
-                      pair.clientIP.toString().c_str(),
-                      pair.clientPort,
-                      pair.serverIP.toString().c_str(),
-                      pair.serverPort,
-                      pair.downstreamKey,
-                      pair.upstreamKey);
+                        "dk=%x uk=%x",
+                        pair.clientIP.toString().c_str(),
+                        pair.clientPort,
+                        pair.serverIP.toString().c_str(),
+                        pair.serverPort,
+                        pair.downstreamKey,
+                        pair.upstreamKey);
     }
 
     /// Open the upstream connection. Called by the consumer after a decision.
@@ -163,10 +164,10 @@ public:
 
         // From the upstream session's perspective, local = server,
         // remote = client.
-        upConn->localIP = pair.serverIP;
-        upConn->localPort = pair.serverPort;
-        upConn->remoteIP = pair.clientIP;
-        upConn->remotePort = pair.clientPort;
+        upConn->localIP = localIP_;
+        upConn->localPort = pair.clientPort;
+        upConn->remoteIP = pair.serverIP;
+        upConn->remotePort = pair.serverPort;
 
         // Active open.
         const uint32_t iss = nextIss();
@@ -201,9 +202,16 @@ private:
         return dist(rng_);
     }
 
+    uint16_t nextEphemeralPort()
+    {
+        std::uniform_int_distribution<uint16_t> d(40000, 60000);
+        return d(rng_);
+    }
+
     SessionManagerType* mgr_; ///< Session manager (not owned).
     TransmitHandler* tx_;     ///< Transmit handler (not owned).
-    std::mt19937 rng_;        ///< RNG for initial sequence numbers.
+    layers::IPAddress localIP_;
+    std::mt19937 rng_; ///< RNG for initial sequence numbers.
 };
 
 } // namespace snet::proxy

@@ -1,0 +1,49 @@
+#pragma once
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+
+#include <snet/probe/probe_owner.hpp>
+
+namespace snet::probe
+{
+
+class ProbeHandle : public std::enable_shared_from_this<ProbeHandle>
+{
+public:
+    struct Config
+    {
+        std::chrono::milliseconds connectTimeout{1000};
+        std::chrono::milliseconds handshakeTimeout{2000};
+    };
+
+    ProbeHandle(IProbeOwner* owner, void* session, uint32_t key, Config cfg);
+
+    ~ProbeHandle();
+
+    ProbeHandle(const ProbeHandle&)            = delete;
+    ProbeHandle& operator=(const ProbeHandle&) = delete;
+
+    void complete() noexcept;
+    void abort() noexcept;
+    void armTimers();
+
+private:
+    IProbeOwner*             owner_{nullptr};
+    void*                    session_{nullptr};
+    uint32_t                 key_{0};
+    Config                   cfg_{};
+
+    std::atomic<bool>        completed_{false};
+    std::thread              watchdog_;
+    std::condition_variable  cv_;
+    std::mutex               mtx_;
+    bool                     stop_{false};
+};
+
+} // namespace snet::probe

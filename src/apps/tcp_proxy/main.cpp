@@ -29,8 +29,12 @@
 
 #include <snet/proxy/proxy_context_factory.hpp>
 #include <snet/proxy/proxy_context.hpp>
-#include <snet/proxy/transparent_proxy_acceptor.hpp>
-#include <snet/proxy/transparent_proxy_consumer.hpp>
+#include <snet/proxy/proxy_acceptor.hpp>
+#include <snet/proxy/proxy_consumer.hpp>
+
+#include <snet/probe.hpp>
+#include <snet/probe/unified_acceptor.hpp>
+#include <snet/probe/unified_consumer.hpp>
 
 #include <snet/utils/print_hex.hpp>
 
@@ -39,10 +43,11 @@ using namespace casket::opt;
 using namespace snet::layers;
 using namespace snet::tcp;
 using namespace snet::proxy;
+using namespace snet::probe;
 
 namespace fs = std::filesystem;
 
-using SessionContexts = std::tuple<TcpConnection, ProxyContext>;
+using SessionContexts = std::tuple<TcpConnection, ProxyContext, ProbeContext>;
 using SessionManager = snet::session::SessionManager<uint32_t, SessionContexts>;
 
 class CmdLineProcessor final
@@ -192,9 +197,6 @@ int main(int argc, char* argv[])
 
         driver->start();
         std::cout << "listening... (Ctrl+C to stop)\n";
-        auto rxPool = std::make_unique<RxRingPool>(1024);
-        auto txPool = std::make_unique<TxRingPool>(1024);
-
         snet::arp::ArpTransport arpTransport(*driver);
         snet::arp::ArpResolver arpResolver(arpTransport);
         auto networkSink = std::make_unique<NetworkSink>(*driver, arpResolver);
@@ -207,68 +209,11 @@ int main(int argc, char* argv[])
         auto ip1 = snet::layers::IPv4Address::fromString("10.0.1.254").value();
         arpResolver.addLocal(d1->id(), ip1, d1->mac());
 
-        networkSink->addSubnet(d0->id(),
-                        IPv4Address::fromString("10.0.0.0").value(),
-                        IPv4Address::fromString("255.255.255.0").value());
+        networkSink->addSubnet(
+            d0->id(), IPv4Address::fromString("10.0.0.0").value(), IPv4Address::fromString("255.255.255.0").value());
 
-        networkSink->addSubnet(d1->id(),
-                        IPv4Address::fromString("10.0.1.0").value(),
-                        IPv4Address::fromString("255.255.255.0").value());
-
-        auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
-        fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
-        fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
-        mgr.setFactoryRegistry(std::move(fRegistry));
-
-        TcpTransmitHandlerConfig txCfg;
-        txCfg.packetHeadroom = 14;
-        txCfg.maxPacketSize = 65536;
-        txCfg.ttl = 64;
-
-        auto threadPool = std::make_shared<casket::thread::ThreadPool>(2);
-        auto submitFn = [threadPool](std::function<void()> task)
-        {
-            threadPool->addTask(std::move(task));
-        };
-
-        snet::proxy::TlsProbeConnection probe{submitFn};
-        snet::proxy::DecisionCache cache{snet::proxy::DecisionCache::Config{}};
-
-        auto policy = [](std::string_view sni,
-                         const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
-        {
-            if (sni == "test")
-                return snet::proxy::InspectionDecision::Block;
-            if (sni == "inspect.example.com")
-                return snet::proxy::InspectionDecision::Mitm;
-            (void)chain;
-            return snet::proxy::InspectionDecision::Bypass;
-        };
-
-        snet::proxy::TlsDecisionEngine engine{probe, cache, policy};
-
-        auto sessionTx = std::make_shared<TcpTransmitHandler<SessionManager>>(networkSink.get(), txCfg);
-
-        auto acceptor = std::make_unique<TransparentProxyAcceptor<SessionManager>>(&mgr, sessionTx.get());
-
-        auto consumer = std::make_shared<snet::proxy::TransparentProxyConsumer<SessionManager>>(
-            &mgr, sessionTx.get(), &engine, acceptor.get());
-
-        auto sessionRx = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(acceptor.get(), consumer.get());
-
-        auto sessionPipeline = std::make_unique<SessionManager::Pipeline>();
-
-        sessionPipeline->add(sessionRx);
-        sessionPipeline->add(sessionTx);
-
-        mgr.setPipeline(std::move(sessionPipeline));
-
-        /// End of session manager initialization
-
-        snet::pp::PacketPipeline packetPipeline;
-
-        packetPipeline.addStage(std::make_unique<snet::pp::L2FilterStage>(*driver));
-        packetPipeline.addStage(std::make_unique<snet::pp::ArpInterceptorStage>(arpResolver));
+        networkSink->addSubnet(
+            d1->id(), IPv4Address::fromString("10.0.1.0").value(), IPv4Address::fromString("255.255.255.0").value());
 
         auto routing = std::make_unique<snet::pp::RoutingStage>();
         if (driver->deviceCount() >= 2)
@@ -277,6 +222,79 @@ int main(int argc, char* argv[])
             routing->setLocal(d0->id(), ip0);
             routing->setLocal(d1->id(), ip1);
         }
+
+        /**
+         * Pools initialization.
+         */
+        auto rxPool = std::make_unique<RxRingPool>(1024);
+        auto txPool = std::make_unique<TxRingPool>(1024);
+
+        auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
+        fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
+        fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
+        fRegistry->addFactory<ProbeContextFactory<SessionManager>>();
+        mgr.setFactoryRegistry(std::move(fRegistry));
+
+        /**
+         * TX handler for session initialization.
+         */
+        TcpTransmitHandlerConfig txCfg;
+        txCfg.packetHeadroom = 14;
+        txCfg.maxPacketSize = 65536;
+        txCfg.ttl = 64;
+
+        auto sessionTx = std::make_shared<TcpTransmitHandler<SessionManager>>(networkSink.get(), txCfg);
+        
+        /**
+         * Probe connection initialization.
+         */
+        snet::proxy::DecisionCache cache{snet::proxy::DecisionCache::Config{}};
+        auto policy = [](std::string_view sni,
+                         const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
+        {
+            (void)sni;
+            (void)chain;
+            return snet::proxy::InspectionDecision::Bypass;
+        };
+
+        ProbeConnector<SessionManager> connector(mgr, *sessionTx.get());
+        ProbeClient<SessionManager> probeClient(connector, ip1);
+        snet::proxy::TlsDecisionEngine engine{probeClient, cache, policy};
+
+        /**
+         * RX handler for session initialization.
+         */
+        
+        auto clientAcceptor = std::make_shared<ProxyAcceptor<SessionManager>>(&mgr, sessionTx.get(), ip1);
+        auto clientConsumer = std::make_shared<ProxyConsumer<SessionManager>>(
+            &mgr, sessionTx.get(), &engine, clientAcceptor.get());
+
+        ProbeAcceptorConfig accCfg;
+        accCfg.preferredVersion = snet::tls::ProtocolVersion::TLSv1_2;
+        auto probeAcceptor = std::make_shared<ProbeAcceptor<SessionManager>>(mgr, *sessionTx, accCfg);
+        auto probeConsumer = std::make_shared<ProbeStreamConsumer<SessionManager>>(mgr);
+
+        auto unifiedAcceptor = std::make_shared<UnifiedAcceptor<SessionManager>>(mgr, *clientAcceptor, *probeAcceptor);
+        auto unifiedConsumer = std::make_shared<UnifiedConsumer<SessionManager>>(mgr, *clientConsumer, *probeConsumer);
+
+        auto sessionRx = std::make_shared<snet::tcp::TcpReceiveHandler<SessionManager>>(unifiedAcceptor.get(),
+                                                                                        unifiedConsumer.get());
+
+        /**
+         * Session pipeline initialization.
+         */
+        auto sessionPipeline = std::make_unique<SessionManager::Pipeline>();
+        sessionPipeline->add(sessionRx);
+        sessionPipeline->add(sessionTx);
+        mgr.setPipeline(std::move(sessionPipeline));
+
+        /**
+         * Packet pipeline initialization.
+         */
+        snet::pp::PacketPipeline packetPipeline;
+
+        packetPipeline.addStage(std::make_unique<snet::pp::L2FilterStage>(*driver));
+        packetPipeline.addStage(std::make_unique<snet::pp::ArpInterceptorStage>(arpResolver));
         packetPipeline.addStage(std::move(routing));
         packetPipeline.addStage(std::make_unique<snet::pp::IpForwardStage>());
         packetPipeline.addStage(std::make_unique<snet::pp::SessionStage<SessionManager>>(mgr));
@@ -302,6 +320,8 @@ int main(int argc, char* argv[])
 
             for (uint16_t i = 0; i < received; ++i)
             {
+                std::cout << "Ingress:" << rx[i].ingress << std::endl;
+                std::cout << *rx[i].packet << std::endl;
                 auto v = packetPipeline.onPacket(rx[i].packet, rx[i].ingress);
                 switch (v)
                 {
