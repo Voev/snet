@@ -254,7 +254,6 @@ int main(int argc, char* argv[])
         auto policy = [](std::string_view sni,
                          const snet::proxy::CertificateChain& chain) -> snet::proxy::InspectionDecision
         {
-            std::cout << "SNIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII: " << sni << std::endl;
             (void)sni;
             (void)chain;
             return snet::proxy::InspectionDecision::Bypass;
