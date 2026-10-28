@@ -11,11 +11,6 @@
 namespace snet::probe
 {
 
-/// @brief 5-tuple identifying an active probe flow.
-///
-/// XDP dispatcher checks this registry on every packet to decide
-/// whether the packet belongs to a probe session (→ probe SessionManager)
-/// or to a client session (→ client SessionManager).
 struct ProbeKey
 {
     layers::IPv4Address srcIP;
@@ -38,10 +33,6 @@ struct ProbeKeyHash
     }
 };
 
-/// @brief Thread-safe registry of active probe flows.
-///
-/// `contains()` is on the hot path (every packet), so the common case
-/// must be a cheap shared-lock + hash lookup.
 class ProbeRegistry
 {
 public:

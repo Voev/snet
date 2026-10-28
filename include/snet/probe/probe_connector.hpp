@@ -32,12 +32,6 @@ struct ProbeConfig
     uint32_t initialIssSeed{0}; // 0 = random_device
 };
 
-/// @brief Initiates probe TCP connections through the XDP pipeline.
-///
-/// Template parameter SessionManagerType must have:
-///   - ctx[0] = TcpConnection
-///   - ctx[1] = ProbeContext
-/// (i.e. ContextTypesTuple = tuple<TcpConnection, ProbeContext>).
 template <typename SessionManagerType>
 class ProbeConnector : public IProbeOwner
 {
@@ -53,7 +47,6 @@ public:
     std::shared_ptr<ProbeHandle> start(std::string sni, layers::IPAddress serverIP, uint16_t serverPort,
                                        layers::IPAddress sourceIP, ProbeConnectionCallback cb);
 
-    // ── IProbeOwner ──
     void finalizeProbe(void* session, uint32_t key, const ProbeKey& flowKey) override;
     void abortProbe(void* session, uint32_t key, const ProbeKey& flowKey, std::string_view reason) override;
 
@@ -71,7 +64,6 @@ private:
     std::atomic<uint16_t> nextPort_;
 };
 
-// ── Template implementation (header-only) ──
 
 template <typename SessionManagerType>
 ProbeConnector<SessionManagerType>::ProbeConnector(SessionManagerType& probeMgr,
@@ -167,7 +159,7 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
 
     ProbeHandle::Config hcfg{cfg_.connectTimeout, cfg_.handshakeTimeout};
     std::shared_ptr<ProbeHandle> handle(
-        new ProbeHandle(this, // ProbeConnector<T>* → IProbeOwner* (public base)
+        new ProbeHandle(this,
                         static_cast<void*>(session),
                         key,
                         ProbeKey{sourceIP.toIPv4(), sourcePort, serverIP.toIPv4(), serverPort},

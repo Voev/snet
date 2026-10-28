@@ -15,11 +15,6 @@
 namespace snet::probe
 {
 
-/// @brief RAII handle for a single probe.
-///
-/// Owns the watchdog. complete()/abort() are idempotent and thread-safe.
-/// MUST be created via std::make_shared? No — via `new` from
-/// ProbeConnector<T>::start (ctor is public, not friend).
 class ProbeHandle : public std::enable_shared_from_this<ProbeHandle>
 {
 public:

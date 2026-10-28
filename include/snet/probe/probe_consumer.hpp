@@ -15,8 +15,6 @@
 namespace snet::probe
 {
 
-/// @brief Consumes probe stream data: parses TLS, extracts Certificate,
-///        invokes the probe callback.
 template <typename SessionManagerType>
 class ProbeStreamConsumer : public snet::tcp::IStreamConsumer<SessionManagerType>
 {
@@ -69,7 +67,7 @@ public:
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        // TODO: extractChain(rec->getHandshake<Certificate>())
+                        /// @todo: extract chain: rec->getHandshake<Certificate>()
                         probe->result.status = ProbeResult::Status::Ok;
                         finish(*probe);
                         break;

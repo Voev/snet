@@ -14,10 +14,13 @@ class UnifiedConsumer : public snet::tcp::IStreamConsumer<SessionManagerType>
 public:
     using Session = typename SessionManagerType::Session;
 
-    UnifiedConsumer(SessionManagerType& mgr,
-                    snet::proxy::TransparentProxyConsumer<SessionManagerType>& clientConsumer,
+    UnifiedConsumer(SessionManagerType& mgr, snet::proxy::TransparentProxyConsumer<SessionManagerType>& clientConsumer,
                     ProbeStreamConsumer<SessionManagerType>& probeConsumer)
-        : mgr_(mgr), clientConsumer_(clientConsumer), probeConsumer_(probeConsumer) {}
+        : mgr_(mgr)
+        , clientConsumer_(clientConsumer)
+        , probeConsumer_(probeConsumer)
+    {
+    }
 
     void onStreamData(Session* s, int8_t side, snet::tcp::IStreamReader& r) override
     {
@@ -50,9 +53,9 @@ public:
     }
 
 private:
-    SessionManagerType&                                        mgr_;
+    SessionManagerType& mgr_;
     snet::proxy::TransparentProxyConsumer<SessionManagerType>& clientConsumer_;
-    ProbeStreamConsumer<SessionManagerType>&                    probeConsumer_;
+    ProbeStreamConsumer<SessionManagerType>& probeConsumer_;
 };
 
 } // namespace snet::probe
