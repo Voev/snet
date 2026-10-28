@@ -229,7 +229,7 @@ TEST(SessionPipelineTest, ProcessPacketOnNullPacketReturnsError)
     Pipeline p;
     p.addHandler<NamedHandler>("A");
     FakeSession session;
-    EXPECT_EQ(p.processPacket(&session, nullptr), PacketStatus::Error_NoMemory);
+    EXPECT_EQ(p.processPacket(&session, nullptr), PacketStatus(PacketVerdict::Drop, PacketReason::InvalidParameters));
 }
 
 TEST(SessionPipelineTest, Clear)
