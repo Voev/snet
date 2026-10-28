@@ -103,7 +103,7 @@ private:
     /// State for a single in-flight probe keyed by SNI.
     struct InFlight
     {
-        std::string sni; ///< SNI this probe was started for.
+        std::string sni;                                              ///< SNI this probe was started for.
         std::vector<std::function<void(InspectionDecision)>> waiters; ///< Callbacks awaiting the verdict.
     };
 
@@ -122,8 +122,7 @@ private:
         }
         else
         {
-            CSK_LOG_WARNING(
-                "TlsProbe for %s failed: %s, defaulting to Bypass", inflight->sni.c_str(), result.error.c_str());
+            CSK_LOG_WARNING("probe for %s failed: %s, defaulting to Bypass", inflight->sni.c_str());
         }
 
         cache_.store(inflight->sni, decision);
@@ -145,10 +144,10 @@ private:
     }
 
     IProbeConnection& probe_; ///< Probe connection (not owned).
-    DecisionCache& cache_;      ///< Decision cache (not owned).
-    InspectionPolicy policy_;   ///< Verdict policy.
+    DecisionCache& cache_;    ///< Decision cache (not owned).
+    InspectionPolicy policy_; ///< Verdict policy.
 
-    mutable std::mutex mtx_; ///< Guards inFlight_.
+    mutable std::mutex mtx_;                                              ///< Guards inFlight_.
     std::unordered_map<std::string, std::shared_ptr<InFlight>> inFlight_; ///< Active probes keyed by SNI.
 };
 

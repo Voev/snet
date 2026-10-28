@@ -60,7 +60,6 @@ public:
             {
                 ProbeResult r;
                 r.status = ProbeResult::Status::TlsError;
-                r.error = std::string("buildClientHelloRecord: ") + e.what();
                 probe->cb(std::move(r));
             }
             if (auto h = probe->handle.lock())

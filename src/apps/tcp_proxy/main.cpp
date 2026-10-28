@@ -259,8 +259,7 @@ int main(int argc, char* argv[])
             return snet::proxy::InspectionDecision::Bypass;
         };
 
-        ProbeRegistry probeRegistry;
-        ProbeConnector<SessionManager> connector(mgr, *sessionTx.get(), probeRegistry, probeRecordPool);
+        ProbeConnector<SessionManager> connector(mgr, *sessionTx.get(), probeRecordPool);
         ProbeConnectorAdapter<SessionManager> probeAdapter(connector, ip1);
         snet::proxy::TlsDecisionEngine engine{probeAdapter, cache, policy};
 

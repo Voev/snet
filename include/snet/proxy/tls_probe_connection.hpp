@@ -34,7 +34,7 @@ public:
             pending.swap(handles_);
         }
         for (auto& h : pending)
-            if (h) h->abort("adapter destroyed");
+            if (h) h->abort();
     }
 
     void asyncProbe(std::string sni, layers::IPAddress serverIP,
@@ -49,7 +49,6 @@ public:
             {
                 probe::ProbeResult tls;
                 tls.status  = mapStatus(r.status);
-                tls.error   = std::move(r.error);
                 tls.version = r.version;
                 tls.chain   = std::move(r.chain);
                 cb(std::move(tls));

@@ -29,7 +29,6 @@ struct ProbeResult
     };
 
     Status status{Status::ConnectFailed}; ///< Probe outcome.
-    std::string error;                    ///< Human-readable error detail (on failure).
 
     tls::ProtocolVersion version;                 ///< Negotiated TLS protocol version.
     const tls::CipherSuite* cipherSuite{nullptr}; ///< Negotiated cipher suite (nullptr if none).

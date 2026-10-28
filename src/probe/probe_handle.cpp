@@ -6,12 +6,10 @@
 namespace snet::probe
 {
 
-ProbeHandle::ProbeHandle(IProbeOwner* owner, void* session, uint32_t key,
-                         ProbeKey flowKey, Config cfg)
+ProbeHandle::ProbeHandle(IProbeOwner* owner, void* session, uint32_t key, Config cfg)
     : owner_(owner)
     , session_(session)
     , key_(key)
-    , flowKey_(flowKey)
     , cfg_(cfg)
 {
 }
@@ -28,14 +26,20 @@ ProbeHandle::~ProbeHandle()
 
     if (!completed_.exchange(true) && owner_)
     {
-        try { owner_->abortProbe(session_, key_, flowKey_, "handle destroyed"); }
-        catch (...) {}
+        try
+        {
+            owner_->abortProbe(session_, key_);
+        }
+        catch (...)
+        {
+        }
     }
 }
 
 void ProbeHandle::complete() noexcept
 {
-    if (completed_.exchange(true)) return;
+    if (completed_.exchange(true))
+        return;
 
     {
         std::lock_guard lk(mtx_);
@@ -45,14 +49,20 @@ void ProbeHandle::complete() noexcept
 
     if (owner_)
     {
-        try { owner_->finalizeProbe(session_, key_, flowKey_); }
-        catch (...) {}
+        try
+        {
+            owner_->finalizeProbe(session_, key_);
+        }
+        catch (...)
+        {
+        }
     }
 }
 
-void ProbeHandle::abort(std::string_view reason) noexcept
+void ProbeHandle::abort() noexcept
 {
-    if (completed_.exchange(true)) return;
+    if (completed_.exchange(true))
+        return;
 
     {
         std::lock_guard lk(mtx_);
@@ -62,36 +72,42 @@ void ProbeHandle::abort(std::string_view reason) noexcept
 
     if (owner_)
     {
-        try { owner_->abortProbe(session_, key_, flowKey_, reason); }
-        catch (...) {}
+        try
+        {
+            owner_->abortProbe(session_, key_);
+        }
+        catch (...)
+        {
+        }
     }
 }
 
 void ProbeHandle::armTimers()
 {
     auto self = weak_from_this();
-    auto cfg  = cfg_;
+    auto cfg = cfg_;
 
-    watchdog_ = std::thread([self, cfg]()
-    {
-        auto lock = self.lock();
-        if (!lock) return;
-        auto& h = *lock;
-
-        const auto deadline = std::chrono::steady_clock::now()
-                            + cfg.connectTimeout + cfg.handshakeTimeout;
-
-        std::unique_lock lk(h.mtx_);
-        while (!h.stop_)
+    watchdog_ = std::thread(
+        [self, cfg]()
         {
-            if (h.cv_.wait_until(lk, deadline) == std::cv_status::timeout)
-            {
-                lk.unlock();
-                h.abort("probe timeout");
+            auto lock = self.lock();
+            if (!lock)
                 return;
+            auto& h = *lock;
+
+            const auto deadline = std::chrono::steady_clock::now() + cfg.connectTimeout + cfg.handshakeTimeout;
+
+            std::unique_lock lk(h.mtx_);
+            while (!h.stop_)
+            {
+                if (h.cv_.wait_until(lk, deadline) == std::cv_status::timeout)
+                {
+                    lk.unlock();
+                    h.abort();
+                    return;
+                }
             }
-        }
-    });
+        });
 }
 
 } // namespace snet::probe

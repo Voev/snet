@@ -9,8 +9,7 @@
 #include <string_view>
 #include <thread>
 
-#include <snet/probe/probe_registry.hpp>    // ProbeKey
-#include <snet/probe/probe_owner.hpp>       // IProbeOwner
+#include <snet/probe/probe_owner.hpp>
 
 namespace snet::probe
 {
@@ -24,8 +23,7 @@ public:
         std::chrono::milliseconds handshakeTimeout{2000};
     };
 
-    ProbeHandle(IProbeOwner* owner, void* session, uint32_t key,
-                ProbeKey flowKey, Config cfg);
+    ProbeHandle(IProbeOwner* owner, void* session, uint32_t key, Config cfg);
 
     ~ProbeHandle();
 
@@ -33,14 +31,13 @@ public:
     ProbeHandle& operator=(const ProbeHandle&) = delete;
 
     void complete() noexcept;
-    void abort(std::string_view reason) noexcept;
+    void abort() noexcept;
     void armTimers();
 
 private:
     IProbeOwner*             owner_{nullptr};
     void*                    session_{nullptr};
     uint32_t                 key_{0};
-    ProbeKey                 flowKey_{};
     Config                   cfg_{};
 
     std::atomic<bool>        completed_{false};

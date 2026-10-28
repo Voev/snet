@@ -1,6 +1,5 @@
 #pragma once
 
-#include <snet/probe/probe_registry.hpp>
 #include <snet/probe/probe_context.hpp>
 #include <snet/probe/probe_context_factory.hpp>
 #include <snet/probe/probe_acceptor.hpp>

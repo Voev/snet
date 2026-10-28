@@ -15,8 +15,7 @@
 #include <snet/tcp/tcp_receive_handler.hpp>
 
 #include <snet/probe/probe_context.hpp>
-#include <snet/probe/probe_owner.hpp> // IProbeOwner
-#include <snet/probe/probe_registry.hpp>
+#include <snet/probe/probe_owner.hpp>
 #include <snet/probe/probe_handle.hpp>
 #include <snet/probe/probe_result.hpp>
 
@@ -40,15 +39,14 @@ public:
     using TcpConnection = snet::tcp::TcpConnection;
     using TxHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>;
 
-    ProbeConnector(SessionManagerType& probeMgr, TxHandler& tx, ProbeRegistry& registry, tls::RecordPool& pool,
-                   ProbeConfig cfg = ProbeConfig{});
+    ProbeConnector(SessionManagerType& probeMgr, TxHandler& tx, tls::RecordPool& pool, ProbeConfig cfg = ProbeConfig{});
 
     /// @brief Start a probe to (serverIP:serverPort) from sourceIP.
     std::shared_ptr<ProbeHandle> start(std::string sni, layers::IPAddress serverIP, uint16_t serverPort,
                                        layers::IPAddress sourceIP, ProbeConnectionCallback cb);
 
-    void finalizeProbe(void* session, uint32_t key, const ProbeKey& flowKey) override;
-    void abortProbe(void* session, uint32_t key, const ProbeKey& flowKey, std::string_view reason) override;
+    void finalizeProbe(void* session, uint32_t key) override;
+    void abortProbe(void* session, uint32_t key) override;
 
 private:
     uint16_t pickEphemeralPort();
@@ -57,21 +55,18 @@ private:
 
     SessionManagerType& probeMgr_;
     TxHandler& tx_;
-    ProbeRegistry& registry_;
     tls::RecordPool& pool_;
     ProbeConfig cfg_;
     std::mt19937 rng_;
     std::atomic<uint16_t> nextPort_;
 };
 
-
 template <typename SessionManagerType>
 ProbeConnector<SessionManagerType>::ProbeConnector(SessionManagerType& probeMgr,
                                                    snet::tcp::TcpTransmitHandler<SessionManagerType>& tx,
-                                                   ProbeRegistry& registry, tls::RecordPool& pool, ProbeConfig cfg)
+                                                   tls::RecordPool& pool, ProbeConfig cfg)
     : probeMgr_(probeMgr)
     , tx_(tx)
-    , registry_(registry)
     , pool_(pool)
     , cfg_(cfg)
     , rng_(cfg.initialIssSeed ? cfg.initialIssSeed : std::random_device{}())
@@ -106,7 +101,6 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
     {
         ProbeResult r;
         r.status = ProbeResult::Status::ConnectFailed;
-        r.error = "probe session create failed";
         cb(std::move(r));
         return nullptr;
     }
@@ -116,7 +110,6 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
     {
         ProbeResult r;
         r.status = ProbeResult::Status::ConnectFailed;
-        r.error = "probe context missing (factory not installed?)";
         cb(std::move(r));
         return nullptr;
     }
@@ -131,7 +124,6 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
     {
         ProbeResult r;
         r.status = ProbeResult::Status::ConnectFailed;
-        r.error = "probe TcpConnection ctx missing";
         probe->cb(std::move(r));
         return nullptr;
     }
@@ -152,21 +144,13 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
     {
         ProbeResult r;
         r.status = ProbeResult::Status::ConnectFailed;
-        r.error = "onActiveOpen failed (state not Closed?)";
         probe->cb(std::move(r));
         return nullptr;
     }
 
     ProbeHandle::Config hcfg{cfg_.connectTimeout, cfg_.handshakeTimeout};
-    std::shared_ptr<ProbeHandle> handle(
-        new ProbeHandle(this,
-                        static_cast<void*>(session),
-                        key,
-                        ProbeKey{sourceIP.toIPv4(), sourcePort, serverIP.toIPv4(), serverPort},
-                        hcfg));
+    std::shared_ptr<ProbeHandle> handle(new ProbeHandle(this, static_cast<void*>(session), key, hcfg));
     probe->handle = handle;
-
-    registry_.add(ProbeKey{sourceIP.toIPv4(), sourcePort, serverIP.toIPv4(), serverPort});
 
     conn->pendingOutput = syn;
     conn->hasPendingOutput = true;
@@ -177,10 +161,8 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
 }
 
 template <typename SessionManagerType>
-void ProbeConnector<SessionManagerType>::finalizeProbe(void* session, uint32_t key, const ProbeKey& flowKey)
+void ProbeConnector<SessionManagerType>::finalizeProbe(void* session, uint32_t key)
 {
-    registry_.remove(flowKey);
-
     auto* s = static_cast<Session*>(session);
     if (!s)
         return;
@@ -190,11 +172,8 @@ void ProbeConnector<SessionManagerType>::finalizeProbe(void* session, uint32_t k
 }
 
 template <typename SessionManagerType>
-void ProbeConnector<SessionManagerType>::abortProbe(void* session, uint32_t key, const ProbeKey& flowKey,
-                                                    std::string_view reason)
+void ProbeConnector<SessionManagerType>::abortProbe(void* session, uint32_t key)
 {
-    registry_.remove(flowKey);
-
     auto* s = static_cast<Session*>(session);
     if (!s)
         return;
@@ -204,7 +183,6 @@ void ProbeConnector<SessionManagerType>::abortProbe(void* session, uint32_t key,
     {
         ProbeResult r;
         r.status = ProbeResult::Status::ConnectTimeout;
-        r.error = std::string(reason);
         probe->cb(std::move(r));
     }
 
