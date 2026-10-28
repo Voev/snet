@@ -29,10 +29,8 @@
 
 #include <snet/proxy/proxy_context_factory.hpp>
 #include <snet/proxy/proxy_context.hpp>
-#include <snet/proxy/transparent_proxy_acceptor.hpp>
-#include <snet/proxy/transparent_proxy_consumer.hpp>
-
-#include <snet/proxy/tls_probe_connection.hpp>
+#include <snet/proxy/proxy_acceptor.hpp>
+#include <snet/proxy/proxy_consumer.hpp>
 
 #include <snet/probe.hpp>
 #include <snet/probe/unified_acceptor.hpp>
@@ -230,7 +228,7 @@ int main(int argc, char* argv[])
          */
         auto rxPool = std::make_unique<RxRingPool>(1024);
         auto txPool = std::make_unique<TxRingPool>(1024);
-        snet::tls::RecordPool probeRecordPool(16);
+
         auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
         fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(rxPool.get(), txPool.get());
         fRegistry->addFactory<ProxyContextFactory<SessionManager>>();
@@ -259,16 +257,16 @@ int main(int argc, char* argv[])
             return snet::proxy::InspectionDecision::Bypass;
         };
 
-        ProbeConnector<SessionManager> connector(mgr, *sessionTx.get(), probeRecordPool);
-        ProbeConnectorAdapter<SessionManager> probeAdapter(connector, ip1);
-        snet::proxy::TlsDecisionEngine engine{probeAdapter, cache, policy};
+        ProbeConnector<SessionManager> connector(mgr, *sessionTx.get());
+        ProbeClient<SessionManager> probeClient(connector, ip1);
+        snet::proxy::TlsDecisionEngine engine{probeClient, cache, policy};
 
         /**
          * RX handler for session initialization.
          */
         
-        auto clientAcceptor = std::make_shared<TransparentProxyAcceptor<SessionManager>>(&mgr, sessionTx.get(), ip1);
-        auto clientConsumer = std::make_shared<TransparentProxyConsumer<SessionManager>>(
+        auto clientAcceptor = std::make_shared<ProxyAcceptor<SessionManager>>(&mgr, sessionTx.get(), ip1);
+        auto clientConsumer = std::make_shared<ProxyConsumer<SessionManager>>(
             &mgr, sessionTx.get(), &engine, clientAcceptor.get());
 
         ProbeAcceptorConfig accCfg;

@@ -10,8 +10,8 @@
 #include <snet/tcp/tcp_transmit_handler.hpp>
 
 #include <snet/proxy/proxy_context.hpp>
-#include <snet/proxy/tls_decision_engine.hpp>
-#include <snet/proxy/transparent_proxy_acceptor.hpp>
+#include <snet/proxy/decision_engine.hpp>
+#include <snet/proxy/proxy_acceptor.hpp>
 
 #include <snet/utils/print_hex.hpp>
 
@@ -38,20 +38,20 @@ namespace snet::proxy
 ///        - then TLS termination.
 ///   6. Decision Block — RST, close.
 template <typename SessionManagerType>
-class TransparentProxyConsumer final : public snet::tcp::IStreamConsumer<SessionManagerType>
+class ProxyConsumer final : public snet::tcp::IStreamConsumer<SessionManagerType>
 {
 public:
     using Session = typename SessionManagerType::Session; ///< Session type of the manager.
     using TcpConnection = snet::tcp::TcpConnection; ///< TCP connection type.
     using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>; ///< Transmit handler type.
-    using Acceptor = TransparentProxyAcceptor<SessionManagerType>; ///< Upstream opener.
+    using Acceptor = ProxyAcceptor<SessionManagerType>; ///< Upstream opener.
     using TlsSession = snet::tls::Session; ///< TLS session type used for MITM.
 
     /// @param[in] mgr      Session manager owning contexts and sessions.
     /// @param[in] tx       Transmit handler used to pump outgoing packets.
     /// @param[in] engine   Decision engine resolving SNI to a verdict.
     /// @param[in] acceptor Acceptor used to open the upstream connection.
-    TransparentProxyConsumer(SessionManagerType* mgr, TransmitHandler* tx, TlsDecisionEngine* engine,
+    ProxyConsumer(SessionManagerType* mgr, TransmitHandler* tx, TlsDecisionEngine* engine,
                              Acceptor* acceptor)
         : mgr_(mgr)
         , tx_(tx)
@@ -142,7 +142,7 @@ public:
     /// @param[in] missingBytes Number of missing bytes.
     void onStreamGap(Session*, int8_t, uint32_t missingBytes) override
     {
-        CSK_LOG_WARNING("TransparentProxy: gap %u bytes", missingBytes);
+        CSK_LOG_WARNING("proxy: gap %u bytes", missingBytes);
     }
 
 private:

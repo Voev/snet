@@ -6,7 +6,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <string_view>
 #include <thread>
 
 #include <snet/probe/probe_owner.hpp>

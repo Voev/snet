@@ -1,12 +1,8 @@
 #pragma once
-
 #include <cstdint>
-#include <string_view>
 
 namespace snet::probe
 {
-
-struct ProbeKey;
 
 class IProbeOwner
 {

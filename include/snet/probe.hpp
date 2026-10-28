@@ -7,3 +7,5 @@
 #include <snet/probe/probe_connector.hpp>
 #include <snet/probe/probe_handle.hpp>
 #include <snet/probe/probe_result.hpp>
+#include <snet/probe/i_probe_client.hpp>
+#include <snet/probe/probe_client.hpp>

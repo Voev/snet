@@ -22,7 +22,7 @@ namespace snet::proxy
 /// downstream and prepares the pair. Upstream opening is initiated later,
 /// from the consumer, after the decision (bypass/mitm) is made.
 template <typename SessionManagerType>
-class TransparentProxyAcceptor final : public snet::tcp::IConnectionAcceptor<SessionManagerType>
+class ProxyAcceptor final : public snet::tcp::IConnectionAcceptor<SessionManagerType>
 {
 public:
     using Session = typename SessionManagerType::Session;                      ///< Session type of the manager.
@@ -31,7 +31,7 @@ public:
 
     /// @param[in] mgr Session manager owning contexts and sessions.
     /// @param[in] tx  Transmit handler used to pump outgoing packets.
-    TransparentProxyAcceptor(SessionManagerType* mgr, TransmitHandler* tx, layers::IPAddress localIP)
+    ProxyAcceptor(SessionManagerType* mgr, TransmitHandler* tx, layers::IPAddress localIP)
         : mgr_(mgr)
         , tx_(tx)
         , localIP_(localIP)

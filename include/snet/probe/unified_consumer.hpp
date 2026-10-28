@@ -3,7 +3,7 @@
 #include <snet/tcp/tcp_stream.hpp>
 #include <snet/probe/probe_context.hpp>
 #include <snet/probe/probe_consumer.hpp>
-#include <snet/proxy/transparent_proxy_consumer.hpp>
+#include <snet/proxy/proxy_consumer.hpp>
 
 namespace snet::probe
 {
@@ -14,7 +14,7 @@ class UnifiedConsumer : public snet::tcp::IStreamConsumer<SessionManagerType>
 public:
     using Session = typename SessionManagerType::Session;
 
-    UnifiedConsumer(SessionManagerType& mgr, snet::proxy::TransparentProxyConsumer<SessionManagerType>& clientConsumer,
+    UnifiedConsumer(SessionManagerType& mgr, snet::proxy::ProxyConsumer<SessionManagerType>& clientConsumer,
                     ProbeStreamConsumer<SessionManagerType>& probeConsumer)
         : mgr_(mgr)
         , clientConsumer_(clientConsumer)
@@ -54,7 +54,7 @@ public:
 
 private:
     SessionManagerType& mgr_;
-    snet::proxy::TransparentProxyConsumer<SessionManagerType>& clientConsumer_;
+    snet::proxy::ProxyConsumer<SessionManagerType>& clientConsumer_;
     ProbeStreamConsumer<SessionManagerType>& probeConsumer_;
 };
 

@@ -5,7 +5,6 @@
 #include <memory>
 #include <random>
 #include <string>
-#include <string_view>
 #include <tuple>
 
 #include <snet/layers/l3/ip_address.hpp>
@@ -39,9 +38,8 @@ public:
     using TcpConnection = snet::tcp::TcpConnection;
     using TxHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>;
 
-    ProbeConnector(SessionManagerType& probeMgr, TxHandler& tx, tls::RecordPool& pool, ProbeConfig cfg = ProbeConfig{});
+    ProbeConnector(SessionManagerType& probeMgr, TxHandler& tx, ProbeConfig cfg = ProbeConfig{});
 
-    /// @brief Start a probe to (serverIP:serverPort) from sourceIP.
     std::shared_ptr<ProbeHandle> start(std::string sni, layers::IPAddress serverIP, uint16_t serverPort,
                                        layers::IPAddress sourceIP, ProbeConnectionCallback cb);
 
@@ -55,7 +53,6 @@ private:
 
     SessionManagerType& probeMgr_;
     TxHandler& tx_;
-    tls::RecordPool& pool_;
     ProbeConfig cfg_;
     std::mt19937 rng_;
     std::atomic<uint16_t> nextPort_;
@@ -64,10 +61,9 @@ private:
 template <typename SessionManagerType>
 ProbeConnector<SessionManagerType>::ProbeConnector(SessionManagerType& probeMgr,
                                                    snet::tcp::TcpTransmitHandler<SessionManagerType>& tx,
-                                                   tls::RecordPool& pool, ProbeConfig cfg)
+                                                   ProbeConfig cfg)
     : probeMgr_(probeMgr)
     , tx_(tx)
-    , pool_(pool)
     , cfg_(cfg)
     , rng_(cfg.initialIssSeed ? cfg.initialIssSeed : std::random_device{}())
 {
@@ -113,6 +109,7 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
         cb(std::move(r));
         return nullptr;
     }
+    /// @todo: optimize reusing.
     probe->tlsPool = std::make_unique<tls::RecordPool>(8);
     probe->tls = std::make_unique<tls::Session>(*probe->tlsPool);
     probe->tls->setVersion(tls::ProtocolVersion::TLSv1_2);

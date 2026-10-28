@@ -3,7 +3,7 @@
 #include <snet/tcp/tcp_stream.hpp>
 #include <snet/probe/probe_context.hpp>
 #include <snet/probe/probe_acceptor.hpp>
-#include <snet/proxy/transparent_proxy_acceptor.hpp>
+#include <snet/proxy/proxy_acceptor.hpp>
 
 namespace snet::probe
 {
@@ -15,7 +15,7 @@ public:
     using Session = typename SessionManagerType::Session;
     using TcpConnection = snet::tcp::TcpConnection;
 
-    UnifiedAcceptor(SessionManagerType& mgr, snet::proxy::TransparentProxyAcceptor<SessionManagerType>& clientAcceptor,
+    UnifiedAcceptor(SessionManagerType& mgr, snet::proxy::ProxyAcceptor<SessionManagerType>& clientAcceptor,
                     ProbeAcceptor<SessionManagerType>& probeAcceptor)
         : mgr_(mgr)
         , clientAcceptor_(clientAcceptor)
@@ -47,7 +47,7 @@ public:
 
 private:
     SessionManagerType& mgr_;
-    snet::proxy::TransparentProxyAcceptor<SessionManagerType>& clientAcceptor_;
+    snet::proxy::ProxyAcceptor<SessionManagerType>& clientAcceptor_;
     ProbeAcceptor<SessionManagerType>& probeAcceptor_;
 };
 
