@@ -134,7 +134,7 @@ public:
 
     size_t serializeHeader(nonstd::span<uint8_t> output);
 
-    void deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+    std::error_code deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept;
 
     size_t serializeHandshake(HandshakeMessage&& handshake, const int8_t sideIndex, const Session& session);
 
