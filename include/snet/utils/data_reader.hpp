@@ -1,10 +1,15 @@
 #pragma once
-#include <casket/nonstd/span.hpp>
-#include <string>
+
 #include <vector>
+#include <string>
+#include <cstring>
+
+#include <casket/nonstd/span.hpp>
 #include <casket/utils/exception.hpp>
 #include <casket/utils/format.hpp>
 #include <casket/utils/load_store.hpp>
+
+#include <snet/utils/decode_error.hpp>
 
 namespace snet::utils
 {
@@ -12,224 +17,306 @@ namespace snet::utils
 class DataReader final
 {
 public:
-    DataReader(const char* type, nonstd::span<const uint8_t> buf_in)
-        : m_typename(type)
-        , m_buf(buf_in)
-        , m_offset(0)
+    DataReader(nonstd::span<const uint8_t> buffer)
+        : buffer_(buffer)
+        , offset_(0)
+        , error_(DecodeError::None)
     {
     }
 
-    void assert_done() const
+    DataReader(const DataReader&) = delete;
+
+    DataReader& operator=(const DataReader&) = delete;
+
+    bool ok() const noexcept
     {
-        if (has_remaining())
+        return error_ == DecodeError::None;
+    }
+
+    explicit operator bool() const noexcept
+    {
+        return ok();
+    }
+
+    void set_error(DecodeError e) noexcept
+    {
+        if (error_ == DecodeError::None)
         {
-            throw_decode_error("Extra bytes at end of message");
+            error_ = e;
         }
     }
 
-    size_t read_so_far() const
+    DecodeError error() const noexcept
     {
-        return m_offset;
+        return error_;
     }
 
-    size_t remaining_bytes() const
+    DecodeError take_error() noexcept
     {
-        return m_buf.size() - m_offset;
+        const auto e = error_;
+        error_ = DecodeError::None;
+        return e;
     }
 
-    bool has_remaining() const
+    std::error_code take_ec() noexcept
     {
-        return (remaining_bytes() > 0);
+        return make_error_code(take_error());
     }
 
-    nonstd::span<const uint8_t> get_span_remaining()
+    void assert_done() noexcept
     {
-        return {m_buf.begin() + m_offset, m_buf.end()};
+        if (has_remaining())
+        {
+            set_error(DecodeError::TrailingBytes);
+        }
     }
 
-    std::vector<uint8_t> get_remaining()
+    size_t read_so_far() const noexcept
     {
-        return std::vector<uint8_t>(m_buf.begin() + m_offset, m_buf.end());
+        return offset_;
     }
 
-    std::vector<uint8_t> get_data_read_so_far()
+    size_t remaining_bytes() const noexcept
     {
-        return std::vector<uint8_t>(m_buf.begin(), m_buf.begin() + m_offset);
+        return buffer_.size() - offset_;
     }
 
-    void discard_next(size_t bytes)
+    bool has_remaining() const noexcept
     {
-        assert_at_least(bytes);
-        m_offset += bytes;
+        return offset_ < buffer_.size();
     }
 
-    uint32_t get_uint32_t()
+    void discard_next(size_t n) noexcept
     {
-        assert_at_least(4);
-        uint32_t result =
-            casket::make_uint32(m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2], m_buf[m_offset + 3]);
-        m_offset += 4;
-        return result;
+        if (!at_least(n))
+        {
+            return;
+        }
+        offset_ += n;
     }
 
-    uint32_t get_uint24_t()
+    uint8_t get_byte() noexcept
     {
-        assert_at_least(3);
-        uint32_t result = casket::make_uint32(0, m_buf[m_offset], m_buf[m_offset + 1], m_buf[m_offset + 2]);
-        m_offset += 3;
-        return result;
+        if (!at_least(1))
+        {
+            return 0;
+        }
+        return buffer_[offset_++];
     }
 
     uint16_t get_uint16_t()
     {
-        assert_at_least(2);
-        uint16_t result = casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
-        m_offset += 2;
-        return result;
-    }
-
-    uint16_t peek_uint16_t() const
-    {
-        assert_at_least(2);
-        return casket::make_uint16(m_buf[m_offset], m_buf[m_offset + 1]);
-    }
-
-    uint8_t get_byte()
-    {
-        assert_at_least(1);
-        uint8_t result = m_buf[m_offset];
-        m_offset += 1;
-        return result;
-    }
-
-    template <typename T, typename Container>
-    Container get_elem(size_t num_elems)
-    {
-        assert_at_least(num_elems * sizeof(T));
-
-        Container result(num_elems);
-
-        for (size_t i = 0; i != num_elems; ++i)
+        if (!at_least(2))
         {
-            result[i] = casket::load_be<T>(&m_buf[m_offset], i);
+            return 0;
         }
-
-        m_offset += num_elems * sizeof(T);
-
+        uint16_t result = casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
+        offset_ += 2;
         return result;
+    }
+
+    uint16_t peek_uint16_t() const noexcept
+    {
+        if (!at_least_const(2))
+        {
+            return 0;
+        }
+        return casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
+    }
+
+    uint32_t get_uint24_t() noexcept
+    {
+        if (!at_least(3))
+        {
+            return 0;
+        }
+        uint32_t result = casket::make_uint32(0, buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2]);
+        offset_ += 3;
+        return result;
+    }
+
+    uint32_t get_uint32_t()
+    {
+        if (!at_least_const(4))
+        {
+            return 0;
+        }
+        uint32_t result =
+            casket::make_uint32(buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2], buffer_[offset_ + 3]);
+        offset_ += 4;
+        return result;
+    }
+
+    nonstd::span<const uint8_t> get_span_fixed(size_t n) noexcept
+    {
+        if (!at_least(n))
+            return {};
+        auto s = nonstd::span<const uint8_t>(buffer_.data() + offset_, n);
+        offset_ += n;
+        return s;
+    }
+
+    nonstd::span<const uint8_t> get_span_remaining() noexcept
+    {
+        auto s = nonstd::span<const uint8_t>(buffer_.data() + offset_, buffer_.size() - offset_);
+        offset_ = buffer_.size();
+        return s;
+    }
+
+    nonstd::span<const uint8_t> get_span(size_t lenBytes, size_t minElems, size_t maxElems) noexcept
+    {
+        const size_t n = get_length_field(lenBytes, minElems, maxElems);
+        return get_span_fixed(n);
+    }
+
+    nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes) noexcept
+    {
+        const size_t n = get_length_field(lenBytes, 0, remaining_bytes());
+        return get_span_fixed(n);
+    }
+
+    nonstd::string_view get_string_view(size_t len_bytes, size_t min_b, size_t max_b) noexcept
+    {
+        const size_t n = get_length_field(len_bytes, min_b, max_b);
+        if (error_ != DecodeError::None)
+            return {};
+        auto s = nonstd::string_view(reinterpret_cast<const char*>(buffer_.data() + offset_), n);
+        offset_ += n;
+        return s;
+    }
+
+    bool get_fixed_into(size_t n, std::vector<uint8_t>& out) noexcept
+    {
+        if (!at_least(n))
+            return false;
+        if (!resize_guarded(out, n))
+            return false;
+        std::memcpy(out.data(), buffer_.data() + offset_, n);
+        offset_ += n;
+        return true;
+    }
+
+    bool get_tls_length_value_into(size_t len_bytes, std::vector<uint8_t>& out) noexcept
+    {
+        const size_t n = get_length_field(len_bytes, 0, remaining_bytes());
+        if (error_ != DecodeError::None)
+            return false;
+        return get_fixed_into(n, out);
     }
 
     template <typename T>
-    std::vector<T> get_range(size_t len_bytes, size_t min_elems, size_t max_elems)
+    bool get_elem_into(size_t num_elems, std::vector<T>& out) noexcept
     {
-        const size_t num_elems = get_num_elems(len_bytes, sizeof(T), min_elems, max_elems);
+        if (!at_least(num_elems * sizeof(T)))
+            return false;
+        if (!resize_guarded(out, num_elems))
+            return false;
 
-        return get_elem<T, std::vector<T>>(num_elems);
-    }
-
-    nonstd::span<const uint8_t> get_span(size_t len_bytes, size_t min_elems, size_t max_elems)
-    {
-        const size_t num_elems = get_num_elems(len_bytes, sizeof(uint8_t), min_elems, max_elems);
-
-        assert_at_least(num_elems * sizeof(uint8_t));
-
-        nonstd::span<const uint8_t> result(reinterpret_cast<const uint8_t*>(&m_buf[m_offset]), num_elems);
-
-        m_offset += num_elems * sizeof(uint8_t);
-
-        return result;
-    }
-
-    std::string get_string(size_t len_bytes, size_t min_bytes, size_t max_bytes)
-    {
-        auto v = get_span(len_bytes, min_bytes, max_bytes);
-        return std::string(v.begin(), v.end());
+        const uint8_t* p = buffer_.data() + offset_;
+        for (size_t i = 0; i < num_elems; ++i, p += sizeof(T))
+        {
+            out[i] = casket::load_be<T>(p);
+        }
+        offset_ += num_elems * sizeof(T);
+        return true;
     }
 
     template <typename T>
-    std::vector<T> get_fixed(size_t size)
+    bool get_range_into(size_t len_bytes, size_t min_elems, size_t max_elems, std::vector<T>& out) noexcept
     {
-        return get_elem<T, std::vector<T>>(size);
-    }
-
-    nonstd::span<const uint8_t> get_span_fixed(size_t numElems)
-    {
-        assert_at_least(numElems * sizeof(uint8_t));
-
-        nonstd::span<const uint8_t> result(reinterpret_cast<const uint8_t*>(&m_buf[m_offset]), numElems);
-
-        m_offset += numElems * sizeof(uint8_t);
-
-        return result;
-    }
-
-    std::vector<uint8_t> get_tls_length_value(size_t lenBytes)
-    {
-        return get_fixed<uint8_t>(get_length_field(lenBytes));
-    }
-
-    nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes)
-    {
-        return get_span_fixed(get_length_field(lenBytes));
+        const size_t bytes = get_length_field(len_bytes, 0, remaining_bytes());
+        if (error_ != DecodeError::None)
+            return false;
+        if (bytes % sizeof(T))
+        {
+            set_error(DecodeError::SizeNotMultiple);
+            return false;
+        }
+        const size_t n = bytes / sizeof(T);
+        if (n < min_elems || n > max_elems)
+        {
+            set_error(DecodeError::LengthOutOfRange);
+            return false;
+        }
+        return get_elem_into<T>(n, out);
     }
 
 private:
-    size_t get_length_field(size_t len_bytes)
+    size_t get_length_field(size_t len_bytes, size_t min_b, size_t max_b) noexcept
     {
-        assert_at_least(len_bytes);
-
-        if (len_bytes == 1)
+        if (!at_least(len_bytes))
         {
-            return get_byte();
-        }
-        else if (len_bytes == 2)
-        {
-            return get_uint16_t();
-        }
-        else if (len_bytes == 3)
-        {
-            return get_uint24_t();
+            return 0;
         }
 
-        throw_decode_error("Bad length size");
+        size_t n = 0;
+        switch (len_bytes)
+        {
+        case 1:
+            n = buffer_[offset_];
+            break;
+        case 2:
+            n = casket::make_uint16(buffer_[offset_], buffer_[offset_ + 1]);
+            break;
+        case 3:
+            n = casket::make_uint32(0, buffer_[offset_], buffer_[offset_ + 1], buffer_[offset_ + 2]);
+            break;
+        default:
+            set_error(DecodeError::BadLengthSize);
+            return 0;
+        }
+        offset_ += len_bytes;
+        if (n < min_b || n > max_b)
+        {
+            set_error(DecodeError::LengthOutOfRange);
+            return 0;
+        }
+        return n;
     }
 
-    size_t get_num_elems(size_t len_bytes, size_t T_size, size_t min_elems, size_t max_elems)
+    template <typename T>
+    bool resize_guarded(std::vector<T>& out, size_t n) noexcept
     {
-        const size_t byte_length = get_length_field(len_bytes);
-
-        if (byte_length % T_size != 0)
+        if (n <= out.capacity())
         {
-            throw_decode_error("Size isn't multiple of T");
+            out.resize(n);
+            return true;
         }
-
-        const size_t num_elems = byte_length / T_size;
-
-        if (num_elems < min_elems || num_elems > max_elems)
+        if (n > out.max_size())
         {
-            throw_decode_error("Length field outside parameters");
+            set_error(DecodeError::LengthOutOfRange);
+            return false;
         }
-
-        return num_elems;
-    }
-
-    void assert_at_least(size_t n) const
-    {
-        if (m_buf.size() - m_offset < n)
+        try
         {
-            throw_decode_error("Expected " + std::to_string(n) + " bytes remaining, only " +
-                               std::to_string(m_buf.size() - m_offset) + " left");
+            out.resize(n);
+            return true;
+        }
+        catch (...)
+        {
+            set_error(DecodeError::AllocationFailed);
+            return false;
         }
     }
 
-    [[noreturn]] void throw_decode_error(nonstd::string_view why) const
+    bool at_least(size_t n) noexcept
     {
-        throw casket::RuntimeError(casket::format("Invalid {}: {}", m_typename, why));
+        if (remaining_bytes() < n)
+        {
+            set_error(DecodeError::NotEnoughBytes);
+            return false;
+        }
+        return true;
     }
 
-    const char* m_typename;
-    nonstd::span<const uint8_t> m_buf;
-    size_t m_offset;
+    bool at_least_const(size_t n) const noexcept
+    {
+        return remaining_bytes() >= n;
+    }
+
+    nonstd::span<const uint8_t> buffer_;
+    size_t offset_;
+    DecodeError error_;
 };
 
 } // namespace snet::utils

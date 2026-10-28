@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <snet/tls.hpp>
 
+#include <vector>
+
 #include <snet/crypto/pointers.hpp>
 #include <snet/crypto/rand.hpp>
 #include <snet/crypto/cert.hpp>
@@ -55,14 +57,14 @@ public:
         {
             builder.addCommand(param.name, param.value);
         }
-        builder.apply(clientSettings_, SSL_CONF_FLAG_CLIENT|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+        builder.apply(clientSettings_, SSL_CONF_FLAG_CLIENT | SSL_CONF_FLAG_SHOW_ERRORS | SSL_CONF_FLAG_FILE);
 
         builder.clear();
         for (auto& param : GetParam().serverCmds)
         {
             builder.addCommand(param.name, param.value);
         }
-        builder.apply(serverSettings_, SSL_CONF_FLAG_SERVER|SSL_CONF_FLAG_SHOW_ERRORS|SSL_CONF_FLAG_FILE);
+        builder.apply(serverSettings_, SSL_CONF_FLAG_SERVER | SSL_CONF_FLAG_SHOW_ERRORS | SSL_CONF_FLAG_FILE);
 
         certForger_ = std::make_unique<CertForger>(ca_.getKey(), ca_.getCert());
 
@@ -144,7 +146,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                           if (extensions.has(ExtensionCode::KeyShare))
                                                           {
                                                               auto keyShare = extensions.take<KeyShare>();
-                                                              auto offeredGroups = keyShare->offeredGroups();
+                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
+                                                              keyShare->offeredGroups(offeredGroups);
                                                               auto firstGroup = offeredGroups.front();
 
                                                               /// @todo: check offered group by policy
@@ -152,13 +155,12 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               auto key = GroupParams::generateKeyByParams(firstGroup);
                                                               keyShare->setPublicKey(0, key);
                                                               session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(std::move(keyShare));
+                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello), HandshakeType::ClientHelloCode), sideIndex,
-                            mitmClient);
+                            HandshakeMessage(std::move(clientHello)), sideIndex, mitmClient);
                         break;
                     }
                     case HandshakeType::ClientKeyExchangeCode:
@@ -219,7 +221,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                           if (extensions.has(ExtensionCode::KeyShare))
                                                           {
                                                               auto keyShare = extensions.take<KeyShare>();
-                                                              auto offeredGroups = keyShare->offeredGroups();
+                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
+                                                              keyShare->offeredGroups(offeredGroups);
                                                               auto firstGroup = offeredGroups.front();
 
                                                               auto clientKeyShare =
@@ -231,13 +234,12 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               keyShare->setPublicKey(key);
 
                                                               session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(std::move(keyShare));
+                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello), HandshakeType::ServerHelloCode), sideIndex,
-                            mitmServer);
+                            HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
@@ -247,8 +249,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         mitmServer.processEncryptedExtensions(encryptedExtensions);
 
                         modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(encryptedExtensions), HandshakeType::EncryptedExtensionsCode),
-                            sideIndex, mitmServer);
+                            HandshakeMessage(std::move(encryptedExtensions)), sideIndex, mitmServer);
                         break;
                     }
                     case HandshakeType::CertificateCode:

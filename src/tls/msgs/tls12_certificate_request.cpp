@@ -1,42 +1,87 @@
 #include <snet/tls/msgs/tls12_certificate_request.hpp>
 
+#include <cstring>
+
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
+#include <snet/utils/decode_error.hpp>
 
-#include <casket/utils/exception.hpp>
-
-using namespace casket;
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
-void TLSv12CertificateRequest::deserialize(nonstd::span<const uint8_t> input)
+std::error_code TLSv12CertificateRequest::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    utils::DataReader reader("TLSv1.2 CertificateRequest", input);
+    certTypes = {};
+    supportedSigAlgs = {};
+    certAuthorities = {};
 
-    casket::ThrowIfTrue(reader.remaining_bytes() < 4, "TLSv1.2 CertificateRequest: bad message");
+    utils::DataReader reader(input);
 
     certTypes = reader.get_span(1, 1, 255);
-    supportedSigAlgs = reader.get_span(2, 2, 65534);
+    if (!reader.ok())
+        return reader.take_ec();
 
-    casket::ThrowIfTrue(supportedSigAlgs.size() % 2 != 0, "Bad length for signature IDs in certificate request");
-
-    const uint16_t certAuthoritiesSize = reader.get_uint16_t();
-    casket::ThrowIfTrue(reader.remaining_bytes() != certAuthoritiesSize, "Inconsistent length in certificate request");
-
-    while (reader.has_remaining())
+    supportedSigAlgs = reader.get_span_length_and_value(2);
+    if (!reader.ok())
+        return reader.take_ec();
+    if (supportedSigAlgs.size() < 2 || supportedSigAlgs.size() % 2 != 0)
     {
-        auto certAuthority = reader.get_span(2, 0, 65535);
+        reader.set_error(utils::DecodeError::SizeNotMultiple);
+        return reader.take_ec();
     }
 
+    const std::uint16_t caTotal = reader.get_uint16_t();
+    if (!reader.ok())
+        return reader.take_ec();
+    if (caTotal != reader.remaining_bytes())
+    {
+        return utils::make_error_code(utils::DecodeError::LengthOutOfRange);
+    }
+
+    certAuthorities = reader.get_span_fixed(caTotal);
+    if (!reader.ok())
+        return reader.take_ec();
+
     reader.assert_done();
+    return reader.take_ec();
 }
 
-size_t TLSv12CertificateRequest::serialize(nonstd::span<uint8_t> output) const
+std::size_t TLSv12CertificateRequest::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    /// @todo: support it.
-    (void)output;
-    return 0;
+    std::size_t pos = 0;
+
+    {
+        const std::size_t n = AppendLengthAndValue(output.subspan(pos), certTypes.data(), certTypes.size(), 1);
+        if (n == kSerializationFailed)
+        {
+            return kSerializationFailed;
+        }
+        pos += n;
+    }
+
+    {
+        const std::size_t n =
+            AppendLengthAndValue(output.subspan(pos), supportedSigAlgs.data(), supportedSigAlgs.size(), 2);
+        if (n == kSerializationFailed)
+        {
+            return kSerializationFailed;
+        }
+        pos += n;
+    }
+
+    {
+        const std::size_t n =
+            AppendLengthAndValue(output.subspan(pos), certAuthorities.data(), certAuthorities.size(), 2);
+        if (n == kSerializationFailed)
+        {
+            return kSerializationFailed;
+        }
+        pos += n;
+    }
+
+    return pos;
 }
 
-} // namespace snet::tls::msg
+} // namespace snet::tls

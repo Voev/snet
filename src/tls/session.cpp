@@ -388,14 +388,26 @@ void Session::encrypt(const int8_t sideIndex, Record* record)
 {
     if (sideIndex == 0)
     {
-        recordLayer_.encrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
-                             keyInfo_.clientMacKey, keyInfo_.clientIV);
+        recordLayer_.encrypt(clientCipherCtx_,
+                             hmacCtx_,
+                             hashCtx_,
+                             hmacHashAlg_,
+                             record,
+                             seqnum_.getClientSequence(),
+                             keyInfo_.clientMacKey,
+                             keyInfo_.clientIV);
         seqnum_.acceptClientSequence();
     }
     else
     {
-        recordLayer_.encrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
-                             keyInfo_.serverMacKey, keyInfo_.serverIV);
+        recordLayer_.encrypt(serverCipherCtx_,
+                             hmacCtx_,
+                             hashCtx_,
+                             hmacHashAlg_,
+                             record,
+                             seqnum_.getServerSequence(),
+                             keyInfo_.serverMacKey,
+                             keyInfo_.serverIV);
         seqnum_.acceptServerSequence();
     }
 }
@@ -404,14 +416,26 @@ void Session::decrypt(const int8_t sideIndex, Record* record)
 {
     if (sideIndex == 0)
     {
-        recordLayer_.decrypt(clientCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getClientSequence(),
-                             keyInfo_.clientMacKey, keyInfo_.clientIV);
+        recordLayer_.decrypt(clientCipherCtx_,
+                             hmacCtx_,
+                             hashCtx_,
+                             hmacHashAlg_,
+                             record,
+                             seqnum_.getClientSequence(),
+                             keyInfo_.clientMacKey,
+                             keyInfo_.clientIV);
         seqnum_.acceptClientSequence();
     }
     else
     {
-        recordLayer_.decrypt(serverCipherCtx_, hmacCtx_, hashCtx_, hmacHashAlg_, record, seqnum_.getServerSequence(),
-                             keyInfo_.serverMacKey, keyInfo_.serverIV);
+        recordLayer_.decrypt(serverCipherCtx_,
+                             hmacCtx_,
+                             hashCtx_,
+                             hmacHashAlg_,
+                             record,
+                             seqnum_.getServerSequence(),
+                             keyInfo_.serverMacKey,
+                             keyInfo_.serverIV);
         seqnum_.acceptServerSequence();
     }
 }
@@ -441,10 +465,10 @@ void Session::generateHandshakeTrafficSecrets()
         keyInfo_.clientHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
         keyInfo_.serverHndTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
 
-        DeriveClientHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                              keyInfo_.clientHndTrafficSecret);
-        DeriveServerHsTraffic(handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash,
-                              keyInfo_.serverHndTrafficSecret);
+        DeriveClientHsTraffic(
+            handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash, keyInfo_.clientHndTrafficSecret);
+        DeriveServerHsTraffic(
+            handshakeHashAlg_, keyInfo_.handshakeSecret, transcriptHash, keyInfo_.serverHndTrafficSecret);
     }
 }
 
@@ -489,10 +513,10 @@ void Session::generateApplicationTrafficSecrets()
         keyInfo_.clientAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
         keyInfo_.serverAppTrafficSecret.resize(HashTraits::getSize(handshakeHashAlg_));
 
-        DeriveClientApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
-                              keyInfo_.clientAppTrafficSecret);
-        DeriveServerApTraffic(handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash,
-                              keyInfo_.serverAppTrafficSecret);
+        DeriveClientApTraffic(
+            handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash, keyInfo_.clientAppTrafficSecret);
+        DeriveServerApTraffic(
+            handshakeHashAlg_, keyInfo_.masterSecret, transcriptHash, keyInfo_.serverAppTrafficSecret);
     }
 }
 
@@ -526,7 +550,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         PRF(keyInfo_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::DataReader reader("Key block (for AEAD)", keyBlock);
+        utils::DataReader reader(keyBlock);
 
         keyInfo_.clientEncKey.assign(reader.get_span_fixed(keySize));
         keyInfo_.serverEncKey.assign(reader.get_span_fixed(keySize));
@@ -545,14 +569,14 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         if (sideIndex == 0)
         {
-            recordLayer_.doTLSv1AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV,
-                                         encrypt);
+            recordLayer_.doTLSv1AeadInit(
+                clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
             canDecrypt_ |= 1;
         }
         else
         {
-            recordLayer_.doTLSv1AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV,
-                                         encrypt);
+            recordLayer_.doTLSv1AeadInit(
+                serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
             canDecrypt_ |= 2;
         }
     }
@@ -567,7 +591,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         PRF(keyInfo_.masterSecret, "key expansion", serverRandom_, clientRandom_, keyBlock);
 
-        utils::DataReader reader("Key block (with MAC key)", keyBlock);
+        utils::DataReader reader(keyBlock);
 
         keyInfo_.clientMacKey.assign(reader.get_span_fixed(macSize));
         keyInfo_.serverMacKey.assign(reader.get_span_fixed(macSize));
@@ -735,7 +759,8 @@ void Session::constructClientHello(ClientHello& clientHello)
         if (clientExtensions_.has(ExtensionCode::KeyShare))
         {
             auto keyShare = clientExtensions_.take<KeyShare>();
-            auto offeredGroups = keyShare->offeredGroups();
+            std::vector<crypto::GroupParams> offeredGroups;
+            keyShare->offeredGroups(offeredGroups);
             auto firstGroup = offeredGroups.front();
 
             /// @todo: check offered group by policy
@@ -743,7 +768,7 @@ void Session::constructClientHello(ClientHello& clientHello)
             ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
             keyShare->setPublicKey(0, ephemeralPrivateKey_);
 
-            clientExtensions_.add(std::move(keyShare));
+            clientExtensions_.add(ExtensionVariant{std::move(*keyShare)});
         }
     }
 }
@@ -802,8 +827,7 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
 
         certificate.message = std::move(message);
 
-        record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
-                                   *this);
+        record->serializeHandshake(HandshakeMessage(std::move(certificate)), sideIndex, *this);
     }
     else
     {
@@ -817,8 +841,7 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
 
         certificate.message = std::move(message);
 
-        record->serializeHandshake(HandshakeMessage(std::move(certificate), HandshakeType::CertificateCode), sideIndex,
-                                   *this);
+        record->serializeHandshake(HandshakeMessage(std::move(certificate)), sideIndex, *this);
     }
 }
 
@@ -846,8 +869,7 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
         certVerify.scheme = scheme;
         certVerify.signature = signature;
 
-        record->serializeHandshake(HandshakeMessage(std::move(certVerify), HandshakeType::CertificateVerifyCode),
-                                   sideIndex, *this);
+        record->serializeHandshake(HandshakeMessage(std::move(certVerify)), sideIndex, *this);
     }
 }
 
@@ -886,7 +908,10 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
     else if (kex == NID_kx_ecdhe || kex == NID_kx_ecdhe_psk)
     {
-        sharedGroupParams_ = ChooseKeyExchangeGroup(supportedGroupsByPeer->getEcGroups(), {});
+        std::vector<crypto::GroupParams> ecGroups;
+
+        supportedGroupsByPeer->getEcGroups(ecGroups);
+        sharedGroupParams_ = ChooseKeyExchangeGroup(ecGroups, {});
         casket::ThrowIfTrue(sharedGroupParams_ == GroupParams::NONE, "No shared ECC group with client");
 
         ephemeralPrivateKey_ = GroupParams::generateKeyByParams(sharedGroupParams_);
@@ -929,18 +954,16 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
             hash = CryptoManager::getInstance().fetchDigest(hashName);
         }
 
-        keyExchange.signature = Signature::signMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_,
-                                                       signatureBuffer, {tbsBuffer.data(), tbsLength});
+        keyExchange.signature = Signature::signMessage(
+            hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_, signatureBuffer, {tbsBuffer.data(), tbsLength});
     }
 
-    record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ServerKeyExchangeCode),
-                               sideIndex, *this);
+    record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
 }
 
 void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
 {
-    record->serializeHandshake(HandshakeMessage(ServerHelloDone(), HandshakeType::ServerHelloDoneCode), sideIndex,
-                               *this);
+    record->serializeHandshake(HandshakeMessage(ServerHelloDone()), sideIndex, *this);
 }
 
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
@@ -987,15 +1010,15 @@ void Session::processCertificateVerify(const int8_t sideIndex, const Certificate
         }
 
         HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature,
-                                 handshakeBuffer_);
+        Signature::verifyMessage(
+            hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature, handshakeBuffer_);
     }
 }
 
 void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
 {
-    serverEncExtensions_.deserialize(Side::Server, encryptedExtensions.extensions,
-                                     HandshakeType::EncryptedExtensionsCode);
+    serverEncExtensions_.deserialize(
+        Side::Server, encryptedExtensions.extensions, HandshakeType::EncryptedExtensionsCode);
 }
 
 void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
@@ -1044,8 +1067,8 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
         HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(hashCtx_, keyExchange.scheme.getKeyAlgorithm(), hash, publicKey, keyExchange.signature,
-                                 tbs);
+        Signature::verifyMessage(
+            hashCtx_, keyExchange.scheme.getKeyAlgorithm(), hash, publicKey, keyExchange.signature, tbs);
     }
 }
 
@@ -1087,7 +1110,7 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 #else  /// ^(OPENSSL_VERSION_NUMBER >= 0x30000000L)
        /// @todo: support it.
 #endif /// !(OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    
+
         size_t size{0};
         crypto::ThrowIfFalse(
             0 < EVP_PKEY_decrypt(ctx, nullptr, &size, msg.preMasterSecret.data(), msg.preMasterSecret.size()));
@@ -1115,8 +1138,7 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
         auto& ecdh = keyExchange.params.emplace<ClientEcdhPublic>();
         ecdh.ecdhPublic = publicKey;
         PMS_ = GroupParams::deriveSecret(ephemeralPrivateKey_, peerPublicKey_, false);
-        record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
-                                   sideIndex, *this);
+        record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
     }
     else if (kex == NID_kx_rsa)
     {
@@ -1126,7 +1148,7 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
         uint16_t value = metaInfo_.version.code();
         pms[0] = casket::get_byte<0>(value);
         pms[1] = casket::get_byte<1>(value);
-        
+
         Rand::generate(pms.subspan(2));
 
         auto serverKey = X509_get0_pubkey(serverCert_);
@@ -1144,8 +1166,7 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
 
         auto& params = keyExchange.params.emplace<EncryptedPreMasterSecret>();
         params.preMasterSecret = encryptedData;
-        record->serializeHandshake(HandshakeMessage(std::move(keyExchange), HandshakeType::ClientKeyExchangeCode),
-                                   sideIndex, *this);
+        record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
     }
 }
 
@@ -1204,7 +1225,10 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
 
             std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
-            PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
+            PRF(keyInfo_.masterSecret,
+                (sideIndex == 0 ? "client finished" : "server finished"),
+                transcriptHash,
+                {},
                 actual);
 
             casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
@@ -1235,8 +1259,7 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
 
         finished.verifyData = ComputeTLSv13FinishedMac(secret, transcriptHash, sigBuffer, hashCtx_, metaInfo_);
 
-        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
-                                   *this);
+        record->serializeHandshake(HandshakeMessage(std::move(finished)), sideIndex, *this);
         break;
     }
     case ProtocolVersion::TLSv1_2:
@@ -1250,13 +1273,11 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
 
         std::array<uint8_t, TLS1_FINISH_MAC_LENGTH> actual;
 
-        PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {},
-            actual);
+        PRF(keyInfo_.masterSecret, (sideIndex == 0 ? "client finished" : "server finished"), transcriptHash, {}, actual);
 
         finished.verifyData = actual;
 
-        record->serializeHandshake(HandshakeMessage(std::move(finished), HandshakeType::FinishedCode), sideIndex,
-                                   *this);
+        record->serializeHandshake(HandshakeMessage(std::move(finished)), sideIndex, *this);
         break;
     }
     case ProtocolVersion::SSLv3_0:

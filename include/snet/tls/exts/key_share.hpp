@@ -1,180 +1,417 @@
 #pragma once
-#include <vector>
-#include <casket/nonstd/variant.hpp>
 
-#include <snet/tls/extensions.hpp>
+#include <cstdint>
+#include <variant>
+#include <vector>
+
+#include <casket/nonstd/span.hpp>
+
 #include <snet/crypto/group_params.hpp>
+#include <snet/crypto/pointers.hpp>
+#include <snet/tls/exts/extension_code.hpp>
+#include <snet/tls/types.hpp>
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/data_writer.hpp>
 
 namespace snet::tls
 {
 
+/// @brief One `KeyShareEntry` from RFC 8446 §4.2.8.
+///
+/// Wire format: `<group: uint16> <key_exchange: opaque<1..2^16-1>>`.
 class KeyShareEntry final
 {
 public:
-    KeyShareEntry() = default;
+    /// @brief Default constructor.
+    KeyShareEntry() noexcept = default;
 
-    ~KeyShareEntry() = default;
+    /// @brief Constructs an empty entry for @p group.
+    /// @param[in] group The named group.
+    explicit KeyShareEntry(crypto::GroupParams group) noexcept
+        : groupParams_(group)
+    {
+    }
 
-    explicit KeyShareEntry(const crypto::GroupParams groupParams);
+    /// @brief Sets the named group.
+    /// @param[in] group The named group.
+    void setGroup(crypto::GroupParams group) noexcept
+    {
+        groupParams_ = group;
+    }
 
-    void setGroup(const crypto::GroupParams groupParams) noexcept;
+    /// @brief Gets the named group.
+    /// @return The named group.
+    crypto::GroupParams getGroup() const noexcept
+    {
+        return groupParams_;
+    }
 
-    crypto::GroupParams getGroup() const noexcept;
-
+    /// @brief Fills `key_exchange_` from a key object.
+    /// @param[in] key Public key to encode.
+    /// @throws casket::RuntimeError if the group is not a supported ECDH group.
+    /// @note Not part of the `ExtensionLike` contract: uses crypto, may throw.
     void setPublicKey(const Key* key);
 
+    /// @brief Reconstructs a key object from `key_exchange_`.
+    /// @return Public key, or nullptr on unsupported group.
+    /// @note Not part of the `ExtensionLike` contract: uses crypto.
     crypto::KeyPtr getPublicKey() const;
 
-    bool empty() const noexcept;
+    /// @brief Checks whether the entry is default-constructed.
+    /// @retval true  Group is `NONE` and body is empty.
+    /// @retval false Otherwise.
+    bool empty() const noexcept
+    {
+        return (groupParams_ == crypto::GroupParams::NONE) && keyExchange_.empty();
+    }
 
-    void deserialize(utils::DataReader& reader);
+    /// @brief Parses one entry from @p reader.
+    /// @param[in,out] reader Reader positioned at the entry.
+    /// @return DecodeError::None on success, error otherwise.
+    utils::DecodeError deserialize(utils::DataReader& reader) noexcept
+    {
+        groupParams_ = static_cast<crypto::GroupParams>(reader.get_uint16_t());
+        if (!reader.ok())
+            return reader.take_error();
+        reader.get_tls_length_value_into(2, keyExchange_);
+        return reader.take_error();
+    }
 
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Serializes one entry into @p output.
+    /// @param[in] output Destination buffer; must hold `4 + keyExchange_.size()` bytes.
+    /// @return Bytes written on success, `kSerializationFailed` if @p output
+    ///         is too small or the body exceeds 65535 bytes.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept
+    {
+        const std::size_t n = keyExchange_.size();
+        if (n > 0xFFFF)
+        {
+            return kSerializationFailed;
+        }
+
+        if (output.size_bytes() < 4 + n)
+        {
+            return kSerializationFailed;
+        }
+
+        const auto code = groupParams_.wireCode();
+        output[0] = casket::get_byte<0>(code);
+        output[1] = casket::get_byte<1>(code);
+
+        const auto n16 = static_cast<std::uint16_t>(n);
+        output[2] = casket::get_byte<0>(n16);
+        output[3] = casket::get_byte<1>(n16);
+
+        if (n)
+        {
+            std::memcpy(output.data() + 4, keyExchange_.data(), n);
+        }
+        return 4 + n;
+    }
+
+    /// @brief Gets the raw `key_exchange` bytes.
+    /// @return View over the owned body.
+    nonstd::span<const std::uint8_t> keyExchange() const noexcept
+    {
+        return {keyExchange_.data(), keyExchange_.size()};
+    }
 
 private:
-    std::vector<uint8_t> keyExchange_;
-    crypto::GroupParams groupParams_;
+    std::vector<std::uint8_t> keyExchange_; ///< Raw public key bytes.
+    crypto::GroupParams groupParams_{};     ///< Named group of this entry.
 };
 
+/// @brief ClientHello form of the KeyShare extension: a list of offered entries.
 class KeyShareClientHello final
 {
 public:
-    KeyShareClientHello() = default;
-    ~KeyShareClientHello() = default;
+    /// @brief Default constructor.
+    KeyShareClientHello() noexcept = default;
 
-    KeyShareClientHello(const KeyShareClientHello&) = delete;
-    KeyShareClientHello& operator=(const KeyShareClientHello&) = delete;
+    /// @brief Builds one entry per supported group (client side).
+    /// @param[in] supported Supported groups; order is preserved.
+    explicit KeyShareClientHello(const std::vector<crypto::GroupParams>& supported);
 
-    KeyShareClientHello(KeyShareClientHello&&) = default;
-    KeyShareClientHello& operator=(KeyShareClientHello&&) = default;
+    /// @brief Replaces all entries with a single entry for @p toOffer.
+    /// @param[in] toOffer Group to offer in the retry.
+    void retryOffer(crypto::GroupParams toOffer);
 
-    KeyShareClientHello(nonstd::span<const uint8_t> input);
+    /// @brief Collects all offered groups into @p out (clears it first).
+    /// @param[out] out Destination vector; cleared and filled with offered groups.
+    void offeredGroups(std::vector<crypto::GroupParams>& out) const;
 
-    KeyShareClientHello(const std::vector<crypto::GroupParams>& supported);
-
-    void retryOffer(const crypto::GroupParams toOffer);
-
-    std::vector<crypto::GroupParams> offeredGroups() const;
-
+    /// @brief ClientHello never selects a group.
+    /// @throws std::logic_error Always.
     crypto::GroupParams selectedGroup() const;
 
-    void setPublicKey(const size_t idx, const Key* key);
+    /// @brief Sets the public key of the entry at @p idx.
+    /// @param[in] idx Index in `[0, size())`.
+    /// @param[in] key Public key to encode.
+    /// @throws std::out_of_range if @p idx is out of range.
+    void setPublicKey(std::size_t idx, const Key* key);
 
-    crypto::KeyPtr getPublicKey(const size_t idx);
+    /// @brief Reconstructs the public key of the entry at @p idx.
+    /// @param[in] idx Index in `[0, size())`.
+    /// @return Public key, or nullptr on unsupported group.
+    /// @throws std::out_of_range if @p idx is out of range.
+    crypto::KeyPtr getPublicKey(std::size_t idx) const;
 
-    bool empty() const;
+    /// @brief Always `false` -- RFC 8446 allows an empty `client_shares`.
+    bool empty() const noexcept
+    {
+        return false;
+    }
 
-    void deserialize(nonstd::span<const uint8_t> input);
+    /// @brief Parses the ClientHello form from @p input.
+    /// @param[in] input Wire bytes of the extension_data field.
+    /// @return DecodeError::None on success; error otherwise.
+    utils::DecodeError deserialize(nonstd::span<const uint8_t> input) noexcept;
 
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Serializes the ClientHello form into @p output.
+    /// @param[in] output Destination buffer.
+    /// @return Bytes written on success, `kSerializationFailed` otherwise.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 
 private:
-    std::vector<KeyShareEntry> clientKeyShares_;
+    std::vector<KeyShareEntry> clientKeyShares_; ///< Offered entries; groups unique.
 };
 
+/// @brief ServerHello form of the KeyShare extension: exactly one entry.
 class KeyShareServerHello final
 {
 public:
-    KeyShareServerHello() = default;
-    ~KeyShareServerHello() = default;
+    /// @brief Default constructor.
+    KeyShareServerHello() noexcept = default;
 
-    KeyShareServerHello(const KeyShareServerHello&) = delete;
-    KeyShareServerHello& operator=(const KeyShareServerHello&) = delete;
-
-    KeyShareServerHello(KeyShareServerHello&&) = default;
-    KeyShareServerHello& operator=(KeyShareServerHello&&) = default;
-
+    /// @brief Constructs from a selected group and a server public key.
+    /// @param[in] group     Selected named group.
+    /// @param[in] serverKey Server public key to encode.
     KeyShareServerHello(crypto::GroupParams group, const Key* serverKey);
 
+    /// @brief Sets the server public key.
+    /// @param[in] key Public key to encode.
     void setPublicKey(const Key* key);
 
-    crypto::KeyPtr getPublicKey(size_t);
+    /// @brief Reconstructs the server public key.
+    /// @param[in] unused Unused.
+    /// @return Public key, or nullptr on unsupported group.
+    crypto::KeyPtr getPublicKey(std::size_t) const;
 
-    std::vector<crypto::GroupParams> offeredGroups() const;
+    /// @brief Collects the single selected group into @p out.
+    /// @param[out] out Destination vector; cleared and filled with one group.
+    void offeredGroups(std::vector<crypto::GroupParams>& out) const;
 
-    crypto::GroupParams selectedGroup() const;
+    /// @brief Gets the selected group.
+    /// @return The selected group.
+    crypto::GroupParams selectedGroup() const noexcept
+    {
+        return serverKeyShare_.getGroup();
+    }
 
-    bool empty() const;
+    /// @brief Checks whether the entry is default-constructed.
+    /// @retval true  No entry.
+    /// @retval false Otherwise.
+    bool empty() const noexcept
+    {
+        return serverKeyShare_.empty();
+    }
 
-    void deserialize(nonstd::span<const uint8_t> input);
+    /// @brief Parses the ServerHello form from @p input.
+    /// @param[in] input Wire bytes of the extension_data field.
+    /// @return DecodeError::None on success; error otherwise.
+    utils::DecodeError deserialize(nonstd::span<const uint8_t> input) noexcept;
 
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Serializes the ServerHello form into @p output.
+    /// @param[in] output Destination buffer.
+    /// @return Bytes written on success, `kSerializationFailed` otherwise.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept
+    {
+        return serverKeyShare_.serialize(output);
+    }
 
 private:
-    KeyShareEntry serverKeyShare_;
+    KeyShareEntry serverKeyShare_; ///< Single selected entry.
 };
 
+/// @brief HelloRetryRequest form of the KeyShare extension: a single group.
 class KeyShareHelloRetryRequest final
 {
 public:
-    KeyShareHelloRetryRequest() = default;
-    ~KeyShareHelloRetryRequest() = default;
+    /// @brief Default constructor.
+    KeyShareHelloRetryRequest() noexcept = default;
 
-    KeyShareHelloRetryRequest(const KeyShareHelloRetryRequest&) = delete;
-    KeyShareHelloRetryRequest& operator=(const KeyShareHelloRetryRequest&) = delete;
+    /// @brief Constructs from the selected group.
+    /// @param[in] selectedGroup Group the server asks the client to use.
+    explicit KeyShareHelloRetryRequest(crypto::GroupParams selectedGroup) noexcept
+        : selectedGroup_(selectedGroup)
+    {
+    }
 
-    KeyShareHelloRetryRequest(KeyShareHelloRetryRequest&&) = default;
-    KeyShareHelloRetryRequest& operator=(KeyShareHelloRetryRequest&&) = default;
+    /// @brief Gets the selected group.
+    /// @return The selected group.
+    crypto::GroupParams selectedGroup() const noexcept
+    {
+        return selectedGroup_;
+    }
 
-    KeyShareHelloRetryRequest(crypto::GroupParams selectedGroup);
+    /// @brief HRR never offers groups.
+    /// @param[out] out Unused.
+    /// @throws std::logic_error Always.
+    void offeredGroups(std::vector<crypto::GroupParams>& out) const;
 
-    crypto::GroupParams selectedGroup() const;
+    /// @brief Checks whether the selected group is unset.
+    /// @retval true  Group is `NONE`.
+    /// @retval false Otherwise.
+    bool empty() const noexcept
+    {
+        return selectedGroup_ == crypto::GroupParams::NONE;
+    }
 
-    std::vector<crypto::GroupParams> offeredGroups() const;
+    /// @brief Parses the HelloRetryRequest form from @p input.
+    /// @param[in] input Wire bytes of the extension_data field (exactly 2 bytes).
+    /// @return DecodeError::None on success; error otherwise.
+    utils::DecodeError deserialize(nonstd::span<const uint8_t> input) noexcept;
 
-    bool empty() const;
-
-    void deserialize(nonstd::span<const uint8_t> input);
-
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Serializes the HelloRetryRequest form into @p output.
+    /// @param[in] output Destination buffer; must hold at least 2 bytes.
+    /// @return 2 on success, `kSerializationFailed` if @p output is too small.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept
+    {
+        if (output.size_bytes() < 2)
+        {
+            return kSerializationFailed;
+        }
+        const auto code = selectedGroup_.wireCode();
+        output[0] = casket::get_byte<0>(code);
+        output[1] = casket::get_byte<1>(code);
+        return 2;
+    }
 
 private:
-    crypto::GroupParams selectedGroup_;
+    crypto::GroupParams selectedGroup_{crypto::GroupParams::NONE}; ///< Selected group.
 };
 
-class KeyShare final : public Extension
+/// @brief KeyShare Extension (RFC 8446 §4.2.8).
+///
+/// The wire format depends on the carrying handshake message:
+///   * ClientHello:        `<2-byte length> <KeyShareEntry>*`
+///   * ServerHello:        `<KeyShareEntry>` (exactly one)
+///   * HelloRetryRequest:  `<selected_group: uint16>` (exactly 2 bytes)
+///
+/// `deserialize` requires the `HandshakeType` to pick the right form; this
+/// is the only extension in the set that needs the handshake type.
+class KeyShare final
 {
 public:
-    static ExtensionCode staticType()
+    /// @brief Active form.
+    using Variant = std::variant<KeyShareClientHello, KeyShareServerHello, KeyShareHelloRetryRequest>;
+
+    /// @brief Gets the wire code for this extension.
+    /// @return ExtensionCode::KeyShare.
+    static constexpr ExtensionCode staticType() noexcept
     {
         return ExtensionCode::KeyShare;
     }
 
-    ExtensionCode type() const override
+    /// @brief Default constructor; active form is `KeyShareClientHello`.
+    KeyShare() noexcept = default;
+
+    /// @brief Constructs the ClientHello form from supported groups.
+    /// @param[in] supported Supported groups; one entry is created per group.
+    explicit KeyShare(const std::vector<crypto::GroupParams>& supported)
+        : keyShare_(KeyShareClientHello(supported))
     {
-        return staticType();
     }
 
-    KeyShare(nonstd::span<const uint8_t> input, HandshakeType messageType);
-
-    KeyShare(const std::vector<crypto::GroupParams>& supported);
-
+    /// @brief Constructs the ServerHello form from a selected group and key.
+    /// @param[in] selectedGroup Selected named group.
+    /// @param[in] serverKey     Server public key to encode.
     KeyShare(crypto::GroupParams selectedGroup, const Key* serverKey);
 
-    KeyShare(crypto::GroupParams selectedGroup);
+    /// @brief Constructs the HelloRetryRequest form.
+    /// @param[in] selectedGroup Group the server asks the client to use.
+    explicit KeyShare(crypto::GroupParams selectedGroup) noexcept
+        : keyShare_(KeyShareHelloRetryRequest(selectedGroup))
+    {
+    }
 
-    ~KeyShare() noexcept;
+    /// @brief Checks whether the active form is empty.
+    /// @return Value of `empty()` on the active form.
+    bool empty() const noexcept
+    {
+        return std::visit(
+            [](const auto& inner) noexcept
+            {
+                return inner.empty();
+            },
+            keyShare_);
+    }
 
-    size_t serialize(Side whoami, nonstd::span<uint8_t> output) const override;
+    /// @brief Serializes the active form into @p output.
+    /// @param[in] whoami Side (Client or Server); unused.
+    /// @param[in] output Destination buffer.
+    /// @return Bytes written on success, `kSerializationFailed` otherwise.
+    std::size_t serialize(Side /*whoami*/, nonstd::span<uint8_t> output) const noexcept
+    {
+        return std::visit(
+            [output](const auto& inner) noexcept
+            {
+                return inner.serialize(output);
+            },
+            keyShare_);
+    }
 
-    bool empty() const override;
+    /// @brief Parses the extension body for a given handshake message type.
+    /// @param[in] side           Side (Client or Server); unused.
+    /// @param[in] input          Wire bytes of the extension_data field.
+    /// @param[in] handshakeType  One of ClientHello, ServerHello, HelloRetryRequest.
+    /// @return DecodeError::None on success; error otherwise.
+    utils::DecodeError deserialize(Side side, nonstd::span<const uint8_t> input,
+                                   HandshakeType handshakeType) noexcept;
 
-    void setPublicKey(const size_t idx, const Key* key);
-
+    /// @brief Sets the public key on the active ServerHello form.
+    /// @param[in] key Public key to encode.
+    /// @throws std::logic_error if the active form is not ServerHello.
     void setPublicKey(const Key* key);
 
-    crypto::KeyPtr getPublicKey(size_t i = 0);
+    /// @brief Sets the public key by index on the active ClientHello form.
+    /// @param[in] idx Index in `[0, size())`.
+    /// @param[in] key Public key to encode.
+    /// @throws std::logic_error if the active form is not ClientHello.
+    /// @throws std::out_of_range if @p idx is out of range.
+    void setPublicKey(std::size_t idx, const Key* key);
 
-    void retryOffer(const KeyShare& retryRequestKeyShare, const std::vector<crypto::GroupParams>& supportedGroups);
+    /// @brief Reconstructs a public key from the active ClientHello or ServerHello form.
+    /// @param[in] i Index (used only by ClientHello).
+    /// @return Public key, or nullptr on unsupported group.
+    /// @throws std::logic_error if the active form is HelloRetryRequest.
+    crypto::KeyPtr getPublicKey(std::size_t i = 0) const;
 
-    std::vector<crypto::GroupParams> offeredGroups() const;
+    /// @brief Collects the offered groups of the active form into @p out.
+    /// @param[out] out Destination vector; cleared and filled with offered groups.
+    void offeredGroups(std::vector<crypto::GroupParams>& out) const;
 
+    /// @brief Gets the selected group (ServerHello or HelloRetryRequest only).
+    /// @return The selected group.
+    /// @throws std::logic_error for the ClientHello form.
     crypto::GroupParams selectedGroup() const;
 
+    /// @brief Retries the ClientHello offer against an HRR.
+    /// @param[in] retryRequestKeyShare HRR form carrying the selected group.
+    /// @param[in] supportedGroups      Groups advertised in the original ClientHello.
+    /// @throws std::runtime_error if the HRR selected a group that was not offered,
+    ///         or if the active forms are not `ClientHello` + `HelloRetryRequest`.
+    void retryOffer(const KeyShare& retryRequestKeyShare, const std::vector<crypto::GroupParams>& supportedGroups);
+
+    /// @brief Raw access to the active form (advanced / tests).
+    /// @return Const reference to the active variant.
+    const Variant& raw() const noexcept
+    {
+        return keyShare_;
+    }
+
 private:
-    using Type = nonstd::variant<KeyShareClientHello, KeyShareServerHello, KeyShareHelloRetryRequest>;
-    Type keyShare_;
+    Variant keyShare_; ///< Active form.
 };
 
 } // namespace snet::tls

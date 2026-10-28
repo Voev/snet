@@ -1,98 +1,106 @@
 #include <snet/tls/exts/alpn.hpp>
-#include <snet/utils/data_writer.hpp>
-#include <snet/utils/data_reader.hpp>
 
-#include <casket/utils/exception.hpp>
-
-using namespace casket;
+#include <stdexcept>
 
 namespace snet::tls
 {
 
-ExtensionCode ALPN::staticType()
+ALPN::ALPN(const std::vector<std::string>& protocols)
 {
-    return ExtensionCode::AppLayerProtocolNegotiation;
-}
-
-ExtensionCode ALPN::type() const
-{
-    return staticType();
-}
-
-bool ALPN::empty() const
-{
-    return protocols_.empty();
-}
-
-size_t ALPN::serialize(Side side, nonstd::span<uint8_t> output) const
-{
-    (void)side;
-
-    ThrowIfTrue(output.size_bytes() < 2, "buffer too small");
-    auto buffer = output.subspan(2);
-    uint16_t totalLength{0};
-
-    for (auto&& p : protocols_)
+    buf_.reserve(protocols.size() * 8);
+    offsets_.reserve(protocols.size());
+    for (const auto& p : protocols)
     {
-        ThrowIfTrue(p.length() >= 256, "ALPN name too long");
-        if (!p.empty())
+        if (p.empty() || p.size() > 255)
         {
-            auto encodedLength = append_length_and_value(buffer, p.data(), p.size(), 1);
-            buffer = buffer.subspan(encodedLength);
-            totalLength += encodedLength;
+            clear();
+            throw std::invalid_argument("ALPN protocol name must be 1..255 bytes");
+        }
+        if (!appendProtocol(p))
+        {
+            clear();
+            throw std::bad_alloc();
         }
     }
-
-    output[0] = casket::get_byte<0>(totalLength);
-    output[1] = casket::get_byte<1>(totalLength);
-
-    totalLength += 2;
-
-    return totalLength;
 }
 
-ALPN::ALPN(nonstd::string_view protocol)
-    : protocols_(1, std::string(protocol))
+bool ALPN::appendProtocol(nonstd::string_view p) noexcept
 {
+    const std::size_t len = p.size();
+    if (len == 0 || len > 255)
+        return false;
+    try
+    {
+        offsets_.push_back(static_cast<std::uint16_t>(buf_.size()));
+        buf_.push_back(static_cast<char>(len));
+        buf_.insert(buf_.end(), p.data(), p.data() + len);
+        return true;
+    }
+    catch (...)
+    {
+        // Leave the object consistent on OOM.
+        buf_.clear();
+        offsets_.clear();
+        return false;
+    }
 }
 
-ALPN::ALPN(const std::vector<std::string>& protocols)
-    : protocols_(protocols)
+utils::DecodeError ALPN::deserialize(Side side, nonstd::span<const uint8_t> input) noexcept
 {
-}
+    clear();
 
-ALPN::ALPN(Side side, nonstd::span<const uint8_t> input)
-{
-    utils::DataReader reader("ALPN", input);
+    utils::DataReader reader(input);
 
-    const uint16_t nameBytes = reader.get_uint16_t();
-    ThrowIfTrue(nameBytes != reader.remaining_bytes(), "bad encoding of ALPN extension, bad length field");
+    const std::uint16_t nameBytes = reader.get_uint16_t();
+    if (!reader.ok())
+    {
+        return reader.take_error();
+    }
+
+    if (nameBytes != reader.remaining_bytes())
+    {
+        return utils::DecodeError::LengthOutOfRange;
+    }
+
+    try
+    {
+        offsets_.reserve(nameBytes / 2);
+        buf_.reserve(nameBytes);
+    }
+    catch (...)
+    {
+        return utils::DecodeError::AllocationFailed;
+    }
 
     while (reader.has_remaining())
     {
-        const std::string p = reader.get_string(1, 0, 255);
-        ThrowIfTrue(p.empty(), "empty ALPN protocol not allowed");
-        protocols_.push_back(p);
+        const auto p = reader.get_string_view(1, 1, 255);
+        if (!reader.ok())
+        {
+            clear();
+            return reader.take_error();
+        }
+
+        if (!appendProtocol(p))
+        {
+            clear();
+            return utils::DecodeError::AllocationFailed;
+        }
+    }
+    reader.assert_done();
+    if (!reader.ok())
+    {
+        clear();
+        return reader.take_error();
     }
 
-    reader.assert_done();
-
-    // RFC 7301 3.1
-    //    The "extension_data" field of the [...] extension is structured the
-    //    same as described above for the client "extension_data", except that
-    //    the "ProtocolNameList" MUST contain exactly one "ProtocolName".
-    ThrowIfTrue(side == Side::Server && protocols_.size() != 1,
-                        "server sent {} protocols in ALPN extension response", protocols_.size());
-}
-
-const std::vector<std::string>& ALPN::protocols() const
-{
-    return protocols_;
-}
-
-std::string ALPN::singleProtocol() const
-{
-    return protocols_.front();
+    // RFC 7301 §3.1: server response MUST contain exactly one protocol.
+    if (side == Side::Server && offsets_.size() != 1)
+    {
+        clear();
+        return utils::DecodeError::LengthOutOfRange;
+    }
+    return utils::DecodeError::None;
 }
 
 } // namespace snet::tls

@@ -8,68 +8,120 @@
 namespace snet::tls
 {
 
-
-
-void ClientHello::parse(nonstd::span<const uint8_t> input)
+std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    utils::DataReader reader("Client Hello", input);
+    utils::DataReader reader(input);
 
-    /// @todo: fuzzing: check bytes for correctness
+    // version: 2 bytes, mandatory
     version = ProtocolVersion(reader.get_uint16_t());
-    random = reader.get_span_fixed(32);
-    sessionID = reader.get_span(1, 0, 32);
-    suites = reader.get_span(2, 1, 32767);
-    compMethods = reader.get_span(1, 1, 255);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
 
+    // random: exactly 32 bytes
+    random = reader.get_span_fixed(32);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    // session_id: <1 byte length> <0..32 bytes>
+    sessionID = reader.get_span(1, 0, 32);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    // cipher_suites: <2 byte length> <2..65534 bytes, even>  (RFC: 2..2^16-2)
+    suites = reader.get_span(2, 2, 65534);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    if (suites.size() % 2 != 0)
+    {
+        // must be multiple of 2
+        reader.set_error(utils::DecodeError::SizeNotMultiple);
+        return reader.take_ec();
+    }
+
+    // compression_methods: <1 byte length> <1..255 bytes>
+    compMethods = reader.get_span(1, 1, 255);
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    // Pre-TLS-1.3 / SSLv3.0: no extensions, must be exactly consumed
     if (version == ProtocolVersion::SSLv3_0)
     {
         reader.assert_done();
+        extensions = {};
+        return reader.take_ec();
     }
-    else
+
+    // Everything else goes to extensions. It is *not* parsed here —
+    // Extensions::deserialize() consumes it later, on its own reader.
+    extensions = reader.get_span_remaining();
+    reader.assert_done();
+
+    return reader.take_ec();
+}
+
+size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+{
+    if (output.size_bytes() < 2)
     {
-        extensions = reader.get_span_remaining();
+        return kSerializationFailed;
     }
-}
 
-ClientHello ClientHello::deserialize(nonstd::span<const uint8_t> input)
-{
-    ClientHello msg;
-    msg.parse(input);
-    return msg;
-}
+    size_t pos = 0;
+    size_t n = 0;
 
-size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& session) const
-{
-    size_t offset{};
-    size_t length{};
+    output[pos++] = version.majorVersion();
+    output[pos++] = version.minorVersion();
 
-    output[0] = version.majorVersion();
-    output[1] = version.minorVersion();
-    output = output.subspan(2);
-    length += 2;
+    if (output.size_bytes() - pos < random.size())
+    {
+        return kSerializationFailed;
+    }
 
-    std::copy(random.begin(), random.end(), output.begin());
-    output = output.subspan(random.size());
-    length += random.size();
+    if (!random.empty())
+    {
+        std::memcpy(output.data() + pos, random.data(), random.size());
+    }
+    pos += random.size();
 
-    offset = append_length_and_value(output, sessionID.data(), sessionID.size(), 1);
-    output = output.subspan(offset);
-    length += offset;
+    n = AppendLengthAndValue(output.subspan(pos), sessionID.data(), sessionID.size(), 1);
+    if (n == kSerializationFailed)
+    {
+        return kSerializationFailed;
+    }
+    pos += n;
 
-    offset = append_length_and_value(output, suites.data(), suites.size(), 2);
-    output = output.subspan(offset);
-    length += offset;
+    n = AppendLengthAndValue(output.subspan(pos), suites.data(), suites.size(), 2);
+    if (n == kSerializationFailed)
+    {
+        return kSerializationFailed;
+    }
+    pos += n;
 
-    offset = append_length_and_value(output, compMethods.data(), compMethods.size(), 1);
-    output = output.subspan(offset);
-    length += offset;
+    n = AppendLengthAndValue(output.subspan(pos), compMethods.data(), compMethods.size(), 1);
+    if (n == kSerializationFailed)
+    {
+        return kSerializationFailed;
+    }
+    pos += n;
 
-    const auto& extensions = session.getClientExtensions();
-    offset = extensions.serialize(Side::Client, output);
-    output = output.subspan(offset);
-    length += offset;
+    const auto extWritten = session.getClientExtensions().serialize(Side::Client, output.subspan(pos));
+    if (extWritten == 0)
+    {
+        return kSerializationFailed;
+    }
 
-    return length;
+    return pos + extWritten;
 }
 
 } // namespace snet::tls

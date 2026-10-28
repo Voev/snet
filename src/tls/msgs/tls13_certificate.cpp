@@ -1,90 +1,172 @@
 #include <snet/tls/msgs/tls13_certificate.hpp>
 
+#include <cstring>
+
+#include <casket/utils/load_store.hpp>
+
 #include <snet/crypto/cert.hpp>
 
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/data_writer.hpp>
 
-#include <casket/utils/exception.hpp>
+#include <snet/tls/session.hpp>
 
-using namespace casket;
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
-void TLSv13Certificate::deserialize(nonstd::span<const uint8_t> buffer)
+std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    utils::DataReader reader("TLSv1.3 Certificate", buffer);
+    requestContext = {};
+    entryCount = 0;
+    for (auto& e : entryList)
+    {
+        e.certData = {};
+        e.extsData = {};
+        e.cert = nullptr;
+    }
+
+    utils::DataReader reader(input);
 
     requestContext = reader.get_span(1, 0, 255);
+    if (!reader.ok())
+        return reader.take_ec();
 
-    const size_t certEntriesLength = reader.get_uint24_t();
-    ThrowIfTrue(reader.remaining_bytes() != certEntriesLength, "TLSv1.3 Certificate: message malformed");
+    const std::uint32_t total = reader.get_uint24_t();
+    if (!reader.ok())
+        return reader.take_ec();
+    if (total != reader.remaining_bytes())
+        return make_error_code(DecodeError::LengthOutOfRange);
 
     while (reader.has_remaining())
     {
-        Entry entry;
+        if (entryCount == kMaxCertChain)
+            return make_error_code(DecodeError::LengthOutOfRange);
+
+        Entry& entry = entryList[entryCount];
+
         entry.certData = reader.get_span_length_and_value(3);
+        if (!reader.ok())
+        {
+            entryCount = 0;
+            return reader.take_ec();
+        }
+        if (entry.certData.empty())
+        {
+            entryCount = 0;
+            return make_error_code(DecodeError::LengthOutOfRange);
+        }
 
-        const auto length = reader.peek_uint16_t();
-        entry.extsData = reader.get_span_fixed(2 + length);
+        const std::uint16_t extTotal = reader.peek_uint16_t();
+        if (!reader.ok())
+        {
+            entryCount = 0;
+            return reader.take_ec();
+        }
+        if (static_cast<std::size_t>(extTotal) + 2 > reader.remaining_bytes())
+        {
+            entryCount = 0;
+            return make_error_code(DecodeError::LengthOutOfRange);
+        }
+        entry.extsData = reader.get_span_fixed(2 + static_cast<std::size_t>(extTotal));
+        if (!reader.ok())
+        {
+            entryCount = 0;
+            return reader.take_ec();
+        }
 
-        entryList[entryCount++] = std::move(entry);
+        ++entryCount;
     }
 
     reader.assert_done();
+    return reader.take_ec();
 }
 
-size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output) const
+std::size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
-    size_t totalLength{0};
+    (void)session;
+    /// @todo use session.
+    const Side side = Side::Server;
+    std::size_t pos = 0;
 
-    totalLength += append_length_and_value(output, requestContext.data(), requestContext.size(), 1);
-
-    auto header = output.subspan(totalLength);
-    auto entries = header.subspan(3);
-    totalLength += 3;
-
-    int32_t offset;
-    uint32_t entriesLength{0};
-    for (size_t i = 0; i < entryCount; ++i)
+    // certificate_request_context
+    if (output.size_bytes() < 1)
+        return kSerializationFailed;
+    if (requestContext.size() > 255)
+        return kSerializationFailed;
+    output[pos++] = static_cast<std::uint8_t>(requestContext.size());
+    if (!requestContext.empty())
     {
-        auto certData = entries.subspan(3);
+        if (output.size_bytes() - pos < requestContext.size())
+            return kSerializationFailed;
+        std::memcpy(output.data() + pos, requestContext.data(), requestContext.size());
+        pos += requestContext.size();
+    }
 
-        offset = crypto::Cert::toBuffer(entryList[i].cert, certData);
-        ThrowIfTrue(offset < 0, "Certificate serialization error");
+    if (output.size_bytes() - pos < 3)
+        return kSerializationFailed;
+    const std::size_t listStart = pos;
+    pos += 3;
 
-        entries[0] = casket::get_byte<1>(offset);
-        entries[1] = casket::get_byte<2>(offset);
-        entries[2] = casket::get_byte<3>(offset);
+    std::uint32_t entriesLength = 0;
 
-        offset += 3;
-        entries = entries.subspan(offset);
-        entriesLength += offset;
+    for (std::size_t i = 0; i < entryCount; ++i)
+    {
+        const Entry& entry = entryList[i];
+        if (!entry.cert)
+            return kSerializationFailed;
 
-        if (entryList[i].extensions)
+        if (output.size_bytes() - pos < 3)
+            return kSerializationFailed;
+        auto certBuf = output.subspan(pos + 3);
+
+        const auto certSize = crypto::Cert::toBuffer(entry.cert, certBuf);
+        if (certSize <= 0)
+            return kSerializationFailed;
+        if (static_cast<std::size_t>(certSize) > 0xFFFFFF)
+            return kSerializationFailed;
+
+        const auto certSize32 = static_cast<std::uint32_t>(certSize);
+        output[pos] = casket::get_byte<1>(certSize32);
+        output[pos + 1] = casket::get_byte<2>(certSize32);
+        output[pos + 2] = casket::get_byte<3>(certSize32);
+        pos += 3 + static_cast<std::size_t>(certSize);
+        entriesLength += 3 + certSize32;
+
+        // extensions: ALWAYS write 2-byte length, even if empty
+        if (entry.extensions)
         {
-            /// @todo: pay attention to side
-            offset = entryList[i].extensions->serialize(Side::Server, entries);
+            const auto n = entry.extensions->serialize(side, output.subspan(pos));
+            if (n == kSerializationFailed)
+            {
+                return kSerializationFailed;
+            }
+            pos += n;
+            entriesLength += static_cast<std::uint32_t>(n);
         }
         else
         {
-            offset = 2;
-            entries[0] = 0x00;
-            entries[1] = 0x00;
+            if (output.size_bytes() - pos < 2)
+            {
+                return kSerializationFailed;
+            }
+            output[pos++] = 0x00;
+            output[pos++] = 0x00;
+            entriesLength += 2;
         }
-
-        entries = entries.subspan(offset);
-        entriesLength += offset;
     }
 
-    header[0] = casket::get_byte<1>(entriesLength);
-    header[1] = casket::get_byte<2>(entriesLength);
-    header[2] = casket::get_byte<3>(entriesLength);
+    if (entriesLength > 0xFFFFFF)
+    {
+        return kSerializationFailed;
+    }
 
-    totalLength += entriesLength;
+    output[listStart] = casket::get_byte<1>(entriesLength);
+    output[listStart + 1] = casket::get_byte<2>(entriesLength);
+    output[listStart + 2] = casket::get_byte<3>(entriesLength);
 
-    return totalLength;
+    return pos;
 }
 
 } // namespace snet::tls

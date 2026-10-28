@@ -7,6 +7,7 @@
 
 using namespace testing;
 using namespace snet::tls;
+using namespace snet::utils;
 
 struct SerializeTestParam
 {
@@ -26,33 +27,38 @@ protected:
 
 TEST_P(CertificateSerializeTest, DeserializeSerialize)
 {
-    SerializeTestParam param = GetParam();
-    std::vector<uint8_t> serialized(param.cert.size());
-    size_t serializedLength = 0;
+    const SerializeTestParam param = GetParam();
 
     MetaInfo metaInfo{};
     metaInfo.version = param.version;
 
     Certificate certificate;
-    ASSERT_NO_THROW(certificate = Certificate::deserialize(param.cert, metaInfo));
+    ASSERT_EQ(certificate.deserialize(nonstd::span<const uint8_t>(param.cert), metaInfo),
+              make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     ASSERT_NO_THROW(session.processCertificate(1, certificate));
 
     if (param.version == ProtocolVersion::TLSv1_3)
     {
-        std::get<TLSv13Certificate>(certificate.message).entryList[0].cert = session.getServerCert();
-        /// @todo: set extensions
+        auto& entry = std::get<TLSv13Certificate>(certificate.message).entryList[0];
+        if (!entry.cert)
+            entry.cert = session.getServerCert();
+        // entry.extensions remains empty: round-trip via extsData is enough.
     }
     else
     {
-        std::get<TLSv1Certificate>(certificate.message).entryList[0].cert = session.getServerCert();
+        auto& entry = std::get<TLSv1Certificate>(certificate.message).entryList[0];
+        if (!entry.cert)
+            entry.cert = session.getServerCert();
     }
 
-    ASSERT_NO_THROW(serializedLength = certificate.serialize(serialized, session));
-    serialized.resize(serializedLength);
+    std::vector<uint8_t> serialized(param.cert.size() + 64);
+    const std::size_t written = certificate.serialize(serialized, session);
+    ASSERT_GT(written, 0u);
+    serialized.resize(written);
 
-    ASSERT_EQ(serialized, param.cert);
+    ASSERT_EQ(serialized, param.cert) << CompareVectors(serialized, param.cert);
 }
 
 // clang-format off

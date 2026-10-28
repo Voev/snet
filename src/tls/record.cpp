@@ -5,7 +5,11 @@
 #include <snet/tls/record.hpp>
 #include <snet/tls/session.hpp>
 
+#include <snet/utils/decode_error.hpp>
+
 #include <casket/utils/exception.hpp>
+
+using namespace snet::utils;
 
 namespace snet::tls
 {
@@ -76,9 +80,17 @@ size_t Record::initCiphertext(nonstd::span<const uint8_t> data) noexcept
     }
 }
 
-void Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::error_code Record::deserializeHandshake(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept
 {
-    handshake_ = HandshakeMessage::deserialize(input, metaInfo);
+    HandshakeMessage msg;
+    std::error_code ec{make_error_code(DecodeError::None)};
+
+    ec = HandshakeMessage::deserialize(input, metaInfo, msg);
+    if (!ec)
+    {
+        handshake_ = std::move(msg);
+    }
+    return ec;
 }
 
 inline ProtocolVersion GetRecordVersion(const HandshakeType type, const Session& session) noexcept

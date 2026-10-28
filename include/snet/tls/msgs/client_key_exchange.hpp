@@ -1,117 +1,152 @@
 #pragma once
 
-#include <casket/nonstd/variant.hpp>
+#include <cstdint>
+#include <system_error>
+
 #include <casket/nonstd/span.hpp>
+#include <casket/nonstd/variant.hpp>
 
-#include <snet/tls/version.hpp>
 #include <snet/tls/meta_info.hpp>
-
-#include <snet/crypto/group_params.hpp>
-#include <snet/crypto/signature_scheme.hpp>
+#include <snet/tls/version.hpp>
 
 #include <snet/utils/data_reader.hpp>
+#include <snet/utils/decode_error.hpp>
 
 namespace snet::tls
 {
 
 class Session;
 
-/// @brief Represents an encrypted pre-master secret in TLS key exchange.
+/// @brief Encrypted pre-master secret for RSA key exchange
+///        (TLS 1.0: RFC 2246 §7.4.7.1; TLS 1.2: RFC 5246 §7.4.7.1).
 ///
-/// Used in RSA key exchange to securely transmit the pre-master secret
-/// from client to server, encrypted with the server's public key.
+/// Wire format: `<2-byte length> <encrypted PMS bytes>`.
+///
+/// `preMasterSecret` is a view into the input buffer passed to
+/// `deserialize` (or the reader's buffer); the caller must keep that
+/// buffer alive for the lifetime of the object.
 struct EncryptedPreMasterSecret final
 {
-    /// @brief Deserialize the encrypted pre-master secret from a data reader.
-    ///
-    /// @param[in] reader Data reader containing the serialized data.
-    void deserialize(utils::DataReader& reader);
+    /// @brief Encrypted pre-master secret bytes; without the 2-byte length prefix.
+    nonstd::span<const uint8_t> preMasterSecret{};
 
-    /// @brief Serialize the encrypted pre-master secret to a byte buffer.
-    ///
-    /// @param[in] output Buffer to write the serialized data to.
-    ///
-    /// @return Number of bytes written to output buffer.
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Default constructor; `preMasterSecret` is empty.
+    EncryptedPreMasterSecret() noexcept = default;
 
-    nonstd::span<const uint8_t> preMasterSecret; ///< Raw encrypted pre-master secret data.
+    /// @brief Parses the encrypted pre-master secret from @p reader.
+    /// @param[in,out] reader Reader positioned at the encrypted PMS.
+    /// @return `std::error_code` (`0` on success).
+    ///         On failure `*this` is left with an empty view (strong guarantee).
+    /// @note `noexcept`. The view points into the reader's buffer.
+    std::error_code deserialize(utils::DataReader& reader) noexcept;
+
+    /// @brief Serializes the encrypted pre-master secret into @p output.
+    /// @param[in] output Destination buffer; must hold
+    ///                   `2 + preMasterSecret.size()` bytes.
+    /// @return Bytes written on success, `kSerializationFailed` on error.
+    /// @note `noexcept`.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
-/// @brief Represents a client's Diffie-Hellman public value.
+/// @brief Client DH public value for DHE key exchange
+///        (TLS 1.0: RFC 2246 §7.4.7.2; TLS 1.2: RFC 5246 §7.4.7.2).
 ///
-/// Used in traditional DH key exchange to transmit the client's
-/// public DH parameter to the server.
+/// Wire format: `<2-byte length> <dh_Yc bytes>`.
+///
+/// `dhPublic` is a view into the input buffer passed to `deserialize`;
+/// the caller must keep that buffer alive for the lifetime of the object.
 struct ClientDhPublic final
 {
-    /// @brief Deserialize the client DH public value from a data reader.
-    ///
-    /// @param[in] reader Data reader containing the serialized data.
-    void deserialize(utils::DataReader& reader);
+    /// @brief DH public value bytes; without the 2-byte length prefix.
+    nonstd::span<const uint8_t> dhPublic{};
 
-    /// @brief Serialize the client DH public value to a byte buffer.
-    ///
-    /// @param[in] output Buffer to write the serialized data to.
-    ///
-    /// @return Number of bytes written to output buffer.
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Default constructor; `dhPublic` is empty.
+    ClientDhPublic() noexcept = default;
 
-    nonstd::span<const uint8_t> dhPublic; ///< Raw DH public value data.
+    /// @brief Parses the DH public value from @p reader.
+    /// @param[in,out] reader Reader positioned at the DH public value.
+    /// @return `std::error_code` (`0` on success).
+    ///         On failure `*this` is left with an empty view (strong guarantee).
+    /// @note `noexcept`. The view points into the reader's buffer.
+    std::error_code deserialize(utils::DataReader& reader) noexcept;
+
+    /// @brief Serializes the DH public value into @p output.
+    /// @param[in] output Destination buffer; must hold
+    ///                   `2 + dhPublic.size()` bytes.
+    /// @return Bytes written on success, `kSerializationFailed` on error.
+    /// @note `noexcept`.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
-/// @brief Represents a client's Elliptic Curve Diffie-Hellman public value.
+/// @brief Client ECDH public value for ECDHE key exchange
+///        (TLS 1.0: RFC 4492 §5.7; TLS 1.2: RFC 8422 §5.7).
 ///
-/// Used in ECDH key exchange to transmit the client's
-/// elliptic curve public key to the server.
+/// Wire format: `<1-byte length> <ecdh_Yc bytes>`.
+///
+/// `ecdhPublic` is a view into the input buffer passed to `deserialize`;
+/// the caller must keep that buffer alive for the lifetime of the object.
 struct ClientEcdhPublic final
 {
-    /// @brief Deserialize the client ECDH public value from a data reader.
-    ///
-    /// @param[in] reader Data reader containing the serialized data.
-    void deserialize(utils::DataReader& reader);
+    /// @brief ECDH public value bytes; without the 1-byte length prefix.
+    nonstd::span<const uint8_t> ecdhPublic{};
 
-    /// @brief Serialize the client ECDH public value to a byte buffer.
-    ///
-    /// @param[in] output Buffer to write the serialized data to.
-    ///
-    /// @return Number of bytes written to output buffer.
-    size_t serialize(nonstd::span<uint8_t> output) const;
+    /// @brief Default constructor; `ecdhPublic` is empty.
+    ClientEcdhPublic() noexcept = default;
 
-    nonstd::span<const uint8_t> ecdhPublic; ///< Raw ECDH public value data.
+    /// @brief Parses the ECDH public value from @p reader.
+    /// @param[in,out] reader Reader positioned at the ECDH public value.
+    /// @return `std::error_code` (`0` on success).
+    ///         On failure `*this` is left with an empty view (strong guarantee).
+    /// @note `noexcept`. The view points into the reader's buffer.
+    std::error_code deserialize(utils::DataReader& reader) noexcept;
+
+    /// @brief Serializes the ECDH public value into @p output.
+    /// @param[in] output Destination buffer; must hold
+    ///                   `1 + ecdhPublic.size()` bytes.
+    /// @return Bytes written on success, `kSerializationFailed` on error.
+    /// @note `noexcept`.
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
-/// @brief Represents a Client Key Exchange message in TLS protocol.
+/// @brief ClientKeyExchange handshake message (TLS 1.0–1.2;
+///        TLS 1.0: RFC 2246 §7.4.7; TLS 1.2: RFC 5246 §7.4.7).
 ///
-/// This structure handles the key exchange parameters sent by the client
-/// during the TLS handshake. It supports multiple key exchange methods
-/// through a variant type (EncryptedPreMasterSecret, ClientDhPublic, ClientEcdhPublic).
+/// The active alternative is selected by the key exchange algorithm
+/// derived from `MetaInfo::cipherSuite`:
+///   * `NID_kx_rsa`             -> `EncryptedPreMasterSecret`;
+///   * `NID_kx_dhe` / `_dhe_psk`  -> `ClientDhPublic`;
+///   * `NID_kx_ecdhe` / `_ecdhe_psk` -> `ClientEcdhPublic`.
+///
+/// Not used in TLS 1.3, where the key exchange is carried in the `key_share`
+/// extension of `ClientHello` / `ServerHello`.
 struct ClientKeyExchange final
 {
-    /// @brief Variant type representing different key exchange parameters.
+    /// @brief Key exchange parameters; one of three wire-format variants.
     using Params = nonstd::variant<EncryptedPreMasterSecret, ClientDhPublic, ClientEcdhPublic>;
 
-    /// @brief Parse a Client Key Exchange message from raw data.
-    ///
-    /// @param[in] input Raw bytes containing the Client Key Exchange message.
-    /// @param[in] metaInfo Metadata information for parsing context.
-    void parse(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+    /// @brief Active key exchange parameters; set by `deserialize`.
+    Params params{};
 
-    /// @brief Static factory method to deserialize a Client Key Exchange message.
-    ///
-    /// @param[in] input Raw bytes containing the Client Key Exchange message.
-    /// @param[in] metaInfo Metadata information for parsing context.
-    ///
-    /// @return Parsed ClientKeyExchange object.
-    static ClientKeyExchange deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo);
+    /// @brief Default constructor; active alternative is `EncryptedPreMasterSecret`.
+    ClientKeyExchange() noexcept = default;
 
-    /// @brief Serialize the Client Key Exchange message to a byte buffer.
-    ///
-    /// @param[in] output Buffer to write the serialized data to.
-    /// @param[in] session Session context for serialization.
-    ///
-    /// @return Number of bytes written to output buffer.
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const;
+    /// @brief Parses the ClientKeyExchange body into `*this`.
+    /// @param[in] input    Wire bytes of the ClientKeyExchange body (without
+    ///                     the 4-byte handshake header).
+    /// @param[in] metaInfo Protocol metadata; `metaInfo.cipherSuite` selects
+    ///                     the key exchange algorithm.
+    /// @return `std::error_code` (`0` on success).
+    ///         On failure `*this` is left unchanged (strong guarantee).
+    /// @note `noexcept`. Views point into @p input.
+    std::error_code deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept;
 
-    Params params; ///< Key exchange parameters specific to the negotiated method.
+    /// @brief Serializes the active alternative into @p output.
+    /// @param[in] output  Destination buffer.
+    /// @param[in] session Session context (unused; kept for the uniform
+    ///                    `serialize(span, const Session&)` contract).
+    /// @return Bytes written on success, `kSerializationFailed` on error.
+    /// @note `noexcept`.
+    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
 };
 
 } // namespace snet::tls

@@ -1,88 +1,165 @@
-#include <cassert>
 #include <snet/tls/msgs/handshake_message.hpp>
+
 #include <snet/tls/session.hpp>
+
+#include <snet/utils/data_reader.hpp>
+#include <snet/utils/decode_error.hpp>
+
+using namespace snet::utils;
 
 namespace snet::tls
 {
 
-HandshakeMessage HandshakeMessage::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo)
+std::error_code HandshakeMessage::deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo,
+                                              HandshakeMessage& out) noexcept
 {
-    if (input.size() < TLS_HANDSHAKE_HEADER_SIZE)
+    if (input.size_bytes() < TLS_HANDSHAKE_HEADER_SIZE)
     {
-        throw std::runtime_error("Input buffer too small for handshake header");
+        return make_error_code(utils::DecodeError::NotEnoughBytes);
     }
 
-    utils::DataReader reader("Handshake Message", input);
+    utils::DataReader reader(input);
 
     const auto messageType = static_cast<HandshakeType>(reader.get_byte());
     const auto messageLength = reader.get_uint24_t();
-    casket::ThrowIfFalse(reader.remaining_bytes() == messageLength, "Incorrect length of handshake message");
-    
+    if (!reader.ok())
+    {
+        return reader.take_ec();
+    }
+
+    if (reader.remaining_bytes() != messageLength)
+    {
+        return make_error_code(utils::DecodeError::LengthOutOfRange);
+    }
+
     auto payload = input.subspan(TLS_HANDSHAKE_HEADER_SIZE, messageLength);
-    
+
     MessageType message;
+    std::error_code err;
+
     switch (messageType)
     {
     case HandshakeType::ClientHelloCode:
-        message = ClientHello::deserialize(payload);
+        err = message.emplace<ClientHello>().deserialize(payload);
         break;
     case HandshakeType::ServerHelloCode:
-        message = ServerHello::deserialize(payload);
+        err = message.emplace<ServerHello>().deserialize(payload);
         break;
     case HandshakeType::EncryptedExtensionsCode:
-        message = EncryptedExtensions::deserialize(payload);
+        err = message.emplace<EncryptedExtensions>().deserialize(payload);
         break;
     case HandshakeType::CertificateCode:
-        message = Certificate::deserialize(payload, metaInfo);
+        err = message.emplace<Certificate>().deserialize(payload, metaInfo);
         break;
     case HandshakeType::CertificateRequestCode:
-        message = CertificateRequest::deserialize(payload, metaInfo);
+        err = message.emplace<CertificateRequest>().deserialize(payload, metaInfo);
         break;
     case HandshakeType::CertificateVerifyCode:
-        message = CertificateVerify::deserialize(payload, metaInfo);
+        err = message.emplace<CertificateVerify>().deserialize(payload, metaInfo);
         break;
     case HandshakeType::ServerKeyExchangeCode:
-        message = ServerKeyExchange::deserialize(payload, metaInfo);
+        err = message.emplace<ServerKeyExchange>().deserialize(payload, metaInfo);
         break;
     case HandshakeType::FinishedCode:
-        message = Finished::deserialize(payload);
+        err = message.emplace<Finished>().deserialize(payload);
         break;
     case HandshakeType::ServerHelloDoneCode:
-        message = ServerHelloDone::deserialize(payload);
+        err = message.emplace<ServerHelloDone>().deserialize(payload);
         break;
     case HandshakeType::KeyUpdateCode:
-        // Nothing to do.
+        err = message.emplace<KeyUpdate>().deserialize(payload);
         break;
     case HandshakeType::ClientKeyExchangeCode:
-        message = ClientKeyExchange::deserialize(payload, metaInfo);
+        err = message.emplace<ClientKeyExchange>().deserialize(payload, metaInfo);
         break;
     case HandshakeType::NewSessionTicketCode:
-        message = NewSessionTicket::deserialize(payload, metaInfo);
+        err = message.emplace<NewSessionTicket>().deserialize(payload, metaInfo);
         break;
     default:
-        throw casket::RuntimeError("Unknown handshake message type");
+        err = make_error_code(utils::DecodeError::MalformedMessage);
+        break;
     }
 
-    return HandshakeMessage(std::move(message), messageType);
+    if (err)
+    {
+        return err;
+    }
+
+    out.message_ = std::move(message);
+    return make_error_code(DecodeError::None);
 }
 
-size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session)
+std::size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
-    const size_t payloadSize = nonstd::visit(
-        [&output, &session](auto&& msg) -> size_t
-        {
-            auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
-            return msg.serialize(payload, session);
-        },
-        message);
+    if (output.size_bytes() < TLS_HANDSHAKE_HEADER_SIZE)
+        return kSerializationFailed;
 
-    output[0] = static_cast<uint8_t>(type);
-    auto length = static_cast<uint32_t>(payloadSize);
+    const std::size_t payloadSize = nonstd::visit(
+        [&output, &session](const auto& msg) noexcept -> std::size_t
+        {
+            using T = std::decay_t<decltype(msg)>;
+            if constexpr (std::is_same_v<T, NoMessage>)
+            {
+                return 0;
+            }
+            else
+            {
+                auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
+                return msg.serialize(payload, session);
+            }
+        },
+        message_);
+
+    if (payloadSize == kSerializationFailed)
+    {
+
+        return kSerializationFailed;
+    }
+
+    if (payloadSize > 0xFFFFFF)
+    {
+        return kSerializationFailed;
+    }
+
+    output[0] = static_cast<std::uint8_t>(getType());
+    const auto length = static_cast<std::uint32_t>(payloadSize);
     output[1] = casket::get_byte<1>(length);
     output[2] = casket::get_byte<2>(length);
     output[3] = casket::get_byte<3>(length);
 
     return TLS_HANDSHAKE_HEADER_SIZE + payloadSize;
+}
+
+namespace
+{
+
+inline constexpr HandshakeType kIndexToType[] = {
+    HandshakeType::NoneCode,
+    HandshakeType::ClientHelloCode,
+    HandshakeType::ServerHelloCode,
+    HandshakeType::EncryptedExtensionsCode,
+    HandshakeType::ServerKeyExchangeCode,
+    HandshakeType::ClientKeyExchangeCode,
+    HandshakeType::CertificateCode,
+    HandshakeType::CertificateRequestCode,
+    HandshakeType::CertificateVerifyCode,
+    HandshakeType::FinishedCode,
+    HandshakeType::NewSessionTicketCode,
+    HandshakeType::ServerHelloDoneCode,
+    HandshakeType::KeyUpdateCode,
+};
+static_assert(std::size(kIndexToType) == 13);
+
+} // namespace
+
+HandshakeType HandshakeMessage::getType() const noexcept
+{
+    const auto idx = message_.index();
+    if (idx >= std::size(kIndexToType))
+    {
+        return HandshakeType::NoneCode;
+    }
+    return kIndexToType[idx];
 }
 
 } // namespace snet::tls

@@ -2,8 +2,11 @@
 #include <snet/tls/msgs/server_hello.hpp>
 #include <snet/tls/session.hpp>
 
+#include <snet/utils/compare_vectors.hpp>
+
 using namespace testing;
 using namespace snet::tls;
+using namespace snet::utils;
 
 using SerializeTestParam = std::vector<uint8_t>;
 
@@ -24,16 +27,17 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     size_t serializedLength = 0;
 
     ServerHello serverHello;
-    ASSERT_NO_THROW(serverHello.parse(param));
+    ASSERT_EQ(serverHello.deserialize(param), make_error_code(DecodeError::None));
 
     Session session(recordPool_);
     session.setMonitor(true);
     ASSERT_NO_THROW(session.processServerHello(serverHello));
 
-    ASSERT_NO_THROW(serializedLength = serverHello.serialize(serialized, session));
+    serializedLength = serverHello.serialize(serialized, session);
+    ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 
-    ASSERT_EQ(serialized, param);
+    ASSERT_EQ(serialized, param) << CompareVectors(serialized, param);
 }
 
 // clang-format off
