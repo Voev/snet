@@ -20,14 +20,7 @@ class Record
 public:
     friend class RecordLayer;
 
-    Record()
-        : type_(RecordType::Invalid)
-        , currentLength_(0)
-        , expectedLength_(0)
-        , isPlaintext_(false)
-        , mustBeEncrypted_(false)
-    {
-    }
+    Record() noexcept;
 
     Record(const RecordType type)
         : type_(type)
@@ -100,7 +93,7 @@ public:
         return plaintext_.subspan(dataStartOffset_);
     }
 
-    void reset();
+    void reset() noexcept;
 
     /// @brief Initialize plaintext buffer.
     ///
