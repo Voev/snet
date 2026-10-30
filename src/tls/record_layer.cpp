@@ -97,7 +97,6 @@ void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
                                  Record* record, uint64_t seq, nonstd::span<const uint8_t> macKey)
 {
     casket::ThrowIfTrue(version_ == ProtocolVersion::SSLv3_0, "SSL 3.0 record encryption is not implemented");
-    casket::ThrowIfTrue(!record->mustBeEncrypted(), "doTLSv1Encrypt called on a record that must not be encrypted");
 
     const auto plaintext = record->getPlaintext();
     const auto type = record->getType();
@@ -132,7 +131,7 @@ void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
                                         {},
                                         out.first(plaintext.size()),
                                         out.subspan(plaintext.size(), macSize));
-        casket::ThrowIfTrue(mac.size() == macSize, "Unexpected MAC size");
+        casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
 
         const size_t contentLen = plaintext.size() + macSize;
         crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), out.data(), static_cast<unsigned int>(contentLen)));
@@ -167,7 +166,7 @@ void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
                                             out.first(explicitIV),
                                             out.subspan(explicitIV, paddedLen),
                                             out.subspan(outSize, macSize));
-            casket::ThrowIfTrue(mac.size() == macSize, "Unexpected MAC size");
+            casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
             outSize += macSize;
         }
         else
@@ -185,7 +184,7 @@ void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
                                             {},
                                             out.first(plaintext.size()),
                                             out.subspan(plaintext.size(), macSize));
-            casket::ThrowIfTrue(mac.size() == macSize, "Unexpected MAC size");
+            casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
 
             const size_t contentLen = plaintext.size() + macSize;
             const size_t padLen = blockSize - 1 - (contentLen % blockSize);
@@ -291,6 +290,7 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
                 tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
 
                 outSize -= blockSize;
+                decryptedContent = {out.data() + blockSize, outSize};
             }
             else
             {
@@ -304,8 +304,9 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
                 {
                     tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
                 }
+
+                decryptedContent = {out.data(), outSize};
             }
-            decryptedContent = {out.data(), outSize};
         }
     }
     /* Stream cipher */

@@ -97,7 +97,7 @@ TEST_P(TLSv13AeadRecordLayerTest, EncryptDecrypt)
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
 }
 
-static std::array<uint16_t, 5> gTLSv13CipherSuites = {
+static std::vector<uint16_t> gTLSv13CipherSuites = {
     casket::make_uint16(0x13, 0x01), /// TLS_AES_128_GCM_SHA256
     casket::make_uint16(0x13, 0x02), /// TLS_AES_256_GCM_SHA384
     casket::make_uint16(0x13, 0x03), /// TLS_CHACHA20_POLY1305_SHA256
@@ -113,13 +113,6 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 {
     const auto& param = GetParam();
     auto suiteCode = ::get<RecordLayerFields::Suite>(param);
-
-    /// CHACHA20_POLY1305 doesn't support zero data length.
-    if (suiteCode == casket::make_uint16(0xCC, 0xA8) || suiteCode == casket::make_uint16(0xCC, 0xA9) ||
-        suiteCode == casket::make_uint16(0xCC, 0xAA))
-    {
-        GTEST_SKIP();
-    }
 
     auto cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(suiteCode);
     ASSERT_NE(cipherSuite, nullptr) << "Unsupported cipher suite: " << CastToString(suiteCode);
@@ -163,51 +156,23 @@ TEST_P(TLSv12AeadRecordLayerTest, EncryptDecrypt)
 }
 
 // TLS 1.2 AEAD cipher suites
-constexpr std::array<uint16_t, 35> gTLSv12AeadCipherSuites = {
-    // TLS 1.2 ECDHE + ECDSA (with PFS)
+static std::vector<uint16_t> gTLSv12AeadCipherSuites = {
     casket::make_uint16(0xC0, 0x2C), /// TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-    casket::make_uint16(0xC0, 0x30), /// TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-    casket::make_uint16(0x00, 0xA3), /// TLS_DHE_DSS_WITH_AES_256_GCM_SHA384
-    casket::make_uint16(0x00, 0x9F), /// TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
-    casket::make_uint16(0xCC, 0xA9), /// TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-    casket::make_uint16(0xCC, 0xA8), /// TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-    casket::make_uint16(0xCC, 0xAA), /// TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-    casket::make_uint16(0xC0, 0xAF), /// TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8
-    casket::make_uint16(0xC0, 0xAD), /// TLS_ECDHE_ECDSA_WITH_AES_256_CCM
-    casket::make_uint16(0xC0, 0xA3), /// TLS_DHE_RSA_WITH_AES_256_CCM_8
-    casket::make_uint16(0xC0, 0x9F), /// TLS_DHE_RSA_WITH_AES_256_CCM
-    casket::make_uint16(0xC0, 0x5D), /// TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384
-    casket::make_uint16(0xC0, 0x61), /// TLS_ECDHE_RSA_WITH_ARIA_256_GCM_SHA384
-    casket::make_uint16(0xC0, 0x57), /// TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384
-    casket::make_uint16(0xC0, 0x53), /// TLS_DHE_RSA_WITH_ARIA_256_GCM_SHA384
     casket::make_uint16(0xC0, 0x2B), /// TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-    casket::make_uint16(0xC0, 0x2F), /// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-    casket::make_uint16(0x00, 0xA2), /// TLS_DHE_DSS_WITH_AES_128_GCM_SHA256
-    casket::make_uint16(0x00, 0x9E), /// TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+    casket::make_uint16(0xC0, 0xAF), /// TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8
     casket::make_uint16(0xC0, 0xAE), /// TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8
+    casket::make_uint16(0xC0, 0xAD), /// TLS_ECDHE_ECDSA_WITH_AES_256_CCM
     casket::make_uint16(0xC0, 0xAC), /// TLS_ECDHE_ECDSA_WITH_AES_128_CCM
-    casket::make_uint16(0xC0, 0xA2), /// TLS_DHE_RSA_WITH_AES_128_CCM_8
-    casket::make_uint16(0xC0, 0x9E), /// TLS_DHE_RSA_WITH_AES_128_CCM
+    casket::make_uint16(0xCC, 0xA9), /// TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+    casket::make_uint16(0xC0, 0x5D), /// TLS_ECDHE_ECDSA_WITH_ARIA_256_GCM_SHA384
     casket::make_uint16(0xC0, 0x5C), /// TLS_ECDHE_ECDSA_WITH_ARIA_128_GCM_SHA256
-    casket::make_uint16(0xC0, 0x60), /// TLS_ECDHE_RSA_WITH_ARIA_128_GCM_SHA256
-    casket::make_uint16(0xC0, 0x56), /// TLS_DHE_DSS_WITH_ARIA_128_GCM_SHA256
-    casket::make_uint16(0xC0, 0x52), /// TLS_DHE_RSA_WITH_ARIA_128_GCM_SHA256
-    // RSA without PFS (TLS 1.2)
-    casket::make_uint16(0x00, 0x9D), /// TLS_RSA_WITH_AES_256_GCM_SHA384
-    casket::make_uint16(0xC0, 0xA1), /// TLS_RSA_WITH_AES_256_CCM_8
-    casket::make_uint16(0xC0, 0x9D), /// TLS_RSA_WITH_AES_256_CCM
-    casket::make_uint16(0xC0, 0x51), /// TLS_RSA_WITH_ARIA_256_GCM_SHA384
-    casket::make_uint16(0x00, 0x9C), /// TLS_RSA_WITH_AES_128_GCM_SHA256
-    casket::make_uint16(0xC0, 0xA0), /// TLS_RSA_WITH_AES_128_CCM_8
-    casket::make_uint16(0xC0, 0x9C), /// TLS_RSA_WITH_AES_128_CCM
-    casket::make_uint16(0xC0, 0x50), /// TLS_RSA_WITH_ARIA_128_GCM_SHA256
 };
 
-/*class TLSv1RecordLayerTest : public TestWithParam<RecordLayerTestParam>
+class TLSv1RecordLayerTest : public TestWithParam<RecordLayerTestParam>
 {
 };
 
-TEST_P(TLSv1RecordLayerTest, DISABLED_EncryptDecrypt)
+TEST_P(TLSv1RecordLayerTest, EncryptDecrypt)
 {
     const auto& param = GetParam();
     auto suiteCode = ::get<RecordLayerFields::Suite>(param);
@@ -218,7 +183,7 @@ TEST_P(TLSv1RecordLayerTest, DISABLED_EncryptDecrypt)
     auto hmacAlg = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(cipherSuite));
 
     ASSERT_NE(cipherAlg, nullptr);
-    ASSERT_TRUE(CipherTraits::isAEAD(cipherAlg));
+    ASSERT_FALSE(CipherTraits::isAEAD(cipherAlg)); // CBC path
 
     std::vector<uint8_t> key(CipherTraits::getKeyLength(cipherAlg));
     std::vector<uint8_t> macKey(HashTraits::getSize(hmacAlg));
@@ -232,7 +197,6 @@ TEST_P(TLSv1RecordLayerTest, DISABLED_EncryptDecrypt)
 
     CipherCtxPtr ctx;
     ASSERT_NO_THROW(ctx = CipherTraits::createContext());
-    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg));
 
     MacCtxPtr hmacCtx;
     ASSERT_NO_THROW(hmacCtx = HmacTraits::createContext());
@@ -241,25 +205,24 @@ TEST_P(TLSv1RecordLayerTest, DISABLED_EncryptDecrypt)
     ASSERT_NO_THROW(hashCtx = HashTraits::createContext());
 
     RecordLayer recordLayer;
-
     recordLayer.setVersion(ProtocolVersion::TLSv1_2);
+
     Record record(RecordType::ApplicationData);
-
     recordLayer.prepareRecordForEncrypt(&record, cipherAlg);
-
     record.initPlaintext(plaintext);
 
-    ASSERT_NO_THROW(recordLayer.doTLSv1Encrypt(ctx, hmacCtx, hashCtx, hmacAlg, &record,
-                                               ::get<RecordLayerFields::Seqnum>(param), key, macKey, iv));
-    ASSERT_NO_THROW(recordLayer.doTLSv1Decrypt(ctx, hmacCtx, hashCtx, hmacAlg, &record,
-                                               ::get<RecordLayerFields::Seqnum>(param), key, macKey, iv));
+    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg, key, iv, true));
+    ASSERT_NO_THROW(recordLayer.doTLSv1Encrypt(
+        ctx, hmacCtx, hashCtx, hmacAlg, &record, ::get<RecordLayerFields::Seqnum>(param), macKey));
+    ASSERT_NO_THROW(RecordLayer::init(ctx, cipherAlg, key, iv, false));
+    ASSERT_NO_THROW(recordLayer.doTLSv1Decrypt(
+        ctx, hmacCtx, hashCtx, hmacAlg, &record, ::get<RecordLayerFields::Seqnum>(param), macKey));
 
     auto decryptedData = record.getPlaintext();
     ASSERT_TRUE(std::equal(decryptedData.begin(), decryptedData.end(), plaintext.begin(), plaintext.end()));
-}*/
+}
 
-/*
-constexpr std::array<uint16_t, 36> gTLSv1CipherSuites = {
+static std::vector<uint16_t> gTLSv1CipherSuites = {
     // RSA without PFS
     casket::make_uint16(0x00, 0x3D), /// TLS_RSA_WITH_AES_256_CBC_SHA256
     casket::make_uint16(0x00, 0xC0), /// TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256
@@ -303,7 +266,7 @@ constexpr std::array<uint16_t, 36> gTLSv1CipherSuites = {
     casket::make_uint16(0x00, 0x84), /// TLS_RSA_WITH_CAMELLIA_256_CBC_SHA
     casket::make_uint16(0x00, 0x2F), /// TLS_RSA_WITH_AES_128_CBC_SHA
     casket::make_uint16(0x00, 0x41), /// TLS_RSA_WITH_CAMELLIA_128_CBC_SHA
-};*/
+};
 
 // clang-format off
 
@@ -311,13 +274,22 @@ INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv13AeadRecordLayerTest,
     Combine(
         ValuesIn(gTLSv13CipherSuites),
         ValuesIn(GenerateSequence<uint64_t, 10>(0, std::numeric_limits<uint64_t>::max())),
-        ValuesIn(GenerateSequence<uint16_t, 5>(0, 2048))
+        ValuesIn(GenerateSequence<uint16_t, 5>(1, 2048))
     )
 );
 
 INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv12AeadRecordLayerTest,
     Combine(
         ValuesIn(gTLSv12AeadCipherSuites),
+        ValuesIn(GenerateSequence<uint64_t, 10>(0, std::numeric_limits<uint64_t>::max())),
+        ValuesIn(GenerateSequence<uint16_t, 5>(1, 2048))
+    )
+);
+
+
+INSTANTIATE_TEST_SUITE_P(CryptoTests, TLSv1RecordLayerTest,
+    Combine(
+        ValuesIn(gTLSv1CipherSuites),
         ValuesIn(GenerateSequence<uint64_t, 10>(0, std::numeric_limits<uint64_t>::max())),
         ValuesIn(GenerateSequence<uint16_t, 5>(0, 2048))
     )
