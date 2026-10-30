@@ -80,9 +80,7 @@ bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
 size_t Session::readRecords(nonstd::span<const uint8_t> input)
 {
     if (input.empty())
-    {
         return 0;
-    }
 
     size_t processedLength = 0;
 
@@ -91,15 +89,11 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
         if (!readingRecord_)
         {
             if (input.size() - processedLength < TLS_HEADER_SIZE)
-            {
                 break;
-            }
 
             readingRecord_ = recordPool_.acquire();
             if (!readingRecord_)
-            {
                 return processedLength;
-            }
 
             try
             {
@@ -119,21 +113,21 @@ size_t Session::readRecords(nonstd::span<const uint8_t> input)
 
         if (readingRecord_->isFullyAssembled())
         {
-            if (pendingRecords_.push(readingRecord_))
+            if (!pendingRecords_.tryPush(readingRecord_))
             {
-                readingRecord_ = nullptr;
-            }
-            else
-            {
+                // pendingRecords_ overflow: caller is not draining incoming
+                // records between readRecords() calls. Silent drop or rollback
+                // would corrupt the record stream (rollback re-parses payload
+                // bytes as a new header on retry; drop loses TLS data).
+                // Abort loudly.
                 recordPool_.release(std::exchange(readingRecord_, nullptr));
-                return processedLength;
+                casket::ThrowIfTrue(false,
+                                    "pendingRecords_ overflow ({} slots): caller must drain "
+                                    "pending records between readRecords() calls",
+                                    pendingRecords_.capacity());
             }
+            readingRecord_ = nullptr;
         }
-    }
-
-    if (readingRecord_ && processedLength == 0)
-    {
-        recordPool_.release(std::exchange(readingRecord_, nullptr));
     }
 
     return processedLength;
@@ -145,25 +139,19 @@ size_t Session::writeRecords(nonstd::span<uint8_t> output)
 
     while (!outgoingRecords_.empty() && written < output.size())
     {
-        Record* record{nullptr};
-
-        if (!outgoingRecords_.pop(record))
-        {
-            break;
-        }
-
-        nonstd::span<const uint8_t> data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
-
-        size_t totalNeeded = TLS_HEADER_SIZE + data.size();
+        Record* record = outgoingRecords_.front();
+        
+        auto data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
+        
+        const size_t totalNeeded = TLS_HEADER_SIZE + data.size();
         if (output.size() - written < totalNeeded)
         {
             break;
         }
 
-        size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
-
+        outgoingRecords_.pop();
+        const size_t headerSize = record->serializeHeader(output.subspan(written, TLS_HEADER_SIZE));
         std::copy(data.begin(), data.end(), output.begin() + written + headerSize);
-
         written += headerSize + data.size();
         recordPool_.release(record);
     }

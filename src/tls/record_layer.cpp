@@ -6,6 +6,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#include <openssl/rand.h>
 
 #include <snet/crypto/exception.hpp>
 #include <snet/crypto/cipher_traits.hpp>
@@ -60,17 +61,156 @@ void RecordLayer::init(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const 
     ThrowIfFalse(0 < EVP_CipherInit(ctx, cipher, key.data(), iv.data(), static_cast<int>(encrypt)));
 }
 
-void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
+nonstd::span<const uint8_t> RecordLayer::tls1ComputeMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType rt,
+                                                        uint64_t seq, nonstd::span<const uint8_t> macKey,
+                                                        nonstd::span<const uint8_t> iv,
+                                                        nonstd::span<const uint8_t> content, nonstd::span<uint8_t> out)
+{
+    std::array<uint8_t, 13> meta;
+    casket::store_be(seq, meta.data());
+    meta[8] = static_cast<uint8_t>(rt);
+    meta[9] = version_.majorVersion();
+    meta[10] = version_.minorVersion();
+    const uint16_t s = static_cast<uint16_t>(content.size() + iv.size());
+    meta[11] = casket::get_byte<0>(s);
+    meta[12] = casket::get_byte<1>(s);
+
+    HmacTraits::initHmac(hmacCtx, hmacHash, macKey);
+    HmacTraits::updateHmac(hmacCtx, meta);
+    if (!iv.empty())
+        HmacTraits::updateHmac(hmacCtx, iv);
+    HmacTraits::updateHmac(hmacCtx, content);
+    return HmacTraits::finalHmac(hmacCtx, out);
+}
+
+void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
+                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                               nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
+{
+    std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+    const auto actualMac = tls1ComputeMac(hmacCtx, hmacHash, recordType, seq, macKey, iv, content, buffer);
+    casket::ThrowIfFalse(
+        expectedMac.size() == actualMac.size() && std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
+        "Bad record MAC");
+}
+void RecordLayer::doTLSv1Encrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* /*hashCtx*/, const Hash* hmacHash,
                                  Record* record, uint64_t seq, nonstd::span<const uint8_t> macKey)
 {
-    /// @todo Implementation
-    (void)cipherCtx;
-    (void)hmacCtx;
-    (void)hashCtx;
-    (void)hmacHash;
-    (void)record;
-    (void)seq;
-    (void)macKey;
+    casket::ThrowIfTrue(version_ == ProtocolVersion::SSLv3_0, "SSL 3.0 record encryption is not implemented");
+
+    const auto plaintext = record->getPlaintext();
+    const auto type = record->getType();
+    const auto blockSize = CipherTraits::getBlockLength(cipherCtx);
+    const auto macSize = HashTraits::getSize(hmacHash);
+    const bool tls11plus = version_ >= ProtocolVersion::TLSv1_1;
+    const size_t explicitIV = (tls11plus && blockSize > 1) ? blockSize : 0u;
+
+    auto out = record->mutableCiphertextBuffer();
+    size_t outSize = 0;
+
+    auto generateAndPrependIV = [&]()
+    {
+        std::array<uint8_t, EVP_MAX_IV_LENGTH> ivBuf;
+        crypto::ThrowIfFalse(RAND_bytes(ivBuf.data(), static_cast<int>(blockSize)) > 0, "Failed to generate IV");
+        crypto::ThrowIfFalse(0 < EVP_CipherInit_ex(cipherCtx, nullptr, nullptr, nullptr, ivBuf.data(), 1),
+                             "Failed to set IV");
+        std::memcpy(out.data(), ivBuf.data(), blockSize);
+    };
+
+    if (blockSize == 1)
+    {
+        // Stream cipher: content || MAC, then encrypt
+        casket::ThrowIfTrue(plaintext.size() + macSize > out.size(), "Plaintext too large for ciphertext buffer");
+        std::memcpy(out.data(), plaintext.data(), plaintext.size());
+
+        const auto mac = tls1ComputeMac(hmacCtx,
+                                        hmacHash,
+                                        type,
+                                        seq,
+                                        macKey,
+                                        {},
+                                        out.first(plaintext.size()),
+                                        out.subspan(plaintext.size(), macSize));
+        casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
+
+        const size_t contentLen = plaintext.size() + macSize;
+        crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), out.data(), static_cast<unsigned int>(contentLen)));
+        outSize = contentLen;
+    }
+    else if (blockSize > 1)
+    {
+        if (encryptThenMAC_)
+        {
+            // Encrypt-then-MAC (RFC 7366)
+            // Layout: [IV (1.1+)] [ciphertext(padding||plaintext)] [MAC(IV||ciphertext)]
+            const size_t padLen = blockSize - 1 - (plaintext.size() % blockSize);
+            const size_t paddedLen = plaintext.size() + padLen + 1;
+
+            casket::ThrowIfTrue(explicitIV + paddedLen + macSize > out.size(), "Ciphertext buffer too small");
+
+            auto enc = out.data() + explicitIV;
+            std::memcpy(enc, plaintext.data(), plaintext.size());
+            std::memset(enc + plaintext.size(), static_cast<int>(padLen), padLen + 1);
+
+            if (explicitIV > 0)
+                generateAndPrependIV();
+
+            crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, enc, enc, static_cast<unsigned int>(paddedLen)));
+            outSize = explicitIV + paddedLen;
+
+            const auto mac = tls1ComputeMac(hmacCtx,
+                                            hmacHash,
+                                            type,
+                                            seq,
+                                            macKey,
+                                            out.first(explicitIV),
+                                            out.subspan(explicitIV, paddedLen),
+                                            out.subspan(outSize, macSize));
+            casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
+            outSize += macSize;
+        }
+        else
+        {
+            // MAC-then-encrypt
+            // Layout: [IV (1.1+)] [encrypted(plaintext||MAC||padding)]
+            casket::ThrowIfTrue(plaintext.size() + macSize > out.size(), "Plaintext too large for ciphertext buffer");
+            std::memcpy(out.data(), plaintext.data(), plaintext.size());
+
+            const auto mac = tls1ComputeMac(hmacCtx,
+                                            hmacHash,
+                                            type,
+                                            seq,
+                                            macKey,
+                                            {},
+                                            out.first(plaintext.size()),
+                                            out.subspan(plaintext.size(), macSize));
+            casket::ThrowIfTrue(mac.size() != macSize, "Unexpected MAC size");
+
+            const size_t contentLen = plaintext.size() + macSize;
+            const size_t padLen = blockSize - 1 - (contentLen % blockSize);
+            const size_t paddedLen = contentLen + padLen + 1;
+
+            casket::ThrowIfTrue(explicitIV + paddedLen > out.size(), "Ciphertext buffer too small");
+            std::memset(out.data() + contentLen, static_cast<int>(padLen), padLen + 1);
+
+            if (explicitIV > 0)
+            {
+                std::memmove(out.data() + explicitIV, out.data(), paddedLen);
+                generateAndPrependIV();
+            }
+            crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx,
+                                                out.data() + explicitIV,
+                                                out.data() + explicitIV,
+                                                static_cast<unsigned int>(paddedLen)));
+            outSize = explicitIV + paddedLen;
+        }
+    }
+    else
+    {
+        casket::ThrowIfTrue(true, "Unsupported cipher block size");
+    }
+
+    record->markEncrypted(out.first(outSize));
 }
 
 void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx, const Hash* hmacHash,
@@ -78,10 +218,10 @@ void RecordLayer::doTLSv1Decrypt(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx*
 {
     auto input = record->getCiphertext();
 
-    record->plaintext_ = doTLSv1Process(cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, macKey, input,
-                                        record->plaintextBuffer_);
+    auto plaintext = doTLSv1Process(
+        cipherCtx, hmacCtx, hashCtx, hmacHash, record->getType(), seq, macKey, input, record->mutablePlaintextBuffer());
 
-    record->isPlaintext_ = true;
+    record->markDecrypted(plaintext);
 }
 
 nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* hmacCtx, HashCtx* hashCtx,
@@ -150,6 +290,7 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
                 tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
 
                 outSize -= blockSize;
+                decryptedContent = {out.data() + blockSize, outSize};
             }
             else
             {
@@ -163,8 +304,9 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
                 {
                     tls1CheckMac(hmacCtx, hmacHash, rt, seq, macKey, {}, content, mac);
                 }
+
+                decryptedContent = {out.data(), outSize};
             }
-            decryptedContent = {out.data(), outSize};
         }
     }
     /* Stream cipher */
@@ -188,39 +330,6 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
     }
 
     return decryptedContent;
-}
-
-
-void RecordLayer::tls1CheckMac(MacCtx* hmacCtx, const Hash* hmacHash, const RecordType recordType, uint64_t seq,
-                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
-                               nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> expectedMac)
-{
-    std::array<uint8_t, 13> meta;
-    casket::store_be(seq, meta.data());
-
-    meta[8] = static_cast<uint8_t>(recordType);
-    meta[9] = version_.majorVersion();
-    meta[10] = version_.minorVersion();
-    uint16_t s = content.size() + iv.size();
-    meta[11] = casket::get_byte<0>(s);
-    meta[12] = casket::get_byte<1>(s);
-
-    HmacTraits::initHmac(hmacCtx, hmacHash, macKey);
-    HmacTraits::updateHmac(hmacCtx, meta);
-
-    if (!iv.empty())
-    {
-        HmacTraits::updateHmac(hmacCtx, iv);
-    }
-
-    HmacTraits::updateHmac(hmacCtx, content);
-
-    std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-    auto actualMac = HmacTraits::finalHmac(hmacCtx, buffer);
-
-    casket::ThrowIfFalse(expectedMac.size() == actualMac.size() &&
-                             std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
-                         "Bad record MAC");
 }
 
 void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType recordType, uint64_t seq,
@@ -258,9 +367,9 @@ void RecordLayer::ssl3CheckMac(HashCtx* ctx, const Hash* hmacHash, RecordType re
     HashTraits::hashUpdate(ctx, preActualMac);
     auto actualMac = HashTraits::hashFinal(ctx, buffer);
 
-    casket::ThrowIfFalse(expectedMac.size() == actualMac.size() &&
-                             std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
-                         "Bad record MAC");
+    casket::ThrowIfFalse(
+        expectedMac.size() == actualMac.size() && std::equal(expectedMac.begin(), expectedMac.end(), actualMac.begin()),
+        "Bad record MAC");
 }
 
 void RecordLayer::doTLSv1AeadInit(CipherCtx* ctx, const Cipher* cipher, nonstd::span<const uint8_t> key,
@@ -291,17 +400,16 @@ void RecordLayer::doTLSv1AeadInit(CipherCtx* ctx, const Cipher* cipher, nonstd::
 
 void RecordLayer::doTLSv1AeadEncrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq)
 {
-    auto input = record->getPlaintext();
-    record->ciphertext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, input, true);
-    record->expectedLength_ = record->ciphertext_.size();
-    record->isPlaintext_ = false;
+    auto input = record->mutablePlaintext();
+    auto ciphertext = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, input, true);
+    record->markEncrypted(ciphertext);
 }
 
 void RecordLayer::doTLSv1AeadDecrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq)
 {
-    auto input = record->getCiphertext();
-    record->plaintext_ = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, input, false);
-    record->isPlaintext_ = true;
+    auto input = record->mutableCiphertext();
+    auto plaintext = doTLSv1AeadProcess(cipherCtx, record->getType(), seq, input, false);
+    record->markDecrypted(plaintext);
 }
 
 nonstd::span<uint8_t> RecordLayer::doTLSv1AeadProcess(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
@@ -318,8 +426,8 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1AeadProcess(CipherCtx* cipherCtx, Reco
     aad[11] = casket::get_byte<0>(inputLength);
     aad[12] = casket::get_byte<1>(inputLength);
 
-    auto tagLength = EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_TLS1_AAD, static_cast<int>(aad.size()),
-                                         const_cast<uint8_t*>(aad.data()));
+    auto tagLength = EVP_CIPHER_CTX_ctrl(
+        cipherCtx, EVP_CTRL_AEAD_TLS1_AAD, static_cast<int>(aad.size()), const_cast<uint8_t*>(aad.data()));
     crypto::ThrowIfFalse(tagLength > 0, "Invalid tag length");
 
     if (encrypt)
@@ -381,18 +489,18 @@ void RecordLayer::doTLSv13KeyUpdate(CipherCtx* ctx, nonstd::span<const uint8_t> 
 
 void RecordLayer::doTLSv13Encrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> iv)
 {
-    assert(record->ciphertextBuffer_.size() >= record->plaintext_.size() + 1 + tagLength_);
+    assert(record->mutableCiphertextBuffer().size() >=
+           record->getPlaintext().size() + 1 + static_cast<size_t>(tagLength_));
 
-    record->plaintext_ = record->plaintext_.first(record->plaintext_.size() + 1);
-    record->plaintext_.back() = static_cast<uint8_t>(record->getType());
-    record->type_ = RecordType::ApplicationData;
+    auto buf = record->mutablePlaintextBuffer();
+    auto pt = record->getPlaintext();
+    buf[pt.size()] = static_cast<uint8_t>(record->getType());
+    record->setWireType(RecordType::ApplicationData);
+    record->setPlaintextLength(pt.size() + 1);
 
-    nonstd::span<uint8_t> ciphertext = record->ciphertextBuffer_;
-    auto encryptedData = doTLSv13Process(cipherCtx, record->getType(), seq, iv, record->plaintext_, ciphertext, true);
-
-    record->ciphertext_ = {ciphertext.data(), encryptedData.size()};
-    record->expectedLength_ = encryptedData.size();
-    record->isPlaintext_ = false;
+    auto ciphertext = record->mutableCiphertextBuffer();
+    auto enc = doTLSv13Process(cipherCtx, record->getType(), seq, iv, record->getPlaintext(), ciphertext, true);
+    record->markEncrypted(enc);
 }
 
 void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t seq, nonstd::span<const uint8_t> iv)
@@ -401,14 +509,13 @@ void RecordLayer::doTLSv13Decrypt(CipherCtx* cipherCtx, Record* record, uint64_t
                         "TLSv1.3 encrypted record must have outer type ApplicationData");
 
     auto input = record->getCiphertext();
-    record->plaintext_ = doTLSv13Process(cipherCtx, record->getType(), seq, iv, input, record->plaintextBuffer_, false);
+    auto pt = doTLSv13Process(cipherCtx, record->getType(), seq, iv, input, record->mutablePlaintextBuffer(), false);
+    record->markDecrypted(pt);
 
-    uint8_t lastByte = record->plaintext_.back();
+    uint8_t lastByte = record->getPlaintext().back();
     casket::ThrowIfTrue(lastByte < 20 || lastByte > 23, "TLSv1.3 record type had unexpected value '{}'", lastByte);
-
-    record->type_ = static_cast<RecordType>(lastByte);
-    record->plaintext_ = record->plaintext_.first(record->plaintext_.size() - 1);
-    record->isPlaintext_ = true;
+    record->setWireType(static_cast<RecordType>(lastByte));
+    record->setPlaintextLength(pt.size() - 1);
 }
 
 nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, RecordType rt, uint64_t seq,
@@ -442,8 +549,9 @@ nonstd::span<std::uint8_t> RecordLayer::doTLSv13Process(CipherCtx* cipherCtx, Re
         dataLength -= tagLength_;
 
         /// Set tag for decryption.
-        crypto::ThrowIfFalse(0 < EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_,
-                                                     const_cast<uint8_t*>(in.data()) + dataLength));
+        crypto::ThrowIfFalse(
+            0 < EVP_CIPHER_CTX_ctrl(
+                    cipherCtx, EVP_CTRL_AEAD_SET_TAG, tagLength_, const_cast<uint8_t*>(in.data()) + dataLength));
     }
     else
     {

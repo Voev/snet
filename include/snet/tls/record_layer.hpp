@@ -211,6 +211,29 @@ private:
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                       nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac);
 
+    /// @brief Compute a TLS 1.0/1.1/1.2 record MAC into a caller-provided buffer.
+    ///
+    /// @details Builds the 13-byte MAC input (seq || type || version || length ||
+    ///          content) per RFC 5246 §6.2.3.1 and runs HMAC over it. When @p iv
+    ///          is non-empty it is included in the length field and hashed
+    ///          between the metadata and @p content (Encrypt-then-MAC layout).
+    ///          The MAC key schedule and HMAC state are reset via @p hmacCtx.
+    ///
+    /// @param[in,out] hmacCtx  HMAC context; initialized and finalized internally.
+    /// @param[in]     hmacHash Hash algorithm for HMAC.
+    /// @param[in]     rt       Record type (handshake, alert, application data, ...).
+    /// @param[in]     seq      Record sequence number.
+    /// @param[in]     macKey   MAC key.
+    /// @param[in]     iv       Explicit IV (TLS 1.1+ CBC / EtM), empty otherwise.
+    /// @param[in]     content  Record content to authenticate.
+    /// @param[out]     out     Buffer for the computed MAC; must be at least
+    ///                         @c HashTraits::getSize(hmacHash) bytes.
+    ///
+    /// @return Slice of @p out containing the MAC (size == hash digest size).
+    nonstd::span<const uint8_t> tls1ComputeMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType rt, uint64_t seq,
+                                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                                               nonstd::span<const uint8_t> content, nonstd::span<uint8_t> out);
+
     /// @brief Verify SSL 3.0 MAC.
     ///
     /// @param[in] ctx Hash context.
