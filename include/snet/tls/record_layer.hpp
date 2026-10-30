@@ -211,6 +211,10 @@ private:
                       nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
                       nonstd::span<const uint8_t> content, nonstd::span<const uint8_t> mac);
 
+    nonstd::span<const uint8_t> tls1ComputeMac(MacCtx* hmacCtx, const Hash* hmacHash, RecordType rt, uint64_t seq,
+                                               nonstd::span<const uint8_t> macKey, nonstd::span<const uint8_t> iv,
+                                               nonstd::span<const uint8_t> content, nonstd::span<uint8_t> out);
+
     /// @brief Verify SSL 3.0 MAC.
     ///
     /// @param[in] ctx Hash context.
