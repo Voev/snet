@@ -70,6 +70,13 @@ public:
         return type_;
     }
 
+    /// @brief Set the record type.
+    /// @param[in] type TLS record type.
+    inline void setType(RecordType type) noexcept
+    {
+        type_ = type;
+    }
+
     /// @brief Get the record protocol version.
     /// @return Protocol version stored in the header.
     inline ProtocolVersion getVersion() const noexcept

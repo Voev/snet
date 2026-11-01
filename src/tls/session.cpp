@@ -260,7 +260,7 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
         }
         case HandshakeType::KeyUpdateCode:
         {
-            processKeyUpdate(sideIndex, data);
+            processKeyUpdate(sideIndex, record->getHandshake<KeyUpdate>());
             break;
         }
         case HandshakeType::HelloRequestCode:
@@ -1304,35 +1304,39 @@ void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
     (void)sessionTicket;
 }
 
-void Session::processKeyUpdate(const std::int8_t sideIndex, nonstd::span<const uint8_t> message)
+void Session::processKeyUpdate(const std::int8_t sideIndex, const KeyUpdate& keyUpdate)
 {
-    /// @todo: handle requested and not requested mode
-    casket::ThrowIfFalse(message.subspan(TLS_HANDSHAKE_HEADER_SIZE).size_bytes() == 1, "invalid KeyUpdate message");
+    (void)keyUpdate;
 
-    const auto digestName = HashTraits::getName(handshakeHashAlg_);
+    // RFC 8446, 4.6.3: rotate RECEIVING keys for the peer that sent KeyUpdate.
+    // This is required in both normal and monitor modes — otherwise subsequent
+    // records from this side cannot be decrypted.
+    updateTrafficKeys(sideIndex);
+}
 
-    if (sideIndex == 0)
+void Session::constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate)
+{
+    KeyUpdate keyUpdate(requestUpdate ? KeyUpdate::RequestUpdate::UpdateRequested
+                                      : KeyUpdate::RequestUpdate::UpdateNotRequested);
+    record->serializeHandshake(HandshakeMessage(std::move(keyUpdate)), sideIndex, *this);
+}
+
+void Session::sendKeyUpdate(const int8_t sideIndex, bool requestUpdate)
+{
+    Record* record = recordPool_.acquire();
+    casket::ThrowIfTrue(record == nullptr, "record pool exhausted");
+    record->setType(RecordType::Handshake);
+
+    constructKeyUpdate(sideIndex, record, requestUpdate);
+    encrypt(sideIndex, record);
+
+    if (!outgoingRecords_.tryPush(record))
     {
-        crypto::UpdateTrafficSecret(digestName, keyInfo_.clientAppTrafficSecret);
-
-        crypto::DeriveKey(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientEncKey);
-        crypto::DeriveIV(digestName, keyInfo_.clientAppTrafficSecret, keyInfo_.clientIV);
-
-        seqnum_.resetClientSequence();
-
-        recordLayer_.doTLSv13KeyUpdate(clientCipherCtx_, keyInfo_.clientEncKey);
+        recordPool_.release(record);
+        casket::ThrowIfTrue(false, "outgoingRecords_ overflow");
     }
-    else
-    {
-        crypto::UpdateTrafficSecret(digestName, keyInfo_.serverAppTrafficSecret);
 
-        crypto::DeriveKey(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverEncKey);
-        crypto::DeriveIV(digestName, keyInfo_.serverAppTrafficSecret, keyInfo_.serverIV);
-
-        seqnum_.resetServerSequence();
-
-        recordLayer_.doTLSv13KeyUpdate(serverCipherCtx_, keyInfo_.serverEncKey);
-    }
+    updateTrafficKeys(sideIndex);
 }
 
 void Session::fetchAlgorithms()
@@ -1386,6 +1390,30 @@ void Session::fetchAlgorithms()
     }
 
     handshakeHashAlg_ = CryptoManager::getInstance().fetchDigest(getHashAlgorithm());
+}
+
+void Session::updateTrafficKeys(const int8_t sideIndex)
+{
+    const auto digestName = HashTraits::getName(handshakeHashAlg_);
+
+    auto& secret = (sideIndex == 0) ? keyInfo_.clientAppTrafficSecret : keyInfo_.serverAppTrafficSecret;
+    auto& encKey = (sideIndex == 0) ? keyInfo_.clientEncKey : keyInfo_.serverEncKey;
+    auto& iv = (sideIndex == 0) ? keyInfo_.clientIV : keyInfo_.serverIV;
+    auto& cipherCtx = (sideIndex == 0) ? clientCipherCtx_ : serverCipherCtx_;
+
+    crypto::UpdateTrafficSecret(digestName, secret);
+    crypto::DeriveKey(digestName, secret, encKey);
+    crypto::DeriveIV(digestName, secret, iv);
+
+    if (sideIndex == 0)
+    {
+        seqnum_.resetClientSequence();
+    }
+    else
+    {
+        seqnum_.resetServerSequence();
+    }
+    recordLayer_.doTLSv13KeyUpdate(cipherCtx, encKey);
 }
 
 } // namespace snet::tls
