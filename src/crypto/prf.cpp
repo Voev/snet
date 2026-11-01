@@ -21,6 +21,69 @@
 namespace snet::crypto
 {
 
+namespace
+{
+
+constexpr uint8_t kPad1 = 0x36;
+constexpr uint8_t kPad2 = 0x5C;
+constexpr size_t kPadLen = 48;
+
+void ssl3Half(nonstd::span<const uint8_t> masterSecret, nonstd::span<const uint8_t> handshake,
+              nonstd::span<const uint8_t, 4> sender, const EVP_MD* md, size_t padLen, nonstd::span<uint8_t> out)
+{
+    std::array<uint8_t, EVP_MAX_MD_SIZE> inner{};
+    unsigned int innerLen = 0, outerLen = 0;
+
+    std::array<uint8_t, 48> pad1;
+    pad1.fill(0x36);
+    std::array<uint8_t, 48> pad2;
+    pad2.fill(0x5C);
+
+    // inner = MD( handshake || sender || master || pad1[padLen] )
+    {
+        HashCtxPtr ctx = HashTraits::createContext();
+        HashTraits::hashInit(ctx, md);
+        HashTraits::hashUpdate(ctx, handshake);
+        HashTraits::hashUpdate(ctx, sender);
+        HashTraits::hashUpdate(ctx, masterSecret);
+        HashTraits::hashUpdate(ctx, {pad1.data(), padLen});
+        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, inner.data(), &innerLen));
+    }
+
+    // out = MD( master || pad2[padLen] || inner )
+    {
+        HashCtxPtr ctx = HashTraits::createContext();
+        HashTraits::hashInit(ctx, md);
+        HashTraits::hashUpdate(ctx, masterSecret);
+        HashTraits::hashUpdate(ctx, {pad2.data(), padLen});
+        HashTraits::hashUpdate(ctx, {inner.data(), innerLen});
+        crypto::ThrowIfFalse(0 < EVP_DigestFinal_ex(ctx, out.data(), &outerLen));
+    }
+}
+
+} // namespace
+
+void ssl3FinishedMac(nonstd::span<const uint8_t> masterSecret, nonstd::span<const uint8_t> handshake,
+                     std::int8_t sideIndex, nonstd::span<uint8_t> out)
+{
+    static constexpr std::array<uint8_t, 4> clnt = {'C', 'L', 'N', 'T'};
+    static constexpr std::array<uint8_t, 4> srvr = {'S', 'R', 'V', 'R'};
+    const auto& sender = (sideIndex == 0) ? clnt : srvr;
+
+    ThrowIfFalse(out.size() >= kSsl3FinishedSize, "output buffer too small for SSLv3 Finished MAC");
+
+    auto md5 = crypto::CryptoManager::getInstance().fetchDigest("MD5");
+    crypto::ThrowIfTrue(md5 == nullptr);
+    auto sha1 = crypto::CryptoManager::getInstance().fetchDigest("SHA1");
+    crypto::ThrowIfTrue(sha1 == nullptr);
+
+    // MD5 part (16 bytes) -> out[0..16)
+    ssl3Half(masterSecret, handshake, sender, md5, 48, out.subspan(0, 16));
+
+    // SHA1 part (20 bytes) -> out[16..36)
+    ssl3Half(masterSecret, handshake, sender, sha1, 40, out.subspan(16, 20));
+}
+
 void ssl3Prf(nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> clientRandom,
              nonstd::span<const uint8_t> serverRandom, nonstd::span<uint8_t> out)
 {
@@ -91,11 +154,11 @@ void tls1Prf(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret, 
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SECRET, const_cast<uint8_t*>(secret.data()), secret.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<char*>(label.data()), label.size());
     if (!clientRandom.empty())
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()),
-                                                 clientRandom.size());
+        *p++ = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(clientRandom.data()), clientRandom.size());
     if (!serverRandom.empty())
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()),
-                                                 serverRandom.size());
+        *p++ = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SEED, const_cast<uint8_t*>(serverRandom.data()), serverRandom.size());
     *p = OSSL_PARAM_construct_end();
 
     crypto::ThrowIfFalse(0 < EVP_KDF_derive(kctx, out.data(), out.size(), params));
@@ -150,8 +213,8 @@ void GenerateSecret(const Hash* hashAlg, nonstd::span<const uint8_t> prevSecret,
 
         HashTraits::hashInit(mctx, hashAlg);
         auto hash = HashTraits::hashFinal(mctx, buffer);
-        HkdfExpand(HashTraits::getName(hashAlg), prevSecret, kDerivedSecretLabel, hash,
-                   {preExtractSecret.data(), mdlen});
+        HkdfExpand(
+            HashTraits::getName(hashAlg), prevSecret, kDerivedSecretLabel, hash, {preExtractSecret.data(), mdlen});
         prevSecret = {preExtractSecret.data(), mdlen};
     }
 
@@ -183,8 +246,8 @@ void HkdfExpand(nonstd::string_view algorithm, nonstd::span<const uint8_t> secre
     *p++ = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
     *p++ = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char*>(algorithm.data()), 0);
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<uint8_t*>(secret.data()), secret.size());
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PREFIX, const_cast<uint8_t*>(labelPrefix.data()),
-                                             labelPrefix.size());
+    *p++ = OSSL_PARAM_construct_octet_string(
+        OSSL_KDF_PARAM_PREFIX, const_cast<uint8_t*>(labelPrefix.data()), labelPrefix.size());
     *p++ = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_LABEL, const_cast<uint8_t*>(label.data()), label.size());
 
     if (!data.empty())
@@ -253,14 +316,14 @@ void DeriveFinishedKey(nonstd::string_view algorithm, nonstd::span<const uint8_t
     HkdfExpand(algorithm, secret, finishedLabel, {}, out);
 }
 
-static const unsigned char client_handshake_traffic[] = {0x63, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74,
-                                                         0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
-static const unsigned char client_application_traffic[] = {0x63, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74,
-                                                           0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
-static const unsigned char server_handshake_traffic[] = {0x73, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74,
-                                                         0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
-static const unsigned char server_application_traffic[] = {0x73, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74,
-                                                           0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char client_handshake_traffic[] = {
+    0x63, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74, 0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char client_application_traffic[] = {
+    0x63, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74, 0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char server_handshake_traffic[] = {
+    0x73, 0x20, 0x68, 0x73, 0x20, /*traffic*/ 0x74, 0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
+static const unsigned char server_application_traffic[] = {
+    0x73, 0x20, 0x61, 0x70, 0x20, /*traffic*/ 0x74, 0x72, 0x61, 0x66, 0x66, 0x69, 0x63};
 
 void DeriveClientHsTraffic(const Hash* hashAlg, nonstd::span<const uint8_t> secret, nonstd::span<const uint8_t> data,
                            nonstd::span<uint8_t> out)
@@ -302,8 +365,8 @@ void DeriveIV(nonstd::string_view algorithm, nonstd::span<const uint8_t> secret,
 
 void UpdateTrafficSecret(nonstd::string_view algorithm, nonstd::span<uint8_t> secret)
 {
-    static constexpr std::array<unsigned char, 11> trafficUpdateLabel = {0x74, 0x72, 0x61, 0x66, 0x66, 0x69,
-                                                                         0x63, 0x20, 0x75, 0x70, 0x64};
+    static constexpr std::array<unsigned char, 11> trafficUpdateLabel = {
+        0x74, 0x72, 0x61, 0x66, 0x66, 0x69, 0x63, 0x20, 0x75, 0x70, 0x64};
 
     HkdfExpand(algorithm, secret, trafficUpdateLabel, {}, secret);
 }
