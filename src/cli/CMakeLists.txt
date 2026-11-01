@@ -12,6 +12,7 @@ target_link_libraries(${EXECUTABLE_TARGET}
     casket
     snet_crypto
     snet_tls
+    snet_tls_ex
     snet_event
     snet_layers
     snet_io

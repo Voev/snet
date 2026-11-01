@@ -4,8 +4,8 @@
 #pragma once
 #include <functional>
 #include <snet/tls/types.hpp>
-#include <snet/crypto/pointers.hpp>
 #include <snet/tls/version.hpp>
+#include <snet/crypto/pointers.hpp>
 
 namespace snet::tls
 {

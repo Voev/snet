@@ -2,8 +2,8 @@
 
 #include <snet/crypto/exception.hpp>
 
-#include <snet/tls/connection.hpp>
-#include <snet/tls/settings.hpp>
+#include <snet/tls_ex/connection.hpp>
+#include <snet/tls_ex/settings.hpp>
 
 #include <casket/utils/exception.hpp>
 

@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <snet/tls/types.hpp>
+#include <snet/tls_ex/settings.hpp>
 #include <snet/crypto/exception.hpp>
 
 namespace snet::tls
