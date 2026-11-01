@@ -140,9 +140,9 @@ size_t Session::writeRecords(nonstd::span<uint8_t> output)
     while (!outgoingRecords_.empty() && written < output.size())
     {
         Record* record = outgoingRecords_.front();
-        
+
         auto data = record->isPlaintext() ? record->getPlaintext() : record->getCiphertext();
-        
+
         const size_t totalNeeded = TLS_HEADER_SIZE + data.size();
         if (output.size() - written < totalNeeded)
         {
@@ -1226,8 +1226,20 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
         break;
     }
     case ProtocolVersion::SSLv3_0:
-        /// @todo: do it.
+    {
+        if (keyInfo_.masterSecret.empty())
+        {
+            break;
+        }
+
+        std::array<uint8_t, crypto::kSsl3FinishedSize> actual{};
+        crypto::ssl3FinishedMac(keyInfo_.masterSecret, handshakeBuffer_, sideIndex, actual);
+
+        casket::ThrowIfFalse(finished.verifyData.size() == actual.size() &&
+                                 std::equal(finished.verifyData.begin(), finished.verifyData.end(), actual.begin()),
+                             "Bad Finished MAC (SSLv3)");
         break;
+    }
     }
 }
 
@@ -1269,8 +1281,20 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
         break;
     }
     case ProtocolVersion::SSLv3_0:
-        /// @todo: do it.
+    {
+        if (keyInfo_.masterSecret.empty())
+        {
+            break;
+        }
+
+        Finished finished;
+        std::array<uint8_t, crypto::kSsl3FinishedSize> mac{};
+        crypto::ssl3FinishedMac(keyInfo_.masterSecret, handshakeBuffer_, sideIndex, mac);
+
+        finished.verifyData = {mac.begin(), mac.end()};
+        record->serializeHandshake(HandshakeMessage(std::move(finished)), sideIndex, *this);
         break;
+    }
     }
 }
 
