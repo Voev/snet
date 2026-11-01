@@ -308,8 +308,8 @@ public:
     /// @brief Handles KeyUpdate message to update key material if necessary.
     ///
     /// @param[in] sideIndex Side index (client or server).
-    /// @param[in] message The KeyUpdate message.
-    void processKeyUpdate(const int8_t sideIndex, nonstd::span<const uint8_t> message);
+    /// @param[in] keyUpdate Parsed KeyUpdate message.
+    void processKeyUpdate(const int8_t sideIndex, const KeyUpdate& keyUpdate);
 
     /// @brief Construct a Client Hello message.
     ///
@@ -351,6 +351,30 @@ public:
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
     /// @param[in] record Record to store the constructed message.
     void constructFinished(const int8_t sideIndex, Record* record);
+
+    /// @brief Builds and serializes a KeyUpdate message into @p record (RFC 8446, 4.6.3).
+    ///
+    /// Only serializes the message; does not encrypt, enqueue or rotate keys.
+    /// The caller is responsible for calling encrypt() and updating the sending
+    /// keys after the record has been sent.
+    ///
+    /// @param[in]  sideIndex     0 = client, 1 = server (sender side).
+    /// @param[out] record        Record to serialize into.
+    /// @param[in]  requestUpdate True to set update_requested, false for update_not_requested.
+    ///
+    void constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate);
+
+    /// @brief Builds, encrypts and enqueues a KeyUpdate, then rotates the sending
+    ///        keys for @p sideIndex (RFC 8446, 4.6.3).
+    ///
+    /// The KeyUpdate is encrypted with the current (old) sending keys; the new
+    /// keys take effect only for subsequent records.
+    ///
+    /// @param[in] sideIndex     0 = client, 1 = server (sender side).
+    /// @param[in] requestUpdate True to ask the peer to update its keys too.
+    /// @throw casket::RuntimeError if the record pool is exhausted or the outgoing queue overflows.
+    ///
+    void sendKeyUpdate(const int8_t sideIndex, bool requestUpdate);
 
     /// @brief Enable debug key output.
     ///
@@ -503,6 +527,11 @@ private:
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
     /// @param[in] record Record to pre-process.
     void preprocessRecord(const int8_t sideIndex, Record* record);
+
+    /// @brief Advances the traffic secret ("traffic upd"), re-derives key and IV,
+    ///        resets the sequence number and reinitializes the cipher context.
+    /// @param[in]     sideIndex 0 = client, 1 = server.
+    void updateTrafficKeys(std::int8_t sideIndex);
 
 private:
     RecordPool& recordPool_;                      ///< Record pool for memory management.
