@@ -5,6 +5,7 @@
 
 #include <snet/cli/command_dispatcher.hpp>
 #include <snet/tls.hpp>
+#include <snet/tls_ex.hpp>
 #include <snet/socket.hpp>
 
 #include <snet/crypto/exception.hpp>

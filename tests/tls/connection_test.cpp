@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <snet/tls.hpp>
+#include <snet/tls_ex.hpp>
 
 #include <snet/crypto/rsa_asymm_key.hpp>
 #include <snet/crypto/cert_authority.hpp>

@@ -6,7 +6,7 @@
 #include <snet/tls/alert.hpp>
 #include <snet/tls/types.hpp>
 #include <snet/tls/version.hpp>
-#include <snet/tls/connection.hpp>
+#include <snet/tls_ex/connection.hpp>
 
 namespace snet::tls
 {

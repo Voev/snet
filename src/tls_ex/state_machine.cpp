@@ -5,8 +5,8 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 
-#include <snet/tls/state_machine.hpp>
-#include <snet/tls/settings.hpp>
+#include <snet/tls_ex/state_machine.hpp>
+#include <snet/tls_ex/settings.hpp>
 
 #include <snet/crypto/exception.hpp>
 

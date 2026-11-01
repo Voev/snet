@@ -11,6 +11,7 @@ add_executable(${TEST_NAME} ${SOURCES})
 target_link_libraries(${TEST_NAME}
     PRIVATE
         snet_tls
+        snet_tls_ex
         snet_crypto
         OpenSSL::Crypto
         OpenSSL::SSL

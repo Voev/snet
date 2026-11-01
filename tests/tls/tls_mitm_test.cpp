@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <snet/tls.hpp>
+#include <snet/tls_ex.hpp>
 
 #include <vector>
 
@@ -11,8 +12,6 @@
 #include <snet/crypto/cert_forger.hpp>
 
 #include <snet/utils/print_hex.hpp>
-
-#include <snet/tls_ex/config_builder.hpp>
 
 using namespace snet::crypto;
 using namespace snet::tls;

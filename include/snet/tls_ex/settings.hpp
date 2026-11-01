@@ -4,7 +4,7 @@
 #pragma once
 #include <snet/tls/version.hpp>
 #include <snet/tls/types.hpp>
-#include <snet/tls/connection.hpp>
+#include <snet/tls_ex/connection.hpp>
 #include <casket/utils/noncopyable.hpp>
 
 namespace snet::tls

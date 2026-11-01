@@ -13,7 +13,3 @@
 #include <snet/tls/tls_decrypt_context.hpp>
 #include <snet/tls/tls_decrypt_ctx_factory.hpp>
 #include <snet/tls/tls_stream_consumer.hpp>
-
-#include <snet/tls/settings.hpp>
-#include <snet/tls/connection.hpp>
-#include <snet/tls/state_machine.hpp>

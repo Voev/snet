@@ -28,7 +28,7 @@
 #include <snet/event/epoll.hpp>
 
 #include <snet/socket.hpp>
-#include <snet/tls.hpp>
+#include <snet/tls_ex.hpp>
 
 static const size_t kDefaultThreadCount = 1;
 static const size_t kDefaultSessionCount = 1;
