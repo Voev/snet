@@ -11,8 +11,8 @@
 namespace snet::crypto
 {
 
-constexpr size_t kSsl3Md5Len = 16;                              ///< SSL 3.0 Finished: MD5 part length.
-constexpr size_t kSsl3Sha1Len = 20;                             ///< SSL 3.0 Finished: SHA-1 part length.
+constexpr size_t kSsl3Md5Len = 16;                               ///< SSL 3.0 Finished: MD5 part length.
+constexpr size_t kSsl3Sha1Len = 20;                              ///< SSL 3.0 Finished: SHA-1 part length.
 constexpr size_t kSsl3FinishedSize = kSsl3Md5Len + kSsl3Sha1Len; ///< SSL 3.0 Finished verify_data size (36).
 
 /// @brief SSL 3.0 Pseudo-Random Function (RFC 6101, 6.3).
