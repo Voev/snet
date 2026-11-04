@@ -27,6 +27,8 @@
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/policy.hpp>
 
+#include <snet/tls/policy/client_hello_policy.hpp>
+
 #include <openssl/evp.h>
 
 using namespace snet::crypto;
@@ -742,7 +744,7 @@ void Session::constructClientHello(ClientHello& clientHello)
 
     if (metaInfo_.version != ProtocolVersion::SSLv3_0)
     {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
 
         if (clientExtensions_.has(ExtensionCode::KeyShare))
         {
@@ -759,6 +761,58 @@ void Session::constructClientHello(ClientHello& clientHello)
             clientExtensions_.add(ExtensionVariant{std::move(*keyShare)});
         }
     }
+}
+
+void Session::constructClientHello(const ClientHelloPolicy& policy, Record* record)
+{
+    Rand::generate(clientRandom_);
+
+    Extensions extensions;
+
+    if (!policy.sni.empty())
+    {
+        extensions.add(ServerNameIndicator{policy.sni});
+    }
+
+    if (!policy.useEncryptThenMac)
+    {
+        extensions.add(EncryptThenMAC());
+    }
+
+    if (!policy.useExtendedMasterSecret)
+    {
+        extensions.add(ExtendedMasterSecret());
+    }
+
+    std::vector<std::uint8_t> suitesBytes(policy.cipherSuites.size() * 2);
+    for (std::size_t i = 0; i < policy.cipherSuites.size(); ++i)
+    {
+        suitesBytes[2*i]     = casket::get_byte<0>(policy.cipherSuites[i]);
+        suitesBytes[2*i + 1] = casket::get_byte<1>(policy.cipherSuites[i]);;
+    }
+    std::array<std::uint8_t, 1> compressionMethods{0};
+
+    ClientHello ch;
+    ch.version     = policy.clientLegacyVersion;
+    ch.random      = clientRandom_;
+    ch.sessionID   = policy.clientSessionId;
+    ch.suites      = suitesBytes;
+    ch.compMethods = compressionMethods;
+    ch.extensions  = &extensions;
+
+    record->serializeHandshake(HandshakeMessage(std::move(ch)), 0 /* client side */, *this);
+}
+
+size_t Session::sendClientHello(const ClientHelloPolicy& policy, IByteWriter& writer)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    constructClientHello(policy, record.get());
+    casket::ThrowIfFalse(addOutgoingRecord(0, record.get()), "outgoing records overflow");
+
+    record.release();
+    return flush(writer);
 }
 
 void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
@@ -1414,6 +1468,57 @@ void Session::updateTrafficKeys(const int8_t sideIndex)
         seqnum_.resetServerSequence();
     }
     recordLayer_.doTLSv13KeyUpdate(cipherCtx, encKey);
+}
+
+RecordPool::ScopedRecord Session::popOutgoingRecord() noexcept
+{
+    Record* record = nullptr;
+    if (!outgoingRecords_.pop(record) || !record)
+    {
+        return {};
+    }
+    return RecordPool::ScopedRecord(record, &recordPool_);
+}
+
+bool Session::flushOne(IByteWriter& writer) noexcept
+{
+    if (!deferredRecord_)
+    {
+        deferredRecord_ = popOutgoingRecord();
+        if (!deferredRecord_)
+        {
+            return false;
+        }
+    }
+
+    std::array<std::uint8_t, TLS_HEADER_SIZE> header{};
+    deferredRecord_->serializeHeader(header);
+
+    const auto payload = deferredRecord_->isPlaintext() ? deferredRecord_->getPlaintext()
+                                                        : deferredRecord_->getCiphertext();
+
+    if (writer.available() < header.size() + payload.size())
+    {
+        return false;
+    }
+
+    if (!writer.write(header) || !writer.write(payload))
+    {
+        return false;
+    }
+
+    deferredRecord_.release();
+    return true;
+}
+
+std::size_t Session::flush(IByteWriter& writer) noexcept
+{
+    std::size_t n = 0;
+    while (flushOne(writer))
+    {
+        ++n;
+    }
+    return n;
 }
 
 } // namespace snet::tls

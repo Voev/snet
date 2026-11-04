@@ -25,6 +25,10 @@
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
 
+#include <snet/tls/i_byte_writer.hpp>
+
+#include <snet/tls/policy/client_hello_policy.hpp>
+
 namespace snet::tls
 {
 
@@ -316,6 +320,10 @@ public:
     /// @param[out] clientHello The Client Hello message to construct.
     void constructClientHello(ClientHello& clientHello);
 
+    void constructClientHello(const ClientHelloPolicy& policy, Record* record);
+
+    size_t sendClientHello(const ClientHelloPolicy& policy, IByteWriter& writer);
+    
     /// @brief Construct a Certificate message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
@@ -521,6 +529,10 @@ public:
         return 0;
     }
 
+    std::size_t flush(IByteWriter& writer) noexcept;
+
+    bool flushOne(IByteWriter& writer) noexcept;
+
 private:
     /// @brief Pre-process a record before handling.
     ///
@@ -533,11 +545,14 @@ private:
     /// @param[in]     sideIndex 0 = client, 1 = server.
     void updateTrafficKeys(std::int8_t sideIndex);
 
+    RecordPool::ScopedRecord popOutgoingRecord() noexcept;
+
 private:
     RecordPool& recordPool_;                      ///< Record pool for memory management.
     Record* readingRecord_ = nullptr;             ///< Current reading record.
     casket::RingBuffer<Record*> pendingRecords_;  ///< Incoming records queue.
     casket::RingBuffer<Record*> outgoingRecords_; ///< Outgoing records queue.
+    RecordPool::ScopedRecord deferredRecord_;     ///< Deferred outfoing record.
     RecordLayer recordLayer_;                     ///< Record layer handler.
     std::vector<uint8_t> handshakeBuffer_;        ///< Buffer for handshake messages.
     crypto::HashCtxPtr hashCtx_;                  ///< Hash context.
@@ -584,7 +599,7 @@ void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandl
 
     if (metaInfo_.version != ProtocolVersion::SSLv3_0)
     {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
 
         if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
         {

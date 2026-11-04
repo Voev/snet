@@ -5,6 +5,7 @@
 #include <casket/nonstd/span.hpp>
 
 #include <snet/tls/version.hpp>
+#include <snet/tls/extensions.hpp>
 
 namespace snet::tls
 {
@@ -22,8 +23,9 @@ struct ClientHello final
     nonstd::span<const uint8_t> random{};    ///< Client random (32 bytes on the wire).
     nonstd::span<const uint8_t> sessionID{}; ///< Session ID; 0..32 bytes (1-byte length on the wire).
     nonstd::span<const uint8_t> suites{}; ///< Cipher suite codes (each 2 bytes, big-endian); even length on the wire.
-    nonstd::span<const uint8_t> compMethods{}; ///< Compression methods; 1..255 bytes (1-byte length on the wire).
-    nonstd::span<const uint8_t> extensions{};  ///< Raw extensions block; empty for SSLv3.0.
+    nonstd::span<const uint8_t> compMethods{};    ///< Compression methods; 1..255 bytes (1-byte length on the wire).
+    nonstd::span<const uint8_t> extensionsData{}; ///< Raw extensions block; empty for SSLv3.0.
+    Extensions* extensions{nullptr};              ///< Parsed extensions. Used in serialize.
 
     /// @brief Default constructor; all fields are empty.
     ClientHello() noexcept = default;

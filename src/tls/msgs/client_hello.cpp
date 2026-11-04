@@ -64,7 +64,7 @@ std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noex
 
     // Everything else goes to extensions. It is *not* parsed here —
     // Extensions::deserialize() consumes it later, on its own reader.
-    extensions = reader.get_span_remaining();
+    extensionsData = reader.get_span_remaining();
     reader.assert_done();
 
     return reader.take_ec();
@@ -72,7 +72,14 @@ std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noex
 
 size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
+    (void)session;
+
     if (output.size_bytes() < 2)
+    {
+        return kSerializationFailed;
+    }
+
+    if (!extensions)
     {
         return kSerializationFailed;
     }
@@ -115,7 +122,7 @@ size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& sessi
     }
     pos += n;
 
-    const auto extWritten = session.getClientExtensions().serialize(Side::Client, output.subspan(pos));
+    const auto extWritten = extensions->serialize(Side::Client, output.subspan(pos));
     if (extWritten == 0)
     {
         return kSerializationFailed;
