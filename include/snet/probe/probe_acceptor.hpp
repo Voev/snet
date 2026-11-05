@@ -53,7 +53,8 @@ public:
             policy.sni = probe->sni;
 
             probe::TcpByteWriter<SessionManagerType> writer(tx_, session);
-            const std::size_t flushed = probe->tls->sendClientHello(policy, writer);
+            probe->tls->constructClientHello(policy);
+            const std::size_t flushed = probe->tls->flush(writer);
             if (flushed == 0)
             {
                 CSK_LOG_WARNING("ProbeAcceptor: flush deferred (sni=%s)", probe->sni.c_str());

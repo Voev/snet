@@ -320,9 +320,7 @@ public:
     /// @param[out] clientHello The Client Hello message to construct.
     void constructClientHello(ClientHello& clientHello);
 
-    void constructClientHello(const ClientHelloPolicy& policy, Record* record);
-
-    size_t sendClientHello(const ClientHelloPolicy& policy, IByteWriter& writer);
+    void constructClientHello(const ClientHelloPolicy& policy);
     
     /// @brief Construct a Certificate message.
     ///

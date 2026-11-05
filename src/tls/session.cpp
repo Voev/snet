@@ -763,8 +763,11 @@ void Session::constructClientHello(ClientHello& clientHello)
     }
 }
 
-void Session::constructClientHello(const ClientHelloPolicy& policy, Record* record)
+void Session::constructClientHello(const ClientHelloPolicy& policy)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     Rand::generate(clientRandom_);
 
     Extensions extensions;
@@ -787,32 +790,22 @@ void Session::constructClientHello(const ClientHelloPolicy& policy, Record* reco
     std::vector<std::uint8_t> suitesBytes(policy.cipherSuites.size() * 2);
     for (std::size_t i = 0; i < policy.cipherSuites.size(); ++i)
     {
-        suitesBytes[2*i]     = casket::get_byte<0>(policy.cipherSuites[i]);
-        suitesBytes[2*i + 1] = casket::get_byte<1>(policy.cipherSuites[i]);;
+        suitesBytes[2 * i] = casket::get_byte<0>(policy.cipherSuites[i]);
+        suitesBytes[2 * i + 1] = casket::get_byte<1>(policy.cipherSuites[i]);
     }
     std::array<std::uint8_t, 1> compressionMethods{0};
 
     ClientHello ch;
-    ch.version     = policy.clientLegacyVersion;
-    ch.random      = clientRandom_;
-    ch.sessionID   = policy.clientSessionId;
-    ch.suites      = suitesBytes;
+    ch.version = policy.clientLegacyVersion;
+    ch.random = clientRandom_;
+    ch.sessionID = policy.clientSessionId;
+    ch.suites = suitesBytes;
     ch.compMethods = compressionMethods;
-    ch.extensions  = &extensions;
+    ch.extensions = &extensions;
 
     record->serializeHandshake(HandshakeMessage(std::move(ch)), 0 /* client side */, *this);
-}
-
-size_t Session::sendClientHello(const ClientHelloPolicy& policy, IByteWriter& writer)
-{
-    auto record = recordPool_.acquireScoped();
-    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
-
-    constructClientHello(policy, record.get());
     casket::ThrowIfFalse(addOutgoingRecord(0, record.get()), "outgoing records overflow");
-
     record.release();
-    return flush(writer);
 }
 
 void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
@@ -1494,8 +1487,8 @@ bool Session::flushOne(IByteWriter& writer) noexcept
     std::array<std::uint8_t, TLS_HEADER_SIZE> header{};
     deferredRecord_->serializeHeader(header);
 
-    const auto payload = deferredRecord_->isPlaintext() ? deferredRecord_->getPlaintext()
-                                                        : deferredRecord_->getCiphertext();
+    const auto payload =
+        deferredRecord_->isPlaintext() ? deferredRecord_->getPlaintext() : deferredRecord_->getCiphertext();
 
     if (writer.available() < header.size() + payload.size())
     {

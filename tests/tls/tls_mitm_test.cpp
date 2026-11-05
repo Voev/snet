@@ -284,6 +284,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     default:
                     {
+                        /// @todo: fix empty record passed to outgoing queue.
                         break;
                     }
                     } /// switch
