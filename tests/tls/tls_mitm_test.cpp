@@ -157,7 +157,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
-
+                        clientHello.extensions = const_cast<Extensions*>(&mitmClient.getClientExtensions());
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(clientHello)), sideIndex, mitmClient);
                         break;
