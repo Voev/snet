@@ -20,7 +20,12 @@ TEST_F(ALPNTest, ConstructorWithProtocolList)
 {
     std::vector<std::string> protocols = {"http/1.1", "h2", "h3"};
 
-    ALPN alpn(protocols);
+    std::vector<nonstd::string_view> protocolViews;
+    protocolViews.reserve(protocols.size());
+    for (const auto& p : protocols)
+        protocolViews.emplace_back(p);
+
+    ALPN alpn(protocolViews);
     ASSERT_FALSE(alpn.empty());
     ASSERT_EQ(alpn.size(), 3);
 
@@ -110,7 +115,12 @@ TEST_F(ALPNTest, SerializeMultipleProtocols)
 {
     std::vector<std::string> protocols = {"http/1.1", "h2", "h3"};
 
-    ALPN alpn(protocols);
+    std::vector<nonstd::string_view> protocolViews;
+    protocolViews.reserve(protocols.size());
+    for (const auto& p : protocols)
+        protocolViews.emplace_back(p);
+
+    ALPN alpn(protocolViews);
     std::vector<uint8_t> buffer(32);
 
     const std::size_t written = alpn.serialize(Side::Client, buffer);

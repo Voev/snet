@@ -169,6 +169,38 @@ public:
         return get_span_fixed(n);
     }
 
+    nonstd::span<uint16_t> get_u16_span(size_t lenBytes, size_t minBytes, size_t maxBytes,
+                                        nonstd::span<uint16_t> out) noexcept
+    {
+        if ((minBytes & 1u) != 0 || (maxBytes & 1u) != 0)
+        {
+            set_error(DecodeError::BadLengthSize);
+            return {};
+        }
+
+        const auto raw = get_span(lenBytes, minBytes, maxBytes);
+        if (!ok())
+            return {};
+
+        if (raw.size() % 2 != 0)
+        {
+            set_error(DecodeError::SizeNotMultiple);
+            return {};
+        }
+
+        const std::size_t count = raw.size() / 2;
+        if (count > out.size())
+        {
+            set_error(DecodeError::LengthOutOfRange);
+            return {};
+        }
+
+        for (std::size_t i = 0; i < count; ++i)
+            out[i] = casket::make_uint16(raw[2 * i], raw[2 * i + 1]);
+
+        return {out.data(), count};
+    }
+
     nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes) noexcept
     {
         const size_t n = get_length_field(lenBytes, 0, remaining_bytes());

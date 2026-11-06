@@ -5,7 +5,7 @@
 namespace snet::tls
 {
 
-ALPN::ALPN(const std::vector<std::string>& protocols)
+ALPN::ALPN(nonstd::span<const nonstd::string_view> protocols)
 {
     buf_.reserve(protocols.size() * 8);
     offsets_.reserve(protocols.size());

@@ -1,12 +1,17 @@
+/// @file
+/// @brief Implementation of the CipherSuiteManager class.
+
+#include <snet/tls/cipher_suite_manager.hpp>
+
+#include <algorithm>
 #include <cassert>
 #include <unordered_map>
 
-#include <snet/tls/cipher_suite.hpp>
-#include <snet/tls/cipher_suite_manager.hpp>
-#include <snet/crypto/exception.hpp>
-#include <snet/crypto/pointers.hpp>
+#include <openssl/ssl.h>
 
 #include <casket/utils/load_store.hpp>
+
+#include <snet/crypto/exception.hpp>
 
 using namespace casket;
 using namespace snet::crypto;
@@ -14,7 +19,25 @@ using namespace snet::crypto;
 namespace snet::tls
 {
 
-static std::unordered_map<uint16_t, CipherSuiteMeta> gCipherSuiteMeta = {
+namespace
+{
+
+/// @brief Extract the wire ID from an SSL_CIPHER.
+///
+/// OpenSSL 3.x: SSL_CIPHER_get_protocol_id returns the 16-bit wire ID.
+/// OpenSSL 1.1.1: SSL_CIPHER_get_id returns a 24-bit value where the low
+/// 16 bits are the wire ID.
+std::uint16_t cipherWireId(const SSL_CIPHER* cs) noexcept
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    return static_cast<std::uint16_t>(SSL_CIPHER_get_protocol_id(cs));
+#else
+    return static_cast<std::uint16_t>(SSL_CIPHER_get_id(cs) & 0xFFFF);
+#endif
+}
+
+/// @brief AEAD tag lengths for known cipher suites.
+const std::unordered_map<std::uint16_t, CipherSuiteMeta> kCipherSuiteMeta = {
     {make_uint16(0x13, 0x01), {EVP_GCM_TLS_TAG_LEN}},        {make_uint16(0x13, 0x02), {EVP_GCM_TLS_TAG_LEN}},
     {make_uint16(0x13, 0x03), {EVP_CHACHAPOLY_TLS_TAG_LEN}}, {make_uint16(0x13, 0x04), {EVP_CCM_TLS_TAG_LEN}},
     {make_uint16(0x13, 0x05), {EVP_CCM8_TLS_TAG_LEN}},       {make_uint16(0xC0, 0x9C), {EVP_CCM_TLS_TAG_LEN}},
@@ -29,13 +52,15 @@ static std::unordered_map<uint16_t, CipherSuiteMeta> gCipherSuiteMeta = {
     {make_uint16(0xC0, 0xAD), {EVP_CCM_TLS_TAG_LEN}},        {make_uint16(0xC0, 0xAE), {EVP_CCM8_TLS_TAG_LEN}},
     {make_uint16(0xC0, 0xAF), {EVP_CCM8_TLS_TAG_LEN}},       {make_uint16(0xC0, 0xB2), {EVP_CCM_TLS_TAG_LEN}},
     {make_uint16(0xC0, 0xB3), {EVP_CCM_TLS_TAG_LEN}},
-
 };
+
+} // namespace
+
+// ─────────────────────────── Impl ───────────────────────────
 
 struct CipherSuiteManager::Impl final
 {
-public:
-    Impl()
+    explicit Impl()
         : ctx(SSL_CTX_new(TLS_method()))
         , ssl(nullptr)
     {
@@ -53,18 +78,49 @@ public:
         SSL_CTX_free(ctx);
     }
 
+    /// @brief Fill supportedCache_ from OpenSSL if not already valid.
+    void ensureSupportedCache()
+    {
+        if (supportedCacheValid_)
+            return;
+
+        supportedCache_.clear();
+
+        STACK_OF(SSL_CIPHER)* ciphers = SSL_get1_supported_ciphers(ssl);
+        crypto::ThrowIfTrue(ciphers == nullptr, "Failed to get supported cipher suites");
+
+        const int n = sk_SSL_CIPHER_num(ciphers);
+        supportedCache_.reserve(static_cast<std::size_t>(n));
+
+        for (int i = 0; i < n; ++i)
+            supportedCache_.push_back(sk_SSL_CIPHER_value(ciphers, i));
+
+        sk_SSL_CIPHER_free(ciphers);
+        supportedCacheValid_ = true;
+    }
+
+    /// @brief Invalidate the cache after a configuration change.
+    void invalidateSupportedCache() noexcept
+    {
+        supportedCache_.clear();
+        supportedCacheValid_ = false;
+    }
+
     SSL_CTX* ctx;
     SSL* ssl;
+
+    std::vector<const CipherSuite*> supportedCache_;
+    bool supportedCacheValid_ = false;
 };
+
+// ─────────────────────────── CipherSuiteManager ───────────────────────────
 
 CipherSuiteManager::CipherSuiteManager()
     : impl_(std::make_unique<Impl>())
 {
 }
 
-CipherSuiteManager::~CipherSuiteManager() noexcept
-{
-}
+CipherSuiteManager::~CipherSuiteManager() noexcept = default;
 
 CipherSuiteManager& CipherSuiteManager::getInstance()
 {
@@ -81,44 +137,82 @@ const CipherSuite* CipherSuiteManager::getCipherSuiteById(std::uint16_t id)
 
 std::vector<const CipherSuite*> CipherSuiteManager::getCipherSuites(bool supported)
 {
-    STACK_OF(SSL_CIPHER) * ciphers;
-
     if (supported)
-        ciphers = SSL_get1_supported_ciphers(impl_->ssl);
-    else
-        ciphers = SSL_get_ciphers(impl_->ssl);
-
-    crypto::ThrowIfTrue(ciphers == nullptr, "Failed to get supported cipher suites");
-
-    std::vector<const CipherSuite*> cipherSuites(sk_SSL_CIPHER_num(ciphers));
-
-    for (int i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i)
     {
-        cipherSuites[i] = sk_SSL_CIPHER_value(ciphers, i);
+        impl_->ensureSupportedCache();
+        return impl_->supportedCache_; // copy; use getSupportedCipherSuites() for a view
     }
 
-    if (supported)
-        sk_SSL_CIPHER_free(ciphers);
+    STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(impl_->ssl);
+    crypto::ThrowIfTrue(ciphers != nullptr, "Failed to get cipher suites");
+
+    const int n = sk_SSL_CIPHER_num(ciphers);
+    std::vector<const CipherSuite*> cipherSuites(static_cast<std::size_t>(n));
+
+    for (int i = 0; i < n; ++i)
+        cipherSuites[static_cast<std::size_t>(i)] = sk_SSL_CIPHER_value(ciphers, i);
 
     return cipherSuites;
+}
+
+nonstd::span<const CipherSuite*> CipherSuiteManager::getSupportedCipherSuites()
+{
+    impl_->ensureSupportedCache();
+    return {impl_->supportedCache_.data(), impl_->supportedCache_.size()};
 }
 
 void CipherSuiteManager::setVersion(const ProtocolVersion& version)
 {
     crypto::ThrowIfFalse(SSL_set_min_proto_version(impl_->ssl, static_cast<int>(version.code())));
     crypto::ThrowIfFalse(SSL_set_max_proto_version(impl_->ssl, static_cast<int>(version.code())));
+    impl_->invalidateSupportedCache();
 }
 
 void CipherSuiteManager::setSecurityLevel(const int securityLevel)
 {
     crypto::ThrowIfFalse(securityLevel >= 0 && securityLevel <= 5, "Security level must be in range [0..5]");
     SSL_set_security_level(impl_->ssl, securityLevel);
+    impl_->invalidateSupportedCache();
 }
 
 int CipherSuiteManager::getTagLengthByID(std::uint16_t id)
 {
-    auto meta = gCipherSuiteMeta.find(id);
-    return meta != gCipherSuiteMeta.end() ? meta->second.cipherTagLength : 0;
+    auto it = kCipherSuiteMeta.find(id);
+    return it != kCipherSuiteMeta.end() ? it->second.cipherTagLength : 0;
+}
+
+bool CipherSuiteManager::isSupported(std::uint16_t id)
+{
+    impl_->ensureSupportedCache();
+
+    for (auto* cs : impl_->supportedCache_)
+    {
+        if (cipherWireId(cs) == id)
+            return true;
+    }
+    return false;
+}
+
+std::size_t CipherSuiteManager::filterSupported(nonstd::span<const std::uint16_t> ids, nonstd::span<std::uint16_t> out)
+{
+    impl_->ensureSupportedCache();
+
+    std::size_t n = 0;
+    for (auto id : ids)
+    {
+        if (n == out.size())
+            break;
+
+        for (auto* cs : impl_->supportedCache_)
+        {
+            if (cipherWireId(cs) == id)
+            {
+                out[n++] = id;
+                break;
+            }
+        }
+    }
+    return n;
 }
 
 } // namespace snet::tls

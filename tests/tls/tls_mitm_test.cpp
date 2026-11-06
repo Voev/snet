@@ -123,10 +123,9 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         mitmServer.processPendingRecords(
             0,
-            [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
+            [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                auto modifiedRecord = recordPool.acquire();
-
+                
                 // PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
@@ -137,39 +136,24 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                         ClientHello clientHello = record->getHandshake<ClientHello>();
 
-                        mitmClient.processClientHello(clientHello,
-                                                      [](Session* session, Extensions& extensions)
-                                                      {
-                                                          extensions.removeExtension(ExtensionCode::SessionTicket);
+                        std::array<ProtocolVersion, 5> versionsBuf;
+                        auto policy = ClientHelloPolicy::make(clientHello, mitmServer, versionsBuf);
 
-                                                          if (extensions.has(ExtensionCode::KeyShare))
-                                                          {
-                                                              auto keyShare = extensions.take<KeyShare>();
-                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
-                                                              keyShare->offeredGroups(offeredGroups);
-                                                              auto firstGroup = offeredGroups.front();
-
-                                                              /// @todo: check offered group by policy
-
-                                                              auto key = GroupParams::generateKeyByParams(firstGroup);
-                                                              keyShare->setPublicKey(0, key);
-                                                              session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
-                                                          }
-                                                      });
-                        clientHello.extensions = const_cast<Extensions*>(&mitmClient.getClientExtensions());
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello)), sideIndex, mitmClient);
+                        mitmClient.constructClientHello(policy);
                         break;
                     }
                     case HandshakeType::ClientKeyExchangeCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmClient.constructClientKeyExchange(sideIndex, modifiedRecord);
+                        mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmClient.constructFinished(sideIndex, modifiedRecord);
+                        mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     default:
@@ -177,11 +161,10 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         break;
                     }
                     }
-
-                    mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ChangeCipherSpec)
                 {
+                    auto modifiedRecord = recordPool.acquire();
                     modifiedRecord->serializeChangeCipherSpec(mitmClient.getRecordVersion());
                     mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
@@ -214,6 +197,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
+                        /// @todo: fix this by using normal interface.
                         mitmServer.processServerHello(serverHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {

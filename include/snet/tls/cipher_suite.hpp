@@ -10,6 +10,8 @@
 
 #include <casket/nonstd/string_view.hpp>
 
+#include <openssl/ssl.h>
+
 namespace snet::tls
 {
 

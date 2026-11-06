@@ -24,7 +24,7 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
-
+#include <snet/tls/policy.hpp>
 #include <snet/tls/i_byte_writer.hpp>
 
 #include <snet/tls/policy/client_hello_policy.hpp>
@@ -315,13 +315,8 @@ public:
     /// @param[in] keyUpdate Parsed KeyUpdate message.
     void processKeyUpdate(const int8_t sideIndex, const KeyUpdate& keyUpdate);
 
-    /// @brief Construct a Client Hello message.
-    ///
-    /// @param[out] clientHello The Client Hello message to construct.
-    void constructClientHello(ClientHello& clientHello);
-
     void constructClientHello(const ClientHelloPolicy& policy);
-    
+
     /// @brief Construct a Certificate message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).

@@ -26,7 +26,7 @@ crypto::KeyPtr KeyShareEntry::getPublicKey() const
     return pk;
 }
 
-KeyShareClientHello::KeyShareClientHello(const std::vector<crypto::GroupParams>& supported)
+KeyShareClientHello::KeyShareClientHello(nonstd::span<const crypto::GroupParams> supported)
 {
     clientKeyShares_.reserve(supported.size());
     for (const auto g : supported)

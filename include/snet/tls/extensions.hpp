@@ -137,6 +137,17 @@ public:
         return extensions_;
     }
 
+    /// @brief Reserve capacity for @p n extensions.
+    ///
+    /// No effect on the wire format; only avoids reallocations when the
+    /// number of upcoming add() calls is known.
+    ///
+    /// @param[in] n Expected number of extensions.
+    void reserve(std::size_t n)
+    {
+        extensions_.reserve(n);
+    }
+
     /// @brief Adds an extension.
     /// @param[in] ext Extension to add; moved into the container.
     /// @return false if a duplicate code is already present or on allocation

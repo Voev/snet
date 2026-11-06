@@ -170,6 +170,25 @@ public:
         }
     }
 
+    /// @brief Appends a group to the list.
+    ///
+    /// Duplicates are preserved (RFC 7919 does not require de-duplication).
+    /// If the list exceeds the maximum representable length (32767 groups),
+    /// further additions are ignored.
+    ///
+    /// @param[in] group Group to append.
+    void addGroup(crypto::GroupParams group)
+    {
+        // Max wire size: 2-byte length field, each group is 2 bytes.
+        // 0xFFFF / 2 = 32767 groups max.
+        constexpr std::size_t kMaxGroups = 0xFFFF / 2;
+
+        if (groups_.size() >= kMaxGroups)
+            return;
+
+        groups_.push_back(group);
+    }
+
 private:
     std::vector<crypto::GroupParams> groups_; ///< Supported groups, wire order preserved.
 };

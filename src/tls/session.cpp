@@ -25,9 +25,9 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
-#include <snet/tls/policy.hpp>
-
 #include <snet/tls/policy/client_hello_policy.hpp>
+
+#include <snet/tls/record_printer.hpp>
 
 #include <openssl/evp.h>
 
@@ -733,77 +733,120 @@ void Session::setServerKey(Key* key)
     serverKey_ = crypto::AsymmKey::shallowCopy(key);
 }
 
-void Session::constructClientHello(ClientHello& clientHello)
-{
-    metaInfo_.version = clientHello.version;
-
-    Rand::generate(clientRandom_);
-    clientHello.random = clientRandom_;
-
-    /// @todo: filter ciphersuites
-
-    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
-    {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
-
-        if (clientExtensions_.has(ExtensionCode::KeyShare))
-        {
-            auto keyShare = clientExtensions_.take<KeyShare>();
-            std::vector<crypto::GroupParams> offeredGroups;
-            keyShare->offeredGroups(offeredGroups);
-            auto firstGroup = offeredGroups.front();
-
-            /// @todo: check offered group by policy
-
-            ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
-            keyShare->setPublicKey(0, ephemeralPrivateKey_);
-
-            clientExtensions_.add(ExtensionVariant{std::move(*keyShare)});
-        }
-    }
-}
-
 void Session::constructClientHello(const ClientHelloPolicy& policy)
 {
     auto record = recordPool_.acquireScoped();
     casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
 
+    // Version.
+    const auto versions = policy.versions;
+    casket::ThrowIfFalse(!versions.empty(), "no supported versions");
+
+    const ProtocolVersion negotiated = versions.front();
+    metaInfo_.version = negotiated;
+
+    const ProtocolVersion legacyVersion =
+        negotiated >= ProtocolVersion::TLSv1_3 ? ProtocolVersion::TLSv1_2 : negotiated;
+
     Rand::generate(clientRandom_);
 
     Extensions extensions;
+    extensions.reserve(8);
 
-    if (!policy.sni.empty())
-    {
+    // SNI.
+    if (negotiated > ProtocolVersion::SSLv3_0 && !policy.sni.empty())
         extensions.add(ServerNameIndicator{policy.sni});
+
+    // supported_versions — TLS 1.3 only.
+    if (negotiated >= ProtocolVersion::TLSv1_3)
+    {
+        SupportedVersions sv;
+        for (auto v : versions)
+            sv.addVersion(v);
+        extensions.add(std::move(sv));
     }
 
-    if (!policy.useEncryptThenMac)
+    // supported_groups.
+    std::array<crypto::GroupParams, 8> filteredGroupsBuf{};
+    nonstd::span<const crypto::GroupParams> filteredGroups{};
+
+    if (negotiated > ProtocolVersion::SSLv3_0 && !policy.groups.empty())
     {
+        const auto ourGroups = crypto::GroupParams::getSupported();
+        const std::size_t n = FilterGroups(policy.groups, ourGroups, filteredGroupsBuf);
+        casket::ThrowIfFalse(n > 0, "no supported key exchange groups");
+
+        filteredGroups = {filteredGroupsBuf.data(), n};
+
+        SupportedGroups sg;
+        for (auto g : filteredGroups)
+            sg.addGroup(g);
+        extensions.add(std::move(sg));
+    }
+
+    // signature_algorithms — TLS 1.2+.
+    if (negotiated >= ProtocolVersion::TLSv1_2 && !policy.signatureAlgorithms.empty())
+    {
+        SignatureAlgorithms sa;
+        for (auto s : policy.signatureAlgorithms)
+            sa.addScheme(s);
+        extensions.add(std::move(sa));
+    }
+
+    // key_share / ECDHE.
+    if (negotiated >= ProtocolVersion::TLSv1_3)
+    {
+        casket::ThrowIfFalse(!filteredGroups.empty(), "no common groups for key_share");
+
+        const auto group = filteredGroups.front();
+        ephemeralPrivateKey_ = crypto::GroupParams::generateKeyByParams(group);
+        sharedGroupParams_ = group;
+        const snet::crypto::GroupParams groups[] = {group};
+
+        KeyShare keyShare(groups);
+        keyShare.setPublicKey(0, ephemeralPrivateKey_);
+        extensions.add(std::move(keyShare));
+    }
+    else if (negotiated > ProtocolVersion::SSLv3_0 && !filteredGroups.empty())
+    {
+        sharedGroupParams_ = filteredGroups.front();
+        ephemeralPrivateKey_ = crypto::GroupParams::generateKeyByParams(sharedGroupParams_);
+    }
+
+    // TLS 1.0-1.2 flags.
+    if (negotiated >= ProtocolVersion::TLSv1_0 && policy.useEncryptThenMac)
         extensions.add(EncryptThenMAC());
-    }
 
-    if (!policy.useExtendedMasterSecret)
-    {
+    if (negotiated >= ProtocolVersion::TLSv1_0 && policy.useExtendedMasterSecret)
         extensions.add(ExtendedMasterSecret());
-    }
 
-    std::vector<std::uint8_t> suitesBytes(policy.cipherSuites.size() * 2);
-    for (std::size_t i = 0; i < policy.cipherSuites.size(); ++i)
-    {
-        suitesBytes[2 * i] = casket::get_byte<0>(policy.cipherSuites[i]);
-        suitesBytes[2 * i + 1] = casket::get_byte<1>(policy.cipherSuites[i]);
-    }
-    std::array<std::uint8_t, 1> compressionMethods{0};
+    if (negotiated >= ProtocolVersion::TLSv1_0 && !policy.alpn.empty())
+        extensions.add(ALPN(policy.alpn));
 
-    ClientHello ch;
-    ch.version = policy.clientLegacyVersion;
+    // Cipher suites: filter by supported.
+    casket::ThrowIfFalse(!policy.suites.empty(), "no cipher suites");
+
+    std::array<std::uint16_t, ClientHello::kMaxSuites> suitesBuf{};
+    const std::size_t suitesCount = CipherSuiteManager::getInstance().filterSupported(policy.suites, suitesBuf);
+    casket::ThrowIfFalse(suitesCount > 0, "no supported cipher suites");
+
+    ClientHello ch{};
+    ch.version = legacyVersion;
     ch.random = clientRandom_;
-    ch.sessionID = policy.clientSessionId;
-    ch.suites = suitesBytes;
-    ch.compMethods = compressionMethods;
+    ch.sessionID = policy.sessionId;
     ch.extensions = &extensions;
 
-    record->serializeHandshake(HandshakeMessage(std::move(ch)), 0 /* client side */, *this);
+    std::array<std::uint8_t, 1> compressionMethods{0};
+    ch.compMethods = {compressionMethods.data(), compressionMethods.size()};
+    
+    for (std::size_t i = 0; i < suitesCount; ++i)
+    {
+        casket::ThrowIfFalse(ch.suites.push_back(suitesBuf[i]), "cipher suite list overflow");
+    }
+
+    ch.suites.push_back(casket::make_uint16(0x00, 0xFF));
+
+    record->serializeHandshake(HandshakeMessage(std::move(ch)), 0, *this);
     casket::ThrowIfFalse(addOutgoingRecord(0, record.get()), "outgoing records overflow");
     record.release();
 }

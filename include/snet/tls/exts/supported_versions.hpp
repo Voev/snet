@@ -193,6 +193,30 @@ public:
         return {versions_.data(), versions_.size()};
     }
 
+    /// @brief Appends a protocol version to the list.
+    ///
+    /// Order is preserved; duplicates are kept (RFC 8446 does not require
+    /// de-duplication). On the client side, the maximum number of versions
+    /// is 127 (the wire length is a single byte and each version is 2 bytes).
+    /// Additions beyond that are silently ignored; serialize() will fail
+    /// only if the resulting count exceeds 127.
+    ///
+    /// @param[in] version Protocol version to append.
+    void addVersion(ProtocolVersion version)
+    {
+        versions_.push_back(version);
+    }
+
+    /// @brief Appends multiple protocol versions at once.
+    ///
+    /// Order is preserved; a single allocation for the whole batch.
+    ///
+    /// @param[in] versions Versions to append, in wire order.
+    void addVersions(nonstd::span<const ProtocolVersion> versions)
+    {
+        versions_.insert(versions_.end(), versions.begin(), versions.end());
+    }
+
 private:
     std::vector<ProtocolVersion> versions_; ///< Stored versions; server side holds exactly 1.
 };

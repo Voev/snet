@@ -49,11 +49,9 @@ public:
         try
         {
             tls::ClientHelloPolicy policy{};
-            policy.clientLegacyVersion = cfg_.preferredVersion;
-            policy.sni = probe->sni;
+            probe->tls->constructClientHello(policy);
 
             probe::TcpByteWriter<SessionManagerType> writer(tx_, session);
-            probe->tls->constructClientHello(policy);
             const std::size_t flushed = probe->tls->flush(writer);
             if (flushed == 0)
             {

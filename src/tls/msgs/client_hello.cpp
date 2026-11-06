@@ -33,18 +33,29 @@ std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noex
         return reader.take_ec();
     }
 
-    // cipher_suites: <2 byte length> <2..65534 bytes, even>  (RFC: 2..2^16-2)
-    suites = reader.get_span(2, 2, 65534);
+    // cipher_suites: <2-byte len> <2..65534 wire bytes, even>.
+    const auto suitesRaw = reader.get_span(2, 2, 65534);
     if (!reader.ok())
     {
         return reader.take_ec();
     }
 
-    if (suites.size() % 2 != 0)
+    if (suitesRaw.size() % 2 != 0)
     {
-        // must be multiple of 2
         reader.set_error(utils::DecodeError::SizeNotMultiple);
         return reader.take_ec();
+    }
+
+    const std::size_t suiteCount = suitesRaw.size() / 2;
+    if (suiteCount > suites.capacity())
+    {
+        reader.set_error(utils::DecodeError::LengthOutOfRange);
+        return reader.take_ec();
+    }
+
+    for (std::size_t i = 0; i < suiteCount; ++i)
+    {
+        suites.push_back(casket::make_uint16(suitesRaw[2 * i], suitesRaw[2 * i + 1]));
     }
 
     // compression_methods: <1 byte length> <1..255 bytes>
@@ -108,12 +119,23 @@ size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& sessi
     }
     pos += n;
 
-    n = AppendLengthAndValue(output.subspan(pos), suites.data(), suites.size(), 2);
-    if (n == kSerializationFailed)
+    // cipher_suites: host order -> wire (big-endian).
     {
-        return kSerializationFailed;
+        const std::size_t suitesBytes = suites.size() * 2;
+        if (suitesBytes > 0xFFFF) return kSerializationFailed;
+        if (output.size_bytes() - pos < 2 + suitesBytes) return kSerializationFailed;
+
+        output[pos]     = casket::get_byte<0>(static_cast<std::uint16_t>(suitesBytes));
+        output[pos + 1] = casket::get_byte<1>(static_cast<std::uint16_t>(suitesBytes));
+        pos += 2;
+
+        for (auto id : suites)
+        {
+            output[pos]     = casket::get_byte<0>(id);
+            output[pos + 1] = casket::get_byte<1>(id);
+            pos += 2;
+        }
     }
-    pos += n;
 
     n = AppendLengthAndValue(output.subspan(pos), compMethods.data(), compMethods.size(), 1);
     if (n == kSerializationFailed)

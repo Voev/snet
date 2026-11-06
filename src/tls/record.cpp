@@ -26,10 +26,6 @@ Record::Record(RecordType type) noexcept
     , expectedLength_(0)
     , state_(State::Empty)
 {
-    // Buffers start zeroed; spans are empty (size 0), pointing at the buffers
-    // so getPlaintext().data() / getCiphertext().data() are never nullptr.
-    std::memset(ciphertextBuffer_.data(), 0, ciphertextBuffer_.size());
-    std::memset(plaintextBuffer_.data(), 0, plaintextBuffer_.size());
     ciphertext_ = {ciphertextBuffer_.data(), 0};
     plaintext_ = {plaintextBuffer_.data(), 0};
 }
@@ -39,15 +35,13 @@ void Record::reset() noexcept
     type_ = RecordType::Invalid;
     version_ = ProtocolVersion();
 
-    std::memset(plaintextBuffer_.data(), 0, plaintextBuffer_.size());
     plaintext_ = {plaintextBuffer_.data(), 0};
-
-    std::memset(ciphertextBuffer_.data(), 0, ciphertextBuffer_.size());
     ciphertext_ = {ciphertextBuffer_.data(), 0};
 
     currentLength_ = 0;
     expectedLength_ = 0;
     dataStartOffset_ = 0;
+    handshake_ = HandshakeMessage{};
     state_ = State::Empty;
 }
 
