@@ -15,10 +15,6 @@ class ClientHelloSerializeTest : public TestWithParam<SerializeTestParam>
 public:
     ClientHelloSerializeTest() = default;
     ~ClientHelloSerializeTest() = default;
-
-protected:
-    /// @todo delete this.
-    RecordPool recordPool_{8};
 };
 
 TEST_P(ClientHelloSerializeTest, DeserializeSerialize)
@@ -36,7 +32,7 @@ TEST_P(ClientHelloSerializeTest, DeserializeSerialize)
 
     clientHello.extensions = &extensions;
 
-    /// @todo delete this.
+    /// @todo: delete this.
     RecordPool empty(0);
     Session fixture(empty);
 

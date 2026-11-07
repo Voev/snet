@@ -90,11 +90,6 @@ size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& sessi
         return kSerializationFailed;
     }
 
-    if (!extensions)
-    {
-        return kSerializationFailed;
-    }
-
     size_t pos = 0;
     size_t n = 0;
 
@@ -144,13 +139,17 @@ size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& sessi
     }
     pos += n;
 
-    const auto extWritten = extensions->serialize(Side::Client, output.subspan(pos));
-    if (extWritten == 0)
+    if (extensions)
     {
-        return kSerializationFailed;
+        n = extensions->serialize(Side::Client, output.subspan(pos));
+        if (n == 0)
+        {
+            return kSerializationFailed;
+        }
+        pos += n;
     }
 
-    return pos + extWritten;
+    return pos;
 }
 
 } // namespace snet::tls

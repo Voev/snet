@@ -86,7 +86,7 @@ std::error_code TLSv13Certificate::deserialize(nonstd::span<const uint8_t> input
 std::size_t TLSv13Certificate::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
     (void)session;
-    /// @todo use session.
+    /// @todo: use session.
     const Side side = Side::Server;
     std::size_t pos = 0;
 

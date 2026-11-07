@@ -601,6 +601,7 @@ void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandl
     }
 }
 
+/// @todo: move inside the session.cpp
 /// @brief Process a Server Hello message.
 ///
 /// @tparam ExtensionsHandler Type of handler for extensions.
@@ -612,11 +613,11 @@ void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandl
     assert(serverHello.random.size() == TLS_RANDOM_SIZE);
     std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
 
-    if (!serverHello.extensions.empty())
+    if (!serverHello.extensionsData.empty())
     {
         auto type =
             serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
-        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
+        serverExtensions_.deserialize(Side::Server, serverHello.extensionsData, type);
 
         if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
         {

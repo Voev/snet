@@ -125,8 +125,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             0,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                
-                PrintRecord(sideIndex, &mitmClient, record);
+                // PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -185,7 +184,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             1,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                PrintRecord(sideIndex, &mitmClient, record);
+                //PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -220,6 +219,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                                                               extensions.add(ExtensionVariant(std::move(*keyShare)));
                                                           }
                                                       });
+
+                        serverHello.extensions = const_cast<Extensions*>(&mitmServer.getServerExtensions());
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
