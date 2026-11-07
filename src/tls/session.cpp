@@ -26,6 +26,7 @@
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/policy/client_hello_policy.hpp>
+#include <snet/tls/signature_hash.hpp>
 
 #include <snet/tls/record_printer.hpp>
 
@@ -838,7 +839,7 @@ void Session::constructClientHello(const ClientHelloPolicy& policy)
 
     std::array<std::uint8_t, 1> compressionMethods{0};
     ch.compMethods = {compressionMethods.data(), compressionMethods.size()};
-    
+
     for (std::size_t i = 0; i < suitesCount; ++i)
     {
         casket::ThrowIfFalse(ch.suites.push_back(suitesBuf[i]), "cipher suite list overflow");
@@ -1014,24 +1015,27 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     auto auth = CipherSuiteGetAuth(metaInfo_.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
-        /// @todo: what to do if no extensions
-        const auto& peerSigAlgs = clientExtensions_.get<SignatureAlgorithms>();
-        const auto& supportedSigAlgs = SignatureScheme::supportedSchemes();
-        auto scheme = ChooseSignatureScheme(serverKey_, supportedSigAlgs, peerSigAlgs->supportedSchemes());
+        crypto::SignatureScheme scheme{};
+
+        const SignatureAlgorithms* peerSigAlgs = clientExtensions_.get<SignatureAlgorithms>();
+        if (peerSigAlgs)
+        {
+            auto peerSchemes = peerSigAlgs->supportedSchemes();
+            scheme = ChooseSignatureScheme(serverKey_, SignatureScheme::supportedSchemes(), peerSchemes);
+            casket::ThrowIfFalse(scheme.isSet(), "no suitable signature scheme");
+        }
+        else
+        {
+            casket::ThrowIfTrue(metaInfo_.version >= ProtocolVersion::TLSv1_3,
+                                "TLS 1.3 requires signature_algorithms extension");
+        }
 
         if (metaInfo_.version == ProtocolVersion::TLSv1_2)
         {
             keyExchange.scheme = scheme;
         }
 
-        HashAlg hash{nullptr};
-
-        auto hashName = scheme.getHashAlgorithm();
-        if (!casket::equals(hashName, "UNDEF"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(hashName);
-        }
-
+        auto hash = resolveSignatureHash(scheme, metaInfo_, serverKey_);
         keyExchange.signature = Signature::signMessage(
             hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_, signatureBuffer, {tbsBuffer.data(), tbsLength});
     }
@@ -1114,28 +1118,10 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     /// RFC 4492: section-5.4
     if (!keyExchange.signature.empty())
     {
-        crypto::HashAlg hash;
-
         auto publicKey = Cert::publicKey(serverCert_);
         auto scheme = keyExchange.scheme;
-
-        /// version == TLS1.2
-        if (scheme.isSet())
-        {
-            /// In the case of Ed25519 and Ed448 hash algorithm is built into the signature algorithm.
-            if (!casket::equals(scheme.getHashAlgorithm(), "UNDEF"))
-            {
-                hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
-            }
-        }
-        else if (metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
-        }
-        else
-        {
-            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
-        }
+        auto signature = keyExchange.signature;
+        auto hash = resolveSignatureHash(scheme, metaInfo_, publicKey);
 
         std::vector<uint8_t> tbs;
         tbs.reserve(2 * TLS_RANDOM_SIZE + keyExchange.data.size());
@@ -1145,8 +1131,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
         HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(
-            hashCtx_, keyExchange.scheme.getKeyAlgorithm(), hash, publicKey, keyExchange.signature, tbs);
+        Signature::verifyMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, publicKey, signature, tbs);
     }
 }
 

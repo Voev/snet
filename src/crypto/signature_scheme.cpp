@@ -172,7 +172,7 @@ int SignatureScheme::getKeyAlgorithm() const noexcept
     }
 }
 
-static std::array<SignatureScheme, 26> gAllSupportedSchemes = {
+static constexpr SignatureScheme gAllSupportedSchemes[] = {
 
     SignatureScheme::Code::ECDSA_SHA256,
     SignatureScheme::Code::ECDSA_SHA384,

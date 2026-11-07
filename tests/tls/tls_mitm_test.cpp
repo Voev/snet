@@ -126,7 +126,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
                 
-                // PrintRecord(sideIndex, &mitmClient, record);
+                PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -187,7 +187,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             {
                 auto modifiedRecord = recordPool.acquire();
 
-                // PrintRecord(sideIndex, &mitmClient, record);
+                PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -296,6 +296,21 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
 // clang-format off
 static std::vector<TLSMitmTestParam> gTestParams = {
+    {
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"CipherString", "ECDHE-RSA-AES256-SHA@SECLEVEL=0"},
+        },
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.1"}
+        },
+        {
+            false
+        }
+    },
+    
     {
         {
             ConfigBuilder::Command{"MinProtocol", "TLSv1.2"},
