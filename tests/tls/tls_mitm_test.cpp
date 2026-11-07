@@ -185,8 +185,6 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             1,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                auto modifiedRecord = recordPool.acquire();
-
                 PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
@@ -195,6 +193,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                     case HandshakeType::ServerHelloCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
+
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
                         /// @todo: fix this by using normal interface.
@@ -223,66 +223,75 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
+
                         EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
 
                         mitmServer.processEncryptedExtensions(encryptedExtensions);
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(encryptedExtensions)), sideIndex, mitmServer);
+
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::CertificateCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmServer.constructCertificate(sideIndex, modifiedRecord);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::CertificateVerifyCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::ServerKeyExchangeCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::ServerHelloDoneCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmServer.constructServerHelloDone(sideIndex, modifiedRecord);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
                         mitmServer.constructFinished(sideIndex, modifiedRecord);
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::NewSessionTicketCode:
-                    {
-                        recordPool.release(modifiedRecord);
-                        modifiedRecord = nullptr;
-                        break;
-                    }
                     default:
                     {
-                        /// @todo: fix empty record passed to outgoing queue.
+                        /// skip construction
                         break;
                     }
                     } /// switch
-
-                    mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ChangeCipherSpec)
                 {
+                    auto modifiedRecord = recordPool.acquire();
                     modifiedRecord->serializeChangeCipherSpec(mitmServer.getRecordVersion());
                     mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
                 {
-                    /// write decrypted data...
+                    /// @todo: write decrypted data...
                 }
             });
 
