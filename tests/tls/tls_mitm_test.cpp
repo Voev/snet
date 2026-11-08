@@ -193,44 +193,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     case HandshakeType::ServerHelloCode:
                     {
                         ServerHello serverHello = record->getHandshake<ServerHello>();
-
-                        
                         auto policy = ServerHelloPolicy::make(serverHello, mitmClient);
                         mitmServer.constructServerHello(policy);
-                        
-                        /*
-                        auto modifiedRecord = recordPool.acquire();
-
-                        mitmServer.processServerHello(serverHello,
-                                                      [](Session* session, Extensions& extensions)
-                                                      {
-                                                          if (extensions.has(ExtensionCode::KeyShare))
-                                                          {
-                                                              auto keyShare = extensions.take<KeyShare>();
-                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
-                                                              keyShare->offeredGroups(offeredGroups);
-                                                              auto firstGroup = offeredGroups.front();
-
-                                                              auto clientKeyShare =
-                                                                  session->getClientExtensions().get<KeyShare>();
-                                                              auto peerKey = clientKeyShare->getPublicKey();
-                                                              session->setPublicPeerKey(std::move(peerKey));
-
-                                                              auto key = GroupParams::generateKeyByParams(firstGroup);
-                                                              keyShare->setPublicKey(key);
-
-                                                              session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
-                                                          }
-                                                      });
-
-                        serverHello.extensions = const_cast<Extensions*>(&mitmServer.getServerExtensions());
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
-                        */
-
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:

@@ -928,7 +928,7 @@ void Session::constructServerHello(const ServerHelloPolicy& policy)
 
         // Client's public key for the selected group.
         auto peerKey = clientKeyShare->getPublicKey(0);
-        casket::ThrowIfFalse(!peerKey, "key_share: no entry for selected group {}", policy.group.wireCode());
+        casket::ThrowIfFalse(peerKey, "key_share: no entry for selected group {}", policy.group.wireCode());
 
         // Generate the server's ephemeral key for the same group.
         auto serverEphKey = crypto::GroupParams::generateKeyByParams(policy.group);
