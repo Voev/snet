@@ -583,9 +583,7 @@ private:
     Extensions serverExtensions_;                       ///< Server extensions.
     Extensions serverEncExtensions_;                    ///< Encrypted extensions.
     SequenceNumbers seqnum_;                            ///< Sequence numbers.
-    uint8_t cipherState_;                               ///< Cipher state.
-    uint8_t canDecrypt_;                                ///< Decryption capability flags.
-    SessionFlags flags_;
+    SessionFlags flags_;                                ///< Session flags.
 };
 
 } // namespace snet::tls

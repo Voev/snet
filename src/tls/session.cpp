@@ -50,8 +50,6 @@ Session::Session(RecordPool& recordPool)
     , hmacCtx_(HmacTraits::createContext())
     , clientCipherCtx_(CipherTraits::createContext())
     , serverCipherCtx_(CipherTraits::createContext())
-    , cipherState_(0)
-    , canDecrypt_(0)
 {
 }
 
@@ -72,12 +70,14 @@ void Session::reset() noexcept
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
 {
-    return ((cipherState_ & 0x1) && sideIndex == 0) || ((cipherState_ & 0x2) && sideIndex == 1);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCipherActive
+                                      : SessionBit::ServerCipherActive);
 }
 
 bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
 {
-    return ((canDecrypt_ & 0x1) && sideIndex == 0) || ((canDecrypt_ & 0x2) && sideIndex == 1);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCanDecrypt
+                                      : SessionBit::ServerCanDecrypt);
 }
 
 size_t Session::readRecords(nonstd::span<const uint8_t> input)
@@ -344,7 +344,8 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
                 generateMasterSecret();
                 generateKeyMaterial(sideIndex, encrypt);
             }
-            cipherState_ |= (sideIndex == 0 ? 1 : 2);
+
+            flags_.set(sideIndex == 0 ? SessionBit::ClientCipherActive : SessionBit::ServerCipherActive);
         }
     }
     else
@@ -369,7 +370,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
                 }
 
                 /// @todo: pay attention to the HelloRetryRequest
-                cipherState_ |= (sideIndex == 0 ? 1 : 2);
+                flags_.set(sideIndex == 0 ? SessionBit::ClientCipherActive : SessionBit::ServerCipherActive);
             }
         }
     }
@@ -562,13 +563,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         {
             recordLayer_.doTLSv1AeadInit(
                 clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
-            canDecrypt_ |= 1;
+            flags_.set(SessionBit::ClientCanDecrypt);
         }
         else
         {
             recordLayer_.doTLSv1AeadInit(
                 serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
-            canDecrypt_ |= 2;
+            flags_.set(SessionBit::ServerCanDecrypt);
         }
     }
     else
@@ -606,12 +607,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         if (sideIndex == 0)
         {
             RecordLayer::init(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
-            canDecrypt_ |= 1;
+            flags_.set(SessionBit::ClientCanDecrypt);
         }
         else
         {
             RecordLayer::init(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
-            canDecrypt_ |= 2;
+            flags_.set(SessionBit::ServerCanDecrypt);
         }
     }
 }
@@ -640,7 +641,8 @@ void Session::generateHandshakeKeyAndIv(bool encrypt)
     recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
     recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
-    canDecrypt_ |= 3;
+    flags_.set(SessionBit::ClientCanDecrypt);
+    flags_.set(SessionBit::ServerCanDecrypt);
 }
 
 void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
