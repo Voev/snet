@@ -56,8 +56,6 @@ const std::unordered_map<std::uint16_t, CipherSuiteMeta> kCipherSuiteMeta = {
 
 } // namespace
 
-// ─────────────────────────── Impl ───────────────────────────
-
 struct CipherSuiteManager::Impl final
 {
     explicit Impl()
@@ -112,8 +110,6 @@ struct CipherSuiteManager::Impl final
     std::vector<const CipherSuite*> supportedCache_;
     bool supportedCacheValid_ = false;
 };
-
-// ─────────────────────────── CipherSuiteManager ───────────────────────────
 
 CipherSuiteManager::CipherSuiteManager()
     : impl_(std::make_unique<Impl>())
