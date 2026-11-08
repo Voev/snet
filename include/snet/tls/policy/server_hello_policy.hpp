@@ -1,7 +1,3 @@
-/// @file
-/// @brief Policy extracted from a ClientHello, used to build our own
-///        ClientHello (for upstream) and ServerHello (for the client).
-
 #pragma once
 
 #include <casket/nonstd/string_view.hpp>

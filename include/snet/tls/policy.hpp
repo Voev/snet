@@ -10,24 +10,6 @@
 namespace snet::tls
 {
 
-class Policy
-{
-public:
-    virtual nonstd::string_view serverNameIndication() const noexcept = 0;
-    virtual nonstd::span<const ProtocolVersion> supportedVersion() const noexcept = 0;
-    virtual nonstd::span<const CipherSuite*> offeredCipherSuites() noexcept = 0;
-    virtual nonstd::span<const crypto::GroupParams> offeredGroupParams() const noexcept = 0;
-
-    virtual nonstd::span<std::uint8_t> clientSessionId() const noexcept = 0;
-    virtual nonstd::span<nonstd::string_view> alpnProtocols() const noexcept = 0;
-    virtual nonstd::span<std::uint16_t> signatureAlgorithms() noexcept = 0;
-
-    virtual bool useEncryptThenMac() const noexcept = 0;
-    virtual bool useExtendedMasterSecret() const noexcept = 0;
-    virtual bool useSessionTicket() const noexcept = 0;
-    virtual bool useRenegotiationInfo() const noexcept = 0;
-};
-
 /// @brief Filter `candidates` to groups present in `ourGroups`,
 ///        preserving candidate order.
 /// @param[in]  candidates Groups to filter (policy preference order).

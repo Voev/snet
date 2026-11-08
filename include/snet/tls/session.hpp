@@ -311,8 +311,25 @@ public:
     /// @param[in] keyUpdate Parsed KeyUpdate message.
     void processKeyUpdate(const int8_t sideIndex, const KeyUpdate& keyUpdate);
 
+    /// @brief Builds and enqueues a ClientHello according to @p policy.
+    ///
+    /// Offers versions, cipher suites, groups and signature algorithms from
+    /// @p policy, generates the ECDHE key pair and the @c client_random, and
+    /// pushes the message onto the outgoing queue.
+    ///
+    /// @param[in] policy Client-side handshake policy.
+    ///
     void constructClientHello(const ClientHelloPolicy& policy);
 
+    /// @brief Builds and enqueues a ServerHello according to @p policy.
+    ///
+    /// @p policy is an already-made decision: the method validates it
+    /// against the ClientHello (version/suite offered, key_share entry for
+    /// the chosen group), commits it to the session, derives the TLS 1.3
+    /// handshake secret, and pushes the message onto the outgoing queue.
+    ///
+    /// @param[in] policy Server-side decision to validate and emit.
+    ///
     void constructServerHello(const ServerHelloPolicy& policy);
 
     /// @brief Construct a Certificate message.
