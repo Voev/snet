@@ -852,6 +852,126 @@ void Session::constructClientHello(const ClientHelloPolicy& policy)
     record.release();
 }
 
+void Session::constructServerHello(const ServerHelloPolicy& policy)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    // Protocol version: the policy already picked one.
+    casket::ThrowIfFalse(policy.version != ProtocolVersion(), "policy: version not set");
+    metaInfo_.version = policy.version;
+    const ProtocolVersion legacyVersion =
+        policy.version >= ProtocolVersion::TLSv1_3 ? ProtocolVersion::TLSv1_2 : policy.version;
+
+    // Cipher suite configuraion.
+    casket::ThrowIfFalse(policy.suite != 0, "policy: cipher suite not set");
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(policy.suite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite != nullptr, "unknown cipher suite 0x{:04x}", policy.suite);
+
+    Rand::generate(serverRandom_);
+
+    Extensions extensions;
+    extensions.reserve(6);
+
+    // legacy_session_id_echo (TLS 1.3) / session_id (TLS 1.2-).
+    nonstd::span<const std::uint8_t> sessionId;
+
+    if (policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        // RFC 8446 §4.1.3: echo legacy_session_id from ClientHello.
+        sessionId = policy.sessionId;
+    }
+    else
+    {
+        // TLS 1.0-1.2: session_id is the session ID (for resumption).
+        // Empty for a full handshake, non-empty for resumption.
+        sessionId = policy.sessionId;
+    }
+
+    // TLS 1.0-1.2 echo extensions.
+    if (policy.version < ProtocolVersion::TLSv1_3)
+    {
+        if (policy.useExtendedMasterSecret)
+        {
+            extensions.add(ExtendedMasterSecret());
+        }
+
+        if (policy.useEncryptThenMac)
+        {
+            extensions.add(EncryptThenMAC());
+        }
+
+        // RFC 5746: if the client offered renegotiation_info (or SCSV),
+        // the server must include an empty renegotiation_info.
+        if (policy.useRenegotiationInfo)
+        {
+            extensions.add(RenegotiationExtension());
+        }
+    }
+
+    // TLS 1.3: supported_versions and key_share.
+    if (policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        // supported_versions is mandatory (RFC 8446 §4.2.1).
+        SupportedVersions sv;
+        sv.addVersion(policy.version);
+        extensions.add(std::move(sv));
+
+        casket::ThrowIfFalse(policy.group != crypto::GroupParams::NONE, "policy: key_share group not set");
+
+        auto* clientKeyShare = clientExtensions_.get<KeyShare>();
+        casket::ThrowIfFalse(clientKeyShare != nullptr, "TLS 1.3 ClientHello missing key_share");
+
+        // Client's public key for the selected group.
+        auto peerKey = clientKeyShare->getPublicKey(0);
+        casket::ThrowIfFalse(!peerKey, "key_share: no entry for selected group {}", policy.group.wireCode());
+
+        // Generate the server's ephemeral key for the same group.
+        auto serverEphKey = crypto::GroupParams::generateKeyByParams(policy.group);
+
+        // Build a new KeyShare with exactly one entry (RFC 8446 §4.2.8).
+        KeyShare serverKeyShare(policy.group, serverEphKey);
+
+        // Persist session state.
+        peerPublicKey_ = std::move(peerKey);
+        ephemeralPrivateKey_ = std::move(serverEphKey);
+        sharedGroupParams_ = policy.group;
+
+        extensions.add(ExtensionVariant(std::move(serverKeyShare)));
+    }
+
+    // Resolve ciphers/hashes BEFORE generateHandshakeSecret(), which depends on handshakeHashAlg_.
+    recordLayer_.setVersion(metaInfo_.version);
+
+    if (extensions.has<EncryptThenMAC>())
+    {
+        recordLayer_.enableEncryptThenMAC();
+    }
+
+    fetchAlgorithms();
+
+    // TLS 1.3: derive the handshake secret from ECDHE.
+    // NOTE: peerPublicKey_ is the CLIENT's public key.
+    if (!monitor_ && policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        casket::ThrowIfFalse(ephemeralPrivateKey_ != nullptr, "no ephemeral private key");
+        casket::ThrowIfFalse(peerPublicKey_ != nullptr, "no peer public key");
+        generateHandshakeSecret(peerPublicKey_.get(), ephemeralPrivateKey_.get());
+    }
+
+    ServerHello sh{};
+    sh.version = legacyVersion;
+    sh.random = serverRandom_;
+    sh.cipherSuite = policy.suite;
+    sh.compMethod = 0;
+    sh.sessionID = sessionId;
+    sh.extensions = &extensions;
+
+    record->serializeHandshake(HandshakeMessage(std::move(sh)), /*sideIndex=*/1, *this);
+    casket::ThrowIfFalse(addOutgoingRecord(1, record.get()), "outgoing records overflow");
+    record.release();
+}
+
 void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
 {
     if (std::holds_alternative<TLSv13Certificate>(certificate.message))

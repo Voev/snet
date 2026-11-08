@@ -28,6 +28,7 @@
 #include <snet/tls/i_byte_writer.hpp>
 
 #include <snet/tls/policy/client_hello_policy.hpp>
+#include <snet/tls/policy/server_hello_policy.hpp>
 
 namespace snet::tls
 {
@@ -316,6 +317,8 @@ public:
     void processKeyUpdate(const int8_t sideIndex, const KeyUpdate& keyUpdate);
 
     void constructClientHello(const ClientHelloPolicy& policy);
+
+    void constructServerHello(const ServerHelloPolicy& policy);
 
     /// @brief Construct a Certificate message.
     ///
