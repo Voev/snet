@@ -86,7 +86,7 @@ std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noex
         {
             return make_error_code(DecodeError::LengthOutOfRange);
         }
-        extensions = reader.get_span_fixed(2 + extensionsLength);
+        extensionsData = reader.get_span_fixed(2 + extensionsLength);
         if (!reader.ok())
         {
             return reader.take_ec();
@@ -99,6 +99,8 @@ std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noex
 
 std::size_t ServerHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
 {
+    (void)session;
+
     const std::size_t fixed = 2 + TLS_RANDOM_SIZE + 1 + sessionID.size() + 2 + 1; // cipherSuite + compMethod
 
     if (output.size_bytes() < fixed)
@@ -131,13 +133,17 @@ std::size_t ServerHello::serialize(nonstd::span<uint8_t> output, const Session& 
     output[pos++] = casket::get_byte<1>(cipherSuite);
     output[pos++] = compMethod;
 
-    const auto extWritten = session.getServerExtensions().serialize(Side::Server, output.subspan(pos));
-    if (extWritten == 0)
+    if (extensions)
     {
-        return kSerializationFailed;
+        auto n = extensions->serialize(Side::Server, output.subspan(pos));
+        if (n == 0)
+        {
+            return kSerializationFailed;
+        }
+        pos += n;
     }
 
-    return pos + extWritten;
+    return pos;
 }
 
 } // namespace snet::tls

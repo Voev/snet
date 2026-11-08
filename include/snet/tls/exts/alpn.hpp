@@ -97,7 +97,7 @@ public:
     /// @param[in] protocols Offered protocol names; each 1..255 bytes.
     /// @throws std::bad_alloc on allocation failure.
     /// @throws std::invalid_argument if any name is empty or longer than 255.
-    explicit ALPN(const std::vector<std::string>& protocols);
+    explicit ALPN(nonstd::span<const nonstd::string_view> protocols);
 
     /// @brief Parses the extension body from @p input.
     /// @param[in] side  Side (Client or Server); server response must list

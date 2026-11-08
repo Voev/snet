@@ -130,7 +130,7 @@ public:
 
     /// @brief Builds one entry per supported group (client side).
     /// @param[in] supported Supported groups; order is preserved.
-    explicit KeyShareClientHello(const std::vector<crypto::GroupParams>& supported);
+    explicit KeyShareClientHello(nonstd::span<const crypto::GroupParams> supported);
 
     /// @brief Replaces all entries with a single entry for @p toOffer.
     /// @param[in] toOffer Group to offer in the retry.
@@ -318,7 +318,7 @@ public:
 
     /// @brief Constructs the ClientHello form from supported groups.
     /// @param[in] supported Supported groups; one entry is created per group.
-    explicit KeyShare(const std::vector<crypto::GroupParams>& supported)
+    explicit KeyShare(nonstd::span<const crypto::GroupParams> supported)
         : keyShare_(KeyShareClientHello(supported))
     {
     }

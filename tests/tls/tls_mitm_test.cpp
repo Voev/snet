@@ -123,10 +123,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
         mitmServer.processPendingRecords(
             0,
-            [&recordPool, &mitmClient](const int8_t sideIndex, Record* record)
+            [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                auto modifiedRecord = recordPool.acquire();
-
                 // PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
@@ -137,39 +135,20 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                         ClientHello clientHello = record->getHandshake<ClientHello>();
 
-                        mitmClient.processClientHello(clientHello,
-                                                      [](Session* session, Extensions& extensions)
-                                                      {
-                                                          extensions.removeExtension(ExtensionCode::SessionTicket);
+                        std::array<ProtocolVersion, 5> versionsBuf;
+                        auto policy = ClientHelloPolicy::make(clientHello, mitmServer, versionsBuf);
 
-                                                          if (extensions.has(ExtensionCode::KeyShare))
-                                                          {
-                                                              auto keyShare = extensions.take<KeyShare>();
-                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
-                                                              keyShare->offeredGroups(offeredGroups);
-                                                              auto firstGroup = offeredGroups.front();
-
-                                                              /// @todo: check offered group by policy
-
-                                                              auto key = GroupParams::generateKeyByParams(firstGroup);
-                                                              keyShare->setPublicKey(0, key);
-                                                              session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
-                                                          }
-                                                      });
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(clientHello)), sideIndex, mitmClient);
+                        mitmClient.constructClientHello(policy);
                         break;
                     }
                     case HandshakeType::ClientKeyExchangeCode:
                     {
-                        mitmClient.constructClientKeyExchange(sideIndex, modifiedRecord);
+                        mitmClient.constructClientKeyExchange(sideIndex);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
-                        mitmClient.constructFinished(sideIndex, modifiedRecord);
+                        mitmClient.constructFinished(sideIndex);
                         break;
                     }
                     default:
@@ -177,11 +156,10 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         break;
                     }
                     }
-
-                    mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ChangeCipherSpec)
                 {
+                    auto modifiedRecord = recordPool.acquire();
                     modifiedRecord->serializeChangeCipherSpec(mitmClient.getRecordVersion());
                     mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
@@ -202,9 +180,7 @@ TEST_P(TLSMitmTest, IterativeHandshake)
             1,
             [&recordPool, &mitmClient, &mitmServer](const int8_t sideIndex, Record* record)
             {
-                auto modifiedRecord = recordPool.acquire();
-
-                // PrintRecord(sideIndex, &mitmClient, record);
+                //PrintRecord(sideIndex, &mitmClient, record);
 
                 if (record->getType() == RecordType::Handshake)
                 {
@@ -213,91 +189,66 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     case HandshakeType::ServerHelloCode:
                     {
                         ServerHello serverHello = record->getHandshake<ServerHello>();
-
-                        mitmServer.processServerHello(serverHello,
-                                                      [](Session* session, Extensions& extensions)
-                                                      {
-                                                          if (extensions.has(ExtensionCode::KeyShare))
-                                                          {
-                                                              auto keyShare = extensions.take<KeyShare>();
-                                                              std::vector<snet::crypto::GroupParams> offeredGroups;
-                                                              keyShare->offeredGroups(offeredGroups);
-                                                              auto firstGroup = offeredGroups.front();
-
-                                                              auto clientKeyShare =
-                                                                  session->getClientExtensions().get<KeyShare>();
-                                                              auto peerKey = clientKeyShare->getPublicKey();
-                                                              session->setPublicPeerKey(std::move(peerKey));
-
-                                                              auto key = GroupParams::generateKeyByParams(firstGroup);
-                                                              keyShare->setPublicKey(key);
-
-                                                              session->setEphemeralPrivateKey(std::move(key));
-                                                              extensions.add(ExtensionVariant(std::move(*keyShare)));
-                                                          }
-                                                      });
-
-                        modifiedRecord->serializeHandshake(
-                            HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
+                        auto policy = ServerHelloPolicy::make(serverHello, mitmClient);
+                        mitmServer.constructServerHello(policy);
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:
                     {
+                        auto modifiedRecord = recordPool.acquire();
+
                         EncryptedExtensions encryptedExtensions = record->getHandshake<EncryptedExtensions>();
 
                         mitmServer.processEncryptedExtensions(encryptedExtensions);
 
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(encryptedExtensions)), sideIndex, mitmServer);
+
+                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                         break;
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        mitmServer.constructCertificate(sideIndex, modifiedRecord);
+                        mitmServer.constructCertificate(sideIndex);
                         break;
                     }
                     case HandshakeType::CertificateVerifyCode:
                     {
-                        mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
+                        mitmServer.constructCertificateVerify(sideIndex);
                         break;
                     }
                     case HandshakeType::ServerKeyExchangeCode:
                     {
-                        mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
+                        mitmServer.constructServerKeyExchange(sideIndex);
                         break;
                     }
                     case HandshakeType::ServerHelloDoneCode:
                     {
-                        mitmServer.constructServerHelloDone(sideIndex, modifiedRecord);
+                        mitmServer.constructServerHelloDone(sideIndex);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
-                        mitmServer.constructFinished(sideIndex, modifiedRecord);
+                        mitmServer.constructFinished(sideIndex);
                         break;
                     }
                     case HandshakeType::NewSessionTicketCode:
-                    {
-                        recordPool.release(modifiedRecord);
-                        modifiedRecord = nullptr;
-                        break;
-                    }
                     default:
                     {
+                        /// skip construction
                         break;
                     }
                     } /// switch
-
-                    mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ChangeCipherSpec)
                 {
+                    auto modifiedRecord = recordPool.acquire();
                     modifiedRecord->serializeChangeCipherSpec(mitmServer.getRecordVersion());
                     mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
                 }
                 else if (record->getType() == RecordType::ApplicationData)
                 {
-                    /// write decrypted data...
+                    /// @todo: write decrypted data...
                 }
             });
 
@@ -311,6 +262,21 @@ TEST_P(TLSMitmTest, IterativeHandshake)
 
 // clang-format off
 static std::vector<TLSMitmTestParam> gTestParams = {
+    {
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"CipherString", "ECDHE-RSA-AES256-SHA@SECLEVEL=0"},
+        },
+        {
+            ConfigBuilder::Command{"MinProtocol", "TLSv1.1"},
+            ConfigBuilder::Command{"MaxProtocol", "TLSv1.1"}
+        },
+        {
+            false
+        }
+    },
+    
     {
         {
             ConfigBuilder::Command{"MinProtocol", "TLSv1.2"},

@@ -1,5 +1,8 @@
 #pragma once
 #include <cassert>
+#include <memory>
+#include <vector>
+
 #include <snet/tls/record.hpp>
 
 namespace snet::tls
@@ -8,18 +11,31 @@ namespace snet::tls
 class RecordPool
 {
 public:
+    /// @brief RAII owner of a Record, with std::unique_ptr-like semantics.
+    ///
+    /// - `release()`: relinquish ownership WITHOUT returning to the pool.
+    ///   The caller becomes responsible for eventually calling
+    ///   `RecordPool::release(record)`.
+    /// - `reset(p = nullptr)`: return the current record to the pool (if
+    ///   any) and adopt `p`.
+    /// - Destructor: calls `reset()`, returning the record to the pool.
+    ///
+    /// Move-only.
     class ScopedRecord
     {
     public:
-        ScopedRecord() = default;
+        using pointer = Record*;
 
-        ScopedRecord(Record* record, RecordPool* pool)
+        constexpr ScopedRecord() noexcept = default;
+        constexpr ScopedRecord(std::nullptr_t) noexcept {}
+
+        explicit ScopedRecord(pointer record, RecordPool* pool) noexcept
             : record_(record)
             , pool_(pool)
         {
         }
 
-        ScopedRecord(const ScopedRecord&) = delete;
+        ScopedRecord(const ScopedRecord&)            = delete;
         ScopedRecord& operator=(const ScopedRecord&) = delete;
 
         ScopedRecord(ScopedRecord&& other) noexcept
@@ -27,43 +43,54 @@ public:
             , pool_(other.pool_)
         {
             other.record_ = nullptr;
-            other.pool_ = nullptr;
+            other.pool_   = nullptr;
         }
 
         ScopedRecord& operator=(ScopedRecord&& other) noexcept
         {
             if (this != &other)
             {
-                release();
+                reset();
                 record_ = other.record_;
-                pool_ = other.pool_;
+                pool_   = other.pool_;
                 other.record_ = nullptr;
-                other.pool_ = nullptr;
+                other.pool_   = nullptr;
             }
             return *this;
         }
 
         ~ScopedRecord() noexcept
         {
-            release();
+            reset();
         }
 
-        void release() noexcept
+        /// @brief Get the raw pointer without transferring ownership.
+        pointer get() const noexcept { return record_; }
+
+        /// @brief Relinquish ownership WITHOUT returning to the pool.
+        ///        The caller must eventually release the record manually.
+        pointer release() noexcept
+        {
+            pointer p = record_;
+            record_   = nullptr;
+            pool_     = nullptr;
+            return p;
+        }
+
+        /// @brief Return the current record to the pool (if any) and adopt @p p.
+        ///        @p p is returned to the pool on next reset/destruction.
+        void reset(pointer p = nullptr) noexcept
         {
             if (record_ && pool_)
-            {
                 pool_->release(record_);
-                record_ = nullptr;
+            record_ = p;
+            if (!p)
                 pool_ = nullptr;
-            }
         }
 
-        Record* get() const noexcept
-        {
-            return record_;
-        }
+        explicit operator bool() const noexcept { return record_ != nullptr; }
 
-        Record* operator->() const noexcept
+        pointer operator->() const noexcept
         {
             assert(record_);
             return record_;
@@ -75,19 +102,21 @@ public:
             return *record_;
         }
 
-        explicit operator bool() const noexcept
+        void swap(ScopedRecord& other) noexcept
         {
-            return record_ != nullptr;
+            std::swap(record_, other.record_);
+            std::swap(pool_,   other.pool_);
         }
 
     private:
-        Record* record_ = nullptr;
-        RecordPool* pool_ = nullptr;
+        pointer     record_ = nullptr;
+        RecordPool* pool_   = nullptr;
     };
 
     explicit RecordPool(size_t fixed_size)
         : records_(fixed_size)
     {
+        free_records_.reserve(fixed_size);
         for (auto& record : records_)
         {
             record = std::make_unique<Record>();
@@ -100,10 +129,7 @@ public:
     Record* acquire() noexcept
     {
         if (free_records_.empty())
-        {
             return nullptr;
-        }
-
         Record* record = free_records_.back();
         free_records_.pop_back();
         record->reset();
@@ -112,41 +138,37 @@ public:
 
     ScopedRecord acquireScoped() noexcept
     {
-        Record* record = acquire();
-        return ScopedRecord(record, this);
+        return ScopedRecord(acquire(), this);
     }
 
     void release(Record* record) noexcept
     {
         if (!record)
             return;
-
         assert(is_from_pool(record));
-        record->reset();
+
+        if (secureErase_)
+            record->secureErasePlaintext();
+
         free_records_.push_back(record);
     }
 
-    size_t size() const
-    {
-        return records_.size();
-    }
+    void setSecureErase(bool enable) noexcept { secureErase_ = enable; }
 
-    size_t available() const
-    {
-        return free_records_.size();
-    }
+    size_t size()      const { return records_.size(); }
+    size_t available() const { return free_records_.size(); }
 
 private:
     bool is_from_pool(Record* record) const
     {
-        auto it =
-            std::find_if(records_.begin(), records_.end(), [record](const auto& ptr) { return ptr.get() == record; });
+        auto it = std::find_if(records_.begin(), records_.end(),
+                                [record](const auto& p) { return p.get() == record; });
         return it != records_.end();
     }
 
-private:
     std::vector<std::unique_ptr<Record>> records_;
-    std::vector<Record*> free_records_;
+    std::vector<Record*>                 free_records_;
+    bool                                 secureErase_ = false;
 };
 
 } // namespace snet::tls

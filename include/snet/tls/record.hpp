@@ -242,10 +242,6 @@ public:
 
     /// @brief Mutable ciphertext view.
     /// @return Mutable span over @c ciphertext_.
-    /// @warning In the zero-copy read path @c ciphertext_ may alias a
-    ///          caller-owned (const) buffer; writing through this view is UB
-    ///          unless the caller guarantees mutability. Currently used only
-    ///          by the TLS 1.2 AEAD in-place decrypt path.
     nonstd::span<uint8_t> mutableCiphertext() noexcept;
 
     /// @brief Override the wire record type (TLS 1.3 outer/inner type).
@@ -253,6 +249,12 @@ public:
     void setWireType(RecordType type) noexcept
     {
         type_ = type;
+    }
+
+    void secureErasePlaintext() noexcept
+    {
+        std::memset(plaintextBuffer_.data(), 0, plaintextBuffer_.size());
+        plaintext_ = {plaintextBuffer_.data(), 0};
     }
 
 private:

@@ -245,8 +245,9 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
 
             crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), cipherText.data(), cipherText.size()));
 
-            uint8_t paddingLength = out[outSize - 1];
+            size_t paddingLength = out[outSize - 1];
             paddingLength += 1;
+
             casket::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
             outSize -= paddingLength;
 
@@ -275,8 +276,11 @@ nonstd::span<uint8_t> RecordLayer::doTLSv1Process(CipherCtx* cipherCtx, MacCtx* 
 
             crypto::ThrowIfFalse(0 < EVP_Cipher(cipherCtx, out.data(), cipherText.data(), cipherText.size()));
 
-            uint8_t paddingLength = out[outSize - 1];
-            outSize -= (paddingLength + 1);
+            size_t paddingLength = out[outSize - 1];
+            paddingLength += 1;
+
+            casket::ThrowIfTrue(paddingLength > outSize, "Invalid padding length");
+            outSize -= paddingLength;
 
             auto mac = nonstd::span(out.begin() + outSize - HashTraits::getSize(hmacHash), out.begin() + outSize);
             outSize -= mac.size();

@@ -41,18 +41,17 @@ template <typename SessionManagerType>
 class ProxyConsumer final : public snet::tcp::IStreamConsumer<SessionManagerType>
 {
 public:
-    using Session = typename SessionManagerType::Session; ///< Session type of the manager.
-    using TcpConnection = snet::tcp::TcpConnection; ///< TCP connection type.
+    using Session = typename SessionManagerType::Session;                      ///< Session type of the manager.
+    using TcpConnection = snet::tcp::TcpConnection;                            ///< TCP connection type.
     using TransmitHandler = snet::tcp::TcpTransmitHandler<SessionManagerType>; ///< Transmit handler type.
-    using Acceptor = ProxyAcceptor<SessionManagerType>; ///< Upstream opener.
-    using TlsSession = snet::tls::Session; ///< TLS session type used for MITM.
+    using Acceptor = ProxyAcceptor<SessionManagerType>;                        ///< Upstream opener.
+    using TlsSession = snet::tls::Session;                                     ///< TLS session type used for MITM.
 
     /// @param[in] mgr      Session manager owning contexts and sessions.
     /// @param[in] tx       Transmit handler used to pump outgoing packets.
     /// @param[in] engine   Decision engine resolving SNI to a verdict.
     /// @param[in] acceptor Acceptor used to open the upstream connection.
-    ProxyConsumer(SessionManagerType* mgr, TransmitHandler* tx, TlsDecisionEngine* engine,
-                             Acceptor* acceptor)
+    ProxyConsumer(SessionManagerType* mgr, TransmitHandler* tx, TlsDecisionEngine* engine, Acceptor* acceptor)
         : mgr_(mgr)
         , tx_(tx)
         , engine_(engine)
@@ -232,35 +231,16 @@ private:
         }
     }
 
-    /// MITM session setup. Skeleton — full TLS termination logic is
-    /// implemented separately; only infrastructure is set up here.
-    /// Create the two TLS sessions used for MITM (client-facing and
-    /// server-facing). Actual handshake construction is not done here.
-    ///
-    /// @param[in] session Pair session.
-    /// @param[in] ctx     Session context.
-    /// @param[in] pair    Pair state.
     void startMitm(Session* session, ProxyContext& ctx, ProxyPair& pair)
     {
+        pair.clientTls = std::make_unique<TlsSession>(pair.pool);
+        pair.serverTls = std::make_unique<TlsSession>(pair.pool);
+
         (void)session;
         (void)ctx;
 
-        // Create two tls::Session instances working in active mode.
-        pair.clientTls = std::make_unique<TlsSession>(pair.pool);
-        pair.clientTls->setMonitor(false);
-
-        pair.serverTls = std::make_unique<TlsSession>(pair.pool);
-        pair.serverTls->setMonitor(false);
-
-        // TODO: build ServerHello/Certificate/Finished for the client
-        //       and ClientHello for the server. This is a separate,
-        //       substantial topic.
-        //
-        // See Session::constructClientHello / constructServerHello
-        // (the latter is not in the public API — ServerHello must be
-        //  generated manually or added to Session).
-
-        CSK_LOG_INFO("Proxy: MITM enabled for SNI=%s", pair.clientSni.c_str());
+        // pushToUpstream(pair);
+        // pair.bufferedClientHello.clear();
     }
 
     /// Bypass: relay bytes as-is.
@@ -462,10 +442,10 @@ private:
         printf("═════════════════════════════════\n\n");
     }
 
-    SessionManagerType* mgr_;    ///< Session manager (not owned).
-    TransmitHandler* tx_;        ///< Transmit handler (not owned).
-    TlsDecisionEngine* engine_;  ///< Decision engine (not owned).
-    Acceptor* acceptor_;         ///< Acceptor used to open upstream (not owned).
+    SessionManagerType* mgr_;   ///< Session manager (not owned).
+    TransmitHandler* tx_;       ///< Transmit handler (not owned).
+    TlsDecisionEngine* engine_; ///< Decision engine (not owned).
+    Acceptor* acceptor_;        ///< Acceptor used to open upstream (not owned).
 };
 
 } // namespace snet::proxy

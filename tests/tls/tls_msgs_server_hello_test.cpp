@@ -15,9 +15,6 @@ class ServerHelloSerializeTest : public TestWithParam<SerializeTestParam>
 public:
     ServerHelloSerializeTest() = default;
     ~ServerHelloSerializeTest() = default;
-
-protected:
-    RecordPool recordPool_{8};
 };
 
 TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
@@ -29,11 +26,17 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
     ServerHello serverHello;
     ASSERT_EQ(serverHello.deserialize(param), make_error_code(DecodeError::None));
 
-    Session session(recordPool_);
-    session.setMonitor(true);
-    ASSERT_NO_THROW(session.processServerHello(serverHello));
+    Extensions extensions;
+    ASSERT_EQ(extensions.deserialize(Side::Server, serverHello.extensionsData, HandshakeType::ServerHelloCode),
+              make_error_code(DecodeError::None));
 
-    serializedLength = serverHello.serialize(serialized, session);
+    serverHello.extensions = &extensions;
+
+    /// @todo: delete this.
+    RecordPool empty(0);
+    Session fixture(empty);
+
+    serializedLength = serverHello.serialize(serialized, fixture);
     ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 

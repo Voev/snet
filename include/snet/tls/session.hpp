@@ -24,6 +24,12 @@
 #include <snet/tls/cipher_suite.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
 #include <snet/tls/sequence_numbers.hpp>
+#include <snet/tls/policy.hpp>
+#include <snet/tls/i_byte_writer.hpp>
+#include <snet/tls/session_flags.hpp>
+
+#include <snet/tls/policy/client_hello_policy.hpp>
+#include <snet/tls/policy/server_hello_policy.hpp>
 
 namespace snet::tls
 {
@@ -247,19 +253,13 @@ public:
 
     /// @brief Process a Client Hello message.
     ///
-    /// @tparam ExtensionsHandler Type of handler for extensions.
     /// @param[in] clientHello The Client Hello message.
-    /// @param[in] handler Callback for processing extensions.
-    template <typename ExtensionsHandler = std::nullptr_t>
-    void processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler = nullptr);
+    void processClientHello(const ClientHello& clientHello);
 
     /// @brief Process a Server Hello message.
     ///
-    /// @tparam ExtensionsHandler Type of handler for extensions.
     /// @param[in] serverHello The Server Hello message.
-    /// @param[in] handler Callback for processing extensions.
-    template <typename ExtensionsHandler = std::nullptr_t>
-    void processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler = nullptr);
+    void processServerHello(const ServerHello& serverHello);
 
     /// @brief Process an Encrypted Extensions message.
     ///
@@ -311,77 +311,83 @@ public:
     /// @param[in] keyUpdate Parsed KeyUpdate message.
     void processKeyUpdate(const int8_t sideIndex, const KeyUpdate& keyUpdate);
 
-    /// @brief Construct a Client Hello message.
+    /// @brief Builds and enqueues a ClientHello according to @p policy.
     ///
-    /// @param[out] clientHello The Client Hello message to construct.
-    void constructClientHello(ClientHello& clientHello);
+    /// Offers versions, cipher suites, groups and signature algorithms from
+    /// @p policy, generates the ECDHE key pair and the @c client_random, and
+    /// pushes the message onto the outgoing queue.
+    ///
+    /// @param[in] policy Client-side handshake policy.
+    ///
+    void constructClientHello(const ClientHelloPolicy& policy);
+
+    /// @brief Builds and enqueues a ServerHello according to @p policy.
+    ///
+    /// @p policy is an already-made decision: the method validates it
+    /// against the ClientHello (version/suite offered, key_share entry for
+    /// the chosen group), commits it to the session, derives the TLS 1.3
+    /// handshake secret, and pushes the message onto the outgoing queue.
+    ///
+    /// @param[in] policy Server-side decision to validate and emit.
+    ///
+    void constructServerHello(const ServerHelloPolicy& policy);
 
     /// @brief Construct a Certificate message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructCertificate(const int8_t sideIndex, Record* record);
+    ///
+    void constructCertificate(const int8_t sideIndex);
 
     /// @brief Construct a Certificate Verify message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructCertificateVerify(const int8_t sideIndex, Record* record);
+    ///
+    void constructCertificateVerify(const int8_t sideIndex);
 
     /// @brief Construct a Server Key Exchange message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructServerKeyExchange(const int8_t sideIndex, Record* record);
+    ///
+    void constructServerKeyExchange(const int8_t sideIndex);
 
     /// @brief Construct a Client Key Exchange message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructClientKeyExchange(const int8_t sideIndex, Record* record);
+    ///
+    void constructClientKeyExchange(const int8_t sideIndex);
 
     /// @brief Construct a Server Hello Done message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructServerHelloDone(const int8_t sideIndex, Record* record);
+    ///
+    void constructServerHelloDone(const int8_t sideIndex);
 
     /// @brief Construct a Finished message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructFinished(const int8_t sideIndex, Record* record);
-
-    /// @brief Builds and serializes a KeyUpdate message into @p record (RFC 8446, 4.6.3).
     ///
-    /// Only serializes the message; does not encrypt, enqueue or rotate keys.
-    /// The caller is responsible for calling encrypt() and updating the sending
-    /// keys after the record has been sent.
+    void constructFinished(const int8_t sideIndex);
+
+    /// @brief Construct a KeyUpdate message.
     ///
     /// @param[in]  sideIndex     0 = client, 1 = server (sender side).
-    /// @param[out] record        Record to serialize into.
     /// @param[in]  requestUpdate True to set update_requested, false for update_not_requested.
     ///
-    void constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate);
-
-    /// @brief Builds, encrypts and enqueues a KeyUpdate, then rotates the sending
-    ///        keys for @p sideIndex (RFC 8446, 4.6.3).
-    ///
-    /// The KeyUpdate is encrypted with the current (old) sending keys; the new
-    /// keys take effect only for subsequent records.
-    ///
-    /// @param[in] sideIndex     0 = client, 1 = server (sender side).
-    /// @param[in] requestUpdate True to ask the peer to update its keys too.
-    /// @throw casket::RuntimeError if the record pool is exhausted or the outgoing queue overflows.
-    ///
-    void sendKeyUpdate(const int8_t sideIndex, bool requestUpdate);
+    void constructKeyUpdate(const int8_t sideIndex, bool requestUpdate);
 
     /// @brief Enable debug key output.
     ///
     /// @param[in] debug True to enable debug keys, false to disable.
-    void setDebugKeys(const bool debug)
+    void setDebugKeys(const bool value)
     {
-        debugKeys_ = debug;
+        if (value)
+        {
+            flags_.set(SessionBit::DebugKeys);
+        }
+        else
+        {
+            flags_.clear(SessionBit::DebugKeys);
+        }
     }
 
     /// @brief Enable monitoring mode.
@@ -389,7 +395,14 @@ public:
     /// @param[in] value True to enable monitoring, false to disable.
     void setMonitor(const bool value)
     {
-        monitor_ = value;
+        if (value)
+        {
+            flags_.set(SessionBit::Monitor);
+        }
+        else
+        {
+            flags_.clear(SessionBit::Monitor);
+        }
     }
 
     /// @brief Fetch algorithms that are often used for operations on records.
@@ -521,6 +534,10 @@ public:
         return 0;
     }
 
+    std::size_t flush(IByteWriter& writer) noexcept;
+
+    bool flushOne(IByteWriter& writer) noexcept;
+
 private:
     /// @brief Pre-process a record before handling.
     ///
@@ -533,24 +550,26 @@ private:
     /// @param[in]     sideIndex 0 = client, 1 = server.
     void updateTrafficKeys(std::int8_t sideIndex);
 
-private:
-    RecordPool& recordPool_;                      ///< Record pool for memory management.
-    Record* readingRecord_ = nullptr;             ///< Current reading record.
-    casket::RingBuffer<Record*> pendingRecords_;  ///< Incoming records queue.
-    casket::RingBuffer<Record*> outgoingRecords_; ///< Outgoing records queue.
-    RecordLayer recordLayer_;                     ///< Record layer handler.
-    std::vector<uint8_t> handshakeBuffer_;        ///< Buffer for handshake messages.
-    crypto::HashCtxPtr hashCtx_;                  ///< Hash context.
-    crypto::HashAlg handshakeHashAlg_ = nullptr;  ///< Hash algorithm for handshake.
-    crypto::HashAlg hmacHashAlg_ = nullptr;       ///< Hash algorithm for HMAC.
-    crypto::CipherAlg cipherAlg_ = nullptr;       ///< Cipher algorithm.
-    crypto::MacCtxPtr hmacCtx_;                   ///< HMAC context.
-    crypto::CipherCtxPtr clientCipherCtx_;        ///< Client cipher context.
-    crypto::CipherCtxPtr serverCipherCtx_;        ///< Server cipher context.
-    crypto::X509CertPtr clientCert_;              ///< Client certificate.
-    crypto::X509CertPtr serverCert_;              ///< Server certificate.
-    crypto::KeyPtr serverKey_;                    ///< Server private key.
+    RecordPool::ScopedRecord popOutgoingRecord() noexcept;
 
+private:
+    RecordPool& recordPool_;                            ///< Record pool for memory management.
+    Record* readingRecord_ = nullptr;                   ///< Current reading record.
+    casket::RingBuffer<Record*> pendingRecords_;        ///< Incoming records queue.
+    casket::RingBuffer<Record*> outgoingRecords_;       ///< Outgoing records queue.
+    RecordPool::ScopedRecord deferredRecord_;           ///< Deferred outfoing record.
+    RecordLayer recordLayer_;                           ///< Record layer handler.
+    std::vector<uint8_t> handshakeBuffer_;              ///< Buffer for handshake messages.
+    crypto::HashCtxPtr hashCtx_;                        ///< Hash context.
+    crypto::HashAlg handshakeHashAlg_ = nullptr;        ///< Hash algorithm for handshake.
+    crypto::HashAlg hmacHashAlg_ = nullptr;             ///< Hash algorithm for HMAC.
+    crypto::CipherAlg cipherAlg_ = nullptr;             ///< Cipher algorithm.
+    crypto::MacCtxPtr hmacCtx_;                         ///< HMAC context.
+    crypto::CipherCtxPtr clientCipherCtx_;              ///< Client cipher context.
+    crypto::CipherCtxPtr serverCipherCtx_;              ///< Server cipher context.
+    crypto::X509CertPtr clientCert_;                    ///< Client certificate.
+    crypto::X509CertPtr serverCert_;                    ///< Server certificate.
+    crypto::KeyPtr serverKey_;                          ///< Server private key.
     crypto::GroupParams sharedGroupParams_;             ///< Shared group parameters.
     crypto::KeyPtr ephemeralPrivateKey_;                ///< Ephemeral private key.
     crypto::KeyPtr peerPublicKey_;                      ///< Peer's public key.
@@ -563,93 +582,7 @@ private:
     Extensions serverExtensions_;                       ///< Server extensions.
     Extensions serverEncExtensions_;                    ///< Encrypted extensions.
     SequenceNumbers seqnum_;                            ///< Sequence numbers.
-    uint8_t cipherState_;                               ///< Cipher state.
-    uint8_t canDecrypt_;                                ///< Decryption capability flags.
-    uint8_t monitor_;                                   ///< Monitor mode flag.
-    uint8_t debugKeys_;                                 ///< Debug keys flag.
+    SessionFlags flags_;                                ///< Session flags.
 };
-
-/// @brief Process a Client Hello message.
-///
-/// @tparam ExtensionsHandler Type of handler for extensions.
-/// @param[in] clientHello The Client Hello message.
-/// @param[in] handler Callback for processing extensions.
-template <typename ExtensionsHandler>
-void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler)
-{
-    metaInfo_.version = clientHello.version;
-
-    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
-
-    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
-    {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
-
-        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
-        {
-            handler(this, clientExtensions_);
-        }
-    }
-}
-
-/// @brief Process a Server Hello message.
-///
-/// @tparam ExtensionsHandler Type of handler for extensions.
-/// @param[in] serverHello The Server Hello message.
-/// @param[in] handler Callback for processing extensions.
-template <typename ExtensionsHandler>
-void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler)
-{
-    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
-
-    if (!serverHello.extensions.empty())
-    {
-        auto type =
-            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
-        serverExtensions_.deserialize(Side::Server, serverHello.extensions, type);
-
-        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
-        {
-            handler(this, serverExtensions_);
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
-        {
-            auto ext = serverExtensions_.get<tls::SupportedVersions>();
-            metaInfo_.version = std::move(ext->versions()[0]);
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
-        {
-            recordLayer_.enableEncryptThenMAC();
-        }
-    }
-
-    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
-
-    if (!monitor_)
-    {
-        recordLayer_.setVersion(metaInfo_.version);
-        fetchAlgorithms();
-
-        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
-        {
-            if (peerPublicKey_)
-            {
-                /// We know public key by external way
-                generateHandshakeSecret(peerPublicKey_, ephemeralPrivateKey_);
-            }
-            else
-            {
-                /// We know public key by key share
-                auto keyShare = serverExtensions_.get<KeyShare>();
-                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
-            }
-        }
-    }
-}
 
 } // namespace snet::tls

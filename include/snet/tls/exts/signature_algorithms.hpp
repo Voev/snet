@@ -21,6 +21,8 @@ namespace snet::tls
 /// The length MUST be even and non-zero; an empty list is invalid on the wire.
 class SignatureAlgorithms final
 {
+    static constexpr std::size_t kMaxSchemes = 256;
+
 public:
     /// @brief Gets the wire code for this extension.
     /// @return ExtensionCode::SignatureAlgorithms.
@@ -146,6 +148,34 @@ public:
     nonstd::span<const crypto::SignatureScheme> supportedSchemes() const noexcept
     {
         return {schemes_.data(), schemes_.size()};
+    }
+
+    /// @brief Appends a signature scheme to the list.
+    ///
+    /// Order is preserved; duplicates are kept (RFC 8446 does not
+    /// require de-duplication). If the list already holds the maximum
+    /// number of schemes (32767), the addition is silently ignored.
+    ///
+    /// @param[in] scheme Signature scheme to append.
+    void addScheme(crypto::SignatureScheme scheme)
+    {
+        if (schemes_.size() >= kMaxSchemes)
+            return;
+        schemes_.push_back(scheme);
+    }
+
+    /// @brief Appends multiple signature schemes at once.
+    ///
+    /// Order is preserved; truncates to fit the 16-bit wire length.
+    /// A single allocation for the whole batch.
+    ///
+    /// @param[in] schemes Schemes to append, in wire order.
+    void addSchemes(nonstd::span<const crypto::SignatureScheme> schemes)
+    {
+        const std::size_t room = kMaxSchemes - schemes_.size();
+        const std::size_t n = std::min(room, schemes.size());
+
+        schemes_.insert(schemes_.end(), schemes.begin(), schemes.begin() + n);
     }
 
 private:

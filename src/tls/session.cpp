@@ -25,7 +25,10 @@
 #include <snet/tls/session.hpp>
 #include <snet/tls/record_layer.hpp>
 #include <snet/tls/cipher_suite_manager.hpp>
-#include <snet/tls/policy.hpp>
+#include <snet/tls/policy/client_hello_policy.hpp>
+#include <snet/tls/signature_hash.hpp>
+
+#include <snet/tls/record_printer.hpp>
 
 #include <openssl/evp.h>
 
@@ -47,10 +50,6 @@ Session::Session(RecordPool& recordPool)
     , hmacCtx_(HmacTraits::createContext())
     , clientCipherCtx_(CipherTraits::createContext())
     , serverCipherCtx_(CipherTraits::createContext())
-    , cipherState_(0)
-    , canDecrypt_(0)
-    , monitor_(0)
-    , debugKeys_(0)
 {
 }
 
@@ -62,6 +61,8 @@ void Session::reset() noexcept
     hmacHashAlg_ = nullptr;
     cipherAlg_ = nullptr;
 
+    flags_.clearAll();
+
     CipherTraits::resetContext(clientCipherCtx_);
     CipherTraits::resetContext(serverCipherCtx_);
     HashTraits::resetContext(hashCtx_);
@@ -69,12 +70,14 @@ void Session::reset() noexcept
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
 {
-    return ((cipherState_ & 0x1) && sideIndex == 0) || ((cipherState_ & 0x2) && sideIndex == 1);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCipherActive
+                                      : SessionBit::ServerCipherActive);
 }
 
 bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
 {
-    return ((canDecrypt_ & 0x1) && sideIndex == 0) || ((canDecrypt_ & 0x2) && sideIndex == 1);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCanDecrypt
+                                      : SessionBit::ServerCanDecrypt);
 }
 
 size_t Session::readRecords(nonstd::span<const uint8_t> input)
@@ -336,12 +339,13 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
     {
         if (record->getType() == RecordType::ChangeCipherSpec)
         {
-            if (!monitor_)
+            if (!flags_.test(SessionBit::Monitor))
             {
                 generateMasterSecret();
                 generateKeyMaterial(sideIndex, encrypt);
             }
-            cipherState_ |= (sideIndex == 0 ? 1 : 2);
+
+            flags_.set(sideIndex == 0 ? SessionBit::ClientCipherActive : SessionBit::ServerCipherActive);
         }
     }
     else
@@ -350,7 +354,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
         {
             if (record->getHandshakeType() == HandshakeType::ServerHelloCode)
             {
-                if (!monitor_)
+                if (!flags_.test(SessionBit::Monitor))
                 {
                     generateHandshakeTrafficSecrets();
                     generateHandshakeKeyAndIv(encrypt);
@@ -358,7 +362,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
             }
             else if (record->getHandshakeType() == HandshakeType::FinishedCode)
             {
-                if (!monitor_)
+                if (!flags_.test(SessionBit::Monitor))
                 {
                     generateTLSv13MasterSecret();
                     generateApplicationTrafficSecrets();
@@ -366,7 +370,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
                 }
 
                 /// @todo: pay attention to the HelloRetryRequest
-                cipherState_ |= (sideIndex == 0 ? 1 : 2);
+                flags_.set(sideIndex == 0 ? SessionBit::ClientCipherActive : SessionBit::ServerCipherActive);
             }
         }
     }
@@ -468,7 +472,7 @@ void Session::generateMasterSecret()
         ThrowIfTrue(PMS_.empty(), "Premaster secret not setted");
         keyInfo_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
 
-        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        if (flags_.test(SessionBit::UseExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
             auto transcriptHash = getTranscriptHash(buffer);
@@ -515,7 +519,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         return;
     }
 
-    if (debugKeys_)
+    if (flags_.test(SessionBit::DebugKeys))
     {
         utils::printHex(std::cout, keyInfo_.masterSecret, Colorize("MasterSecret"));
     }
@@ -547,7 +551,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         reader.assert_done();
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
             utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
@@ -559,13 +563,13 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         {
             recordLayer_.doTLSv1AeadInit(
                 clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
-            canDecrypt_ |= 1;
+            flags_.set(SessionBit::ClientCanDecrypt);
         }
         else
         {
             recordLayer_.doTLSv1AeadInit(
                 serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
-            canDecrypt_ |= 2;
+            flags_.set(SessionBit::ServerCanDecrypt);
         }
     }
     else
@@ -590,7 +594,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         reader.assert_done();
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientMacKey, Colorize("Client MAC key"));
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
@@ -603,12 +607,12 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         if (sideIndex == 0)
         {
             RecordLayer::init(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, keyInfo_.clientIV, encrypt);
-            canDecrypt_ |= 1;
+            flags_.set(SessionBit::ClientCanDecrypt);
         }
         else
         {
             RecordLayer::init(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, keyInfo_.serverIV, encrypt);
-            canDecrypt_ |= 2;
+            flags_.set(SessionBit::ServerCanDecrypt);
         }
     }
 }
@@ -626,7 +630,7 @@ void Session::generateHandshakeKeyAndIv(bool encrypt)
     crypto::DeriveIV(digestName, keyInfo_.clientHndTrafficSecret, keyInfo_.clientIV);
     crypto::DeriveIV(digestName, keyInfo_.serverHndTrafficSecret, keyInfo_.serverIV);
 
-    if (debugKeys_)
+    if (flags_.test(SessionBit::DebugKeys))
     {
         utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Handshake Write key"));
         utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server Handshake IV"));
@@ -637,7 +641,8 @@ void Session::generateHandshakeKeyAndIv(bool encrypt)
     recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
     recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
-    canDecrypt_ |= 3;
+    flags_.set(SessionBit::ClientCanDecrypt);
+    flags_.set(SessionBit::ServerCanDecrypt);
 }
 
 void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
@@ -654,7 +659,7 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
 
         recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
             utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
@@ -672,7 +677,7 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
 
         recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
             utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server IV"));
@@ -731,34 +736,304 @@ void Session::setServerKey(Key* key)
     serverKey_ = crypto::AsymmKey::shallowCopy(key);
 }
 
-void Session::constructClientHello(ClientHello& clientHello)
+void Session::processClientHello(const ClientHello& clientHello)
 {
     metaInfo_.version = clientHello.version;
 
-    Rand::generate(clientRandom_);
-    clientHello.random = clientRandom_;
-
-    /// @todo: filter ciphersuites
+    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
 
     if (metaInfo_.version != ProtocolVersion::SSLv3_0)
     {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensions, HandshakeType::ClientHelloCode);
+        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
+    }
+}
 
-        if (clientExtensions_.has(ExtensionCode::KeyShare))
+void Session::constructClientHello(const ClientHelloPolicy& policy)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    // Version.
+    const auto versions = policy.versions;
+    casket::ThrowIfFalse(!versions.empty(), "no supported versions");
+
+    const ProtocolVersion negotiated = versions.front();
+    metaInfo_.version = negotiated;
+
+    const ProtocolVersion legacyVersion =
+        negotiated >= ProtocolVersion::TLSv1_3 ? ProtocolVersion::TLSv1_2 : negotiated;
+
+    Rand::generate(clientRandom_);
+
+    Extensions extensions;
+    extensions.reserve(8);
+
+    // SNI.
+    if (negotiated > ProtocolVersion::SSLv3_0 && !policy.sni.empty())
+        extensions.add(ServerNameIndicator{policy.sni});
+
+    // supported_versions — TLS 1.3 only.
+    if (negotiated >= ProtocolVersion::TLSv1_3)
+    {
+        SupportedVersions sv;
+        for (auto v : versions)
+            sv.addVersion(v);
+        extensions.add(std::move(sv));
+    }
+
+    // supported_groups.
+    std::array<crypto::GroupParams, 8> filteredGroupsBuf{};
+    nonstd::span<const crypto::GroupParams> filteredGroups{};
+
+    if (negotiated > ProtocolVersion::SSLv3_0 && !policy.groups.empty())
+    {
+        const auto ourGroups = crypto::GroupParams::getSupported();
+        const std::size_t n = FilterGroups(policy.groups, ourGroups, filteredGroupsBuf);
+        casket::ThrowIfFalse(n > 0, "no supported key exchange groups");
+
+        filteredGroups = {filteredGroupsBuf.data(), n};
+
+        SupportedGroups sg;
+        for (auto g : filteredGroups)
+            sg.addGroup(g);
+        extensions.add(std::move(sg));
+    }
+
+    // signature_algorithms — TLS 1.2+.
+    if (negotiated >= ProtocolVersion::TLSv1_2 && !policy.signatureAlgorithms.empty())
+    {
+        SignatureAlgorithms sa;
+        for (auto s : policy.signatureAlgorithms)
+            sa.addScheme(s);
+        extensions.add(std::move(sa));
+    }
+
+    // key_share / ECDHE.
+    if (negotiated >= ProtocolVersion::TLSv1_3)
+    {
+        casket::ThrowIfFalse(!filteredGroups.empty(), "no common groups for key_share");
+
+        const auto group = filteredGroups.front();
+        ephemeralPrivateKey_ = crypto::GroupParams::generateKeyByParams(group);
+        sharedGroupParams_ = group;
+        const snet::crypto::GroupParams groups[] = {group};
+
+        KeyShare keyShare(groups);
+        keyShare.setPublicKey(0, ephemeralPrivateKey_);
+        extensions.add(std::move(keyShare));
+    }
+    else if (negotiated > ProtocolVersion::SSLv3_0 && !filteredGroups.empty())
+    {
+        sharedGroupParams_ = filteredGroups.front();
+        ephemeralPrivateKey_ = crypto::GroupParams::generateKeyByParams(sharedGroupParams_);
+    }
+
+    // TLS 1.0-1.2 flags.
+    if (negotiated >= ProtocolVersion::TLSv1_0 && policy.useEncryptThenMac)
+        extensions.add(EncryptThenMAC());
+
+    if (negotiated >= ProtocolVersion::TLSv1_0 && policy.useExtendedMasterSecret)
+        extensions.add(ExtendedMasterSecret());
+
+    if (negotiated >= ProtocolVersion::TLSv1_0 && !policy.alpn.empty())
+        extensions.add(ALPN(policy.alpn));
+
+    // Cipher suites: filter by supported.
+    casket::ThrowIfFalse(!policy.suites.empty(), "no cipher suites");
+
+    std::array<std::uint16_t, ClientHello::kMaxSuites> suitesBuf{};
+    const std::size_t suitesCount = CipherSuiteManager::getInstance().filterSupported(policy.suites, suitesBuf);
+    casket::ThrowIfFalse(suitesCount > 0, "no supported cipher suites");
+
+    ClientHello ch{};
+    ch.version = legacyVersion;
+    ch.random = clientRandom_;
+    ch.sessionID = policy.sessionId;
+    ch.extensions = &extensions;
+
+    std::array<std::uint8_t, 1> compressionMethods{0};
+    ch.compMethods = {compressionMethods.data(), compressionMethods.size()};
+
+    for (std::size_t i = 0; i < suitesCount; ++i)
+    {
+        casket::ThrowIfFalse(ch.suites.push_back(suitesBuf[i]), "cipher suite list overflow");
+    }
+
+    ch.suites.push_back(casket::make_uint16(0x00, 0xFF));
+
+    record->serializeHandshake(HandshakeMessage(std::move(ch)), 0, *this);
+    casket::ThrowIfFalse(addOutgoingRecord(0, record.get()), "outgoing records overflow");
+    record.release();
+}
+
+void Session::processServerHello(const ServerHello& serverHello)
+{
+    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
+
+    if (!serverHello.extensionsData.empty())
+    {
+        auto type =
+            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
+        serverExtensions_.deserialize(Side::Server, serverHello.extensionsData, type);
+
+        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
         {
-            auto keyShare = clientExtensions_.take<KeyShare>();
-            std::vector<crypto::GroupParams> offeredGroups;
-            keyShare->offeredGroups(offeredGroups);
-            auto firstGroup = offeredGroups.front();
+            auto ext = serverExtensions_.get<tls::SupportedVersions>();
+            metaInfo_.version = std::move(ext->versions()[0]);
+        }
 
-            /// @todo: check offered group by policy
+        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
+        {
+            recordLayer_.enableEncryptThenMAC();
+        }
 
-            ephemeralPrivateKey_ = GroupParams::generateKeyByParams(firstGroup);
-            keyShare->setPublicKey(0, ephemeralPrivateKey_);
-
-            clientExtensions_.add(ExtensionVariant{std::move(*keyShare)});
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        {
+            flags_.set(SessionBit::UseExtendedMasterSecret);
         }
     }
+
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
+
+    if (!flags_.test(SessionBit::Monitor))
+    {
+        recordLayer_.setVersion(metaInfo_.version);
+        fetchAlgorithms();
+
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
+        {
+            if (peerPublicKey_)
+            {
+                /// We know public key by external way
+                generateHandshakeSecret(peerPublicKey_, ephemeralPrivateKey_);
+            }
+            else
+            {
+                /// We know public key by key share
+                auto keyShare = serverExtensions_.get<KeyShare>();
+                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
+            }
+        }
+    }
+}
+
+void Session::constructServerHello(const ServerHelloPolicy& policy)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    // Protocol version: the policy already picked one.
+    casket::ThrowIfFalse(policy.version != ProtocolVersion(), "policy: version not set");
+    metaInfo_.version = policy.version;
+    const ProtocolVersion legacyVersion =
+        policy.version >= ProtocolVersion::TLSv1_3 ? ProtocolVersion::TLSv1_2 : policy.version;
+
+    // Cipher suite configuraion.
+    casket::ThrowIfFalse(policy.suite != 0, "policy: cipher suite not set");
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(policy.suite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite != nullptr, "unknown cipher suite 0x{:04x}", policy.suite);
+
+    Rand::generate(serverRandom_);
+
+    Extensions extensions;
+    extensions.reserve(6);
+
+    // legacy_session_id_echo (TLS 1.3) / session_id (TLS 1.2-).
+    nonstd::span<const std::uint8_t> sessionId;
+
+    if (policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        // RFC 8446 §4.1.3: echo legacy_session_id from ClientHello.
+        sessionId = policy.sessionId;
+    }
+    else
+    {
+        // TLS 1.0-1.2: session_id is the session ID (for resumption).
+        // Empty for a full handshake, non-empty for resumption.
+        sessionId = policy.sessionId;
+    }
+
+    // TLS 1.0-1.2 echo extensions.
+    if (policy.version < ProtocolVersion::TLSv1_3)
+    {
+        if (policy.useExtendedMasterSecret)
+        {
+            extensions.add(ExtendedMasterSecret());
+            flags_.set(SessionBit::UseExtendedMasterSecret);
+        }
+
+        if (policy.useEncryptThenMac)
+        {
+            extensions.add(EncryptThenMAC());
+            recordLayer_.enableEncryptThenMAC();
+        }
+
+        // RFC 5746: if the client offered renegotiation_info (or SCSV),
+        // the server must include an empty renegotiation_info.
+        if (policy.useRenegotiationInfo)
+        {
+            extensions.add(RenegotiationExtension());
+        }
+    }
+
+    // TLS 1.3: supported_versions and key_share.
+    if (policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        // supported_versions is mandatory (RFC 8446 §4.2.1).
+        SupportedVersions sv;
+        sv.addVersion(policy.version);
+        extensions.add(std::move(sv));
+
+        casket::ThrowIfFalse(policy.group != crypto::GroupParams::NONE, "policy: key_share group not set");
+
+        auto* clientKeyShare = clientExtensions_.get<KeyShare>();
+        casket::ThrowIfFalse(clientKeyShare != nullptr, "TLS 1.3 ClientHello missing key_share");
+
+        // Client's public key for the selected group.
+        auto peerKey = clientKeyShare->getPublicKey(0);
+        casket::ThrowIfFalse(peerKey, "key_share: no entry for selected group {}", policy.group.wireCode());
+
+        // Generate the server's ephemeral key for the same group.
+        auto serverEphKey = crypto::GroupParams::generateKeyByParams(policy.group);
+
+        // Build a new KeyShare with exactly one entry (RFC 8446 §4.2.8).
+        KeyShare serverKeyShare(policy.group, serverEphKey);
+
+        // Persist session state.
+        peerPublicKey_ = std::move(peerKey);
+        ephemeralPrivateKey_ = std::move(serverEphKey);
+        sharedGroupParams_ = policy.group;
+
+        extensions.add(ExtensionVariant(std::move(serverKeyShare)));
+    }
+
+    // Resolve ciphers/hashes BEFORE generateHandshakeSecret(), which depends on handshakeHashAlg_.
+    recordLayer_.setVersion(metaInfo_.version);
+    fetchAlgorithms();
+
+    // TLS 1.3: derive the handshake secret from ECDHE.
+    // NOTE: peerPublicKey_ is the CLIENT's public key.
+    if (!flags_.test(SessionBit::Monitor) && policy.version >= ProtocolVersion::TLSv1_3)
+    {
+        casket::ThrowIfFalse(ephemeralPrivateKey_ != nullptr, "no ephemeral private key");
+        casket::ThrowIfFalse(peerPublicKey_ != nullptr, "no peer public key");
+        generateHandshakeSecret(peerPublicKey_.get(), ephemeralPrivateKey_.get());
+    }
+
+    ServerHello sh{};
+    sh.version = legacyVersion;
+    sh.random = serverRandom_;
+    sh.cipherSuite = policy.suite;
+    sh.compMethod = 0;
+    sh.sessionID = sessionId;
+    sh.extensions = &extensions;
+
+    record->serializeHandshake(HandshakeMessage(std::move(sh)), /*sideIndex=*/1, *this);
+    casket::ThrowIfFalse(addOutgoingRecord(1, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
@@ -798,8 +1073,11 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, const Certi
     (void)certRequest;
 }
 
-void Session::constructCertificate(const int8_t sideIndex, Record* record)
+void Session::constructCertificate(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     Certificate certificate;
 
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
@@ -831,10 +1109,16 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(certificate)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
+void Session::constructCertificateVerify(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
         CertificateVerify certVerify;
@@ -859,10 +1143,16 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(certVerify)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
+void Session::constructServerKeyExchange(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     ServerKeyExchange keyExchange;
 
     const auto& supportedGroupsByPeer = clientExtensions_.get<SupportedGroups>();
@@ -924,34 +1214,45 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     auto auth = CipherSuiteGetAuth(metaInfo_.cipherSuite);
     if (auth == NID_auth_rsa || auth == NID_auth_dss || auth == NID_auth_ecdsa)
     {
-        /// @todo: what to do if no extensions
-        const auto& peerSigAlgs = clientExtensions_.get<SignatureAlgorithms>();
-        const auto& supportedSigAlgs = SignatureScheme::supportedSchemes();
-        auto scheme = ChooseSignatureScheme(serverKey_, supportedSigAlgs, peerSigAlgs->supportedSchemes());
+        crypto::SignatureScheme scheme{};
+
+        const SignatureAlgorithms* peerSigAlgs = clientExtensions_.get<SignatureAlgorithms>();
+        if (peerSigAlgs)
+        {
+            auto peerSchemes = peerSigAlgs->supportedSchemes();
+            scheme = ChooseSignatureScheme(serverKey_, SignatureScheme::supportedSchemes(), peerSchemes);
+            casket::ThrowIfFalse(scheme.isSet(), "no suitable signature scheme");
+        }
+        else
+        {
+            casket::ThrowIfTrue(metaInfo_.version >= ProtocolVersion::TLSv1_3,
+                                "TLS 1.3 requires signature_algorithms extension");
+        }
 
         if (metaInfo_.version == ProtocolVersion::TLSv1_2)
         {
             keyExchange.scheme = scheme;
         }
 
-        HashAlg hash{nullptr};
-
-        auto hashName = scheme.getHashAlgorithm();
-        if (!casket::equals(hashName, "UNDEF"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(hashName);
-        }
-
+        auto hash = resolveSignatureHash(scheme, metaInfo_, serverKey_);
         keyExchange.signature = Signature::signMessage(
             hashCtx_, scheme.getKeyAlgorithm(), hash, serverKey_, signatureBuffer, {tbsBuffer.data(), tbsLength});
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
+void Session::constructServerHelloDone(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     record->serializeHandshake(HandshakeMessage(ServerHelloDone()), sideIndex, *this);
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
@@ -1024,28 +1325,10 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
     /// RFC 4492: section-5.4
     if (!keyExchange.signature.empty())
     {
-        crypto::HashAlg hash;
-
         auto publicKey = Cert::publicKey(serverCert_);
         auto scheme = keyExchange.scheme;
-
-        /// version == TLS1.2
-        if (scheme.isSet())
-        {
-            /// In the case of Ed25519 and Ed448 hash algorithm is built into the signature algorithm.
-            if (!casket::equals(scheme.getHashAlgorithm(), "UNDEF"))
-            {
-                hash = CryptoManager::getInstance().fetchDigest(scheme.getHashAlgorithm());
-            }
-        }
-        else if (metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
-        }
-        else
-        {
-            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
-        }
+        auto signature = keyExchange.signature;
+        auto hash = resolveSignatureHash(scheme, metaInfo_, publicKey);
 
         std::vector<uint8_t> tbs;
         tbs.reserve(2 * TLS_RANDOM_SIZE + keyExchange.data.size());
@@ -1055,14 +1338,13 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
         tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
 
         HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(
-            hashCtx_, keyExchange.scheme.getKeyAlgorithm(), hash, publicKey, keyExchange.signature, tbs);
+        Signature::verifyMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, publicKey, signature, tbs);
     }
 }
 
 void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 {
-    if (monitor_ || !keyInfo_.masterSecret.empty())
+    if (flags_.test(SessionBit::Monitor) || !keyInfo_.masterSecret.empty())
     {
         return;
     }
@@ -1112,8 +1394,11 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
     }
 }
 
-void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
+void Session::constructClientKeyExchange(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     ClientKeyExchange keyExchange;
 
     auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
@@ -1156,6 +1441,9 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
         params.preMasterSecret = encryptedData;
         record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 nonstd::span<uint8_t> ComputeTLSv13FinishedMac(nonstd::span<const uint8_t> secret,
@@ -1243,8 +1531,11 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     }
 }
 
-void Session::constructFinished(const int8_t sideIndex, Record* record)
+void Session::constructFinished(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     switch (metaInfo_.version.code())
     {
     case ProtocolVersion::TLSv1_3:
@@ -1296,6 +1587,9 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
         break;
     }
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
@@ -1314,29 +1608,17 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, const KeyUpdate& key
     updateTrafficKeys(sideIndex);
 }
 
-void Session::constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate)
+void Session::constructKeyUpdate(const int8_t sideIndex, bool requestUpdate)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     KeyUpdate keyUpdate(requestUpdate ? KeyUpdate::RequestUpdate::UpdateRequested
                                       : KeyUpdate::RequestUpdate::UpdateNotRequested);
     record->serializeHandshake(HandshakeMessage(std::move(keyUpdate)), sideIndex, *this);
-}
 
-void Session::sendKeyUpdate(const int8_t sideIndex, bool requestUpdate)
-{
-    Record* record = recordPool_.acquire();
-    casket::ThrowIfTrue(record == nullptr, "record pool exhausted");
-    record->setType(RecordType::Handshake);
-
-    constructKeyUpdate(sideIndex, record, requestUpdate);
-    encrypt(sideIndex, record);
-
-    if (!outgoingRecords_.tryPush(record))
-    {
-        recordPool_.release(record);
-        casket::ThrowIfTrue(false, "outgoingRecords_ overflow");
-    }
-
-    updateTrafficKeys(sideIndex);
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::fetchAlgorithms()
@@ -1414,6 +1696,57 @@ void Session::updateTrafficKeys(const int8_t sideIndex)
         seqnum_.resetServerSequence();
     }
     recordLayer_.doTLSv13KeyUpdate(cipherCtx, encKey);
+}
+
+RecordPool::ScopedRecord Session::popOutgoingRecord() noexcept
+{
+    Record* record = nullptr;
+    if (!outgoingRecords_.pop(record) || !record)
+    {
+        return {};
+    }
+    return RecordPool::ScopedRecord(record, &recordPool_);
+}
+
+bool Session::flushOne(IByteWriter& writer) noexcept
+{
+    if (!deferredRecord_)
+    {
+        deferredRecord_ = popOutgoingRecord();
+        if (!deferredRecord_)
+        {
+            return false;
+        }
+    }
+
+    std::array<std::uint8_t, TLS_HEADER_SIZE> header{};
+    deferredRecord_->serializeHeader(header);
+
+    const auto payload =
+        deferredRecord_->isPlaintext() ? deferredRecord_->getPlaintext() : deferredRecord_->getCiphertext();
+
+    if (writer.available() < header.size() + payload.size())
+    {
+        return false;
+    }
+
+    if (!writer.write(header) || !writer.write(payload))
+    {
+        return false;
+    }
+
+    deferredRecord_.release();
+    return true;
+}
+
+std::size_t Session::flush(IByteWriter& writer) noexcept
+{
+    std::size_t n = 0;
+    while (flushOne(writer))
+    {
+        ++n;
+    }
+    return n;
 }
 
 } // namespace snet::tls

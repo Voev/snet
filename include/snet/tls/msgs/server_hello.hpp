@@ -7,6 +7,7 @@
 #include <casket/nonstd/span.hpp>
 
 #include <snet/tls/version.hpp>
+#include <snet/tls/extensions.hpp>
 
 namespace snet::tls
 {
@@ -29,7 +30,8 @@ struct ServerHello final
     nonstd::span<const uint8_t> sessionID{};  ///< Session ID; 0..32 bytes (1-byte length on the wire).
     uint16_t cipherSuite{0};                  ///< Selected cipher suite code (big-endian on the wire).
     uint8_t compMethod{0};                    ///< Selected compression method.
-    nonstd::span<const uint8_t> extensions{}; ///< Raw extensions block; empty if absent.
+    nonstd::span<const uint8_t> extensionsData{}; ///< Raw extensions block; empty if absent.
+    Extensions* extensions{nullptr};          ///< Parsed extensions. Used in serialize.
     bool isHelloRetryRequest{false};          ///< `true` if `random` matches the HRR marker.
 
     /// @brief Default constructor; all fields are empty.
