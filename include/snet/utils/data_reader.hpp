@@ -169,54 +169,6 @@ public:
         return get_span_fixed(n);
     }
 
-    nonstd::span<uint16_t> get_u16_span(size_t lenBytes, size_t minBytes, size_t maxBytes,
-                                        nonstd::span<uint16_t> out) noexcept
-    {
-        if ((minBytes & 1u) != 0 || (maxBytes & 1u) != 0)
-        {
-            set_error(DecodeError::BadLengthSize);
-            return {};
-        }
-
-        const auto raw = get_span(lenBytes, minBytes, maxBytes);
-        if (!ok())
-            return {};
-
-        if (raw.size() % 2 != 0)
-        {
-            set_error(DecodeError::SizeNotMultiple);
-            return {};
-        }
-
-        const std::size_t count = raw.size() / 2;
-        if (count > out.size())
-        {
-            set_error(DecodeError::LengthOutOfRange);
-            return {};
-        }
-
-        for (std::size_t i = 0; i < count; ++i)
-            out[i] = casket::make_uint16(raw[2 * i], raw[2 * i + 1]);
-
-        return {out.data(), count};
-    }
-
-    nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes) noexcept
-    {
-        const size_t n = get_length_field(lenBytes, 0, remaining_bytes());
-        return get_span_fixed(n);
-    }
-
-    nonstd::string_view get_string_view(size_t len_bytes, size_t min_b, size_t max_b) noexcept
-    {
-        const size_t n = get_length_field(len_bytes, min_b, max_b);
-        if (error_ != DecodeError::None)
-            return {};
-        auto s = nonstd::string_view(reinterpret_cast<const char*>(buffer_.data() + offset_), n);
-        offset_ += n;
-        return s;
-    }
-
     bool get_fixed_into(size_t n, std::vector<uint8_t>& out) noexcept
     {
         if (!at_least(n))
