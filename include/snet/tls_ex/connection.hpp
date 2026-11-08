@@ -41,6 +41,16 @@ public:
         SSL_set_info_callback(ssl_, cb);
     }
 
+    void setMessageCallback()
+    {
+        SSL_set_msg_callback(ssl_, SSL_trace);
+    }
+
+    void setMessageCallbackArg(Bio* bio)
+    {
+        SSL_set_msg_callback_arg(ssl_, bio);
+    }
+
     void setConnectState() noexcept
     {
         SSL_set_connect_state(ssl_);
