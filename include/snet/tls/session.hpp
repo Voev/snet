@@ -335,62 +335,45 @@ public:
     /// @brief Construct a Certificate message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructCertificate(const int8_t sideIndex, Record* record);
+    ///
+    void constructCertificate(const int8_t sideIndex);
 
     /// @brief Construct a Certificate Verify message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructCertificateVerify(const int8_t sideIndex, Record* record);
+    ///
+    void constructCertificateVerify(const int8_t sideIndex);
 
     /// @brief Construct a Server Key Exchange message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructServerKeyExchange(const int8_t sideIndex, Record* record);
+    ///
+    void constructServerKeyExchange(const int8_t sideIndex);
 
     /// @brief Construct a Client Key Exchange message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructClientKeyExchange(const int8_t sideIndex, Record* record);
+    ///
+    void constructClientKeyExchange(const int8_t sideIndex);
 
     /// @brief Construct a Server Hello Done message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructServerHelloDone(const int8_t sideIndex, Record* record);
+    ///
+    void constructServerHelloDone(const int8_t sideIndex);
 
     /// @brief Construct a Finished message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).
-    /// @param[in] record Record to store the constructed message.
-    void constructFinished(const int8_t sideIndex, Record* record);
-
-    /// @brief Builds and serializes a KeyUpdate message into @p record (RFC 8446, 4.6.3).
     ///
-    /// Only serializes the message; does not encrypt, enqueue or rotate keys.
-    /// The caller is responsible for calling encrypt() and updating the sending
-    /// keys after the record has been sent.
+    void constructFinished(const int8_t sideIndex);
+
+    /// @brief Construct a KeyUpdate message.
     ///
     /// @param[in]  sideIndex     0 = client, 1 = server (sender side).
-    /// @param[out] record        Record to serialize into.
     /// @param[in]  requestUpdate True to set update_requested, false for update_not_requested.
     ///
-    void constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate);
-
-    /// @brief Builds, encrypts and enqueues a KeyUpdate, then rotates the sending
-    ///        keys for @p sideIndex (RFC 8446, 4.6.3).
-    ///
-    /// The KeyUpdate is encrypted with the current (old) sending keys; the new
-    /// keys take effect only for subsequent records.
-    ///
-    /// @param[in] sideIndex     0 = client, 1 = server (sender side).
-    /// @param[in] requestUpdate True to ask the peer to update its keys too.
-    /// @throw casket::RuntimeError if the record pool is exhausted or the outgoing queue overflows.
-    ///
-    void sendKeyUpdate(const int8_t sideIndex, bool requestUpdate);
+    void constructKeyUpdate(const int8_t sideIndex, bool requestUpdate);
 
     /// @brief Enable debug key output.
     ///
@@ -570,24 +553,23 @@ private:
     RecordPool::ScopedRecord popOutgoingRecord() noexcept;
 
 private:
-    RecordPool& recordPool_;                      ///< Record pool for memory management.
-    Record* readingRecord_ = nullptr;             ///< Current reading record.
-    casket::RingBuffer<Record*> pendingRecords_;  ///< Incoming records queue.
-    casket::RingBuffer<Record*> outgoingRecords_; ///< Outgoing records queue.
-    RecordPool::ScopedRecord deferredRecord_;     ///< Deferred outfoing record.
-    RecordLayer recordLayer_;                     ///< Record layer handler.
-    std::vector<uint8_t> handshakeBuffer_;        ///< Buffer for handshake messages.
-    crypto::HashCtxPtr hashCtx_;                  ///< Hash context.
-    crypto::HashAlg handshakeHashAlg_ = nullptr;  ///< Hash algorithm for handshake.
-    crypto::HashAlg hmacHashAlg_ = nullptr;       ///< Hash algorithm for HMAC.
-    crypto::CipherAlg cipherAlg_ = nullptr;       ///< Cipher algorithm.
-    crypto::MacCtxPtr hmacCtx_;                   ///< HMAC context.
-    crypto::CipherCtxPtr clientCipherCtx_;        ///< Client cipher context.
-    crypto::CipherCtxPtr serverCipherCtx_;        ///< Server cipher context.
-    crypto::X509CertPtr clientCert_;              ///< Client certificate.
-    crypto::X509CertPtr serverCert_;              ///< Server certificate.
-    crypto::KeyPtr serverKey_;                    ///< Server private key.
-
+    RecordPool& recordPool_;                            ///< Record pool for memory management.
+    Record* readingRecord_ = nullptr;                   ///< Current reading record.
+    casket::RingBuffer<Record*> pendingRecords_;        ///< Incoming records queue.
+    casket::RingBuffer<Record*> outgoingRecords_;       ///< Outgoing records queue.
+    RecordPool::ScopedRecord deferredRecord_;           ///< Deferred outfoing record.
+    RecordLayer recordLayer_;                           ///< Record layer handler.
+    std::vector<uint8_t> handshakeBuffer_;              ///< Buffer for handshake messages.
+    crypto::HashCtxPtr hashCtx_;                        ///< Hash context.
+    crypto::HashAlg handshakeHashAlg_ = nullptr;        ///< Hash algorithm for handshake.
+    crypto::HashAlg hmacHashAlg_ = nullptr;             ///< Hash algorithm for HMAC.
+    crypto::CipherAlg cipherAlg_ = nullptr;             ///< Cipher algorithm.
+    crypto::MacCtxPtr hmacCtx_;                         ///< HMAC context.
+    crypto::CipherCtxPtr clientCipherCtx_;              ///< Client cipher context.
+    crypto::CipherCtxPtr serverCipherCtx_;              ///< Server cipher context.
+    crypto::X509CertPtr clientCert_;                    ///< Client certificate.
+    crypto::X509CertPtr serverCert_;                    ///< Server certificate.
+    crypto::KeyPtr serverKey_;                          ///< Server private key.
     crypto::GroupParams sharedGroupParams_;             ///< Shared group parameters.
     crypto::KeyPtr ephemeralPrivateKey_;                ///< Ephemeral private key.
     crypto::KeyPtr peerPublicKey_;                      ///< Peer's public key.

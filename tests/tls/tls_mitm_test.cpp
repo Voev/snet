@@ -143,16 +143,12 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     case HandshakeType::ClientKeyExchangeCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmClient.constructClientKeyExchange(sideIndex, modifiedRecord);
-                        mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmClient.constructClientKeyExchange(sideIndex);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmClient.constructFinished(sideIndex, modifiedRecord);
-                        mitmClient.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmClient.constructFinished(sideIndex);
                         break;
                     }
                     default:
@@ -213,37 +209,27 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmServer.constructCertificate(sideIndex, modifiedRecord);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmServer.constructCertificate(sideIndex);
                         break;
                     }
                     case HandshakeType::CertificateVerifyCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmServer.constructCertificateVerify(sideIndex, modifiedRecord);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmServer.constructCertificateVerify(sideIndex);
                         break;
                     }
                     case HandshakeType::ServerKeyExchangeCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmServer.constructServerKeyExchange(sideIndex, modifiedRecord);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmServer.constructServerKeyExchange(sideIndex);
                         break;
                     }
                     case HandshakeType::ServerHelloDoneCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmServer.constructServerHelloDone(sideIndex, modifiedRecord);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmServer.constructServerHelloDone(sideIndex);
                         break;
                     }
                     case HandshakeType::FinishedCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-                        mitmServer.constructFinished(sideIndex, modifiedRecord);
-                        mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        mitmServer.constructFinished(sideIndex);
                         break;
                     }
                     case HandshakeType::NewSessionTicketCode:

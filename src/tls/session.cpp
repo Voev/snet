@@ -1073,8 +1073,11 @@ void Session::processCertificateRequest(const std::int8_t sideIndex, const Certi
     (void)certRequest;
 }
 
-void Session::constructCertificate(const int8_t sideIndex, Record* record)
+void Session::constructCertificate(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     Certificate certificate;
 
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
@@ -1106,10 +1109,16 @@ void Session::constructCertificate(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(certificate)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
+void Session::constructCertificateVerify(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     if (metaInfo_.version == ProtocolVersion::TLSv1_3)
     {
         CertificateVerify certVerify;
@@ -1134,10 +1143,16 @@ void Session::constructCertificateVerify(const int8_t sideIndex, Record* record)
 
         record->serializeHandshake(HandshakeMessage(std::move(certVerify)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
+void Session::constructServerKeyExchange(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     ServerKeyExchange keyExchange;
 
     const auto& supportedGroupsByPeer = clientExtensions_.get<SupportedGroups>();
@@ -1225,11 +1240,19 @@ void Session::constructServerKeyExchange(const int8_t sideIndex, Record* record)
     }
 
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
-void Session::constructServerHelloDone(const int8_t sideIndex, Record* record)
+void Session::constructServerHelloDone(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     record->serializeHandshake(HandshakeMessage(ServerHelloDone()), sideIndex, *this);
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
@@ -1371,8 +1394,11 @@ void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
     }
 }
 
-void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
+void Session::constructClientKeyExchange(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     ClientKeyExchange keyExchange;
 
     auto kex = CipherSuiteGetKeyExchange(metaInfo_.cipherSuite);
@@ -1415,6 +1441,9 @@ void Session::constructClientKeyExchange(const int8_t sideIndex, Record* record)
         params.preMasterSecret = encryptedData;
         record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 nonstd::span<uint8_t> ComputeTLSv13FinishedMac(nonstd::span<const uint8_t> secret,
@@ -1502,8 +1531,11 @@ void Session::processFinished(const std::int8_t sideIndex, const Finished& finis
     }
 }
 
-void Session::constructFinished(const int8_t sideIndex, Record* record)
+void Session::constructFinished(const int8_t sideIndex)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     switch (metaInfo_.version.code())
     {
     case ProtocolVersion::TLSv1_3:
@@ -1555,6 +1587,9 @@ void Session::constructFinished(const int8_t sideIndex, Record* record)
         break;
     }
     }
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::processNewSessionTicket(const NewSessionTicket& sessionTicket)
@@ -1573,29 +1608,17 @@ void Session::processKeyUpdate(const std::int8_t sideIndex, const KeyUpdate& key
     updateTrafficKeys(sideIndex);
 }
 
-void Session::constructKeyUpdate(const int8_t sideIndex, Record* record, bool requestUpdate)
+void Session::constructKeyUpdate(const int8_t sideIndex, bool requestUpdate)
 {
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
     KeyUpdate keyUpdate(requestUpdate ? KeyUpdate::RequestUpdate::UpdateRequested
                                       : KeyUpdate::RequestUpdate::UpdateNotRequested);
     record->serializeHandshake(HandshakeMessage(std::move(keyUpdate)), sideIndex, *this);
-}
 
-void Session::sendKeyUpdate(const int8_t sideIndex, bool requestUpdate)
-{
-    Record* record = recordPool_.acquire();
-    casket::ThrowIfTrue(record == nullptr, "record pool exhausted");
-    record->setType(RecordType::Handshake);
-
-    constructKeyUpdate(sideIndex, record, requestUpdate);
-    encrypt(sideIndex, record);
-
-    if (!outgoingRecords_.tryPush(record))
-    {
-        recordPool_.release(record);
-        casket::ThrowIfTrue(false, "outgoingRecords_ overflow");
-    }
-
-    updateTrafficKeys(sideIndex);
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
 }
 
 void Session::fetchAlgorithms()
