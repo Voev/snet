@@ -192,11 +192,15 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                     {
                     case HandshakeType::ServerHelloCode:
                     {
-                        auto modifiedRecord = recordPool.acquire();
-
                         ServerHello serverHello = record->getHandshake<ServerHello>();
 
-                        /// @todo: fix this by using normal interface.
+                        
+                        auto policy = ServerHelloPolicy::make(serverHello, mitmClient);
+                        mitmServer.constructServerHello(policy);
+                        
+                        /*
+                        auto modifiedRecord = recordPool.acquire();
+
                         mitmServer.processServerHello(serverHello,
                                                       [](Session* session, Extensions& extensions)
                                                       {
@@ -225,6 +229,8 @@ TEST_P(TLSMitmTest, IterativeHandshake)
                         modifiedRecord->serializeHandshake(
                             HandshakeMessage(std::move(serverHello)), sideIndex, mitmServer);
                         mitmServer.addOutgoingRecord(sideIndex, modifiedRecord);
+                        */
+
                         break;
                     }
                     case HandshakeType::EncryptedExtensionsCode:

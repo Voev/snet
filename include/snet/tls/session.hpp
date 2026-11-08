@@ -26,6 +26,7 @@
 #include <snet/tls/sequence_numbers.hpp>
 #include <snet/tls/policy.hpp>
 #include <snet/tls/i_byte_writer.hpp>
+#include <snet/tls/session_flags.hpp>
 
 #include <snet/tls/policy/client_hello_policy.hpp>
 #include <snet/tls/policy/server_hello_policy.hpp>
@@ -578,6 +579,7 @@ private:
     uint8_t canDecrypt_;                                ///< Decryption capability flags.
     uint8_t monitor_;                                   ///< Monitor mode flag.
     uint8_t debugKeys_;                                 ///< Debug keys flag.
+    SessionFlags flags_;
 };
 
 /// @brief Process a Client Hello message.
@@ -636,6 +638,11 @@ void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandl
         if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
         {
             recordLayer_.enableEncryptThenMAC();
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        {
+            flags_.set(SessionBit::UseExtendedMasterSecret);
         }
     }
 

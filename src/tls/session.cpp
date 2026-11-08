@@ -65,6 +65,8 @@ void Session::reset() noexcept
     hmacHashAlg_ = nullptr;
     cipherAlg_ = nullptr;
 
+    flags_.clearAll();
+
     CipherTraits::resetContext(clientCipherCtx_);
     CipherTraits::resetContext(serverCipherCtx_);
     HashTraits::resetContext(hashCtx_);
@@ -471,7 +473,7 @@ void Session::generateMasterSecret()
         ThrowIfTrue(PMS_.empty(), "Premaster secret not setted");
         keyInfo_.masterSecret.resize(TLS_MASTER_SECRET_SIZE);
 
-        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        if (flags_.test(SessionBit::UseExtendedMasterSecret))
         {
             std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
             auto transcriptHash = getTranscriptHash(buffer);
@@ -894,11 +896,13 @@ void Session::constructServerHello(const ServerHelloPolicy& policy)
         if (policy.useExtendedMasterSecret)
         {
             extensions.add(ExtendedMasterSecret());
+            flags_.set(SessionBit::UseExtendedMasterSecret);
         }
 
         if (policy.useEncryptThenMac)
         {
             extensions.add(EncryptThenMAC());
+            recordLayer_.enableEncryptThenMAC();
         }
 
         // RFC 5746: if the client offered renegotiation_info (or SCSV),
@@ -942,12 +946,6 @@ void Session::constructServerHello(const ServerHelloPolicy& policy)
 
     // Resolve ciphers/hashes BEFORE generateHandshakeSecret(), which depends on handshakeHashAlg_.
     recordLayer_.setVersion(metaInfo_.version);
-
-    if (extensions.has<EncryptThenMAC>())
-    {
-        recordLayer_.enableEncryptThenMAC();
-    }
-
     fetchAlgorithms();
 
     // TLS 1.3: derive the handshake secret from ECDHE.
