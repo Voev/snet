@@ -736,6 +736,19 @@ void Session::setServerKey(Key* key)
     serverKey_ = crypto::AsymmKey::shallowCopy(key);
 }
 
+void Session::processClientHello(const ClientHello& clientHello)
+{
+    metaInfo_.version = clientHello.version;
+
+    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
+
+    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
+    {
+        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
+    }
+}
+
 void Session::constructClientHello(const ClientHelloPolicy& policy)
 {
     auto record = recordPool_.acquireScoped();
@@ -852,6 +865,59 @@ void Session::constructClientHello(const ClientHelloPolicy& policy)
     record->serializeHandshake(HandshakeMessage(std::move(ch)), 0, *this);
     casket::ThrowIfFalse(addOutgoingRecord(0, record.get()), "outgoing records overflow");
     record.release();
+}
+
+void Session::processServerHello(const ServerHello& serverHello)
+{
+    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
+    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
+
+    if (!serverHello.extensionsData.empty())
+    {
+        auto type =
+            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
+        serverExtensions_.deserialize(Side::Server, serverHello.extensionsData, type);
+
+        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
+        {
+            auto ext = serverExtensions_.get<tls::SupportedVersions>();
+            metaInfo_.version = std::move(ext->versions()[0]);
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
+        {
+            recordLayer_.enableEncryptThenMAC();
+        }
+
+        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
+        {
+            flags_.set(SessionBit::UseExtendedMasterSecret);
+        }
+    }
+
+    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
+    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
+
+    if (!monitor_)
+    {
+        recordLayer_.setVersion(metaInfo_.version);
+        fetchAlgorithms();
+
+        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
+        {
+            if (peerPublicKey_)
+            {
+                /// We know public key by external way
+                generateHandshakeSecret(peerPublicKey_, ephemeralPrivateKey_);
+            }
+            else
+            {
+                /// We know public key by key share
+                auto keyShare = serverExtensions_.get<KeyShare>();
+                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
+            }
+        }
+    }
 }
 
 void Session::constructServerHello(const ServerHelloPolicy& policy)

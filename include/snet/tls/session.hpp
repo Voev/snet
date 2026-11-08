@@ -253,19 +253,13 @@ public:
 
     /// @brief Process a Client Hello message.
     ///
-    /// @tparam ExtensionsHandler Type of handler for extensions.
     /// @param[in] clientHello The Client Hello message.
-    /// @param[in] handler Callback for processing extensions.
-    template <typename ExtensionsHandler = std::nullptr_t>
-    void processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler = nullptr);
+    void processClientHello(const ClientHello& clientHello);
 
     /// @brief Process a Server Hello message.
     ///
-    /// @tparam ExtensionsHandler Type of handler for extensions.
     /// @param[in] serverHello The Server Hello message.
-    /// @param[in] handler Callback for processing extensions.
-    template <typename ExtensionsHandler = std::nullptr_t>
-    void processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler = nullptr);
+    void processServerHello(const ServerHello& serverHello);
 
     /// @brief Process an Encrypted Extensions message.
     ///
@@ -581,94 +575,5 @@ private:
     uint8_t debugKeys_;                                 ///< Debug keys flag.
     SessionFlags flags_;
 };
-
-/// @brief Process a Client Hello message.
-///
-/// @tparam ExtensionsHandler Type of handler for extensions.
-/// @param[in] clientHello The Client Hello message.
-/// @param[in] handler Callback for processing extensions.
-template <typename ExtensionsHandler>
-void Session::processClientHello(const ClientHello& clientHello, ExtensionsHandler&& handler)
-{
-    metaInfo_.version = clientHello.version;
-
-    assert(clientHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(clientHello.random.data(), TLS_RANDOM_SIZE, clientRandom_.data());
-
-    if (metaInfo_.version != ProtocolVersion::SSLv3_0)
-    {
-        clientExtensions_.deserialize(Side::Client, clientHello.extensionsData, HandshakeType::ClientHelloCode);
-
-        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
-        {
-            handler(this, clientExtensions_);
-        }
-    }
-}
-
-/// @todo: move inside the session.cpp
-/// @brief Process a Server Hello message.
-///
-/// @tparam ExtensionsHandler Type of handler for extensions.
-/// @param[in] serverHello The Server Hello message.
-/// @param[in] handler Callback for processing extensions.
-template <typename ExtensionsHandler>
-void Session::processServerHello(const ServerHello& serverHello, ExtensionsHandler&& handler)
-{
-    assert(serverHello.random.size() == TLS_RANDOM_SIZE);
-    std::copy_n(serverHello.random.data(), TLS_RANDOM_SIZE, serverRandom_.data());
-
-    if (!serverHello.extensionsData.empty())
-    {
-        auto type =
-            serverHello.isHelloRetryRequest ? HandshakeType::HelloRetryRequestCode : HandshakeType::ServerHelloCode;
-        serverExtensions_.deserialize(Side::Server, serverHello.extensionsData, type);
-
-        if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<ExtensionsHandler>>)
-        {
-            handler(this, serverExtensions_);
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::SupportedVersions))
-        {
-            auto ext = serverExtensions_.get<tls::SupportedVersions>();
-            metaInfo_.version = std::move(ext->versions()[0]);
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::EncryptThenMac))
-        {
-            recordLayer_.enableEncryptThenMAC();
-        }
-
-        if (serverExtensions_.has(tls::ExtensionCode::ExtendedMasterSecret))
-        {
-            flags_.set(SessionBit::UseExtendedMasterSecret);
-        }
-    }
-
-    metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
-    casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
-
-    if (!monitor_)
-    {
-        recordLayer_.setVersion(metaInfo_.version);
-        fetchAlgorithms();
-
-        if (metaInfo_.version == tls::ProtocolVersion::TLSv1_3 && ephemeralPrivateKey_)
-        {
-            if (peerPublicKey_)
-            {
-                /// We know public key by external way
-                generateHandshakeSecret(peerPublicKey_, ephemeralPrivateKey_);
-            }
-            else
-            {
-                /// We know public key by key share
-                auto keyShare = serverExtensions_.get<KeyShare>();
-                generateHandshakeSecret(keyShare->getPublicKey(), ephemeralPrivateKey_);
-            }
-        }
-    }
-}
 
 } // namespace snet::tls
