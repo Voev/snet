@@ -52,8 +52,6 @@ Session::Session(RecordPool& recordPool)
     , serverCipherCtx_(CipherTraits::createContext())
     , cipherState_(0)
     , canDecrypt_(0)
-    , monitor_(0)
-    , debugKeys_(0)
 {
 }
 
@@ -341,7 +339,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
     {
         if (record->getType() == RecordType::ChangeCipherSpec)
         {
-            if (!monitor_)
+            if (!flags_.test(SessionBit::Monitor))
             {
                 generateMasterSecret();
                 generateKeyMaterial(sideIndex, encrypt);
@@ -355,7 +353,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
         {
             if (record->getHandshakeType() == HandshakeType::ServerHelloCode)
             {
-                if (!monitor_)
+                if (!flags_.test(SessionBit::Monitor))
                 {
                     generateHandshakeTrafficSecrets();
                     generateHandshakeKeyAndIv(encrypt);
@@ -363,7 +361,7 @@ void Session::keySchedule(const std::int8_t sideIndex, bool encrypt, Record* rec
             }
             else if (record->getHandshakeType() == HandshakeType::FinishedCode)
             {
-                if (!monitor_)
+                if (!flags_.test(SessionBit::Monitor))
                 {
                     generateTLSv13MasterSecret();
                     generateApplicationTrafficSecrets();
@@ -520,7 +518,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
         return;
     }
 
-    if (debugKeys_)
+    if (flags_.test(SessionBit::DebugKeys))
     {
         utils::printHex(std::cout, keyInfo_.masterSecret, Colorize("MasterSecret"));
     }
@@ -552,7 +550,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         reader.assert_done();
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
             utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
@@ -595,7 +593,7 @@ void Session::generateKeyMaterial(const int8_t sideIndex, bool encrypt)
 
         reader.assert_done();
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientMacKey, Colorize("Client MAC key"));
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
@@ -631,7 +629,7 @@ void Session::generateHandshakeKeyAndIv(bool encrypt)
     crypto::DeriveIV(digestName, keyInfo_.clientHndTrafficSecret, keyInfo_.clientIV);
     crypto::DeriveIV(digestName, keyInfo_.serverHndTrafficSecret, keyInfo_.serverIV);
 
-    if (debugKeys_)
+    if (flags_.test(SessionBit::DebugKeys))
     {
         utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Handshake Write key"));
         utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server Handshake IV"));
@@ -659,7 +657,7 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
 
         recordLayer_.doTLSv13AeadInit(clientCipherCtx_, cipherAlg_, keyInfo_.clientEncKey, encrypt);
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.clientEncKey, Colorize("Client Write key"));
             utils::printHex(std::cout, keyInfo_.clientIV, Colorize("Client IV"));
@@ -677,7 +675,7 @@ void Session::generateApplicationKeyAndIv(const int8_t sideIndex, bool encrypt)
 
         recordLayer_.doTLSv13AeadInit(serverCipherCtx_, cipherAlg_, keyInfo_.serverEncKey, encrypt);
 
-        if (debugKeys_)
+        if (flags_.test(SessionBit::DebugKeys))
         {
             utils::printHex(std::cout, keyInfo_.serverEncKey, Colorize("Server Write key"));
             utils::printHex(std::cout, keyInfo_.serverIV, Colorize("Server IV"));
@@ -898,7 +896,7 @@ void Session::processServerHello(const ServerHello& serverHello)
     metaInfo_.cipherSuite = CipherSuiteManager::getInstance().getCipherSuiteById(serverHello.cipherSuite);
     casket::ThrowIfFalse(metaInfo_.cipherSuite, "Cipher suite not found");
 
-    if (!monitor_)
+    if (!flags_.test(SessionBit::Monitor))
     {
         recordLayer_.setVersion(metaInfo_.version);
         fetchAlgorithms();
@@ -1016,7 +1014,7 @@ void Session::constructServerHello(const ServerHelloPolicy& policy)
 
     // TLS 1.3: derive the handshake secret from ECDHE.
     // NOTE: peerPublicKey_ is the CLIENT's public key.
-    if (!monitor_ && policy.version >= ProtocolVersion::TLSv1_3)
+    if (!flags_.test(SessionBit::Monitor) && policy.version >= ProtocolVersion::TLSv1_3)
     {
         casket::ThrowIfFalse(ephemeralPrivateKey_ != nullptr, "no ephemeral private key");
         casket::ThrowIfFalse(peerPublicKey_ != nullptr, "no peer public key");
@@ -1321,7 +1319,7 @@ void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
 
 void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)
 {
-    if (monitor_ || !keyInfo_.masterSecret.empty())
+    if (flags_.test(SessionBit::Monitor) || !keyInfo_.masterSecret.empty())
     {
         return;
     }

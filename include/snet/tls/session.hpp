@@ -378,9 +378,16 @@ public:
     /// @brief Enable debug key output.
     ///
     /// @param[in] debug True to enable debug keys, false to disable.
-    void setDebugKeys(const bool debug)
+    void setDebugKeys(const bool value)
     {
-        debugKeys_ = debug;
+        if (value)
+        {
+            flags_.set(SessionBit::DebugKeys);
+        }
+        else
+        {
+            flags_.clear(SessionBit::DebugKeys);
+        }
     }
 
     /// @brief Enable monitoring mode.
@@ -388,7 +395,14 @@ public:
     /// @param[in] value True to enable monitoring, false to disable.
     void setMonitor(const bool value)
     {
-        monitor_ = value;
+        if (value)
+        {
+            flags_.set(SessionBit::Monitor);
+        }
+        else
+        {
+            flags_.clear(SessionBit::Monitor);
+        }
     }
 
     /// @brief Fetch algorithms that are often used for operations on records.
@@ -571,8 +585,6 @@ private:
     SequenceNumbers seqnum_;                            ///< Sequence numbers.
     uint8_t cipherState_;                               ///< Cipher state.
     uint8_t canDecrypt_;                                ///< Decryption capability flags.
-    uint8_t monitor_;                                   ///< Monitor mode flag.
-    uint8_t debugKeys_;                                 ///< Debug keys flag.
     SessionFlags flags_;
 };
 

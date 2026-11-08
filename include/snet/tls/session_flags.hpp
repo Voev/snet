@@ -14,7 +14,7 @@ enum class SessionBit : std::uint8_t
 {
     // Roles / modes
     IsServer                 = 0,   ///< We are the TLS server (vs client).
-    Monitor                  = 1,   ///< Passive observer: decrypt, don't derive.
+    Monitor                  = 1,   ///< Passive observer modes.
     DebugKeys                = 2,   ///< Print derived keys to stdout.
 
     // Handshake milestones
