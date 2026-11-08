@@ -169,6 +169,22 @@ public:
         return get_span_fixed(n);
     }
 
+    nonstd::span<const uint8_t> get_span_length_and_value(size_t lenBytes) noexcept
+    {
+        const size_t n = get_length_field(lenBytes, 0, remaining_bytes());
+        return get_span_fixed(n);
+    }
+
+    nonstd::string_view get_string_view(size_t len_bytes, size_t min_b, size_t max_b) noexcept
+    {
+        const size_t n = get_length_field(len_bytes, min_b, max_b);
+        if (error_ != DecodeError::None)
+            return {};
+        auto s = nonstd::string_view(reinterpret_cast<const char*>(buffer_.data() + offset_), n);
+        offset_ += n;
+        return s;
+    }
+
     bool get_fixed_into(size_t n, std::vector<uint8_t>& out) noexcept
     {
         if (!at_least(n))
