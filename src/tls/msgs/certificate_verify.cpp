@@ -92,10 +92,8 @@ std::error_code CertificateVerify::deserialize(nonstd::span<const uint8_t> input
     return reader.take_ec();
 }
 
-std::size_t CertificateVerify::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t CertificateVerify::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     if (output.size_bytes() < 2)
         return kSerializationFailed;
 

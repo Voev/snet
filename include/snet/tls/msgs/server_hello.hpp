@@ -47,10 +47,10 @@ struct ServerHello final
 
     /// @brief Serializes the message into @p output.
     /// @param[in] output  Destination buffer.
-    /// @param[in] session Session holding the negotiated extensions.
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
 } // namespace snet::tls

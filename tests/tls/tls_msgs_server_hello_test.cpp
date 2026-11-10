@@ -32,11 +32,7 @@ TEST_P(ServerHelloSerializeTest, DeserializeSerialize)
 
     serverHello.extensions = &extensions;
 
-    /// @todo: delete this.
-    RecordPool empty(0);
-    Session fixture(empty);
-
-    serializedLength = serverHello.serialize(serialized, fixture);
+    serializedLength = serverHello.serialize(serialized);
     ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 

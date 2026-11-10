@@ -34,10 +34,8 @@ std::error_code CertificateRequest::deserialize(nonstd::span<const uint8_t> inpu
     }
 }
 
-std::size_t CertificateRequest::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t CertificateRequest::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     return nonstd::visit(
         [&output](const auto& msg) noexcept -> std::size_t
         {

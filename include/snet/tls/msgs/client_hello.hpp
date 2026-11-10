@@ -46,11 +46,11 @@ struct ClientHello final
     ///                    `2 + random.size() + 1 + sessionID.size() +
     ///                     2 + suites.size() + 1 + compMethods.size()`
     ///                    bytes plus the serialized extensions block.
-    /// @param[in] session Session holding the negotiated extensions.
+    ///
     /// @return Bytes written on success, `kSerializationFailed` if @p output
     ///         is too small or extension serialization failed.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
 } // namespace snet::tls

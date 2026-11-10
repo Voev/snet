@@ -8,6 +8,7 @@
 #include <casket/utils/string.hpp>
 
 #include <snet/utils/print_hex.hpp>
+#include <snet/utils/decode_error.hpp>
 
 #include <snet/crypto/asymm_key.hpp>
 #include <snet/crypto/exception.hpp>
@@ -30,9 +31,8 @@
 
 #include <snet/tls/record_printer.hpp>
 
-#include <openssl/evp.h>
-
 using namespace snet::crypto;
+using namespace snet::utils;
 
 inline std::string Colorize(nonstd::string_view text)
 {
@@ -70,14 +70,12 @@ void Session::reset() noexcept
 
 bool Session::getCipherState(const std::int8_t sideIndex) const noexcept
 {
-    return flags_.test(sideIndex == 0 ? SessionBit::ClientCipherActive
-                                      : SessionBit::ServerCipherActive);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCipherActive : SessionBit::ServerCipherActive);
 }
 
 bool Session::canDecrypt(const std::int8_t sideIndex) const noexcept
 {
-    return flags_.test(sideIndex == 0 ? SessionBit::ClientCanDecrypt
-                                      : SessionBit::ServerCanDecrypt);
+    return flags_.test(sideIndex == 0 ? SessionBit::ClientCanDecrypt : SessionBit::ServerCanDecrypt);
 }
 
 size_t Session::readRecords(nonstd::span<const uint8_t> input)
@@ -196,7 +194,8 @@ void Session::preprocessRecord(const std::int8_t sideIndex, Record* record)
             return;
         }
 
-        record->deserializeHandshake(data, metaInfo_);
+        auto ec = record->deserializeHandshake(data, metaInfo_);
+        casket::ThrowIfTrue(ec != make_error_code(DecodeError::None), "Malformed handshake message");
 
         switch (record->getHandshakeType())
         {
@@ -1036,6 +1035,23 @@ void Session::constructServerHello(const ServerHelloPolicy& policy)
     record.release();
 }
 
+void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
+{
+    serverEncExtensions_.deserialize(
+        Side::Server, encryptedExtensions.rawExtensions, HandshakeType::EncryptedExtensionsCode);
+}
+
+void Session::constructEncryptedExtensions(const int8_t sideIndex)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    record->serializeHandshake(HandshakeMessage(EncryptedExtensions()), sideIndex, *this);
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
+}
+
 void Session::processCertificate(const int8_t sideIndex, const Certificate& certificate)
 {
     if (std::holds_alternative<TLSv13Certificate>(certificate.message))
@@ -1064,13 +1080,6 @@ void Session::processCertificate(const int8_t sideIndex, const Certificate& cert
     }
 
     /// @todo verify certificate chain
-}
-
-void Session::processCertificateRequest(const std::int8_t sideIndex, const CertificateRequest& certRequest)
-{
-    /// @todo: do it.
-    (void)sideIndex;
-    (void)certRequest;
 }
 
 void Session::constructCertificate(const int8_t sideIndex)
@@ -1114,6 +1123,62 @@ void Session::constructCertificate(const int8_t sideIndex)
     record.release();
 }
 
+void Session::processCertificateRequest(const std::int8_t sideIndex, const CertificateRequest& certRequest)
+{
+    /// @todo: do it.
+    (void)sideIndex;
+    (void)certRequest;
+}
+
+void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
+{
+    KeyPtr publicKey{nullptr};
+    HashAlg hash{nullptr};
+
+    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
+    {
+        if (sideIndex == 0)
+        {
+            publicKey = Cert::publicKey(clientCert_);
+        }
+        else
+        {
+            publicKey = Cert::publicKey(serverCert_);
+        }
+
+        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
+        auto transcriptHash = getTranscriptHash(buffer);
+        HashTraits::resetContext(hashCtx_);
+        CertificateVerify::doTLSv13Verify(certVerify, sideIndex, hashCtx_, publicKey, transcriptHash);
+    }
+    else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
+    {
+        casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
+        auto publicKey = Cert::publicKey(clientCert_);
+
+        if (certVerify.scheme.isSet())
+        {
+            auto hashName = certVerify.scheme.getHashAlgorithm();
+            if (!casket::equals(hashName, "UNDEF"))
+            {
+                hash = CryptoManager::getInstance().fetchDigest(hashName);
+            }
+        }
+        else if (metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
+        {
+            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
+        }
+        else
+        {
+            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
+        }
+
+        HashTraits::resetContext(hashCtx_);
+        Signature::verifyMessage(
+            hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature, handshakeBuffer_);
+    }
+}
+
 void Session::constructCertificateVerify(const int8_t sideIndex)
 {
     auto record = recordPool_.acquireScoped();
@@ -1146,6 +1211,49 @@ void Session::constructCertificateVerify(const int8_t sideIndex)
 
     casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
     record.release();
+}
+
+void Session::constructServerHelloDone(const int8_t sideIndex)
+{
+    auto record = recordPool_.acquireScoped();
+    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
+
+    record->serializeHandshake(HandshakeMessage(ServerHelloDone()), sideIndex, *this);
+
+    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
+    record.release();
+}
+
+void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
+{
+    if (std::holds_alternative<EcdheParams>(keyExchange.params))
+    {
+        const auto& ecdhe = std::get<EcdheParams>(keyExchange.params);
+        sharedGroupParams_ = ecdhe.curveID;
+
+        KeyPtr publicKey = GroupParams::generateParams(sharedGroupParams_);
+        AsymmKey::setEncodedPublicKey(publicKey, ecdhe.publicPoint);
+        peerPublicKey_ = std::move(publicKey);
+    }
+
+    /// RFC 4492: section-5.4
+    if (!keyExchange.signature.empty())
+    {
+        auto publicKey = Cert::publicKey(serverCert_);
+        auto scheme = keyExchange.scheme;
+        auto signature = keyExchange.signature;
+        auto hash = resolveSignatureHash(scheme, metaInfo_, publicKey);
+
+        std::vector<uint8_t> tbs;
+        tbs.reserve(2 * TLS_RANDOM_SIZE + keyExchange.data.size());
+
+        tbs.insert(tbs.end(), clientRandom_.begin(), clientRandom_.end());
+        tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
+        tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
+
+        HashTraits::resetContext(hashCtx_);
+        Signature::verifyMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, publicKey, signature, tbs);
+    }
 }
 
 void Session::constructServerKeyExchange(const int8_t sideIndex)
@@ -1242,104 +1350,6 @@ void Session::constructServerKeyExchange(const int8_t sideIndex)
     record->serializeHandshake(HandshakeMessage(std::move(keyExchange)), sideIndex, *this);
     casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
     record.release();
-}
-
-void Session::constructServerHelloDone(const int8_t sideIndex)
-{
-    auto record = recordPool_.acquireScoped();
-    casket::ThrowIfFalse(record.get() != nullptr, "record pool exhausted");
-
-    record->serializeHandshake(HandshakeMessage(ServerHelloDone()), sideIndex, *this);
-
-    casket::ThrowIfFalse(addOutgoingRecord(sideIndex, record.get()), "outgoing records overflow");
-    record.release();
-}
-
-void Session::processCertificateVerify(const int8_t sideIndex, const CertificateVerify& certVerify)
-{
-    KeyPtr publicKey{nullptr};
-    HashAlg hash{nullptr};
-
-    if (metaInfo_.version == ProtocolVersion::TLSv1_3)
-    {
-        if (sideIndex == 0)
-        {
-            publicKey = Cert::publicKey(clientCert_);
-        }
-        else
-        {
-            publicKey = Cert::publicKey(serverCert_);
-        }
-
-        std::array<uint8_t, EVP_MAX_MD_SIZE> buffer;
-        auto transcriptHash = getTranscriptHash(buffer);
-        HashTraits::resetContext(hashCtx_);
-        CertificateVerify::doTLSv13Verify(certVerify, sideIndex, hashCtx_, publicKey, transcriptHash);
-    }
-    else if (metaInfo_.version <= ProtocolVersion::TLSv1_2)
-    {
-        casket::ThrowIfFalse(sideIndex == 0, "CertificateVerify: invalid side index");
-        auto publicKey = Cert::publicKey(clientCert_);
-
-        if (certVerify.scheme.isSet())
-        {
-            auto hashName = certVerify.scheme.getHashAlgorithm();
-            if (!casket::equals(hashName, "UNDEF"))
-            {
-                hash = CryptoManager::getInstance().fetchDigest(hashName);
-            }
-        }
-        else if (metaInfo_.version < ProtocolVersion::TLSv1_2 && AsymmKey::isAlgorithm(publicKey, "RSA"))
-        {
-            hash = CryptoManager::getInstance().fetchDigest(SN_md5_sha1);
-        }
-        else
-        {
-            hash = CryptoManager::getInstance().fetchDigest(CipherSuiteGetHmacDigestName(metaInfo_.cipherSuite));
-        }
-
-        HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(
-            hashCtx_, certVerify.scheme.getKeyAlgorithm(), hash, publicKey, certVerify.signature, handshakeBuffer_);
-    }
-}
-
-void Session::processEncryptedExtensions(const EncryptedExtensions& encryptedExtensions)
-{
-    serverEncExtensions_.deserialize(
-        Side::Server, encryptedExtensions.extensions, HandshakeType::EncryptedExtensionsCode);
-}
-
-void Session::processServerKeyExchange(const ServerKeyExchange& keyExchange)
-{
-    if (std::holds_alternative<EcdheParams>(keyExchange.params))
-    {
-        const auto& ecdhe = std::get<EcdheParams>(keyExchange.params);
-        sharedGroupParams_ = ecdhe.curveID;
-
-        KeyPtr publicKey = GroupParams::generateParams(sharedGroupParams_);
-        AsymmKey::setEncodedPublicKey(publicKey, ecdhe.publicPoint);
-        peerPublicKey_ = std::move(publicKey);
-    }
-
-    /// RFC 4492: section-5.4
-    if (!keyExchange.signature.empty())
-    {
-        auto publicKey = Cert::publicKey(serverCert_);
-        auto scheme = keyExchange.scheme;
-        auto signature = keyExchange.signature;
-        auto hash = resolveSignatureHash(scheme, metaInfo_, publicKey);
-
-        std::vector<uint8_t> tbs;
-        tbs.reserve(2 * TLS_RANDOM_SIZE + keyExchange.data.size());
-
-        tbs.insert(tbs.end(), clientRandom_.begin(), clientRandom_.end());
-        tbs.insert(tbs.end(), serverRandom_.begin(), serverRandom_.end());
-        tbs.insert(tbs.end(), keyExchange.data.begin(), keyExchange.data.end());
-
-        HashTraits::resetContext(hashCtx_);
-        Signature::verifyMessage(hashCtx_, scheme.getKeyAlgorithm(), hash, publicKey, signature, tbs);
-    }
 }
 
 void Session::processClientKeyExchange(const ClientKeyExchange& keyExchange)

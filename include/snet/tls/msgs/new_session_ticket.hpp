@@ -50,12 +50,10 @@ struct NewSessionTicket final
 
     /// @brief Serializes the active variant into @p output.
     /// @param[in] output  Destination buffer.
-    /// @param[in] session Session context (kept for the uniform
-    ///                    `serialize(span, const Session&)` contract; not
-    ///                    used by either alternative).
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
 } // namespace snet::tls

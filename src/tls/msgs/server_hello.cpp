@@ -97,10 +97,8 @@ std::error_code ServerHello::deserialize(nonstd::span<const uint8_t> input) noex
     return reader.take_ec();
 }
 
-std::size_t ServerHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t ServerHello::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     const std::size_t fixed = 2 + TLS_RANDOM_SIZE + 1 + sessionID.size() + 2 + 1; // cipherSuite + compMethod
 
     if (output.size_bytes() < fixed)
