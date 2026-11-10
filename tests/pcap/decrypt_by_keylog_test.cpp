@@ -12,9 +12,14 @@ using namespace snet::tcp;
 using namespace snet::tls;
 using namespace casket;
 
+constexpr size_t kRxPoolCapacity = 128;
+constexpr size_t kRxPoolBufferSize = 16 * 1024;
+constexpr size_t kRecordPoolSize = 64;
+constexpr size_t kPacketBatchSize = 32;
+
 DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
-    : rxPool_(512, 64 * 1024)
-    , recordPool_(256)
+    : rxPool_(kRxPoolCapacity, kRxPoolBufferSize)
+    , recordPool_(kRecordPoolSize)
 {
     auto found = section.find("keylog");
     if (found != section.end())
@@ -41,7 +46,7 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 
     auto fRegistry = std::make_unique<SessionManager::FactoryRegistry>();
     fRegistry->addFactory<TcpConnectionCtxFactory<SessionManager>>(&rxPool_, nullptr);
-    fRegistry->addFactory<TlsDecryptCtxFactory<SessionManager>>(&recordPool_);
+    fRegistry->addFactory<TlsDecryptCtxFactory<SessionManager>>(&recordPool_, false);
     sessionManager_.setFactoryRegistry(std::move(fRegistry));
 
     auto pipeline = std::make_unique<SessionManager::Pipeline>();
@@ -52,8 +57,8 @@ DecryptByKeylog::DecryptByKeylog(const ConfigParser::Section& section)
 void DecryptByKeylog::execute()
 {
     RecvStatus status{RecvStatus::Ok};
-    snet::io::Driver::RxItem rx[32] = {};
-    uint16_t maxCount = 32;
+    uint16_t maxCount = kPacketBatchSize;
+    snet::io::Driver::RxItem rx[kPacketBatchSize] = {};
     uint16_t receivedPackets = 0;
 
     do

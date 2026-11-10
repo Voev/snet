@@ -16,8 +16,9 @@ class TlsDecryptCtxFactory : public snet::session::ISessionCtxFactory<SessionMan
 public:
     using SessionType = typename SessionManagerType::Session;
 
-    TlsDecryptCtxFactory(RecordPool* recordPool)
+    TlsDecryptCtxFactory(RecordPool* recordPool, bool monitor)
         : recordPool_(recordPool)
+        , monitor_(monitor)
     {
         assert(recordPool_ != nullptr);
     }
@@ -49,6 +50,7 @@ public:
         }
 
         ctx->session = std::make_unique<snet::tls::Session>(*recordPool_);
+        ctx->session->setMonitor(monitor_);
         return true;
     }
 
@@ -70,6 +72,7 @@ public:
 
 private:
     RecordPool* recordPool_{nullptr};
+    bool monitor_{false};
 };
 
 } // namespace snet::tls
