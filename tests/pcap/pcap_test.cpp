@@ -10,6 +10,7 @@
 
 #include "pcap_test.hpp"
 #include "decrypt_by_keylog_test.hpp"
+#include "monitor_test.hpp"
 #include "controller_manager.hpp"
 
 using namespace snet;
@@ -70,6 +71,10 @@ std::unique_ptr<PcapTestImpl> PcapTest::makeTest(const TestParam& param)
     if (param.first.find("decrypt_by_keylog") != std::string::npos)
     {
         return std::make_unique<DecryptByKeylog>(param.second);
+    }
+    else if (param.first.find("monitor") != std::string::npos)
+    {
+        return std::make_unique<MonitorTest>(param.second);
     }
 
     return nullptr;

@@ -38,7 +38,7 @@ public:
 
     size_t write(const uint8_t* data, size_t len) noexcept
     {
-        if (!initialized_)
+        if (!initialized_ || len == 0)
             return 0;
         const size_t free = capacity_ - (writePos_ - ackedPos_);
         const size_t toWrite = std::min(len, free);
