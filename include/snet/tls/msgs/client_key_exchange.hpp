@@ -142,11 +142,10 @@ struct ClientKeyExchange final
 
     /// @brief Serializes the active alternative into @p output.
     /// @param[in] output  Destination buffer.
-    /// @param[in] session Session context (unused; kept for the uniform
-    ///                    `serialize(span, const Session&)` contract).
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
 } // namespace snet::tls

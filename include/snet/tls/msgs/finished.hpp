@@ -49,13 +49,11 @@ struct Finished final
 
     /// @brief Serializes the message into @p output.
     /// @param[in] output  Destination buffer; must hold `verifyData.size()` bytes.
-    /// @param[in] session Unused; kept for the uniform `serialize(span, const Session&)` contract.
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept
     {
-        (void)session;
-
         if (output.size_bytes() < verifyData.size())
         {
             return kSerializationFailed;

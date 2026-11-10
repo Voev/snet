@@ -37,13 +37,11 @@ struct ServerHelloDone final
 
     /// @brief Serializes the message into @p output.
     /// @param[in] output  Destination buffer; unused (empty message).
-    /// @param[in] session Session context; unused (empty message).
     /// @return Always `0` (empty payload).
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept
     {
         (void)output;
-        (void)session;
         return 0;
     }
 };

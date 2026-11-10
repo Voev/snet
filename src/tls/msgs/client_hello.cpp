@@ -81,10 +81,8 @@ std::error_code ClientHello::deserialize(nonstd::span<const uint8_t> input) noex
     return reader.take_ec();
 }
 
-size_t ClientHello::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+size_t ClientHello::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     if (output.size_bytes() < 2)
     {
         return kSerializationFailed;

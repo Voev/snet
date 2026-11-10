@@ -102,10 +102,16 @@ std::size_t HandshakeMessage::serialize(nonstd::span<uint8_t> output, const Sess
             {
                 return 0;
             }
-            else
+            else if constexpr (std::is_same_v<T, ServerKeyExchange> ||
+                               std::is_same_v<T, Certificate>)
             {
                 auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
                 return msg.serialize(payload, session);
+            }
+            else
+            {
+                auto payload = output.subspan(TLS_HANDSHAKE_HEADER_SIZE);
+                return msg.serialize(payload);
             }
         },
         message_);

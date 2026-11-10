@@ -4,6 +4,7 @@
 #include <system_error>
 
 #include <casket/nonstd/span.hpp>
+#include <snet/tls/extensions.hpp>
 
 namespace snet::tls
 {
@@ -21,7 +22,8 @@ class Session;
 /// of the `EncryptedExtensions` object.
 struct EncryptedExtensions final
 {
-    nonstd::span<const uint8_t> extensions{};   ///< Raw extensions block (`<2-byte length> <ext>*`).
+    nonstd::span<const uint8_t> rawExtensions{}; ///< Raw extensions block (`<2-byte length> <ext>*`).
+    Extensions* extensions{nullptr};             ///< Parsed extensions. Used in serialize.
 
     /// @brief Default constructor; `extensions` is empty.
     EncryptedExtensions() noexcept = default;
@@ -36,10 +38,10 @@ struct EncryptedExtensions final
 
     /// @brief Serializes the message into @p output.
     /// @param[in] output  Destination buffer.
-    /// @param[in] session Session holding the negotiated extensions.
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 };
 
 } // namespace snet::tls

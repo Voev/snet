@@ -85,10 +85,8 @@ std::error_code ClientKeyExchange::deserialize(nonstd::span<const uint8_t> input
     return reader.take_ec();
 }
 
-std::size_t ClientKeyExchange::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t ClientKeyExchange::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     return nonstd::visit(
         [&](const auto& inner) noexcept -> std::size_t
         {

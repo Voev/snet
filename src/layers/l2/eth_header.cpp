@@ -83,7 +83,6 @@ static inline ProtocolType EtherTypeToProtocol(EtherType etherType) noexcept
 {
     static const std::unordered_map<EtherType, ProtocolType> g_EtherTypeMap = {
         {EtherType::IP, IPv4}, {EtherType::IPV6, IPv6}, {EtherType::ARP, ARP},
-        /// @todo append extra porotocols
     };
 
     auto it = g_EtherTypeMap.find(etherType);

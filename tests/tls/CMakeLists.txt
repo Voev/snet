@@ -17,6 +17,11 @@ target_link_libraries(${TEST_NAME}
         OpenSSL::SSL
         GTest::GTest)
 
+option(SNET_TLS_TEST_KEYS_FROM_FILE "Load test keys from files via env vars" OFF)
+if(SNET_TLS_TEST_KEYS_FROM_FILE)
+    target_compile_definitions(${TEST_NAME} PRIVATE SNET_TLS_TEST_KEYS_FROM_FILE)
+endif()
+
 # Discover tests
 gtest_discover_tests(
     ${TEST_NAME}

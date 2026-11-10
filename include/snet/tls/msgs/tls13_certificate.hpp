@@ -53,9 +53,8 @@ struct TLSv13Certificate final
 
     /// @brief Serializes the message into @p output.
     /// @param[in] output Destination buffer.
-    /// @param[in] session Session context; `session.side()` is used when an
-    ///                    entry has parsed `extensions` that need re-serialization.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    /// @param[in] side Session side.
+    std::size_t serialize(nonstd::span<uint8_t> output, const Side side) const noexcept;
 };
 
 } // namespace snet::tls

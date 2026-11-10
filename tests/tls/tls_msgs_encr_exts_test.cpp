@@ -28,10 +28,13 @@ TEST_P(EncryptedExtensionsTest, DeserializeSerialize)
     EncryptedExtensions encryptedExtensions;
     ASSERT_EQ(encryptedExtensions.deserialize(param), snet::utils::make_error_code(DecodeError::None));
 
-    Session session(recordPool_);
-    ASSERT_NO_THROW(session.processEncryptedExtensions(encryptedExtensions));
+    Extensions extensions;
+    ASSERT_EQ(extensions.deserialize(Side::Server, encryptedExtensions.rawExtensions, HandshakeType::EncryptedExtensionsCode),
+              make_error_code(DecodeError::None));
 
-    serializedLength = encryptedExtensions.serialize(serialized, session);
+    encryptedExtensions.extensions = &extensions;
+
+    serializedLength = encryptedExtensions.serialize(serialized);
     ASSERT_GT(serializedLength, 0U);
     serialized.resize(serializedLength);
 

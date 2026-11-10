@@ -332,6 +332,12 @@ public:
     ///
     void constructServerHello(const ServerHelloPolicy& policy);
 
+    /// @brief Construct a EncryptedExtensions message.
+    ///
+    /// @param[in] sideIndex Side index (0 for client, 1 for server).
+    ///
+    void constructEncryptedExtensions(const int8_t sideIndex);
+
     /// @brief Construct a Certificate message.
     ///
     /// @param[in] sideIndex Side index (0 for client, 1 for server).

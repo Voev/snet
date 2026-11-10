@@ -25,10 +25,8 @@ std::error_code NewSessionTicket::deserialize(nonstd::span<const uint8_t> input,
     return make_error_code(DecodeError::None);
 }
 
-std::size_t NewSessionTicket::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t NewSessionTicket::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    (void)session;
-
     return nonstd::visit(
         [&output](const auto& msg) noexcept -> std::size_t
         {

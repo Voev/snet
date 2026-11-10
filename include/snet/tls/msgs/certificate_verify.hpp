@@ -41,12 +41,11 @@ struct CertificateVerify final
     std::error_code deserialize(nonstd::span<const uint8_t> input, const MetaInfo& metaInfo) noexcept;
 
     /// @brief Serializes the message into @p output.
-    /// @param[in] output Destination buffer; must hold
-    ///                   `2 + 2 + signature.size()` bytes.
-    /// @param[in] session Session context (unused).
+    /// @param[in] output Destination buffer; must hold `2 + 2 + signature.size()` bytes.
+    ///
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
-    std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+    std::size_t serialize(nonstd::span<uint8_t> output) const noexcept;
 
     /// @brief Performs TLS 1.3 signature generation.
     /// @param[in] scheme          Signature scheme.

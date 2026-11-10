@@ -66,14 +66,12 @@ struct KeyUpdate final
     /// @brief Serialize the KeyUpdate message to a byte buffer.
     ///
     /// @param[in] output Buffer to write the serialized data to. Must be >= 1 byte.
-    /// @param[in] session Session context for serialization (unused).
     ///
     /// @return Number of bytes written (always 1).
     ///
     /// @throws casket::Exception if output is too small.
-    size_t serialize(nonstd::span<uint8_t> output, const Session& session) const
+    size_t serialize(nonstd::span<uint8_t> output) const
     {
-        (void)session;
         casket::ThrowIfFalse(output.size() >= 1, "Output buffer too small for KeyUpdate");
         output[0] = static_cast<uint8_t>(requestUpdate);
         return 1;

@@ -36,12 +36,13 @@ std::size_t Certificate::serialize(nonstd::span<uint8_t> output, const Session& 
             using T = std::decay_t<decltype(msg)>;
             if constexpr (std::is_same_v<T, TLSv1Certificate>)
             {
-                (void)session;
                 return msg.serialize(output);
             }
             else
             {
-                return msg.serialize(output, session);
+                /// @todo: Client?
+                (void)session;
+                return msg.serialize(output, Side::Server);
             }
         },
         message);

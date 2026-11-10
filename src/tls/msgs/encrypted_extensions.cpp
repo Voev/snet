@@ -10,7 +10,7 @@ namespace snet::tls
 
 std::error_code EncryptedExtensions::deserialize(nonstd::span<const uint8_t> input) noexcept
 {
-    extensions = {};
+    rawExtensions = {};
 
     utils::DataReader reader(input);
 
@@ -28,13 +28,27 @@ std::error_code EncryptedExtensions::deserialize(nonstd::span<const uint8_t> inp
     }
 
     // keep the whole block, including the 2-byte length
-    extensions = input; 
+    rawExtensions = input; 
     return reader.take_ec();
 }
 
-std::size_t EncryptedExtensions::serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept
+std::size_t EncryptedExtensions::serialize(nonstd::span<uint8_t> output) const noexcept
 {
-    const auto written = session.getEncryptedExtensions().serialize(Side::Server, output);
+    // RFC 8446 §4.3.1: extensions is <0..2^16-1>. When there is nothing
+    // to send, the wire form is still a 2-byte zero length: 0x00 0x00.
+    if (extensions == nullptr)
+    {
+        if (output.size() < 2)
+        {
+            return kSerializationFailed;
+        }
+
+        output[0] = 0;
+        output[1] = 0;
+        return 2;
+    }
+
+    const auto written = extensions->serialize(Side::Server, output);
     if (written == 0)
     {
         return kSerializationFailed;
