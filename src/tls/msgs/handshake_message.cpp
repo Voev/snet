@@ -5,8 +5,6 @@
 #include <snet/utils/data_reader.hpp>
 #include <snet/utils/decode_error.hpp>
 
-#include <snet/utils/print_hex.hpp>
-
 using namespace snet::utils;
 
 namespace snet::tls
@@ -31,7 +29,6 @@ std::error_code HandshakeMessage::deserialize(nonstd::span<const uint8_t> input,
 
     if (reader.remaining_bytes() != messageLength)
     {
-        utils::printHex(std::cout, reader.get_span_remaining(), "Remaining");
         return make_error_code(utils::DecodeError::LengthOutOfRange);
     }
 
