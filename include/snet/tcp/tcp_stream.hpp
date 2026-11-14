@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <utility>
 #include <snet/tcp/tcp_types.hpp>
+#include <casket/nonstd/span.hpp>
 
 namespace snet::tcp
 {
@@ -17,7 +18,7 @@ public:
     virtual ~IStreamReader() = default;
 
     /// Zero-copy view of contiguous data.
-    virtual std::pair<const uint8_t*, size_t> peek() = 0;
+    virtual nonstd::span<const uint8_t> peek() = 0;
 
     /// Copy into user buffer.
     virtual size_t read(uint8_t* out, size_t maxLen) = 0;

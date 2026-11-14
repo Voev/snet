@@ -46,9 +46,18 @@ public:
         if (probe->clientHelloSent.exchange(true))
             return;
 
+        auto* proxy = mgr_.template getContext<proxy::ProxyContext>(session);
+        if (!proxy)
+            return;
+
         try
         {
-            tls::ClientHelloPolicy policy{};
+            tls::ClientHello message;
+            message.deserialize(proxy->pair->bufferedClientHello);
+
+            std::array<tls::ProtocolVersion, 5> versionsBuf;
+            auto policy = tls::ClientHelloPolicy::make(message, proxy->pair->tlsServer, versionsBuf);
+
             probe->tls->constructClientHello(policy);
 
             probe::TcpByteWriter<SessionManagerType> writer(tx_, session);

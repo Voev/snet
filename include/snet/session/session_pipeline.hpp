@@ -140,7 +140,7 @@ public:
     layers::PacketStatus processPacket(Session* session, layers::Packet* packet)
     {
         using namespace snet::layers;
-        
+
         PacketStatus status = PacketStatus::drop(PacketReason::InvalidParameters);
 
         if (handlers_.empty() || !session || !packet)
@@ -152,7 +152,12 @@ public:
         {
             auto next = h->processPacket(session, packet, status);
 
-            CSK_LOG_DEBUG("pipeline: %s -> {%s, %s}", h->name(), toString(next.verdict), toString(next.reason));
+            CSK_LOG_DEBUG("pipeline s=%p, p=%p: %s -> {%s, %s}",
+                          session,
+                          packet,
+                          h->name(),
+                          toString(next.verdict),
+                          toString(next.reason));
 
             status = next;
         }

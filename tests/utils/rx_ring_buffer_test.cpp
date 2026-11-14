@@ -20,8 +20,8 @@ TEST(RxRingBufferTest, DefaultStateIsUninitialized)
     EXPECT_EQ(rb.writeAt(0, buf, 4), 0u);
     rb.advanceContiguous();
     auto p = rb.peek();
-    EXPECT_EQ(p.first, nullptr);
-    EXPECT_EQ(p.second, 0u);
+    EXPECT_EQ(p.data(), nullptr);
+    EXPECT_EQ(p.size(), 0u);
     EXPECT_EQ(rb.read(buf, 4), 0u);
     rb.consume(4);
     EXPECT_EQ(rb.available(), 0u);
@@ -242,10 +242,10 @@ TEST(RxRingBufferTest, PeekReturnsWrappedChunk)
 
     // peek must return only the first contiguous chunk up to the end of the buffer
     auto p = rb.peek();
-    ASSERT_NE(p.first, nullptr);
-    EXPECT_EQ(p.second, 2u); // bytes 7,8 are at offset 6,7
-    EXPECT_EQ(p.first[0], 7);
-    EXPECT_EQ(p.first[1], 8);
+    ASSERT_NE(p.data(), nullptr);
+    EXPECT_EQ(p.size(), 2u); // bytes 7,8 are at offset 6,7
+    EXPECT_EQ(p.data()[0], 7);
+    EXPECT_EQ(p.data()[1], 8);
 }
 
 // ---- consume via peek (zero-copy path) ----
@@ -259,9 +259,9 @@ TEST(RxRingBufferTest, PeekThenConsume)
     rb.advanceContiguous();
 
     auto p = rb.peek();
-    ASSERT_NE(p.first, nullptr);
-    EXPECT_EQ(p.second, 5u);
-    EXPECT_EQ(std::memcmp(p.first, d, 5), 0);
+    ASSERT_NE(p.data(), nullptr);
+    EXPECT_EQ(p.size(), 5u);
+    EXPECT_EQ(std::memcmp(p.data(), d, 5), 0);
 
     rb.consume(3);
     EXPECT_EQ(rb.available(), 2u);
@@ -276,8 +276,8 @@ TEST(RxRingBufferTest, PeekThenConsume)
 
     // peek with no data
     auto p2 = rb.peek();
-    EXPECT_EQ(p2.first, nullptr);
-    EXPECT_EQ(p2.second, 0u);
+    EXPECT_EQ(p2.data(), nullptr);
+    EXPECT_EQ(p2.size(), 0u);
 
     // read with no data
     uint8_t out[4];

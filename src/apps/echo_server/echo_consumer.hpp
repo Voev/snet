@@ -33,8 +33,8 @@ public:
 
         while (reader.available() > 0)
         {
-            auto [data, len] = reader.peek();
-            if (!data || len == 0)
+            auto stream = reader.peek();
+            if (stream.empty())
                 break;
 
             const size_t free = conn->txRing->freeSpace();
@@ -44,8 +44,8 @@ public:
                 break;
             }
 
-            const size_t toEcho = std::min(len, free);
-            const size_t written = conn->txRing->write(data, toEcho);
+            const size_t toEcho = std::min(stream.size(), free);
+            const size_t written = conn->txRing->write(stream.data(), toEcho);
             reader.consume(written);
 
             CSK_LOG_DEBUG("Echo: echoed %zu bytes", written);

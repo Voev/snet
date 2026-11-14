@@ -63,11 +63,6 @@ public:
             return false;
         }
 
-        CSK_LOG_DEBUG("TcpConnectionCtxFactory: created both contexts "
-                      "(rxPool=%p, txPool=%p)",
-                      static_cast<void*>(rxPool_),
-                      static_cast<void*>(txPool_));
-
         return true;
     }
 
@@ -154,12 +149,6 @@ private:
             this->template deallocateContext<TcpConnection>(ctx);
             return false;
         }
-
-        CSK_LOG_DEBUG("TcpConnectionCtxFactory: ctx[%zu] created "
-                      "(rx=%p, tx=%p)",
-                      idx,
-                      static_cast<void*>(ctx->rxRing),
-                      static_cast<void*>(ctx->txRing));
 
         return true;
     }
