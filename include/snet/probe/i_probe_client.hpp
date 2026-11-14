@@ -15,7 +15,8 @@ class IProbeClient
 public:
     using Callback = std::function<void(ProbeResult)>;
     virtual ~IProbeClient() = default;
-    virtual void asyncProbe(std::string sni, const layers::IPAddress& serverIP, uint16_t serverPort, Callback cb) = 0;
+    virtual void asyncProbe(std::string sni, const layers::IPAddress& serverIP, uint16_t serverPort,
+                            uint32_t downstreamKey, Callback cb) = 0;
 };
 
 } // namespace snet::probe

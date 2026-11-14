@@ -46,17 +46,25 @@ public:
         if (probe->clientHelloSent.exchange(true))
             return;
 
-        auto* proxy = mgr_.template getContext<proxy::ProxyContext>(session);
-        if (!proxy)
+        auto* downSession = mgr_.find(probe->downstreamKey);
+        auto* proxy = downSession ? mgr_.template getContext<proxy::ProxyContext>(downSession) : nullptr;
+        if (!proxy || !proxy->pair || !proxy->pair->serverTls) {
             return;
+        }
+
+        CSK_LOG_DEBUG("ProbeAcceptor: s=%p, ctx=%p", downSession, proxy);
 
         try
         {
             tls::ClientHello message;
-            message.deserialize(proxy->pair->bufferedClientHello);
+            utils::printHex(std::cout, proxy->bufferedClientHello, "Buffered client hello");
+
+            auto span = nonstd::span<uint8_t>(proxy->bufferedClientHello.data(), proxy->bufferedClientHello.size());
+            casket::ThrowIfError(message.deserialize(span.subspan(tls::TLS_HEADER_SIZE + tls::TLS_HANDSHAKE_HEADER_SIZE)));
+            
 
             std::array<tls::ProtocolVersion, 5> versionsBuf;
-            auto policy = tls::ClientHelloPolicy::make(message, proxy->pair->tlsServer, versionsBuf);
+            auto policy = tls::ClientHelloPolicy::make(message, *proxy->pair->serverTls, versionsBuf);
 
             probe->tls->constructClientHello(policy);
 

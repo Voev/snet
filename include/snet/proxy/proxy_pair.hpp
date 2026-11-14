@@ -34,8 +34,6 @@ struct ProxyPair
     std::string        clientSni;
     InspectionDecision decision{InspectionDecision::Bypass};
 
-    std::vector<uint8_t> bufferedClientHello;
-
     snet::tls::RecordPool pool{64};
 
     std::unique_ptr<snet::tls::Session> clientTls;

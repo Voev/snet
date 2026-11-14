@@ -13,6 +13,8 @@ struct ProxyContext
 
     ProxyPairPtr pair;
 
+    std::vector<uint8_t> bufferedClientHello;
+
     bool isDownstream{false};
     bool isUpstream{false};
 

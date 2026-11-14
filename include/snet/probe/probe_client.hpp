@@ -35,9 +35,10 @@ public:
         }
     }
 
-    void asyncProbe(std::string sni, const layers::IPAddress& serverIP, uint16_t serverPort, Callback cb) override
+    void asyncProbe(std::string sni, const layers::IPAddress& serverIP, uint16_t serverPort, uint32_t downstreamKey,
+                    Callback cb) override
     {
-        auto handle = connector_.start(std::move(sni), serverIP, serverPort, sourceIP_, std::move(cb));
+        auto handle = connector_.start(std::move(sni), serverIP, serverPort, sourceIP_, downstreamKey, std::move(cb));
         if (handle)
         {
             handles_.push_back(std::move(handle));

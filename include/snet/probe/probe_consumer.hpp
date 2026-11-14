@@ -36,11 +36,11 @@ public:
             return;
         }
 
-        auto [ptr, len] = reader.peek();
-        if (ptr && len > 0)
+        auto stream = reader.peek();
+        if (!stream.empty())
         {
-            probe->tls->readRecords({ptr, static_cast<size_t>(len)});
-            reader.consume(len);
+            probe->tls->readRecords(stream);
+            reader.consume(stream.size());
 
             constexpr int8_t kServerSide = 1;
 

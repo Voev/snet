@@ -16,6 +16,7 @@ struct ProbeContext
 {
     static constexpr size_t MAX_INSTANCES = 1;
 
+    uint32_t downstreamKey{};
     std::string                   sni;
     std::unique_ptr<tls::RecordPool> tlsPool;
     std::unique_ptr<tls::Session> tls;
