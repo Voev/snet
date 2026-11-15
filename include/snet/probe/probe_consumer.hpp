@@ -67,7 +67,9 @@ public:
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        /// @todo: extract chain: rec->getHandshake<Certificate>()
+                        const auto& msg = rec->getHandshake<Certificate>();
+
+                        probe->result.chain = msg.getCertificates();
                         probe->result.status = ProbeResult::Status::Ok;
                         finish(*probe);
                         break;

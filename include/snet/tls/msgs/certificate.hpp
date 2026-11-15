@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 #include <system_error>
 
 #include <casket/nonstd/span.hpp>
@@ -10,6 +11,7 @@
 #include <snet/tls/msgs/tls1_certificate.hpp>
 #include <snet/tls/msgs/tls13_certificate.hpp>
 #include <snet/tls/version.hpp>
+#include <snet/crypto/cert.hpp>
 
 namespace snet::tls
 {
@@ -60,6 +62,22 @@ struct Certificate final
     /// @return Bytes written on success, `kSerializationFailed` on error.
     /// @note `noexcept`.
     std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
+
+    std::vector<crypto::X509CertPtr> Certificate::getCertificates() const
+    {
+        return nonstd::visit(
+            [](const auto& msg) -> std::vector<crypto::X509CertPtr>
+            {
+                std::vector<crypto::X509CertPtr> certs;
+                certs.reserve(msg.entryList.size());
+                for (const auto& entry : msg.entryList)
+                {
+                    certs.push_back(crypto::Cert::fromBuffer(entry.certData));
+                }
+                return certs;
+            },
+            message);
+    }
 };
 
 } // namespace snet::tls
