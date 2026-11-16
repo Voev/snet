@@ -63,7 +63,7 @@ struct Certificate final
     /// @note `noexcept`.
     std::size_t serialize(nonstd::span<uint8_t> output, const Session& session) const noexcept;
 
-    std::vector<crypto::X509CertPtr> Certificate::getCertificates() const
+    std::vector<crypto::X509CertPtr> getCertificates() const
     {
         return nonstd::visit(
             [](const auto& msg) -> std::vector<crypto::X509CertPtr>
