@@ -41,7 +41,7 @@ public:
     ProbeConnector(SessionManagerType& probeMgr, TxHandler& tx, ProbeConfig cfg = ProbeConfig{});
 
     std::shared_ptr<ProbeHandle> start(std::string sni, layers::IPAddress serverIP, uint16_t serverPort,
-                                       layers::IPAddress sourceIP, ProbeConnectionCallback cb);
+                                       layers::IPAddress sourceIP, uint32_t downstreamKey, ProbeConnectionCallback cb);
 
     void finalizeProbe(void* session, uint32_t key) override;
     void abortProbe(void* session, uint32_t key) override;
@@ -87,6 +87,7 @@ uint32_t ProbeConnector<SessionManagerType>::hashFlow(const layers::IPAddress& s
 template <typename SessionManagerType>
 std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::string sni, layers::IPAddress serverIP,
                                                                        uint16_t serverPort, layers::IPAddress sourceIP,
+                                                                       uint32_t downstreamKey,
                                                                        ProbeConnectionCallback cb)
 {
     const uint16_t sourcePort = this->pickEphemeralPort();
@@ -115,6 +116,7 @@ std::shared_ptr<ProbeHandle> ProbeConnector<SessionManagerType>::start(std::stri
     probe->tls->setVersion(tls::ProtocolVersion::TLSv1_2);
     probe->sni = std::move(sni);
     probe->cb = std::move(cb);
+    probe->downstreamKey = downstreamKey;
 
     auto* conn = probeMgr_.template getContext<TcpConnection>(session, 0);
     if (!conn)

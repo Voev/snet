@@ -100,8 +100,9 @@ public:
         ctx->downstreamKey = pair.downstreamKey;
         ctx->upstreamKey = pair.upstreamKey;
 
-        CSK_LOG_WARNING("Acceptor: downstream accepted %s:%u -> %s:%u "
+        CSK_LOG_WARNING("Acceptor: s=%p, ctx=%p, downstream accepted %s:%u -> %s:%u "
                         "dk=%x uk=%x",
+                        downstream, ctx,
                         pair.clientIP.toString().c_str(),
                         pair.clientPort,
                         pair.serverIP.toString().c_str(),

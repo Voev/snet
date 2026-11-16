@@ -3,6 +3,7 @@
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <casket/nonstd/span.hpp>
 
 namespace snet
 {
@@ -137,11 +138,11 @@ public:
     ///
     /// The returned span is valid until the next writeAt/consume call.
     /// May be shorter than available() if the ring wraps.
-    std::pair<const uint8_t*, size_t> peek() const noexcept
+    nonstd::span<const uint8_t> peek() const noexcept
     {
         const size_t avail = available();
         if (avail == 0)
-            return {nullptr, 0};
+            return {};
 
         const size_t offset = ringOffset(consumedSeq_);
         const size_t firstChunk = std::min(avail, capacity_ - offset);

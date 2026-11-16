@@ -53,7 +53,7 @@ public:
     /// @param[in] serverIP   Upstream server address for the probe.
     /// @param[in] serverPort Upstream server port for the probe.
     /// @param[in] cb         Completion callback receiving the decision.
-    void request(std::string sni, const snet::layers::IPAddress& serverIP, uint16_t serverPort,
+    void request(std::string sni, const snet::layers::IPAddress& serverIP, uint16_t serverPort, uint32_t downstreamKey,
                  std::function<void(InspectionDecision)> cb)
     {
         // 1. Cache.
@@ -86,6 +86,7 @@ public:
         probe_.asyncProbe(sni,
                           serverIP,
                           serverPort,
+                          downstreamKey,
                           [this, inflight](probe::ProbeResult r)
                           {
                               onProbeComplete(inflight, std::move(r));

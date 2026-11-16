@@ -36,11 +36,11 @@ public:
             return;
         }
 
-        auto [ptr, len] = reader.peek();
-        if (ptr && len > 0)
+        auto stream = reader.peek();
+        if (!stream.empty())
         {
-            probe->tls->readRecords({ptr, static_cast<size_t>(len)});
-            reader.consume(len);
+            probe->tls->readRecords(stream);
+            reader.consume(stream.size());
 
             constexpr int8_t kServerSide = 1;
 
@@ -67,7 +67,9 @@ public:
                     }
                     case HandshakeType::CertificateCode:
                     {
-                        /// @todo: extract chain: rec->getHandshake<Certificate>()
+                        const auto& msg = rec->getHandshake<Certificate>();
+
+                        probe->result.chain = msg.getCertificates();
                         probe->result.status = ProbeResult::Status::Ok;
                         finish(*probe);
                         break;

@@ -443,7 +443,7 @@ public:
             return oss.str();
         }
 
-        oss << "Packet (" << this->getDataLen() << " bytes):\n";
+        oss << "Packet 0x" << this << " (" << this->getDataLen() << " bytes):\n";
 
         for (const auto& layer : *this)
         {

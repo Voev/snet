@@ -91,11 +91,11 @@ public:
             // flushed to upstream by pushToUpstream() after the decision.
             while (reader.available() > 0)
             {
-                auto [data, len] = reader.peek();
-                if (!data || len == 0)
+                auto stream = reader.peek();
+                if (stream.empty())
                     break;
-                pair.bufferedClientHello.insert(pair.bufferedClientHello.end(), data, data + len);
-                reader.consume(len);
+                ctx->bufferedClientHello.insert(ctx->bufferedClientHello.end(), stream.data(), stream.data() + stream.size());
+                reader.consume(stream.size());
             }
             break;
         }
@@ -153,37 +153,70 @@ private:
     /// @param[in] ctx     Session context.
     /// @param[in] pair    Pair state.
     /// @param[in] reader  Reader over available bytes.
-    void handleWaiting(Session* session, ProxyContext& ctx, ProxyPair& pair, snet::tcp::IStreamReader& reader)
+    void handleWaiting(Session* session, ProxyContext& ctx, ProxyPair& pair,
+                       snet::tcp::IStreamReader& reader)
     {
         if (!ctx.isDownstream)
             return;
 
-        // Buffer everything that arrived.
-        while (reader.available() > 0)
+        if (!pair.serverTls)
         {
-            auto [data, len] = reader.peek();
-            if (!data || len == 0)
-                break;
-            pair.bufferedClientHello.insert(pair.bufferedClientHello.end(), data, data + len);
-            reader.consume(len);
+            pair.serverTls = std::make_unique<TlsSession>(pair.pool);
+            pair.serverTls->setMonitor(false);
         }
 
-        // Try to extract SNI from the buffered bytes.
-        if (pair.clientSni.empty())
+        while (reader.available() > 0)
         {
-            auto sni = std::string("test"); // extractSniFromClientHello(pair.bufferedClientHello);
-            if (sni.empty())
-                return; // wait for more bytes
-            pair.clientSni = std::move(sni);
+            auto span = reader.peek();
+            if (span.empty())
+                break;
+
+            size_t consumed = 0;
+            try
+            {
+                consumed = pair.serverTls->readRecords(span);
+            }
+            catch (const std::exception& e)
+            {
+                CSK_LOG_ERROR("Waiting: readRecords failed: %s", e.what());
+                pair.phase = PairPhase::Closed;
+                return;
+            }
+
+            if (consumed == 0)
+                break;
+
+            ctx.bufferedClientHello.insert(ctx.bufferedClientHello.end(),
+                                            span.data(),
+                                            span.data() + consumed);
+            reader.consume(consumed);
         }
+
+        if (!pair.clientSni.empty())
+            return;
+
+        try
+        {
+            pair.serverTls->processPendingRecords(0, [](int8_t, tls::Record*) {});
+        }
+        catch (const std::exception& e)
+        {
+            CSK_LOG_ERROR("Waiting: processPendingRecords failed: %s", e.what());
+            pair.phase = PairPhase::Closed;
+            return;
+        }
+
+        auto& ext = pair.serverTls->getClientExtensions();
+        if (auto* sni = ext.get<tls::ServerNameIndicator>())
+            pair.clientSni = sni->getHostname();
+
+        if (pair.clientSni.empty())
+            return; // ClientHello not complete yet
 
         CSK_LOG_DEBUG("Proxy: SNI=%s", pair.clientSni.c_str());
 
-        // Start the decision request.
         pair.phase = PairPhase::Probing;
-        engine_->request(pair.clientSni,
-                         pair.serverIP,
-                         pair.serverPort,
+        engine_->request(pair.clientSni, pair.serverIP, pair.serverPort, pair.downstreamKey,
                          [this, session](InspectionDecision d)
                          {
                              onDecision(session, d);
@@ -211,10 +244,10 @@ private:
         {
             acceptor_->openUpstream(session);
             pair.phase = PairPhase::Splice;
-            if (!pair.bufferedClientHello.empty())
+            if (!ctx->bufferedClientHello.empty())
             {
-                pushToUpstream(session, *ctx, pair, pair.bufferedClientHello);
-                pair.bufferedClientHello.clear();
+                pushToUpstream(session, *ctx, pair, ctx->bufferedClientHello);
+                ctx->bufferedClientHello.clear();
             }
             break;
         }
@@ -238,9 +271,6 @@ private:
 
         (void)session;
         (void)ctx;
-
-        // pushToUpstream(pair);
-        // pair.bufferedClientHello.clear();
     }
 
     /// Bypass: relay bytes as-is.
@@ -271,14 +301,14 @@ private:
             if (free == 0)
                 break;
 
-            auto [data, len] = reader.peek();
-            if (!data || len == 0)
+            auto stream = reader.peek();
+            if (stream.empty())
                 break;
 
-            utils::printHex(std::cout, {data, len}, "TCP stream");
+            utils::printHex(std::cout, stream, "TCP stream");
 
-            const size_t chunk = std::min(len, free);
-            const size_t written = dstConn->txRing->write(data, chunk);
+            const size_t chunk = std::min(stream.size(), free);
+            const size_t written = dstConn->txRing->write(stream.data(), chunk);
             reader.consume(written);
 
             if (ctx.isDownstream)

@@ -44,19 +44,38 @@ public:
     {
         auto* ctx = sessionManager_->template getContext<TlsDecryptContext>(session);
         if (!ctx || !ctx->session)
+        {
             return;
+        }
 
         while (reader.available() > 0)
         {
-            auto [data, len] = reader.peek();
-            if (!data || len == 0)
+            auto streamData = reader.peek();
+            if (streamData.empty())
+            {
                 break;
+            }
 
             size_t consumed = 0;
             try
             {
-                consumed = ctx->session->readRecords({data, len});
+                consumed = ctx->session->readRecords(streamData);
+            }
+            catch (const std::exception& e)
+            {
+                CSK_LOG_ERROR("error processing stream with length %lu: %s", streamData.size(), e.what());
+                break;
+            }
 
+            if (consumed == 0)
+            {
+                break;
+            }
+
+            reader.consume(consumed);
+
+            try
+            {
                 ctx->session->processPendingRecords(
                     sideIndex,
                     [&ctx, this](const int8_t si, Record* record)
@@ -82,14 +101,9 @@ public:
             }
             catch (const std::exception& e)
             {
-                CSK_LOG_ERROR("error processing stream with length %lu: %s", len, e.what());
+                CSK_LOG_ERROR("processPendingRecords failed (side=%d): %s", sideIndex, e.what());
                 break;
             }
-
-            if (consumed == 0)
-                break;
-
-            reader.consume(consumed);
         }
     }
 

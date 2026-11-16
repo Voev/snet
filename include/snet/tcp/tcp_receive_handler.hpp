@@ -31,10 +31,11 @@ public:
     {
     }
 
-    std::pair<const uint8_t*, size_t> peek() override
+    nonstd::span<const uint8_t> peek() override
     {
         return ring_->peek();
     }
+
     size_t read(uint8_t* out, size_t maxLen) override
     {
         return ring_->read(out, maxLen);

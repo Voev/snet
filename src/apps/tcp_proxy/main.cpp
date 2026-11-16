@@ -201,19 +201,23 @@ int main(int argc, char* argv[])
         snet::arp::ArpResolver arpResolver(arpTransport);
         auto networkSink = std::make_unique<NetworkSink>(*driver, arpResolver);
 
-        auto* d0 = driver->deviceAt(0);
         auto ip0 = snet::layers::IPv4Address::fromString("10.0.0.254").value();
-        arpResolver.addLocal(d0->id(), ip0, d0->mac());
+        auto* d0 = driver->deviceAt(0);
+        if (d0)
+        {
+            arpResolver.addLocal(d0->id(), ip0, d0->mac());
+            networkSink->addSubnet(
+                d0->id(), IPv4Address::fromString("10.0.0.0").value(), IPv4Address::fromString("255.255.255.0").value());
+        }
 
-        auto* d1 = driver->deviceAt(1);
         auto ip1 = snet::layers::IPv4Address::fromString("10.0.1.254").value();
-        arpResolver.addLocal(d1->id(), ip1, d1->mac());
-
-        networkSink->addSubnet(
-            d0->id(), IPv4Address::fromString("10.0.0.0").value(), IPv4Address::fromString("255.255.255.0").value());
-
-        networkSink->addSubnet(
-            d1->id(), IPv4Address::fromString("10.0.1.0").value(), IPv4Address::fromString("255.255.255.0").value());
+        auto* d1 = driver->deviceAt(1);
+        if (d1)
+        {
+            arpResolver.addLocal(d1->id(), ip1, d1->mac());
+            networkSink->addSubnet(
+                d1->id(), IPv4Address::fromString("10.0.1.0").value(), IPv4Address::fromString("255.255.255.0").value());
+        }
 
         auto routing = std::make_unique<snet::pp::RoutingStage>();
         if (driver->deviceCount() >= 2)
